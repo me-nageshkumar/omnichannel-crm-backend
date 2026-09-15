@@ -3,7 +3,7 @@ server:
 
 logging:
   level:
-    in.redlava.wabridge: INFO
+    me.nageshk.whatsapp: INFO
 
 wabridge:
   jwt:

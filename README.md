@@ -1,7 +1,20 @@
-# wabridge server
+# whatsapp-backend
 
-Spring Boot backend for the WhatsApp Web Chrome extension bridge. See
-`docs/superpowers/specs/2026-09-15-chrome-extension-bridge-design.md`.
+Spring Boot backend for the [whatsapp-web-extension](https://github.com/me-nageshkumar/whatsapp-web-extension)
+bridge: authenticates extensions, relays WhatsApp events, sends messages, and delivers the page
+script. Design specs and implementation plans live in `docs/superpowers/`.
+
+## Repository layout
+
+Three sibling checkouts in one directory:
+
+```
+<workspace>/
+  whatsapp-web.js/           # upstream https://github.com/wwebjs/whatsapp-web.js
+  whatsapp-web-extension/    # the Chrome extension; its `npm run build` writes
+                             # src/main/resources/wabridge/scripts/ in this repo
+  whatsapp-backend/          # this repo (Java 21, Spring Boot 3.5, package me.nageshk.whatsapp)
+```
 
 ## Run
 
@@ -46,8 +59,8 @@ Error codes: `NO_DEVICE` / `WHATSAPP_NOT_READY` (409), `CHAT_NOT_FOUND` / `PAGE_
 ## Page script delivery
 
 The extension fetches `page.js` from this server on every connect when the hash in the `hello`
-reply differs from its cache. Regenerate the resources with `cd extension && npm run build` and
-commit `server/src/main/resources/wabridge/scripts/`; the server refuses to start if the manifest
+reply differs from its cache. Regenerate the resources with `cd ../whatsapp-web-extension && npm run build` and
+commit `src/main/resources/wabridge/scripts/`; the server refuses to start if the manifest
 hash does not match the file.
 
 ## Event delivery guarantees
