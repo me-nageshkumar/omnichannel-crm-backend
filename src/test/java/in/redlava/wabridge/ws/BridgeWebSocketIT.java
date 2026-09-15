@@ -90,6 +90,7 @@ class BridgeWebSocketIT {
             Envelope reply = device.next();
             assertThat(reply.id()).isEqualTo("h1");
             assertThat(reply.result().get("ok").asBoolean()).isTrue();
+            assertThat(reply.result().get("scripts").get("page").get("sha256").asText()).hasSize(64);
 
             DeviceSession session = registry.find("demo").orElseThrow();
             assertThat(session.waState()).isEqualTo("CONNECTED");

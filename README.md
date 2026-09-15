@@ -31,6 +31,10 @@ curl -s -X POST localhost:8080/api/messages \
 # recent events (oldest first); poll with after=<last seq>
 curl -s -H "Authorization: Bearer $TOKEN" 'localhost:8080/api/events?limit=20'
 
+# scripts delivered to the extension (manifest + code; ETag = sha256)
+curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/scripts
+curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/scripts/page -o page.js
+
 # call any page method directly (diagnostic / generic pass-through)
 curl -s -X POST localhost:8080/api/rpc -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"method":"getState"}'
@@ -38,6 +42,13 @@ curl -s -X POST localhost:8080/api/rpc -H "Authorization: Bearer $TOKEN" -H 'Con
 
 Error codes: `NO_DEVICE` / `WHATSAPP_NOT_READY` (409), `CHAT_NOT_FOUND` / `PAGE_ERROR` /
 `VALIDATION` (400), `DEVICE_DISCONNECTED` / `SEND_FAILED` (502), `TIMEOUT` (504).
+
+## Page script delivery
+
+The extension fetches `page.js` from this server on every connect when the hash in the `hello`
+reply differs from its cache. Regenerate the resources with `cd extension && npm run build` and
+commit `server/src/main/resources/wabridge/scripts/`; the server refuses to start if the manifest
+hash does not match the file.
 
 ## WebSocket protocol (`/ws`)
 

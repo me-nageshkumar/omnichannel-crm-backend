@@ -9,6 +9,7 @@ import in.redlava.wabridge.events.WhatsAppEvent;
 import in.redlava.wabridge.rpc.Envelope;
 import in.redlava.wabridge.rpc.RpcDispatcher;
 import in.redlava.wabridge.rpc.RpcException;
+import in.redlava.wabridge.scripts.ScriptCatalog;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,6 +40,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     private final ApplicationEventPublisher publisher;
     private final ScheduledExecutorService scheduler;
     private final WabridgeProperties props;
+    private final ScriptCatalog scripts;
     private final ConcurrentHashMap<String, ScheduledFuture<?>> authTimers = new ConcurrentHashMap<>();
 
     public BridgeWebSocketHandler(
@@ -48,7 +50,8 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             RpcDispatcher dispatcher,
             ApplicationEventPublisher publisher,
             ScheduledExecutorService wsScheduler,
-            WabridgeProperties props) {
+            WabridgeProperties props,
+            ScriptCatalog scripts) {
         this.mapper = mapper;
         this.jwt = jwt;
         this.registry = registry;
@@ -56,6 +59,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         this.publisher = publisher;
         this.scheduler = wsScheduler;
         this.props = props;
+        this.scripts = scripts;
     }
 
     @Override
@@ -128,7 +132,9 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
                 if (params.hasNonNull("waState")) device.setWaState(params.get("waState").asText());
                 if (params.hasNonNull("info")) device.setInfo(params.get("info"));
             }
-            device.send(Envelope.response(frame.id(), mapper.createObjectNode().put("ok", true)));
+            ObjectNode result = mapper.createObjectNode().put("ok", true);
+            result.set("scripts", scripts.manifest());
+            device.send(Envelope.response(frame.id(), result));
             return;
         }
         device.send(Envelope.errorResponse(frame.id(), RpcException.METHOD_NOT_FOUND,
