@@ -1654,7 +1654,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "e37ff73fffdf" : "dev";
+  var BUILD = true ? "e5284d30fdfc" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
@@ -1739,7 +1739,7 @@
       ctl.announce();
       console.info(
         TAG,
-        "ready",
+        "ready (server-delivered)",
         ctl.info.wid?._serialized,
         window.Debug.VERSION,
         "build",
