@@ -22,6 +22,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         this.jwt = jwt;
     }
 
+    /**
+     * Controllers return CompletableFuture; Spring completes them via an ASYNC dispatch that re-runs the
+     * security chain. Run on that dispatch too so the Bearer header is re-read and authorization passes.
+     */
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {

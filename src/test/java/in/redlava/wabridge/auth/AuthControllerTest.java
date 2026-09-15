@@ -57,8 +57,7 @@ class AuthControllerTest {
     @Test
     void protectedEndpointWithTokenIsNotRejectedByAuth() throws Exception {
         String token = jwt.issue("demo").token();
-        // /api/status does not exist yet; 404 proves the filter accepted the token (401 would mean rejected)
         mvc.perform(get("/api/status").header("Authorization", "Bearer " + token))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
     }
 }
