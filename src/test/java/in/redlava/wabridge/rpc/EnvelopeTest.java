@@ -41,6 +41,19 @@ class EnvelopeTest {
     }
 
     @Test
+    void parsesDurableEventAndAck() throws Exception {
+        Envelope ev = mapper.readValue("{\"type\":\"event\",\"name\":\"message\",\"payload\":{},\"seq\":5,\"ts\":1700000000000}", Envelope.class);
+        assertThat(ev.seq()).isEqualTo(5L);
+        assertThat(ev.ts()).isEqualTo(1700000000000L);
+        assertThat(mapper.readValue("{\"type\":\"event\",\"name\":\"ready\"}", Envelope.class).seq()).isNull();
+
+        Envelope ack = mapper.readValue("{\"type\":\"event_ack\",\"seq\":3}", Envelope.class);
+        assertThat(ack.type()).isEqualTo(Envelope.EVENT_ACK);
+        assertThat(ack.seq()).isEqualTo(3L);
+        assertThat(mapper.writeValueAsString(Envelope.eventAck(3))).isEqualTo("{\"type\":\"event_ack\",\"seq\":3}");
+    }
+
+    @Test
     void factoriesProduceExpectedTypes() {
         assertThat(Envelope.auth("t").type()).isEqualTo(Envelope.AUTH);
         assertThat(Envelope.auth("t").token()).isEqualTo("t");
