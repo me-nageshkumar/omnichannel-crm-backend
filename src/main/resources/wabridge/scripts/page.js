@@ -1431,13 +1431,18 @@
     UNAUTHORIZED: 4401,
     REPLACED: 4409
   });
+  var DURABLE_EVENTS = /* @__PURE__ */ new Set([
+    import_Constants.Events.MESSAGE_RECEIVED,
+    import_Constants.Events.MESSAGE_CREATE,
+    import_Constants.Events.MESSAGE_ACK
+  ]);
   var response = (id, result) => ({ type: "response", id, result });
   var errorResponse = (id, code, message) => ({
     type: "response",
     id,
     error: { code, message }
   });
-  var event = (name, payload) => ({ type: "event", name, payload });
+  var event = (name, payload, ts) => ts === void 0 ? { type: "event", name, payload } : { type: "event", name, payload, ts };
   var isEnvelope = (x) => Boolean(x) && typeof x === "object" && typeof x.type === "string";
 
   // src/page/bridge.js
@@ -1451,7 +1456,7 @@
         win.postMessage(JSON.parse(JSON.stringify(data)), origin);
       }
     };
-    const emit = (name, payload) => post(event(name, payload));
+    const emit = (name, payload) => post(event(name, payload, Date.now()));
     async function handle(frame) {
       const fn = methods.get(frame.method);
       if (!fn) {
@@ -1654,7 +1659,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "e5284d30fdfc" : "dev";
+  var BUILD = true ? "fc6a61c4cca0" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
