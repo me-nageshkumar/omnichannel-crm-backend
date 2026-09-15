@@ -27,6 +27,10 @@ curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/status
 curl -s -X POST localhost:8080/api/messages \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"chatId":"919999999999@c.us","content":"hello from server"}'
+
+# call any page method directly (diagnostic / generic pass-through)
+curl -s -X POST localhost:8080/api/rpc -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"method":"getState"}'
 ```
 
 Error codes: `NO_DEVICE` / `WHATSAPP_NOT_READY` (409), `CHAT_NOT_FOUND` / `PAGE_ERROR` /

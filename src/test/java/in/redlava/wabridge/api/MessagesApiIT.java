@@ -147,6 +147,32 @@ class MessagesApiIT {
     }
 
     @Test
+    void rpcPassesAnyMethodThroughWithoutReadinessGate() throws Exception {
+        String token = jwt.issue("demo").token();
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
+            CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() ->
+                    rest.exchange("/api/rpc", HttpMethod.POST,
+                            new HttpEntity<>("{\"method\":\"getState\"}", authHeaders(token)), JsonNode.class));
+
+            Envelope req = device.next();
+            assertThat(req.method()).isEqualTo("getState");
+            device.send(Envelope.response(req.id(), mapper.getNodeFactory().textNode("CONNECTED")));
+
+            ResponseEntity<JsonNode> res = http.get(5, TimeUnit.SECONDS);
+            assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(res.getBody().asText()).isEqualTo("CONNECTED");
+        }
+    }
+
+    @Test
+    void rpcWithoutDeviceReturns409() {
+        ResponseEntity<JsonNode> res = rest.exchange("/api/rpc", HttpMethod.POST,
+                new HttpEntity<>("{\"method\":\"getState\"}", authHeaders(jwt.issue("demo").token())), JsonNode.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(res.getBody().get("code").asText()).isEqualTo("NO_DEVICE");
+    }
+
+    @Test
     void statusWithoutTokenIs401() {
         ResponseEntity<Map> res = rest.getForEntity("/api/status", Map.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
