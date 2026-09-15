@@ -41,6 +41,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     private final ScheduledExecutorService scheduler;
     private final WabridgeProperties props;
     private final ScriptCatalog scripts;
+    private final EventSequenceTracker sequences;
     private final ConcurrentHashMap<String, ScheduledFuture<?>> authTimers = new ConcurrentHashMap<>();
 
     public BridgeWebSocketHandler(
@@ -51,7 +52,8 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             ApplicationEventPublisher publisher,
             ScheduledExecutorService wsScheduler,
             WabridgeProperties props,
-            ScriptCatalog scripts) {
+            ScriptCatalog scripts,
+            EventSequenceTracker sequences) {
         this.mapper = mapper;
         this.jwt = jwt;
         this.registry = registry;
@@ -60,6 +62,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         this.scheduler = wsScheduler;
         this.props = props;
         this.scripts = scripts;
+        this.sequences = sequences;
     }
 
     @Override
@@ -131,6 +134,9 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             if (params != null) {
                 if (params.hasNonNull("waState")) device.setWaState(params.get("waState").asText());
                 if (params.hasNonNull("info")) device.setInfo(params.get("info"));
+                JsonNode outbox = params.path("outbox");
+                log.info("[{}] hello waState={} outbox pending={} dropped={}", device.username(),
+                        device.waState(), outbox.path("pending").asInt(0), outbox.path("dropped").asInt(0));
             }
             ObjectNode result = mapper.createObjectNode().put("ok", true);
             result.set("scripts", scripts.manifest());
@@ -143,6 +149,12 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
 
     private void handleEvent(DeviceSession device, Envelope frame) {
         JsonNode payload = frame.payload() == null ? mapper.nullNode() : frame.payload();
+        Long seq = frame.seq();
+        if (seq != null && sequences.isDuplicate(device.username(), seq)) {
+            log.debug("[{}] duplicate event seq={} ({}), re-acking", device.username(), seq, frame.name());
+            sendAck(device, seq);
+            return;
+        }
         switch (frame.name() == null ? "" : frame.name()) {
             case "ready" -> {
                 device.setWaState(DeviceSession.STATE_CONNECTED);
@@ -152,7 +164,19 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             case "disconnected" -> device.setWaState("DISCONNECTED");
             default -> { /* no state change */ }
         }
-        publisher.publishEvent(new WhatsAppEvent(this, device.username(), frame.name(), payload));
+        publisher.publishEvent(new WhatsAppEvent(this, device.username(), frame.name(), payload, seq, frame.ts()));
+        if (seq != null) {
+            sequences.record(device.username(), seq);
+            sendAck(device, seq);
+        }
+    }
+
+    private void sendAck(DeviceSession device, long seq) {
+        try {
+            device.send(Envelope.eventAck(seq));
+        } catch (IOException e) {
+            log.warn("[{}] could not ack event seq={}: {}", device.username(), seq, e.getMessage());
+        }
     }
 
     @Override

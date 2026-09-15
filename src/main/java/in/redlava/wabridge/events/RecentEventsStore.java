@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RecentEventsStore {
 
-    public record StoredEvent(long seq, Instant at, String name, JsonNode payload) {}
+    public record StoredEvent(long seq, Instant at, String name, JsonNode payload, Long deviceSeq, Instant capturedAt) {}
 
     public static final int CAPACITY = 200;
 
@@ -25,7 +25,8 @@ public class RecentEventsStore {
     @EventListener
     public synchronized void on(WhatsAppEvent event) {
         Deque<StoredEvent> q = byUser.computeIfAbsent(event.username(), u -> new ArrayDeque<>());
-        q.addLast(new StoredEvent(++seq, Instant.now(), event.name(), event.payload()));
+        Instant capturedAt = event.ts() == null ? null : Instant.ofEpochMilli(event.ts());
+        q.addLast(new StoredEvent(++seq, Instant.now(), event.name(), event.payload(), event.seq(), capturedAt));
         while (q.size() > CAPACITY) q.pollFirst();
     }
 

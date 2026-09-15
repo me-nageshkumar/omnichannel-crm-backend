@@ -50,6 +50,14 @@ reply differs from its cache. Regenerate the resources with `cd extension && npm
 commit `server/src/main/resources/wabridge/scripts/`; the server refuses to start if the manifest
 hash does not match the file.
 
+## Event delivery guarantees
+
+Durable events (`message`, `message_create`, `message_ack`) arrive with `seq` (extension outbox
+sequence) and `ts` (capture time). The server publishes them, then answers `{"type":"event_ack","seq":N}`
+(cumulative). Replays after a reconnect are de-duplicated by `seq` per user in memory; after a server
+restart that memory is empty, so a replayed burst can be published once more. `GET /api/events`
+exposes `deviceSeq` and `capturedAt` for consumers that need to de-duplicate or order by capture time.
+
 ## WebSocket protocol (`/ws`)
 
 First frame must be `{"type":"auth","token":"<jwt>"}` within 5 s, else close 4401. A newer

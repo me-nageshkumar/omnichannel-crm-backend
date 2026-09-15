@@ -178,7 +178,7 @@ class MessagesApiIT {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
             device.send(Envelope.event("ready", mapper.createObjectNode().put("pushname", "N")));
             device.send(Envelope.event("message", mapper.createObjectNode().put("body", "one")));
-            device.send(Envelope.event("message", mapper.createObjectNode().put("body", "two")));
+            device.send(Envelope.durableEvent("message", mapper.createObjectNode().put("body", "two"), 42, 1700000000000L));
             Thread.sleep(300);
 
             ResponseEntity<JsonNode> res = rest.exchange("/api/events?limit=2", HttpMethod.GET,
@@ -189,6 +189,9 @@ class MessagesApiIT {
             assertThat(list.get(0).get("name").asText()).isEqualTo("message");
             assertThat(list.get(0).get("payload").get("body").asText()).isEqualTo("one");
             assertThat(list.get(1).get("payload").get("body").asText()).isEqualTo("two");
+            assertThat(list.get(1).get("deviceSeq").asLong()).isEqualTo(42L);
+            assertThat(list.get(1).get("capturedAt").asText()).isEqualTo("2023-11-14T22:13:20Z");
+            assertThat(list.get(0).get("deviceSeq").isNull()).isTrue();
 
             long last = list.get(1).get("seq").asLong();
             ResponseEntity<JsonNode> none = rest.exchange("/api/events?after=" + last, HttpMethod.GET,

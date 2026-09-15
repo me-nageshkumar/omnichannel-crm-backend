@@ -36,24 +36,33 @@ public class LoggingEventListener {
         return id.path("fromMe").asBoolean(false) + "_" + remote + "_" + id.path("id").asText();
     }
 
+    /** " seq=N capturedAt=ISO" for durable events, empty otherwise. */
+    static String origin(WhatsAppEvent event) {
+        if (event.seq() == null) return "";
+        String at = event.ts() == null ? "?" : java.time.Instant.ofEpochMilli(event.ts()).toString();
+        return " seq=" + event.seq() + " capturedAt=" + at;
+    }
+
     @EventListener
     public void on(WhatsAppEvent event) {
         JsonNode p = event.payload();
         switch (event.name()) {
             case "message", "message_create" -> log.info(
-                    "[{}] {} id={} chat={} from={} to={} type={} body={}",
+                    "[{}] {} id={} chat={} from={} to={} type={} body={}{}",
                     event.username(), event.name(),
                     messageId(p.path("id")),
                     wid(p.path("id").path("remote")),
                     wid(p.path("from")),
                     wid(p.path("to")),
                     p.path("type").asText(),
-                    p.path("body").asText());
+                    p.path("body").asText(),
+                    origin(event));
             case "message_ack" -> log.info(
-                    "[{}] message_ack id={} ack={}",
+                    "[{}] message_ack id={} ack={}{}",
                     event.username(),
                     messageId(p.path("message").path("id")),
-                    p.path("ack").asInt());
+                    p.path("ack").asInt(),
+                    origin(event));
             case "ready" -> log.info(
                     "[{}] ready wid={} pushname={} waVersion={}",
                     event.username(),

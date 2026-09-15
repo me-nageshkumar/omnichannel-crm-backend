@@ -126,6 +126,34 @@ class BridgeWebSocketIT {
     }
 
     @Test
+    void durableEventsAreAckedAndDuplicatesAreNotRepublished() throws Exception {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, jwt.issue("demo").token())) {
+            capture.events.clear();
+            var payload = mapper.createObjectNode().put("body", "offline msg");
+
+            device.send(Envelope.durableEvent("message", payload, 1, 1700000000000L));
+            Envelope ack = device.next();
+            assertThat(ack.type()).isEqualTo(Envelope.EVENT_ACK);
+            assertThat(ack.seq()).isEqualTo(1L);
+            WhatsAppEvent published = capture.events.poll(5, TimeUnit.SECONDS);
+            assertThat(published.seq()).isEqualTo(1L);
+            assertThat(published.ts()).isEqualTo(1700000000000L);
+
+            device.send(Envelope.durableEvent("message", payload, 1, 1700000000000L)); // replayed duplicate
+            assertThat(device.next().seq()).isEqualTo(1L);
+            assertThat(capture.events.poll(500, TimeUnit.MILLISECONDS)).isNull();
+
+            device.send(Envelope.event("change_state", mapper.createObjectNode().put("state", "CONNECTED")));
+            WhatsAppEvent transientEvent = capture.events.poll(5, TimeUnit.SECONDS);
+            assertThat(transientEvent.name()).isEqualTo("change_state");
+            assertThat(transientEvent.seq()).isNull();
+
+            device.send(Envelope.ping());
+            assertThat(device.next().type()).isEqualTo(Envelope.PONG); // no ack was sent for the transient event
+        }
+    }
+
+    @Test
     void disconnectUnregistersDevice() throws Exception {
         FakeDevice device = FakeDevice.connectAndAuth(port, jwt.issue("demo").token());
         device.close();
