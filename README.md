@@ -28,6 +28,9 @@ curl -s -X POST localhost:8080/api/messages \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"chatId":"919999999999@c.us","content":"hello from server"}'
 
+# recent events (oldest first); poll with after=<last seq>
+curl -s -H "Authorization: Bearer $TOKEN" 'localhost:8080/api/events?limit=20'
+
 # call any page method directly (diagnostic / generic pass-through)
 curl -s -X POST localhost:8080/api/rpc -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"method":"getState"}'

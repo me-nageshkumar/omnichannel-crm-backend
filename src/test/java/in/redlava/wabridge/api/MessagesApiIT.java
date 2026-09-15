@@ -173,6 +173,31 @@ class MessagesApiIT {
     }
 
     @Test
+    void eventsEndpointReturnsRecentEventsInOrderWithSeqCursor() throws Exception {
+        String token = jwt.issue("demo").token();
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
+            device.send(Envelope.event("ready", mapper.createObjectNode().put("pushname", "N")));
+            device.send(Envelope.event("message", mapper.createObjectNode().put("body", "one")));
+            device.send(Envelope.event("message", mapper.createObjectNode().put("body", "two")));
+            Thread.sleep(300);
+
+            ResponseEntity<JsonNode> res = rest.exchange("/api/events?limit=2", HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(token)), JsonNode.class);
+            assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+            JsonNode list = res.getBody();
+            assertThat(list.size()).isEqualTo(2);
+            assertThat(list.get(0).get("name").asText()).isEqualTo("message");
+            assertThat(list.get(0).get("payload").get("body").asText()).isEqualTo("one");
+            assertThat(list.get(1).get("payload").get("body").asText()).isEqualTo("two");
+
+            long last = list.get(1).get("seq").asLong();
+            ResponseEntity<JsonNode> none = rest.exchange("/api/events?after=" + last, HttpMethod.GET,
+                    new HttpEntity<>(authHeaders(token)), JsonNode.class);
+            assertThat(none.getBody().size()).isEqualTo(0);
+        }
+    }
+
+    @Test
     void statusWithoutTokenIs401() {
         ResponseEntity<Map> res = rest.getForEntity("/api/status", Map.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
