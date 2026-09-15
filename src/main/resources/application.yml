@@ -1,0 +1,22 @@
+server:
+  port: 8080
+
+logging:
+  level:
+    in.redlava.wabridge: INFO
+
+wabridge:
+  jwt:
+    # Must be at least 32 bytes. Override in production: WABRIDGE_JWT_SECRET=...
+    secret: ${WABRIDGE_JWT_SECRET:dev-only-secret-please-change-me-0123456789}
+    ttl: 12h
+  users:
+    # Dev/PoC user. For real deployments use {bcrypt}<hash>; generate with:
+    #   htpasswd -bnBC 10 "" 'your-password' | tr -d ':\n' | sed 's/^/{bcrypt}/'
+    - username: demo
+      password: "{noop}demo123"
+  ws:
+    allowed-origins: "chrome-extension://*"
+  rpc:
+    timeout: 30s
+    auth-timeout: 5s
