@@ -265,6 +265,23 @@ class RolesApiIT {
     }
 
     @Test
+    void roleEditAppliesOnTheHoldersNextRequest() {
+        HttpHeaders manager = bearer(testUsers.accessToken(
+                testUsers.create("am", "pw", BuiltInRoles.ACCOUNT_MANAGER, null)));
+        ResponseEntity<JsonNode> before = rest.exchange("/api/customers", HttpMethod.GET,
+                new HttpEntity<>(manager), JsonNode.class);
+        assertThat(before.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<JsonNode> edit = call(HttpMethod.PUT, "/api/roles/" + idOf("ACCOUNT_MANAGER"),
+                Map.of("description", "am", "authorities", List.of("customer:create", "customer:manage")));
+        assertThat(edit.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<JsonNode> after = rest.exchange("/api/customers", HttpMethod.GET,
+                new HttpEntity<>(manager), JsonNode.class);
+        assertThat(after.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
     void previewDoesNotSave() {
         Role before = roles.findByName("AGENT").orElseThrow();
         call(HttpMethod.POST, "/api/roles/" + before.getId() + "/preview",
