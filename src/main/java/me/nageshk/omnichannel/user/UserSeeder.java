@@ -42,9 +42,9 @@ public class UserSeeder implements ApplicationRunner {
         User u = base(sa.name(), sa.username(), sa.password(), UserRole.SUPER_ADMIN);
         u.setEmail(blankToNull(sa.email()));
         u.setMobileNumber(blankToNull(sa.mobileNumber()));
-        u.setTwoFactor(isBlank(sa.totpSecret()) ? TwoFactor.disabled() : TwoFactor.enabledWith(sa.totpSecret()));
+        u.setTwoFactor(TwoFactor.disabled());
         users.save(u);
-        log.info("seeded super admin '{}' (two-factor {})", u.getUsername(), u.getTwoFactor().enabled() ? "on" : "off");
+        log.info("seeded super admin '{}' (two-factor off)", u.getUsername());
     }
 
     private void seedDeviceUser(OmnichannelProperties.DeviceUser du) {

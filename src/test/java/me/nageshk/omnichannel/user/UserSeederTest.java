@@ -17,7 +17,6 @@ import org.mockito.ArgumentCaptor;
 class UserSeederTest {
 
     private static final String HASH = "$2a$10$IYsaLnFsKXKfLd0AwpzjY.V2orPGsTrdwmEuPIeBb828W3nx7NEqi";
-    private static final String SECRET = "5K5S56WVYBBV4GJT6LVWUUWL4O4FT5UM";
 
     private UserRepository repo;
 
@@ -34,8 +33,8 @@ class UserSeederTest {
                 new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)));
     }
 
-    private static OmnichannelProperties.SuperAdmin superAdmin(String hash, String secret) {
-        return new OmnichannelProperties.SuperAdmin("Nagesh Kumar", "nageshk", hash, "me@example.in", "9928088743", secret);
+    private static OmnichannelProperties.SuperAdmin superAdmin(String hash) {
+        return new OmnichannelProperties.SuperAdmin("Nagesh Kumar", "nageshk", hash, "me@example.in", "9928088743");
     }
 
     private static OmnichannelProperties.DeviceUser device(String username, String hash) {
@@ -49,9 +48,9 @@ class UserSeederTest {
     }
 
     @Test
-    void seedsSuperAdminWithTwoFactorWhenSecretGiven() {
+    void seedsSuperAdminWithTwoFactorOff() {
         when(repo.existsByRole(UserRole.SUPER_ADMIN)).thenReturn(false);
-        new UserSeeder(repo, props(superAdmin(HASH, SECRET), device("", ""))).run(null);
+        new UserSeeder(repo, props(superAdmin(HASH), device("", ""))).run(null);
 
         User u = savedUser();
         assertThat(u.getRole()).isEqualTo(UserRole.SUPER_ADMIN);
@@ -62,21 +61,13 @@ class UserSeederTest {
         assertThat(u.getPassword()).isEqualTo(HASH);
         assertThat(u.isActive()).isTrue();
         assertThat(u.getTokenVersion()).isZero();
-        assertThat(u.getTwoFactor()).isEqualTo(TwoFactor.enabledWith(SECRET));
-    }
-
-    @Test
-    void seedsSuperAdminWithTwoFactorOffWhenSecretBlank() {
-        when(repo.existsByRole(UserRole.SUPER_ADMIN)).thenReturn(false);
-        new UserSeeder(repo, props(superAdmin(HASH, ""), device("", ""))).run(null);
-
-        assertThat(savedUser().getTwoFactor()).isEqualTo(TwoFactor.disabled());
+        assertThat(u.getTwoFactor()).isEqualTo(TwoFactor.disabled());
     }
 
     @Test
     void skipsSuperAdminWhenOneExists() {
         when(repo.existsByRole(UserRole.SUPER_ADMIN)).thenReturn(true);
-        new UserSeeder(repo, props(superAdmin("", ""), device("", ""))).run(null);
+        new UserSeeder(repo, props(superAdmin(""), device("", ""))).run(null);
 
         verify(repo, never()).save(any());
     }
@@ -84,7 +75,7 @@ class UserSeederTest {
     @Test
     void failsWhenNoSuperAdminAndNoPasswordHash() {
         when(repo.existsByRole(UserRole.SUPER_ADMIN)).thenReturn(false);
-        UserSeeder seeder = new UserSeeder(repo, props(superAdmin("", SECRET), device("", "")));
+        UserSeeder seeder = new UserSeeder(repo, props(superAdmin(""), device("", "")));
 
         assertThatThrownBy(() -> seeder.run(null))
                 .isInstanceOf(IllegalStateException.class)
@@ -96,7 +87,7 @@ class UserSeederTest {
     void seedsDeviceUserWhenUsernameSet() {
         when(repo.existsByRole(UserRole.SUPER_ADMIN)).thenReturn(true);
         when(repo.existsByUsername("wabridge")).thenReturn(false);
-        new UserSeeder(repo, props(superAdmin("", ""), device("wabridge", HASH))).run(null);
+        new UserSeeder(repo, props(superAdmin(""), device("wabridge", HASH))).run(null);
 
         User u = savedUser();
         assertThat(u.getRole()).isEqualTo(UserRole.USER);
@@ -110,7 +101,7 @@ class UserSeederTest {
     @Test
     void skipsDeviceUserWhenUsernameBlank() {
         when(repo.existsByRole(UserRole.SUPER_ADMIN)).thenReturn(true);
-        new UserSeeder(repo, props(superAdmin("", ""), device("", HASH))).run(null);
+        new UserSeeder(repo, props(superAdmin(""), device("", HASH))).run(null);
 
         verify(repo, never()).existsByUsername(any());
         verify(repo, never()).save(any());
@@ -120,7 +111,7 @@ class UserSeederTest {
     void skipsDeviceUserWhenExists() {
         when(repo.existsByRole(UserRole.SUPER_ADMIN)).thenReturn(true);
         when(repo.existsByUsername("wabridge")).thenReturn(true);
-        new UserSeeder(repo, props(superAdmin("", ""), device("wabridge", HASH))).run(null);
+        new UserSeeder(repo, props(superAdmin(""), device("wabridge", HASH))).run(null);
 
         verify(repo, never()).save(any());
     }
@@ -129,7 +120,7 @@ class UserSeederTest {
     void failsWhenDeviceUsernameSetButPasswordBlank() {
         when(repo.existsByRole(UserRole.SUPER_ADMIN)).thenReturn(true);
         when(repo.existsByUsername("wabridge")).thenReturn(false);
-        UserSeeder seeder = new UserSeeder(repo, props(superAdmin("", ""), device("wabridge", "")));
+        UserSeeder seeder = new UserSeeder(repo, props(superAdmin(""), device("wabridge", "")));
 
         assertThatThrownBy(() -> seeder.run(null))
                 .isInstanceOf(IllegalStateException.class)

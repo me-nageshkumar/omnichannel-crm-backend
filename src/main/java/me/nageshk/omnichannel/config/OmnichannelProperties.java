@@ -10,14 +10,16 @@ public record OmnichannelProperties(
 
     public record Jwt(String secret, @DefaultValue("12h") Duration ttl) {}
 
-    /** Seeded once when no SUPER_ADMIN exists. {@code password} is a bare bcrypt hash. */
+    /**
+     * Seeded once, with two-factor off, when no SUPER_ADMIN exists. {@code password} is a bare
+     * bcrypt hash.
+     */
     public record SuperAdmin(
             @DefaultValue("Nagesh Kumar") String name,
             @DefaultValue("nageshk") String username,
             String password,
             String email,
-            String mobileNumber,
-            String totpSecret) {}
+            String mobileNumber) {}
 
     /** Two-factor-off user for the Chrome extension; seeding skipped when {@code username} is blank. */
     public record DeviceUser(

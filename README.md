@@ -25,7 +25,7 @@ and never overwritten afterwards:
 
 | User | Variables | Notes |
 |---|---|---|
-| Super admin (`SUPER_ADMIN`) | `OMNICHANNEL_SUPER_ADMIN_PASSWORD` (bcrypt hash, required until one exists), optional `_USERNAME` (default `nageshk`), `_NAME`, `_EMAIL`, `_MOBILE`, `_TOTP_SECRET` | Two-factor on when the TOTP secret is set |
+| Super admin (`SUPER_ADMIN`) | `OMNICHANNEL_SUPER_ADMIN_PASSWORD` (bcrypt hash, required until one exists), optional `_USERNAME` (default `nageshk`), `_NAME`, `_EMAIL`, `_MOBILE` | Seeded with two-factor off; enable it later from the console Profile page or `/api/users/me/two-factor/*` |
 | Device user (`USER`) | `OMNICHANNEL_DEVICE_USER_USERNAME`, `OMNICHANNEL_DEVICE_USER_PASSWORD` (bcrypt hash) | For the Chrome extension; two-factor off; skipped when the username is blank |
 
 ```bash
@@ -33,7 +33,6 @@ and never overwritten afterwards:
 htpasswd -bnBC 10 "" 'your-password' | tr -d ':\n'
 
 export OMNICHANNEL_SUPER_ADMIN_PASSWORD='$2a$10$...'
-export OMNICHANNEL_SUPER_ADMIN_TOTP_SECRET='JBSWY3DPEHPK3PXP'   # any 32-char Base32, or enrol later via the API
 export OMNICHANNEL_DEVICE_USER_USERNAME=wabridge
 export OMNICHANNEL_DEVICE_USER_PASSWORD='$2a$10$...'
 ./mvnw spring-boot:run
