@@ -222,7 +222,7 @@ Admin confirms or cancels. Saving does not depend on the preview.
 - Brand APIs take the workspace in the path: `/api/workspaces/{workspaceId}/…`.
 - A workspace or customer the caller may not see answers **404**, not 403, so ids of other tenants
   are not confirmed to exist. (My call.) A known resource the caller may see but not change answers
-  403 `{ error: "forbidden" }`.
+  403 `{ code: "FORBIDDEN", message }`.
 - The WhatsApp REST endpoints and the WebSocket `auth` frame require `whatsapp:bridge`. This closes
   the gap where any token could use them. The device user keeps working via `WHATSAPP_DEVICE`; the
   Super Admin has it too.
@@ -266,7 +266,8 @@ staff's everyday view until support access is designed. (Builder-check call.)
   a JWT with `authState = PASSWORD_CHANGE_PENDING`, ten minutes, accepted only by
   `POST /api/auth/initial-password { newPassword }` → `200 { token, expiresAt }`.
 - New password: at least 10 characters, not equal to the temporary one. Otherwise
-  `400 { error: "weak_password" }`.
+  `400 { code: "WEAK_PASSWORD", message }`; a bad or expired change token answers
+  `401 { code: "INVALID_TOKEN", message }`.
 - The seeded users never have `mustChangePassword`, so the extension's login is unchanged.
 
 ## API summary (first slice)
@@ -274,7 +275,8 @@ staff's everyday view until support access is designed. (Builder-check call.)
 | Endpoint | Needs |
 |---|---|
 | `GET/POST /api/platform-users`, `PUT /api/platform-users/{id}`, `POST …/{id}/deactivate`, `…/reactivate`, `…/reset-password` | `platform-user:manage` |
-| `GET /api/roles`, `GET /api/authorities` | Super Admin, plus any user with a managing authority (to fill role pickers with roles they may assign) |
+| `GET /api/roles`, `GET /api/authorities` | Super Admin |
+| `GET /api/platform-users/assignable-roles`, `GET /api/customers/assignable-roles`, `GET /api/workspaces/{workspaceId}/assignable-roles` | `platform-user:manage` / `customer:manage` or `customer:create` / `user:manage` — the roles the caller may give there, for role pickers |
 | `POST /api/roles`, `PUT /api/roles/{id}`, `DELETE /api/roles/{id}`, `POST /api/roles/{id}/preview`, `GET /api/roles/{id}/changes` | Super Admin |
 | `GET /api/customers`, `GET /api/customers/{id}` | `customer:view` |
 | `POST /api/customers` (company name, first workspace name, owner name/username/email/mobile/temporary password) | `customer:create` |
@@ -287,8 +289,9 @@ staff's everyday view until support access is designed. (Builder-check call.)
 | `POST /api/users/{userId}/deactivate`, `…/reactivate` | `company-user:manage` + rule 3 |
 | `GET/POST /api/workspaces/{workspaceId}/teams`, `PUT …/teams/{teamId}` | `user:view` / `team:manage` |
 
-Validation errors answer `400 { error: "validation_failed", fields: { name: "…" } }`; duplicates
-(username, role name, workspace or team name) answer `409 { error: "duplicate", field }`.
+Errors use the existing API shape `{ code, message }` (login errors keep their `{ error }` shape for the
+extension). Validation errors answer `400 { code: "VALIDATION", message, fields: { name: "…" } }`;
+duplicates (username, role name, workspace or team name) answer `409 { code: "DUPLICATE", message, field }`.
 
 ## Console (frontend)
 
