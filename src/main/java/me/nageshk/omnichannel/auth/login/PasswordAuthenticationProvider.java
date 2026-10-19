@@ -12,19 +12,26 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-/** Checks lockout, loads the user, verifies the password, and counts failures. */
+/**
+ * Checks lockout, loads the user, verifies the password, and counts failures. The reply must not
+ * reveal whether a username exists: an unknown username still pays for one bcrypt compare, and the
+ * active flag is only consulted after the password matched.
+ */
 @Component
 public class PasswordAuthenticationProvider implements AuthenticationProvider {
 
     private final MongoUserDetailsService users;
     private final PasswordEncoder encoder;
     private final LoginAttemptService attempts;
+    /** Hash compared against when the username is unknown, so timing matches a real user. */
+    private final String dummyHash;
 
     public PasswordAuthenticationProvider(
             MongoUserDetailsService users, PasswordEncoder encoder, LoginAttemptService attempts) {
         this.users = users;
         this.encoder = encoder;
         this.attempts = attempts;
+        this.dummyHash = encoder.encode("timing-attack-mitigation");
     }
 
     @Override
@@ -39,16 +46,17 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
         try {
             user = users.loadUserByUsername(username);
         } catch (UsernameNotFoundException e) {
+            encoder.matches(password, dummyHash);
             throw new BadCredentialsException("invalid_credentials", e);
-        }
-        if (!user.isEnabled()) {
-            throw new DisabledException("account_inactive");
         }
         if (!encoder.matches(password, user.getPassword())) {
             attempts.recordFailedLogin(username);
             throw new BadCredentialsException("invalid_credentials");
         }
         attempts.clearLogin(username);
+        if (!user.isEnabled()) {
+            throw new DisabledException("account_inactive");
+        }
         return PasswordAuthentication.authenticated(user);
     }
 

@@ -87,6 +87,17 @@ class LoginIT {
     }
 
     @Test
+    void inactiveUserWithWrongPasswordReturnsInvalidCredentials() throws Exception {
+        // The inactive state must not be revealed to someone who does not know the password.
+        User u = testUsers.create("old", "pw", UserRole.USER, null);
+        u.setActive(false);
+        repo.save(u);
+        login("old", "wrong")
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("invalid_credentials"));
+    }
+
+    @Test
     void missingPasswordReturns401() throws Exception {
         testUsers.create("dev", "pw", UserRole.USER, null);
         login("dev", null).andExpect(status().isUnauthorized());
