@@ -119,24 +119,26 @@
       <build>
         <plugins>
           <plugin>
+            <!-- Ant resolves ".." in the default path; the enforcer's requireFilesExist rejects such paths. -->
             <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-enforcer-plugin</artifactId>
+            <artifactId>maven-antrun-plugin</artifactId>
             <executions>
               <execution>
                 <id>require-frontend-build</id>
                 <phase>validate</phase>
                 <goals>
-                  <goal>enforce</goal>
+                  <goal>run</goal>
                 </goals>
                 <configuration>
-                  <rules>
-                    <requireFilesExist>
-                      <files>
-                        <file>${frontend.dist}/index.html</file>
-                      </files>
-                      <message>frontend build not found at ${frontend.dist}; run npm run build in omnichannel_crm_frontend</message>
-                    </requireFilesExist>
-                  </rules>
+                  <target>
+                    <fail message="frontend build not found at ${frontend.dist}; run npm run build in omnichannel_crm_frontend">
+                      <condition>
+                        <not>
+                          <available file="${frontend.dist}/index.html" />
+                        </not>
+                      </condition>
+                    </fail>
+                  </target>
                 </configuration>
               </execution>
             </executions>
