@@ -1,0 +1,63 @@
+package me.nageshk.omnichannel.user;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import org.bson.Document;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+
+@SpringBootTest
+class UserRepositoryIT {
+
+    @Autowired UserRepository repo;
+    @Autowired MongoTemplate template;
+
+    @BeforeEach
+    void clean() {
+        repo.deleteAll();
+    }
+
+    private static User newUser(String username) {
+        User u = new User();
+        u.setName("Test " + username);
+        u.setUsername(username);
+        u.setPassword("x");
+        u.setRole(UserRole.USER);
+        u.setActive(true);
+        u.setTwoFactor(TwoFactor.disabled());
+        return u;
+    }
+
+    @Test
+    void saveSetsAuditFieldsAndClass() {
+        User u = newUser("alice");
+        repo.save(u);
+
+        Document raw = template.getCollection("users").find().first();
+        assertThat(u.getCreationTime()).isNotNull();
+        assertThat(u.getLastUpdateTime()).isNotNull();
+        assertThat(raw.getString("_class")).isEqualTo("me.nageshk.omnichannel.user.User");
+        assertThat(raw.get("tokenVersion")).isInstanceOf(Long.class);
+        assertThat(raw.getString("role")).isEqualTo("USER");
+    }
+
+    @Test
+    void usernameIsUnique() {
+        repo.save(newUser("bob"));
+        assertThatThrownBy(() -> repo.save(newUser("bob"))).isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void findByUsernameAndExistsByRole() {
+        repo.save(newUser("carol"));
+        assertThat(repo.findByUsername("carol")).isPresent();
+        assertThat(repo.findByUsername("CAROL")).isEmpty();
+        assertThat(repo.existsByRole(UserRole.USER)).isTrue();
+        assertThat(repo.existsByRole(UserRole.SUPER_ADMIN)).isFalse();
+    }
+}
