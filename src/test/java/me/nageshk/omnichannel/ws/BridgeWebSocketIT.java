@@ -8,6 +8,9 @@ import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.support.FakeDevice;
+import me.nageshk.omnichannel.user.User;
+import me.nageshk.omnichannel.user.UserRepository;
+import me.nageshk.omnichannel.user.UserRole;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +42,7 @@ class BridgeWebSocketIT {
     @LocalServerPort int port;
     @Autowired JwtService jwt;
     @Autowired TestUsers testUsers;
+    @Autowired UserRepository repo;
     String deviceToken;
 
     @BeforeEach
@@ -69,6 +73,25 @@ class BridgeWebSocketIT {
     void closesWith4401OnInvalidToken() throws Exception {
         FakeDevice device = FakeDevice.connect(port);
         device.send(Envelope.auth("garbage"));
+        assertThat(device.awaitClose().getCode()).isEqualTo(4401);
+    }
+
+    @Test
+    void authWithStaleTokenVersionIsRefused() throws Exception {
+        User u = testUsers.create("stale", "pw", UserRole.USER, null);
+        String token = testUsers.accessToken(u);
+        u.setTokenVersion(1L);
+        repo.save(u);
+
+        FakeDevice device = FakeDevice.connect(port);
+        device.send(Envelope.auth(token));
+        assertThat(device.awaitClose().getCode()).isEqualTo(4401);
+    }
+
+    @Test
+    void authWithPendingTokenIsRefused() throws Exception {
+        FakeDevice device = FakeDevice.connect(port);
+        device.send(Envelope.auth(jwt.issuePendingToken("demo")));
         assertThat(device.awaitClose().getCode()).isEqualTo(4401);
     }
 

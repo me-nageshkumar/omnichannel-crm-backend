@@ -3,7 +3,8 @@ package me.nageshk.omnichannel.ws;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.auth.AccessTokenAuthenticator;
+import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
@@ -34,7 +35,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(BridgeWebSocketHandler.class);
 
     private final ObjectMapper mapper;
-    private final JwtService jwt;
+    private final AccessTokenAuthenticator authenticator;
     private final DeviceRegistry registry;
     private final RpcDispatcher dispatcher;
     private final ApplicationEventPublisher publisher;
@@ -46,7 +47,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
 
     public BridgeWebSocketHandler(
             ObjectMapper mapper,
-            JwtService jwt,
+            AccessTokenAuthenticator authenticator,
             DeviceRegistry registry,
             RpcDispatcher dispatcher,
             ApplicationEventPublisher publisher,
@@ -55,7 +56,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             ScriptCatalog scripts,
             EventSequenceTracker sequences) {
         this.mapper = mapper;
-        this.jwt = jwt;
+        this.authenticator = authenticator;
         this.registry = registry;
         this.dispatcher = dispatcher;
         this.publisher = publisher;
@@ -112,7 +113,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             closeQuietly(session, CLOSE_UNAUTHORIZED, "auth required");
             return;
         }
-        Optional<String> username = jwt.verifyAccessToken(frame.token()).map(JwtService.AccessClaims::username);
+        Optional<String> username = authenticator.authenticate(frame.token()).map(AuthenticatedUser::getUsername);
         if (username.isEmpty()) {
             closeQuietly(session, CLOSE_UNAUTHORIZED, "invalid token");
             return;

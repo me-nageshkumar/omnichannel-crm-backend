@@ -5,21 +5,20 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.List;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+/** Authenticates {@code Authorization: Bearer <access token>} requests; the principal is an {@link AuthenticatedUser}. */
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final String BEARER = "Bearer ";
-    private final JwtService jwt;
+    private final AccessTokenAuthenticator authenticator;
 
-    public JwtAuthFilter(JwtService jwt) {
-        this.jwt = jwt;
+    public JwtAuthFilter(AccessTokenAuthenticator authenticator) {
+        this.authenticator = authenticator;
     }
 
     /**
@@ -36,9 +35,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith(BEARER)) {
-            jwt.verifyAccessToken(header.substring(BEARER.length())).ifPresent(claims -> {
-                var auth = new UsernamePasswordAuthenticationToken(
-                        claims.username(), null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+            authenticator.authenticate(header.substring(BEARER.length())).ifPresent(user -> {
+                var auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
                 SecurityContextHolder.getContext().setAuthentication(auth);
             });
         }
