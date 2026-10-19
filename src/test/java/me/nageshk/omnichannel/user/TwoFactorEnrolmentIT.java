@@ -80,10 +80,10 @@ class TwoFactorEnrolmentIT {
     }
 
     @Test
-    void confirmWithWrongCodeReturns401() throws Exception {
+    void confirmWithWrongCodeReturns400() throws Exception {
         String token = testUsers.tokenFor("dev");
         postAs(token, "confirm", "{\"secret\":\"" + TestUsers.TEST_SECRET + "\",\"otp\":\"000000\"}")
-                .andExpect(status().isUnauthorized())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_OTP"));
         assertThat(repo.findByUsername("dev").orElseThrow().getTwoFactor()).isEqualTo(TwoFactor.disabled());
     }
@@ -111,5 +111,27 @@ class TwoFactorEnrolmentIT {
         postAs(testUsers.tokenFor("dev"), "disable", "{\"otp\":\"123456\"}")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TWO_FACTOR_STATE"));
+    }
+
+    @Test
+    void disableWithWrongCodeReturns400() throws Exception {
+        User u = testUsers.create("dev", "pw", UserRole.USER, TestUsers.TEST_SECRET);
+        postAs(testUsers.accessToken(u), "disable", "{\"otp\":\"000000\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_OTP"));
+        assertThat(repo.findByUsername("dev").orElseThrow().getTwoFactor())
+                .isEqualTo(TwoFactor.enabledWith(TestUsers.TEST_SECRET));
+    }
+
+    @Test
+    void thirdWrongCodeLocksWith429() throws Exception {
+        String token = testUsers.tokenFor("dev");
+        String wrong = "{\"secret\":\"" + TestUsers.TEST_SECRET + "\",\"otp\":\"000000\"}";
+        for (int i = 0; i < 3; i++) {
+            postAs(token, "confirm", wrong).andExpect(status().isBadRequest());
+        }
+        postAs(token, "confirm", wrong)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
     }
 }

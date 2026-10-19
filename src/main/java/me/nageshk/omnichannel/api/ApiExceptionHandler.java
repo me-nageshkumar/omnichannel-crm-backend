@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.api;
 
 import me.nageshk.omnichannel.auth.AccountLockedException;
 import me.nageshk.omnichannel.rpc.RpcException;
+import me.nageshk.omnichannel.user.InvalidOtpException;
 import me.nageshk.omnichannel.user.TwoFactorStateException;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
@@ -9,7 +10,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -31,9 +31,9 @@ public class ApiExceptionHandler {
         return body(HttpStatus.CONFLICT, TwoFactorStateException.CODE, e.getMessage());
     }
 
-    @ExceptionHandler(BadCredentialsException.class)
-    public ResponseEntity<Map<String, String>> badCredentials(BadCredentialsException e) {
-        return body(HttpStatus.UNAUTHORIZED, "INVALID_OTP", "the one-time code is not valid");
+    @ExceptionHandler(InvalidOtpException.class)
+    public ResponseEntity<Map<String, String>> invalidOtp(InvalidOtpException e) {
+        return body(HttpStatus.BAD_REQUEST, InvalidOtpException.CODE, e.getMessage());
     }
 
     @ExceptionHandler(AccountLockedException.class)

@@ -3,7 +3,6 @@ package me.nageshk.omnichannel.user;
 import me.nageshk.omnichannel.auth.AccountLockedException;
 import me.nageshk.omnichannel.auth.LoginAttemptService;
 import me.nageshk.omnichannel.auth.TotpService;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
@@ -76,7 +75,7 @@ public class UserService {
         }
         if (!totp.verify(secret, otp)) {
             attempts.recordFailedOtp(username);
-            throw new BadCredentialsException("invalid_otp");
+            throw new InvalidOtpException();
         }
         attempts.clearOtp(username);
     }
