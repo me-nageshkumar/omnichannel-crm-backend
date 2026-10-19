@@ -51,31 +51,34 @@ public class RoleSeeder implements ApplicationRunner {
     }
 
     public void seed() {
-        BUILT_INS.forEach((name, description) -> {
-            if (roles.existsByName(name)) return;
-            Role r = new Role();
-            r.setName(name);
-            r.setDescription(description);
-            r.setLevel(BuiltInRoles.levelOf(name));
-            r.setBuiltIn(true);
-            roles.save(r);
-            log.info("seeded built-in role {}", name);
-        });
+        try {
+            BUILT_INS.forEach((name, description) -> {
+                if (roles.existsByName(name)) return;
+                Role r = new Role();
+                r.setName(name);
+                r.setDescription(description);
+                r.setLevel(BuiltInRoles.levelOf(name));
+                r.setBuiltIn(true);
+                roles.save(r);
+                log.info("seeded built-in role {}", name);
+            });
 
-        KnownAuthorities state = known.findById(KnownAuthorities.ID).orElseGet(KnownAuthorities::new);
-        Set<String> seen = state.getCodes();
-        for (Authority a : Authority.values()) {
-            if (seen.contains(a.code())) continue;
-            for (String roleName : a.defaultRoles()) {
-                roles.findByName(roleName).ifPresent(r -> {
-                    r.getAuthorities().add(a.code());
-                    roles.save(r);
-                });
+            KnownAuthorities state = known.findById(KnownAuthorities.ID).orElseGet(KnownAuthorities::new);
+            Set<String> seen = state.getCodes();
+            for (Authority a : Authority.values()) {
+                if (seen.contains(a.code())) continue;
+                for (String roleName : a.defaultRoles()) {
+                    roles.findByName(roleName).ifPresent(r -> {
+                        r.getAuthorities().add(a.code());
+                        roles.save(r);
+                    });
+                }
+                log.info("added new authority {} to {}", a.code(), a.defaultRoles());
             }
-            log.info("added new authority {} to {}", a.code(), a.defaultRoles());
+            state.setCodes(Arrays.stream(Authority.values()).map(Authority::code).collect(Collectors.toSet()));
+            known.save(state);
+        } finally {
+            cache.evictAll();
         }
-        state.setCodes(Arrays.stream(Authority.values()).map(Authority::code).collect(Collectors.toSet()));
-        known.save(state);
-        cache.evictAll();
     }
 }
