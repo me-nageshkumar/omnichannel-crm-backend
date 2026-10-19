@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.access.Role;
+import me.nageshk.omnichannel.access.RoleRepository;
 import me.nageshk.omnichannel.auth.AccountLockedException;
 import me.nageshk.omnichannel.auth.LoginAttemptService;
 import me.nageshk.omnichannel.auth.TotpService;
@@ -19,15 +21,17 @@ public class UserService {
             String username,
             String email,
             String mobileNumber,
-            UserRole role,
+            String role,
             boolean twoFactorEnabled) {}
 
     private final UserRepository users;
+    private final RoleRepository roles;
     private final TotpService totp;
     private final LoginAttemptService attempts;
 
-    public UserService(UserRepository users, TotpService totp, LoginAttemptService attempts) {
+    public UserService(UserRepository users, RoleRepository roles, TotpService totp, LoginAttemptService attempts) {
         this.users = users;
+        this.roles = roles;
         this.totp = totp;
         this.attempts = attempts;
     }
@@ -35,7 +39,8 @@ public class UserService {
     public CurrentUser currentUser(String username) {
         User u = require(username);
         return new CurrentUser(
-                u.getId(), u.getName(), u.getUsername(), u.getEmail(), u.getMobileNumber(), u.getRole(),
+                u.getId(), u.getName(), u.getUsername(), u.getEmail(), u.getMobileNumber(),
+                roleName(u),
                 u.getTwoFactor().enabled());
     }
 
@@ -78,6 +83,10 @@ public class UserService {
             throw new InvalidOtpException();
         }
         attempts.clearOtp(username);
+    }
+
+    private String roleName(User u) {
+        return u.getRoleId() == null ? null : roles.findById(u.getRoleId()).map(Role::getName).orElse(null);
     }
 
     private User require(String username) {

@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.auth;
 
+import java.util.Locale;
 import me.nageshk.omnichannel.user.UserRepository;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -16,7 +17,7 @@ public class MongoUserDetailsService implements UserDetailsService {
 
     @Override
     public AuthenticatedUser loadUserByUsername(String username) {
-        return users.findByUsername(username)
+        return users.findByUsername(username.toLowerCase(Locale.ROOT))
                 .map(AuthenticatedUser::new)
                 .orElseThrow(() -> new UsernameNotFoundException("no user '" + username + "'"));
     }

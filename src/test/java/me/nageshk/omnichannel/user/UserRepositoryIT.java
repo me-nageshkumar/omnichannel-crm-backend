@@ -27,7 +27,7 @@ class UserRepositoryIT {
         u.setName("Test " + username);
         u.setUsername(username);
         u.setPassword("x");
-        u.setRole(UserRole.USER);
+        u.setRoleId("r-user");
         u.setActive(true);
         u.setTwoFactor(TwoFactor.disabled());
         return u;
@@ -43,7 +43,7 @@ class UserRepositoryIT {
         assertThat(u.getLastUpdateTime()).isNotNull();
         assertThat(raw.getString("_class")).isEqualTo("me.nageshk.omnichannel.user.User");
         assertThat(raw.get("tokenVersion")).isInstanceOf(Long.class);
-        assertThat(raw.getString("role")).isEqualTo("USER");
+        assertThat(raw.getString("roleId")).isEqualTo("r-user");
     }
 
     @Test
@@ -53,11 +53,11 @@ class UserRepositoryIT {
     }
 
     @Test
-    void findByUsernameAndExistsByRole() {
+    void findByUsernameAndExistsByRoleId() {
         repo.save(newUser("carol"));
         assertThat(repo.findByUsername("carol")).isPresent();
         assertThat(repo.findByUsername("CAROL")).isEmpty();
-        assertThat(repo.existsByRole(UserRole.USER)).isTrue();
-        assertThat(repo.existsByRole(UserRole.SUPER_ADMIN)).isFalse();
+        assertThat(repo.existsByRoleId("r-user")).isTrue();
+        assertThat(repo.existsByRoleId("other")).isFalse();
     }
 }

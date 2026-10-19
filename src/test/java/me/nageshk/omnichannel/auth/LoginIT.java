@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
-import me.nageshk.omnichannel.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +42,7 @@ class LoginIT {
 
     @Test
     void loginWithoutTwoFactorReturnsAccessToken() throws Exception {
-        testUsers.create("dev", "pw", UserRole.USER, null);
+        testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
         login("dev", "pw")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token", not(emptyString())))
@@ -52,8 +51,16 @@ class LoginIT {
     }
 
     @Test
+    void usernameIsCaseInsensitive() throws Exception {
+        testUsers.create("nageshk", "pw", "SUPER_ADMIN", null);
+        login("NAGESHK", "pw")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token", not(emptyString())));
+    }
+
+    @Test
     void loginWithTwoFactorReturnsPendingToken() throws Exception {
-        testUsers.create("admin", "pw", UserRole.SUPER_ADMIN, TestUsers.TEST_SECRET);
+        testUsers.create("admin", "pw", "SUPER_ADMIN", TestUsers.TEST_SECRET);
         login("admin", "pw")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.twoFactorRequired").value(true))
@@ -63,7 +70,7 @@ class LoginIT {
 
     @Test
     void wrongPasswordReturns401InvalidCredentials() throws Exception {
-        testUsers.create("dev", "pw", UserRole.USER, null);
+        testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
         login("dev", "nope")
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("invalid_credentials"));
@@ -78,7 +85,7 @@ class LoginIT {
 
     @Test
     void inactiveUserReturns401AccountInactive() throws Exception {
-        User u = testUsers.create("old", "pw", UserRole.USER, null);
+        User u = testUsers.create("old", "pw", "WHATSAPP_DEVICE", null);
         u.setActive(false);
         repo.save(u);
         login("old", "pw")
@@ -89,7 +96,7 @@ class LoginIT {
     @Test
     void inactiveUserWithWrongPasswordReturnsInvalidCredentials() throws Exception {
         // The inactive state must not be revealed to someone who does not know the password.
-        User u = testUsers.create("old", "pw", UserRole.USER, null);
+        User u = testUsers.create("old", "pw", "WHATSAPP_DEVICE", null);
         u.setActive(false);
         repo.save(u);
         login("old", "wrong")
@@ -99,13 +106,13 @@ class LoginIT {
 
     @Test
     void missingPasswordReturns401() throws Exception {
-        testUsers.create("dev", "pw", UserRole.USER, null);
+        testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
         login("dev", null).andExpect(status().isUnauthorized());
     }
 
     @Test
     void sixthFailureReturns429() throws Exception {
-        testUsers.create("locked", "pw", UserRole.USER, null);
+        testUsers.create("locked", "pw", "WHATSAPP_DEVICE", null);
         for (int i = 0; i < 5; i++) login("locked", "bad").andExpect(status().isUnauthorized());
         login("locked", "bad")
                 .andExpect(status().isTooManyRequests())

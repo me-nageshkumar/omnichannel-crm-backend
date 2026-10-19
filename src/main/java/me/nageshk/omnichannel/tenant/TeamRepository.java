@@ -1,0 +1,12 @@
+package me.nageshk.omnichannel.tenant;
+
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.mongodb.repository.MongoRepository;
+
+public interface TeamRepository extends MongoRepository<Team, String> {
+
+    List<Team> findByWorkspaceIdOrderByName(String workspaceId);
+
+    Optional<Team> findByIdAndWorkspaceId(String id, String workspaceId);
+}

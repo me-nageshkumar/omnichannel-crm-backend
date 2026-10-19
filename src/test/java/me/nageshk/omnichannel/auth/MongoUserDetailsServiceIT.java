@@ -6,12 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
-import me.nageshk.omnichannel.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
@@ -28,13 +26,13 @@ class MongoUserDetailsServiceIT {
     }
 
     @Test
-    void loadsActiveUserWithRoleAuthority() {
-        testUsers.create("alice", "pw", UserRole.USER, null);
+    void loadsActiveUserWithRoleId() {
+        testUsers.create("alice", "pw", "WHATSAPP_DEVICE", null);
 
         UserDetails details = service.loadUserByUsername("alice");
 
         assertThat(details).isInstanceOf(AuthenticatedUser.class);
-        assertThat(details.getAuthorities()).extracting(GrantedAuthority::getAuthority).containsExactly("ROLE_USER");
+        assertThat(((AuthenticatedUser) details).roleId()).isEqualTo(testUsers.roleId("WHATSAPP_DEVICE"));
         assertThat(details.isEnabled()).isTrue();
         assertThat(((AuthenticatedUser) details).tokenVersion()).isZero();
         assertThat(((AuthenticatedUser) details).twoFactorEnabled()).isFalse();
@@ -42,7 +40,7 @@ class MongoUserDetailsServiceIT {
 
     @Test
     void inactiveUserIsDisabled() {
-        User u = testUsers.create("bob", "pw", UserRole.USER, null);
+        User u = testUsers.create("bob", "pw", "WHATSAPP_DEVICE", null);
         u.setActive(false);
         repo.save(u);
 

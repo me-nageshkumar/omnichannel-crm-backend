@@ -11,7 +11,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import java.time.Instant;
 import me.nageshk.omnichannel.support.TestUsers;
-import me.nageshk.omnichannel.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +34,7 @@ class VerifyOtpIT {
         testUsers.deleteAll();
         attempts.clearOtp("admin");
         attempts.clearLogin("admin");
-        testUsers.create("admin", "pw", UserRole.SUPER_ADMIN, TestUsers.TEST_SECRET);
+        testUsers.create("admin", "pw", "SUPER_ADMIN", TestUsers.TEST_SECRET);
     }
 
     static String currentCode() throws Exception {

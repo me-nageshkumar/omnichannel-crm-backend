@@ -27,7 +27,7 @@ class CurrentUserIT {
     }
 
     private User superAdmin() {
-        User u = testUsers.create("nageshk", "pw", UserRole.SUPER_ADMIN, TestUsers.TEST_SECRET);
+        User u = testUsers.create("nageshk", "pw", "SUPER_ADMIN", TestUsers.TEST_SECRET);
         u.setName("Nagesh Kumar");
         u.setEmail("me@example.in");
         u.setMobileNumber("9928088743");
@@ -64,7 +64,7 @@ class CurrentUserIT {
 
     @Test
     void reflectsTwoFactorChangeWithoutNewToken() throws Exception {
-        User u = testUsers.create("dev", "pw", UserRole.USER, null);
+        User u = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
         String token = testUsers.accessToken(u);
         u.setTwoFactor(TwoFactor.enabledWith(TestUsers.TEST_SECRET));
         repo.save(u);

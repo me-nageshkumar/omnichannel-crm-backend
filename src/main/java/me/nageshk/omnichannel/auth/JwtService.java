@@ -27,7 +27,6 @@ public class JwtService {
     public static final Duration PENDING_TTL = Duration.ofMinutes(5);
 
     public static final String CLAIM_USER_ID = "userId";
-    public static final String CLAIM_ROLE = "role";
     public static final String CLAIM_TOKEN_VERSION = "tokenVersion";
     public static final String CLAIM_TWO_FACTOR_ENABLED = "twoFactorEnabled";
 
@@ -53,7 +52,6 @@ public class JwtService {
                 .id(UUID.randomUUID().toString())
                 .subject(user.getUsername())
                 .claim(CLAIM_USER_ID, user.userId())
-                .claim(CLAIM_ROLE, user.role().name())
                 .claim(CLAIM_TOKEN_VERSION, user.tokenVersion())
                 .claim(CLAIM_TWO_FACTOR_ENABLED, user.twoFactorEnabled())
                 .issuedAt(Date.from(now))

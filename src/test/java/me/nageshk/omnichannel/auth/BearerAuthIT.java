@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
-import me.nageshk.omnichannel.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +28,7 @@ class BearerAuthIT {
     @BeforeEach
     void seed() {
         testUsers.deleteAll();
-        user = testUsers.create("dev", "pw", UserRole.USER, null);
+        user = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
     }
 
     private ResultActions getStatus(String token) throws Exception {

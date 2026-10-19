@@ -10,7 +10,6 @@ import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.support.FakeDevice;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
-import me.nageshk.omnichannel.user.UserRole;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -82,7 +81,7 @@ class BridgeWebSocketIT {
 
     @Test
     void authWithStaleTokenVersionIsRefused() throws Exception {
-        User u = testUsers.create("stale", "pw", UserRole.USER, null);
+        User u = testUsers.create("stale", "pw", "WHATSAPP_DEVICE", null);
         String token = testUsers.accessToken(u);
         u.setTokenVersion(1L);
         repo.save(u);

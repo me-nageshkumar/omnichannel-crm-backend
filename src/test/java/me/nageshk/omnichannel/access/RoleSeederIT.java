@@ -23,8 +23,8 @@ class RoleSeederIT {
 
     @BeforeEach
     void clean() {
-        mongo.dropCollection("roles");
-        mongo.dropCollection("system_state");
+        mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "roles");
+        mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "system_state");
         seeder.seed();
     }
 

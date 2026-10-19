@@ -15,7 +15,6 @@ import java.util.Date;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.user.User;
-import me.nageshk.omnichannel.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,7 +45,7 @@ class LogoutIT {
         testUsers.deleteAll();
         revoked.deleteAll();
         attempts.clearLogin("dev");
-        user = testUsers.create("dev", "pw", UserRole.USER, null);
+        user = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
     }
 
     private ResultActions logout(String token) throws Exception {
@@ -111,7 +110,6 @@ class LogoutIT {
         String legacy = Jwts.builder()
                 .subject("dev")
                 .claim(JwtService.CLAIM_USER_ID, user.getId())
-                .claim(JwtService.CLAIM_ROLE, "USER")
                 .claim(JwtService.CLAIM_TOKEN_VERSION, 0L)
                 .claim(JwtService.CLAIM_TWO_FACTOR_ENABLED, false)
                 .issuedAt(Date.from(now))

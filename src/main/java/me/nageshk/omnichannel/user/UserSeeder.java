@@ -1,11 +1,14 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.access.BuiltInRoles;
+import me.nageshk.omnichannel.access.RoleRepository;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,16 +17,19 @@ import org.springframework.stereotype.Component;
  * integration tests seed their own users.
  */
 @Component
+@Order(3)
 @Profile("!test")
 public class UserSeeder implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(UserSeeder.class);
 
     private final UserRepository users;
+    private final RoleRepository roles;
     private final OmnichannelProperties props;
 
-    public UserSeeder(UserRepository users, OmnichannelProperties props) {
+    public UserSeeder(UserRepository users, RoleRepository roles, OmnichannelProperties props) {
         this.users = users;
+        this.roles = roles;
         this.props = props;
     }
 
@@ -34,12 +40,12 @@ public class UserSeeder implements ApplicationRunner {
     }
 
     private void seedSuperAdmin(OmnichannelProperties.SuperAdmin sa) {
-        if (users.existsByRole(UserRole.SUPER_ADMIN)) return;
+        if (users.existsByRoleId(roleId(BuiltInRoles.SUPER_ADMIN))) return;
         if (isBlank(sa.password())) {
             throw new IllegalStateException(
                     "omnichannel.super-admin.password (bcrypt hash) is required to seed the first super admin");
         }
-        User u = base(sa.name(), sa.username(), sa.password(), UserRole.SUPER_ADMIN);
+        User u = base(sa.name(), sa.username(), sa.password(), roleId(BuiltInRoles.SUPER_ADMIN));
         u.setEmail(blankToNull(sa.email()));
         u.setMobileNumber(blankToNull(sa.mobileNumber()));
         u.setTwoFactor(TwoFactor.disabled());
@@ -54,18 +60,24 @@ public class UserSeeder implements ApplicationRunner {
             throw new IllegalStateException(
                     "omnichannel.device-user.password (bcrypt hash) is required when omnichannel.device-user.username is set");
         }
-        User u = base(du.name(), du.username(), du.password(), UserRole.USER);
+        User u = base(du.name(), du.username(), du.password(), roleId(BuiltInRoles.WHATSAPP_DEVICE));
         u.setTwoFactor(TwoFactor.disabled());
         users.save(u);
         log.info("seeded device user '{}'", u.getUsername());
     }
 
-    private static User base(String name, String username, String passwordHash, UserRole role) {
+    private String roleId(String roleName) {
+        return roles.findByName(roleName)
+                .orElseThrow(() -> new IllegalStateException("built-in role " + roleName + " is missing"))
+                .getId();
+    }
+
+    private static User base(String name, String username, String passwordHash, String roleId) {
         User u = new User();
         u.setName(name);
         u.setUsername(username);
         u.setPassword(passwordHash);
-        u.setRole(role);
+        u.setRoleId(roleId);
         u.setActive(true);
         u.setTokenVersion(0L);
         return u;

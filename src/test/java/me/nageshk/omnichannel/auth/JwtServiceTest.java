@@ -9,7 +9,6 @@ import java.time.ZoneOffset;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.user.TwoFactor;
 import me.nageshk.omnichannel.user.User;
-import me.nageshk.omnichannel.user.UserRole;
 import org.junit.jupiter.api.Test;
 
 class JwtServiceTest {
@@ -31,7 +30,7 @@ class JwtServiceTest {
         u.setId("64f0c0ffee");
         u.setUsername("alice");
         u.setPassword("hash");
-        u.setRole(UserRole.ADMIN);
+        u.setRoleId("role-1");
         u.setActive(true);
         u.setTwoFactor(TwoFactor.enabledWith("JBSWY3DPEHPK3PXP"));
         u.setTokenVersion(3L);
@@ -50,8 +49,13 @@ class JwtServiceTest {
         assertThat(claims.get().tokenVersion()).isEqualTo(3L);
         var raw = svc.parse(issued.token());
         assertThat(raw.get("userId", String.class)).isEqualTo("64f0c0ffee");
-        assertThat(raw.get("role", String.class)).isEqualTo("ADMIN");
         assertThat(raw.get("twoFactorEnabled", Boolean.class)).isTrue();
+    }
+
+    @Test
+    void accessTokenHasNoRoleClaim() {
+        var svc = serviceAt(NOW);
+        assertThat(svc.parse(svc.issueAccessToken(user()).token()).get("role")).isNull();
     }
 
     @Test

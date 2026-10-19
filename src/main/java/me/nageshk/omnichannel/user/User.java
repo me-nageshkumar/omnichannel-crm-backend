@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.user;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -24,7 +26,12 @@ public class User {
 
     private String email;
     private String mobileNumber;
-    private UserRole role;
+    /** Null for company-less users; the platform role, or the company-wide role inside a customer. */
+    private String roleId;
+    /** Null for platform users. */
+    private String customerId;
+    private List<WorkspaceRole> workspaceRoles = new ArrayList<>();
+    private boolean mustChangePassword;
     private boolean active;
     private TwoFactor twoFactor;
 
@@ -49,8 +56,16 @@ public class User {
     public void setEmail(String email) { this.email = email; }
     public String getMobileNumber() { return mobileNumber; }
     public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
-    public UserRole getRole() { return role; }
-    public void setRole(UserRole role) { this.role = role; }
+    public String getRoleId() { return roleId; }
+    public void setRoleId(String roleId) { this.roleId = roleId; }
+    public String getCustomerId() { return customerId; }
+    public void setCustomerId(String customerId) { this.customerId = customerId; }
+    public List<WorkspaceRole> getWorkspaceRoles() { return workspaceRoles; }
+    public void setWorkspaceRoles(List<WorkspaceRole> workspaceRoles) {
+        this.workspaceRoles = workspaceRoles == null ? new ArrayList<>() : workspaceRoles;
+    }
+    public boolean isMustChangePassword() { return mustChangePassword; }
+    public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
     public TwoFactor getTwoFactor() { return twoFactor; }

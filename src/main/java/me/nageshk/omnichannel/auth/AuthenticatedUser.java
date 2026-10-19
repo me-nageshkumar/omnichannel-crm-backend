@@ -3,9 +3,7 @@ package me.nageshk.omnichannel.auth;
 import java.util.Collection;
 import java.util.List;
 import me.nageshk.omnichannel.user.User;
-import me.nageshk.omnichannel.user.UserRole;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 /** Spring Security view of a {@link User}; the principal on every authenticated request. */
@@ -14,7 +12,7 @@ public class AuthenticatedUser implements UserDetails {
     private final String userId;
     private final String username;
     private final String password;
-    private final UserRole role;
+    private final String roleId;
     private final boolean active;
     private final boolean twoFactorEnabled;
     private final String totpSecret;
@@ -24,7 +22,7 @@ public class AuthenticatedUser implements UserDetails {
         this.userId = user.getId();
         this.username = user.getUsername();
         this.password = user.getPassword();
-        this.role = user.getRole();
+        this.roleId = user.getRoleId();
         this.active = user.isActive();
         this.twoFactorEnabled = user.getTwoFactor() != null && user.getTwoFactor().enabled();
         this.totpSecret = user.getTwoFactor() == null ? null : user.getTwoFactor().totpSecret();
@@ -32,14 +30,15 @@ public class AuthenticatedUser implements UserDetails {
     }
 
     public String userId() { return userId; }
-    public UserRole role() { return role; }
+    public String roleId() { return roleId; }
     public boolean twoFactorEnabled() { return twoFactorEnabled; }
     public String totpSecret() { return totpSecret; }
     public long tokenVersion() { return tokenVersion; }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority(role.authority()));
+        // Role-derived authorities arrive with the role cache; nothing checks them yet.
+        return List.of();
     }
 
     @Override public String getPassword() { return password; }
@@ -51,6 +50,6 @@ public class AuthenticatedUser implements UserDetails {
 
     @Override
     public String toString() {
-        return "AuthenticatedUser[" + username + ", " + role + "]";
+        return "AuthenticatedUser[" + username + ", " + roleId + "]";
     }
 }
