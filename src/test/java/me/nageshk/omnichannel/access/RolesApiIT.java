@@ -247,6 +247,24 @@ class RolesApiIT {
     }
 
     @Test
+    void previewReportsCustomerAdminLosingWorkspaceManager() {
+        call(HttpMethod.PUT, "/api/roles/" + idOf("WORKSPACE_MANAGER"), Map.of("description", "wm",
+                "authorities", List.of("workspace:settings", "user:view", "user:manage")));
+        call(HttpMethod.PUT, "/api/roles/" + idOf("CUSTOMER_ADMIN"), Map.of("description", "ca",
+                "authorities", List.of("workspace:create", "company-user:manage", "workspace:settings",
+                        "user:view", "user:manage")));
+        ResponseEntity<JsonNode> res = call(HttpMethod.POST, "/api/roles/" + idOf("WORKSPACE_MANAGER") + "/preview",
+                Map.of("authorities", List.of("workspace:settings", "user:view", "user:manage", "team:manage")));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<JsonNode> changes = StreamSupport.stream(res.getBody().get("changes").spliterator(), false).toList();
+        assertThat(changes).anySatisfy(c -> {
+            assertThat(c.get("assigner").asText()).isEqualTo("CUSTOMER_ADMIN");
+            assertThat(c.get("assigned").asText()).isEqualTo("WORKSPACE_MANAGER");
+            assertThat(c.get("nowAssignable").asBoolean()).isFalse();
+        });
+    }
+
+    @Test
     void previewDoesNotSave() {
         Role before = roles.findByName("AGENT").orElseThrow();
         call(HttpMethod.POST, "/api/roles/" + before.getId() + "/preview",

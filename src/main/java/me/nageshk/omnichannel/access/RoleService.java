@@ -113,7 +113,7 @@ public class RoleService {
         for (RoleLevel level : new RoleLevel[] {RoleLevel.BRAND, RoleLevel.PLATFORM}) {
             String manage = level == RoleLevel.BRAND ? Authority.USER_MANAGE.code() : Authority.PLATFORM_USER_MANAGE.code();
             for (int i = 0; i < current.size(); i++) {
-                if (current.get(i).getLevel() != level) continue;
+                if (!mayAssignAt(current.get(i).getLevel(), level)) continue;
                 for (int j = 0; j < current.size(); j++) {
                     if (i == j || current.get(j).getLevel() != level) continue;
                     boolean was = gives(current.get(i), current.get(j), manage);
@@ -126,6 +126,11 @@ public class RoleService {
         }
         out.sort(Comparator.comparing(PreviewChange::assigner).thenComparing(PreviewChange::assigned));
         return out;
+    }
+
+    /** BRAND roles are given by BRAND roles and by COMPANY roles (the Customer Admin); PLATFORM by PLATFORM. */
+    private static boolean mayAssignAt(RoleLevel assigner, RoleLevel assigned) {
+        return assigner == assigned || (assigned == RoleLevel.BRAND && assigner == RoleLevel.COMPANY);
     }
 
     private static boolean gives(Role assigner, Role assigned, String manage) {
