@@ -63,6 +63,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, LOGIN_PATH, VERIFY_OTP_PATH).permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
+                        .requestMatchers("/api/**").authenticated()
+                        // the console's static files and its client-side routes
+                        .requestMatchers(HttpMethod.GET, "/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint(
                         (req, res, ex) -> res.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
