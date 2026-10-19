@@ -199,7 +199,7 @@ public class AssignmentPolicy {
     }
 
     /** The role's catalogue codes at levels it may hold; removed or misplaced codes grant nothing. */
-    private static Set<String> effective(Role role) {
+    public static Set<String> effective(Role role) {
         if (role.getLevel() == null || role.getAuthorities() == null) return Set.of();
         return role.getAuthorities().stream()
                 .filter(code -> Authority.fromCode(code).filter(x -> role.getLevel().mayHold(x.level())).isPresent())

@@ -4,6 +4,7 @@ import me.nageshk.omnichannel.auth.AccountLockedException;
 import me.nageshk.omnichannel.rpc.RpcException;
 import me.nageshk.omnichannel.user.InvalidOtpException;
 import me.nageshk.omnichannel.user.TwoFactorStateException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -67,12 +68,34 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> validation(MethodArgumentNotValidException e) {
-        String message = e.getBindingResult().getFieldErrors().stream()
-                .map(f -> f.getField() + " " + f.getDefaultMessage())
-                .reduce((a, b) -> a + "; " + b)
-                .orElse("invalid request");
-        return body(HttpStatus.BAD_REQUEST, "VALIDATION", message);
+    public ResponseEntity<Map<String, Object>> validation(MethodArgumentNotValidException e) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        e.getBindingResult().getFieldErrors().forEach(f -> fields.merge(f.getField(),
+                String.valueOf(f.getDefaultMessage()), (a, b) -> a + "; " + b));
+        return validationBody(fields.isEmpty() ? "invalid request"
+                : fields.entrySet().stream().map(f -> f.getKey() + " " + f.getValue())
+                        .reduce((a, b) -> a + "; " + b).orElseThrow(), fields);
+    }
+
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<Map<String, Object>> validation(ValidationException e) {
+        return validationBody(e.getMessage(), e.fields());
+    }
+
+    private static ResponseEntity<Map<String, Object>> validationBody(String message, Map<String, String> fields) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "code", ValidationException.CODE, "message", message, "fields", fields));
+    }
+
+    @ExceptionHandler(DuplicateException.class)
+    public ResponseEntity<Map<String, String>> duplicate(DuplicateException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", DuplicateException.CODE, "message", String.valueOf(e.getMessage()), "field", e.field()));
+    }
+
+    @ExceptionHandler(RoleInUseException.class)
+    public ResponseEntity<Map<String, String>> roleInUse(RoleInUseException e) {
+        return body(HttpStatus.CONFLICT, RoleInUseException.CODE, e.getMessage());
     }
 
     @ExceptionHandler(RpcException.class)
