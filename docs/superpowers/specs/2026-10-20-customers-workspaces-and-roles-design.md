@@ -150,7 +150,7 @@ Role editing is **not** an authority: only the Super Admin can do it, and it can
   BRAND authorities; a BRAND role only BRAND authorities. The API rejects anything else.
 - A COMPANY role's BRAND authorities apply in every workspace of the user's customer. This is how the
   Customer Admin "does everything" in a small company, while staying editable.
-- `SUPER_ADMIN` is built in, not stored with a list: it holds every PLATFORM and COMPANY-level management authority, always (not brand access; see "Platform staff and brand pages").
+- `SUPER_ADMIN` is built in, not stored with a list: it holds every PLATFORM-level authority, always. It has no customer, so it holds no COMPANY authorities and no brand access (see "Platform staff and brand pages").
   It cannot be edited, deleted or given to anyone; it exists only on the seeded user.
 - Built-in roles (`ACCOUNT_MANAGER`, `WHATSAPP_DEVICE`, `CUSTOMER_ADMIN`, `WORKSPACE_MANAGER`,
   `TEAM_LEAD`, `AGENT`) are seeded on first start, can have their authorities, description edited,
@@ -217,8 +217,9 @@ Admin confirms or cancels. Saving does not depend on the preview.
   rejected on the next request, same as an inactive user.
 - PLATFORM and COMPANY authorities are Spring `GrantedAuthority`s: `@PreAuthorize("hasAuthority('customer:create')")`.
 - BRAND authorities go through a bean: `@PreAuthorize("@access.has(#workspaceId, 'user:manage')")`.
-  It returns false when the workspace does not exist, belongs to another customer, or the user has
-  no access to it — including for the Super Admin and other platform staff in this slice.
+  A workspace that does not exist, belongs to another customer, or that the user has no access to
+  answers 404 (the bean throws); a reachable workspace where the user lacks the authority answers 403.
+  Platform staff, including the Super Admin, have no brand access in this slice.
 - Brand APIs take the workspace in the path: `/api/workspaces/{workspaceId}/…`.
 - A workspace or customer the caller may not see answers **404**, not 403, so ids of other tenants
   are not confirmed to exist. (My call.) A known resource the caller may see but not change answers
