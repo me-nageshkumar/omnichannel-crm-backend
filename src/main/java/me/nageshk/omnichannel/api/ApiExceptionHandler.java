@@ -98,6 +98,21 @@ public class ApiExceptionHandler {
         return body(HttpStatus.CONFLICT, RoleInUseException.CODE, e.getMessage());
     }
 
+    @ExceptionHandler(AlreadyAllBrandsException.class)
+    public ResponseEntity<Map<String, String>> alreadyAllBrands(AlreadyAllBrandsException e) {
+        return body(HttpStatus.BAD_REQUEST, AlreadyAllBrandsException.CODE, e.getMessage());
+    }
+
+    @ExceptionHandler(AlreadyInWorkspaceException.class)
+    public ResponseEntity<Map<String, String>> alreadyInWorkspace(AlreadyInWorkspaceException e) {
+        return body(HttpStatus.CONFLICT, AlreadyInWorkspaceException.CODE, e.getMessage());
+    }
+
+    @ExceptionHandler(LastAccessException.class)
+    public ResponseEntity<Map<String, String>> lastAccess(LastAccessException e) {
+        return body(HttpStatus.BAD_REQUEST, LastAccessException.CODE, e.getMessage());
+    }
+
     @ExceptionHandler(RpcException.class)
     public ResponseEntity<Map<String, String>> rpc(RpcException e) {
         HttpStatus status = switch (e.code()) {
