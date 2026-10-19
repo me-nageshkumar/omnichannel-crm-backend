@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Ends the first-login flow: trades a password-change token and a new password for an access token.
  * Permitted without an authenticated principal in {@code SecurityConfig}; the change token in the
- * {@code Authorization} header is the credential, and it works only while the user is active, its
+ * {@code Authorization} header is the credential, and it works only while its token version still matches the user's, the user is active, its
  * customer is active, and {@code mustChangePassword} is still set.
  */
 @RestController
@@ -63,9 +63,10 @@ public class InitialPasswordController {
     private User userFor(String header) {
         InvalidTokenException invalid = new InvalidTokenException("invalid or expired token");
         if (header == null || !header.startsWith(BEARER)) throw invalid;
-        String username = jwt.verifyPasswordChangeToken(header.substring(BEARER.length())).orElseThrow(() -> invalid);
-        User user = users.findByUsername(username.toLowerCase(Locale.ROOT)).orElseThrow(() -> invalid);
-        if (!user.isMustChangePassword() || !access.load(user).isEnabled()) throw invalid;
+        JwtService.PasswordChangeClaims claims =
+                jwt.verifyPasswordChangeToken(header.substring(BEARER.length())).orElseThrow(() -> invalid);
+        User user = users.findByUsername(claims.username().toLowerCase(Locale.ROOT)).orElseThrow(() -> invalid);
+        if (user.getTokenVersion() != claims.tokenVersion() || !user.isMustChangePassword() || !access.load(user).isEnabled()) throw invalid;
         return user;
     }
 }

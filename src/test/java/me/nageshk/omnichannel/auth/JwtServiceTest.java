@@ -115,9 +115,10 @@ class JwtServiceTest {
     @Test
     void passwordChangeTokenIsTenMinutesAndOnlyVerifiesAsChangeToken() {
         var svc = serviceAt(NOW);
-        String token = svc.issuePasswordChangeToken("alice");
+        String token = svc.issuePasswordChangeToken("alice", 4L);
 
-        assertThat(serviceAt(NOW.plus(Duration.ofMinutes(9))).verifyPasswordChangeToken(token)).contains("alice");
+        assertThat(serviceAt(NOW.plus(Duration.ofMinutes(9))).verifyPasswordChangeToken(token))
+                .contains(new JwtService.PasswordChangeClaims("alice", 4L));
         assertThat(serviceAt(NOW.plus(Duration.ofMinutes(11))).verifyPasswordChangeToken(token)).isEmpty();
         assertThat(svc.verifyAccessToken(token)).isEmpty();
         assertThat(svc.verifyPendingToken(token)).isEmpty();

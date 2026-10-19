@@ -38,6 +38,9 @@ public class JwtService {
     /** {@code jti} is null for access tokens issued before tokens carried one. */
     public record AccessClaims(String username, long tokenVersion, String jti, Instant expiresAt) {}
 
+    /** A live password-change token's user and the token version it was issued against. */
+    public record PasswordChangeClaims(String username, long tokenVersion) {}
+
     private final SecretKey key;
     private final Duration ttl;
     private final Clock clock;
@@ -76,11 +79,12 @@ public class JwtService {
     }
 
     /** Ten-minute token accepted only by {@code POST /api/auth/initial-password}. */
-    public String issuePasswordChangeToken(String username) {
+    public String issuePasswordChangeToken(String username, long tokenVersion) {
         Instant now = clock.instant();
         return Jwts.builder()
                 .subject(username)
                 .claim(CLAIM_AUTH_STATE, PASSWORD_CHANGE_PENDING)
+                .claim(CLAIM_TOKEN_VERSION, tokenVersion)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(PASSWORD_CHANGE_TTL)))
                 .signWith(key)
@@ -113,11 +117,12 @@ public class JwtService {
                 .map(Claims::getSubject);
     }
 
-    /** The username only when the token is a live password-change token. */
-    public Optional<String> verifyPasswordChangeToken(String token) {
+    /** Empty unless the token is a live password-change token carrying a token version. */
+    public Optional<PasswordChangeClaims> verifyPasswordChangeToken(String token) {
         return safeParse(token)
                 .filter(c -> PASSWORD_CHANGE_PENDING.equals(c.get(CLAIM_AUTH_STATE, String.class)))
-                .map(Claims::getSubject);
+                .filter(c -> c.getSubject() != null && c.get(CLAIM_TOKEN_VERSION, Long.class) != null)
+                .map(c -> new PasswordChangeClaims(c.getSubject(), c.get(CLAIM_TOKEN_VERSION, Long.class)));
     }
 
     private Optional<Claims> safeParse(String token) {

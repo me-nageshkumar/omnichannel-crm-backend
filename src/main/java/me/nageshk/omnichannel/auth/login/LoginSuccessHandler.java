@@ -45,7 +45,7 @@ public class LoginSuccessHandler implements AuthenticationSuccessHandler {
         if (authentication instanceof PasswordAuthentication && user.twoFactorEnabled()) {
             body = Map.of("twoFactorRequired", true, "twoFactorToken", jwt.issuePendingToken(user.getUsername()));
         } else if (user.mustChangePassword()) {
-            body = Map.of("passwordChangeRequired", true, "passwordChangeToken", jwt.issuePasswordChangeToken(user.getUsername()));
+            body = Map.of("passwordChangeRequired", true, "passwordChangeToken", jwt.issuePasswordChangeToken(user.getUsername(), user.tokenVersion()));
         } else {
             JwtService.IssuedToken issued = jwt.issueAccessToken(user);
             body = Map.of("token", issued.token(), "expiresAt", issued.expiresAt().toString());

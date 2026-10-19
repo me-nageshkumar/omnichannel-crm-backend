@@ -79,7 +79,7 @@ class InitialPasswordIT {
                 .andExpect(jsonPath("$.token").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
         assertThat(jwt.verifyPasswordChangeToken(mapper.readTree(body).get("passwordChangeToken").asText()))
-                .contains("newbie");
+                .contains(new JwtService.PasswordChangeClaims("newbie", 0L));
     }
 
     @Test
@@ -196,5 +196,18 @@ class InitialPasswordIT {
                 .andReturn().getResponse().getContentAsString();
         JsonNode json = mapper.readTree(body);
         assertThat(json.fieldNames()).toIterable().containsExactlyInAnyOrder("token", "expiresAt");
+    }
+
+    @Test
+    void resetRevokesOutstandingChangeToken() throws Exception {
+        User u = mustChange(null);
+        String token = changeToken();
+        u.setTokenVersion(u.getTokenVersion() + 1);
+        u.setMustChangePassword(true);
+        repo.save(u);
+
+        initialPassword(token, NEW_PASSWORD)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
     }
 }
