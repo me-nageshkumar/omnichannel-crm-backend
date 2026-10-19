@@ -13,6 +13,16 @@ public class UserService {
 
     public record TwoFactorSetup(String secret, String qrCodeDataUri, String issuer, String username) {}
 
+    /** The caller's own profile; never carries the password, token version or TOTP secret. */
+    public record CurrentUser(
+            String id,
+            String name,
+            String username,
+            String email,
+            String mobileNumber,
+            UserRole role,
+            boolean twoFactorEnabled) {}
+
     private final UserRepository users;
     private final TotpService totp;
     private final LoginAttemptService attempts;
@@ -21,6 +31,13 @@ public class UserService {
         this.users = users;
         this.totp = totp;
         this.attempts = attempts;
+    }
+
+    public CurrentUser currentUser(String username) {
+        User u = require(username);
+        return new CurrentUser(
+                u.getId(), u.getName(), u.getUsername(), u.getEmail(), u.getMobileNumber(), u.getRole(),
+                u.getTwoFactor().enabled());
     }
 
     /** A fresh secret and QR code; nothing is stored until {@link #confirmTwoFactor}. */
