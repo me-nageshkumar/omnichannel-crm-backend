@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.auth;
 
-import me.nageshk.omnichannel.config.WabridgeProperties;
+import me.nageshk.omnichannel.config.OmnichannelProperties;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -22,7 +22,7 @@ public class JwtService {
     private final Duration ttl;
     private final Clock clock;
 
-    public JwtService(WabridgeProperties props, Clock clock) {
+    public JwtService(OmnichannelProperties props, Clock clock) {
         this.key = Keys.hmacShaKeyFor(props.jwt().secret().getBytes(StandardCharsets.UTF_8));
         this.ttl = props.jwt().ttl();
         this.clock = clock;

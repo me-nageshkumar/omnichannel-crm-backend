@@ -1,20 +1,37 @@
 server:
   port: 8080
 
+spring:
+  data:
+    mongodb:
+      uri: ${OMNICHANNEL_MONGODB_URI:mongodb://localhost:27017/omnichannel_crm}
+      auto-index-creation: true
+
 logging:
   level:
     me.nageshk.omnichannel: INFO
 
-wabridge:
+omnichannel:
   jwt:
-    # Must be at least 32 bytes. Override in production: WABRIDGE_JWT_SECRET=...
-    secret: ${WABRIDGE_JWT_SECRET:dev-only-secret-please-change-me-0123456789}
+    # Must be at least 32 bytes. Override in production: OMNICHANNEL_JWT_SECRET=...
+    secret: ${OMNICHANNEL_JWT_SECRET:dev-only-secret-please-change-me-0123456789}
     ttl: 12h
-  users:
-    # Dev/PoC user. For real deployments use {bcrypt}<hash>; generate with:
-    #   htpasswd -bnBC 10 "" 'your-password' | tr -d ':\n' | sed 's/^/{bcrypt}/'
-    - username: demo
-      password: "{noop}demo123"
+  # Seeded on first start when no SUPER_ADMIN exists. Password is a bcrypt hash:
+  #   htpasswd -bnBC 10 "" 'your-password' | tr -d ':\n'
+  super-admin:
+    name: ${OMNICHANNEL_SUPER_ADMIN_NAME:Nagesh Kumar}
+    username: ${OMNICHANNEL_SUPER_ADMIN_USERNAME:nageshk}
+    password: ${OMNICHANNEL_SUPER_ADMIN_PASSWORD:}
+    email: ${OMNICHANNEL_SUPER_ADMIN_EMAIL:}
+    mobile-number: ${OMNICHANNEL_SUPER_ADMIN_MOBILE:}
+    totp-secret: ${OMNICHANNEL_SUPER_ADMIN_TOTP_SECRET:}
+  # Two-factor-off user for the Chrome extension. Seeding skipped when username is blank.
+  device-user:
+    name: ${OMNICHANNEL_DEVICE_USER_NAME:WhatsApp Bridge}
+    username: ${OMNICHANNEL_DEVICE_USER_USERNAME:}
+    password: ${OMNICHANNEL_DEVICE_USER_PASSWORD:}
+  two-factor:
+    issuer: Omnichannel CRM
   ws:
     allowed-origins: "chrome-extension://*"
   rpc:

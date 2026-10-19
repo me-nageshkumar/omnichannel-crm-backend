@@ -11,9 +11,9 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final BridgeWebSocketHandler handler;
-    private final WabridgeProperties props;
+    private final OmnichannelProperties props;
 
-    public WebSocketConfig(BridgeWebSocketHandler handler, WabridgeProperties props) {
+    public WebSocketConfig(BridgeWebSocketHandler handler, OmnichannelProperties props) {
         this.handler = handler;
         this.props = props;
     }

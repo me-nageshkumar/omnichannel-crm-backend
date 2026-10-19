@@ -1,0 +1,11 @@
+de:
+  flapdoodle:
+    mongodb:
+      embedded:
+        version: 7.0.12
+omnichannel:
+  super-admin:
+    password: ""
+logging:
+  level:
+    de.flapdoodle: WARN

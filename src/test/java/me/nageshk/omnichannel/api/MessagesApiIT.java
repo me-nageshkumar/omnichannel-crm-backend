@@ -24,7 +24,7 @@ import org.springframework.http.ResponseEntity;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "wabridge.rpc.timeout=2s")
+        properties = "omnichannel.rpc.timeout=2s")
 class MessagesApiIT {
 
     @LocalServerPort int port;

@@ -2,12 +2,11 @@ package me.nageshk.omnichannel.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import me.nageshk.omnichannel.config.WabridgeProperties;
+import me.nageshk.omnichannel.config.OmnichannelProperties;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class JwtServiceTest {
@@ -16,11 +15,13 @@ class JwtServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-15T10:00:00Z");
 
     private JwtService serviceAt(Instant now) {
-        var props = new WabridgeProperties(
-                new WabridgeProperties.Jwt(SECRET, Duration.ofHours(1)),
-                List.of(),
-                new WabridgeProperties.Ws("*"),
-                new WabridgeProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)));
+        var props = new OmnichannelProperties(
+                new OmnichannelProperties.Jwt(SECRET, Duration.ofHours(1)),
+                null,
+                null,
+                null,
+                new OmnichannelProperties.Ws("*"),
+                new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)));
         return new JwtService(props, Clock.fixed(now, ZoneOffset.UTC));
     }
 

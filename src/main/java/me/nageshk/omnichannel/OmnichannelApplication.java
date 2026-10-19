@@ -6,8 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
-public class WabridgeApplication {
+public class OmnichannelApplication {
     public static void main(String[] args) {
-        SpringApplication.run(WabridgeApplication.class, args);
+        SpringApplication.run(OmnichannelApplication.class, args);
     }
 }

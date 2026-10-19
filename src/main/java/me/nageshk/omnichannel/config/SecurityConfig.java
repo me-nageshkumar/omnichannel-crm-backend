@@ -11,7 +11,6 @@ import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -44,7 +43,7 @@ public class SecurityConfig {
 
     /** Allows the extension's service worker (origin chrome-extension://<id>) to call the REST API. */
     @Bean
-    public CorsConfigurationSource corsConfigurationSource(WabridgeProperties props) {
+    public CorsConfigurationSource corsConfigurationSource(OmnichannelProperties props) {
         var config = new CorsConfiguration();
         config.setAllowedOriginPatterns(List.of(props.ws().allowedOrigins().split("\\s*,\\s*")));
         config.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
@@ -59,13 +58,10 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+    /** Placeholder until users are loaded from MongoDB. */
     @Bean
-    public UserDetailsService userDetailsService(WabridgeProperties props) {
-        var manager = new InMemoryUserDetailsManager();
-        for (WabridgeProperties.User u : props.users()) {
-            manager.createUser(User.withUsername(u.username()).password(u.password()).roles("USER").build());
-        }
-        return manager;
+    public UserDetailsService userDetailsService() {
+        return new InMemoryUserDetailsManager();
     }
 
     @Bean

@@ -1,7 +1,7 @@
 package me.nageshk.omnichannel.rpc;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import me.nageshk.omnichannel.config.WabridgeProperties;
+import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.ws.DeviceSession;
 import java.io.IOException;
 import java.time.Duration;
@@ -24,7 +24,7 @@ public class RpcDispatcher {
     private final Supplier<String> idSupplier;
 
     @Autowired
-    public RpcDispatcher(WabridgeProperties props) {
+    public RpcDispatcher(OmnichannelProperties props) {
         this(props.rpc().timeout(), () -> UUID.randomUUID().toString());
     }
 

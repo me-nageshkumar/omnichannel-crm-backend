@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import me.nageshk.omnichannel.auth.JwtService;
-import me.nageshk.omnichannel.config.WabridgeProperties;
+import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.rpc.RpcDispatcher;
@@ -39,7 +39,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     private final RpcDispatcher dispatcher;
     private final ApplicationEventPublisher publisher;
     private final ScheduledExecutorService scheduler;
-    private final WabridgeProperties props;
+    private final OmnichannelProperties props;
     private final ScriptCatalog scripts;
     private final EventSequenceTracker sequences;
     private final ConcurrentHashMap<String, ScheduledFuture<?>> authTimers = new ConcurrentHashMap<>();
@@ -51,7 +51,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             RpcDispatcher dispatcher,
             ApplicationEventPublisher publisher,
             ScheduledExecutorService wsScheduler,
-            WabridgeProperties props,
+            OmnichannelProperties props,
             ScriptCatalog scripts,
             EventSequenceTracker sequences) {
         this.mapper = mapper;

@@ -20,7 +20,7 @@ import org.springframework.web.socket.CloseStatus;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "wabridge.rpc.auth-timeout=1s")
+        properties = "omnichannel.rpc.auth-timeout=1s")
 class BridgeWebSocketIT {
 
     /** Nested @TestConfiguration classes are registered as beans automatically; no @Bean needed. */
