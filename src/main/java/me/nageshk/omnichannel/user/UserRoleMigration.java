@@ -18,7 +18,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * One-off upgrade of users written by the old enum model: {@code role} becomes {@code roleId},
- * {@code workspaceRoles} is added, usernames are lower-cased. Works on raw documents because the enum
+ * {@code workspaceRoles} is added, usernames are lower-cased, and {@code version} starts at 0 (without it
+ * Spring Data would treat the user as new and {@code save()} would insert a duplicate). Works on raw documents because the enum
  * no longer exists. Idempotent; runs in every profile after the roles are seeded.
  */
 @Component
@@ -64,6 +65,7 @@ public class UserRoleMigration implements ApplicationRunner {
             if (username != null && !username.equals(username.toLowerCase(Locale.ROOT))) {
                 set.append("username", username.toLowerCase(Locale.ROOT));
             }
+            if (doc.get("version") == null) set.append("version", 0L);
             if (set.isEmpty() && unset.isEmpty()) continue;
             Document update = new Document();
             if (!set.isEmpty()) update.append("$set", set);
@@ -73,7 +75,7 @@ public class UserRoleMigration implements ApplicationRunner {
         for (Document u : updates) {
             users.updateOne(new Document("_id", u.get("_id")), u.get("update", Document.class));
         }
-        if (!updates.isEmpty()) log.info("migrated {} user document(s) to role ids", updates.size());
+        if (!updates.isEmpty()) log.info("migrated {} user document(s)", updates.size());
     }
 
     private String roleIdFor(String legacy, String username) {

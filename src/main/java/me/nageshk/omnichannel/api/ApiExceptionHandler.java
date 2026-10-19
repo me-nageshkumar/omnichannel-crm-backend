@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -116,6 +117,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(LastAccessException.class)
     public ResponseEntity<Map<String, String>> lastAccess(LastAccessException e) {
         return body(HttpStatus.BAD_REQUEST, LastAccessException.CODE, e.getMessage());
+    }
+
+    /** Someone else changed the record between this request's read and its write. */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<Map<String, String>> conflict(OptimisticLockingFailureException e) {
+        return body(HttpStatus.CONFLICT, "CONFLICT", "the record was changed by another request; reload and try again");
     }
 
     @ExceptionHandler(RpcException.class)

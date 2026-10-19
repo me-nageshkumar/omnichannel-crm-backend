@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
 @SpringBootTest
@@ -59,5 +60,22 @@ class UserRepositoryIT {
         assertThat(repo.findByUsername("CAROL")).isEmpty();
         assertThat(repo.existsByRoleId("r-user")).isTrue();
         assertThat(repo.existsByRoleId("other")).isFalse();
+    }
+
+    @Test
+    void staleCopyCannotUndoDeactivation() {
+        User saved = repo.save(newUser("dave"));
+        User stale = repo.findById(saved.getId()).orElseThrow();
+
+        User fresh = repo.findById(saved.getId()).orElseThrow();
+        fresh.setActive(false);
+        fresh.setTokenVersion(fresh.getTokenVersion() + 1);
+        repo.save(fresh);
+
+        stale.setName("Renamed");
+        assertThatThrownBy(() -> repo.save(stale)).isInstanceOf(OptimisticLockingFailureException.class);
+        User now = repo.findById(saved.getId()).orElseThrow();
+        assertThat(now.isActive()).isFalse();
+        assertThat(now.getTokenVersion()).isEqualTo(1L);
     }
 }

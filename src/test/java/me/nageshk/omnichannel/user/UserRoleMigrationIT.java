@@ -20,6 +20,7 @@ class UserRoleMigrationIT {
     @Autowired UserRoleMigration migration;
     @Autowired TestUsers testUsers;
     @Autowired MongoTemplate mongo;
+    @Autowired UserRepository repo;
 
     @BeforeEach
     void clean() {
@@ -75,5 +76,30 @@ class UserRoleMigrationIT {
 
         assertThat(raw("root")).isEqualTo(first);
         assertThat(mongo.count(new Query(Criteria.where("role").exists(true)), "users")).isZero();
+    }
+
+    @Test
+    void legacyDocumentWithoutVersionGetsVersionZeroAndCanBeSaved() {
+        insert("root", "SUPER_ADMIN");
+        migration.migrate();
+
+        assertThat(raw("root").get("version")).isEqualTo(0L);
+        User root = repo.findByUsername("root").orElseThrow();
+        root.setActive(false);
+        repo.save(root);
+
+        assertThat(mongo.count(new Query(), "users")).isEqualTo(1);
+        assertThat(raw("root").getBoolean("active")).isFalse();
+        assertThat(raw("root").get("version")).isEqualTo(1L);
+    }
+
+    @Test
+    void existingVersionIsLeftAlone() {
+        mongo.getCollection("users").insertOne(new Document("username", "kept").append("name", "kept")
+                .append("password", "x").append("workspaceRoles", java.util.List.of()).append("active", true)
+                .append("version", 7L));
+        migration.migrate();
+
+        assertThat(raw("kept").get("version")).isEqualTo(7L);
     }
 }

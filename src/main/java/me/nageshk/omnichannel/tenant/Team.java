@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -22,6 +23,10 @@ public class Team {
     private String name;
     private List<String> memberIds = new ArrayList<>();
 
+    /** Optimistic lock: a save from a stale copy fails instead of undoing a concurrent membership change. */
+    @Version
+    private Long version;
+
     @CreatedDate
     private Instant creationTime;
 
@@ -29,6 +34,8 @@ public class Team {
     private Instant lastUpdateTime;
 
     public String getId() { return id; }
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
     public void setId(String id) { this.id = id; }
     public String getCustomerId() { return customerId; }
     public void setCustomerId(String customerId) { this.customerId = customerId; }

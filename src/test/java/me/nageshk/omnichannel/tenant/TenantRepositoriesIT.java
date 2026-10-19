@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 
 @SpringBootTest
 class TenantRepositoriesIT {
@@ -63,5 +64,23 @@ class TenantRepositoriesIT {
 
         assertThat(workspaces.findByIdAndCustomerId(w.getId(), a.getId())).isPresent();
         assertThat(workspaces.findByIdAndCustomerId(w.getId(), b.getId())).isEmpty();
+    }
+
+    @Test
+    void staleTeamCopyCannotUndoMembershipRemoval() {
+        Customer c = testUsers.customer("Acme");
+        Workspace w = testUsers.workspace(c.getId(), "Support");
+        Team saved = team(c.getId(), w.getId(), "Tier 1");
+        saved.setMemberIds(new java.util.ArrayList<>(List.of("u1")));
+        saved = teams.save(saved);
+        Team stale = teams.findById(saved.getId()).orElseThrow();
+
+        Team fresh = teams.findById(saved.getId()).orElseThrow();
+        fresh.getMemberIds().remove("u1");
+        teams.save(fresh);
+
+        stale.setName("Tier 2");
+        assertThatThrownBy(() -> teams.save(stale)).isInstanceOf(OptimisticLockingFailureException.class);
+        assertThat(teams.findById(saved.getId()).orElseThrow().getMemberIds()).isEmpty();
     }
 }

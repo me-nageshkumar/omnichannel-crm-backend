@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -38,6 +39,10 @@ public class User {
     /** Bumping this invalidates every issued access token for the user. */
     private long tokenVersion;
 
+    /** Optimistic lock: a save from a stale copy fails instead of undoing a deactivation, reset or role change. */
+    @Version
+    private Long version;
+
     @CreatedDate
     private Instant creationTime;
 
@@ -45,6 +50,8 @@ public class User {
     private Instant lastUpdateTime;
 
     public String getId() { return id; }
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
     public void setId(String id) { this.id = id; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
