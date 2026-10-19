@@ -63,9 +63,10 @@ public class AssignmentPolicy {
      * The user being acted on, resolved.
      *
      * @param companyRole the user's COMPANY role, or null
+     * @param platformRole a platform user's PLATFORM role, or null
      * @param workspaceRoles the user's BRAND role in each workspace, by workspace id
      */
-    public record Target(String customerId, Role companyRole, Map<String, Role> workspaceRoles) {
+    public record Target(String customerId, Role companyRole, Role platformRole, Map<String, Role> workspaceRoles) {
         public Target {
             workspaceRoles = workspaceRoles == null ? Map.of() : Map.copyOf(workspaceRoles);
         }
@@ -117,34 +118,54 @@ public class AssignmentPolicy {
     }
 
     /**
-     * Rule 3, whole-login form (reset password, edit details, deactivate): the actor manages the
-     * target in every workspace where it has a role, and the target holds no COMPANY role unless the
-     * actor is platform staff with {@code customer:manage}. Customer users of another customer are
-     * reachable only that way; platform users are not handled here.
+     * Rule 3, whole-login form (reset password, edit details, deactivate).
+     *
+     * <ul>
+     *   <li>Platform user: the actor is platform staff with {@code platform-user:manage} and the
+     *       target's PLATFORM role is a strict subset of the actor's set. Nobody manages the Super
+     *       Admin's login, not even the Super Admin.
+     *   <li>Customer user with a COMPANY role: only platform staff with {@code customer:manage}.
+     *   <li>Other customer users, same customer only: the actor manages the target in every
+     *       workspace where it has a role; a target with no role at all is left to whoever holds
+     *       {@code company-user:manage} (the Customer Admin).
+     * </ul>
      */
     public boolean canManageLogin(Actor a, Target t) {
+        if (t.customerId() == null) return canManagePlatformLogin(a, t);
         if (a.superAdmin()) return true;
-        if (t.customerId() == null) return false;
         if (t.companyRole() != null) {
             if (!isPlatformStaff(a) || !a.platformOrCompany().contains(CUSTOMER_MANAGE)) return false;
-        } else if (!sameCustomer(a, t)) {
-            return false;
+        } else {
+            if (!sameCustomer(a, t)) return false;
+            if (t.workspaceRoles().isEmpty()) return a.platformOrCompany().contains(COMPANY_USER_MANAGE);
         }
         return t.workspaceRoles().entrySet().stream()
                 .allMatch(e -> managesIn(a, e.getKey(), effective(e.getValue())));
     }
 
     /**
-     * {@link #canManageLogin} plus {@code company-user:manage} (a customer user), or, for a target
-     * with a COMPANY role, {@code customer:manage} (platform staff).
+     * {@link #canManageLogin} plus, for a customer user, {@code company-user:manage} (a customer
+     * actor) or, for a target with a COMPANY role, {@code customer:manage} (platform staff). For a
+     * platform user, the same rule as {@link #canManageLogin}.
      */
     public boolean canDeactivateLogin(Actor a, Target t) {
+        if (t.customerId() == null) return canManagePlatformLogin(a, t);
         if (a.superAdmin()) return true;
         if (!canManageLogin(a, t)) return false;
         boolean companyUserManage = !isPlatformStaff(a) && a.platformOrCompany().contains(COMPANY_USER_MANAGE);
         boolean customerManage = t.companyRole() != null
                 && isPlatformStaff(a) && a.platformOrCompany().contains(CUSTOMER_MANAGE);
         return companyUserManage || customerManage;
+    }
+
+    private static boolean canManagePlatformLogin(Actor a, Target t) {
+        Role role = t.platformRole();
+        if (role != null && BuiltInRoles.SUPER_ADMIN.equals(role.getName())) return false;
+        if (a.superAdmin()) return true;
+        Set<String> targetSet = isAt(role, RoleLevel.PLATFORM) ? effective(role) : Set.of();
+        return isPlatformStaff(a)
+                && a.platformOrCompany().contains(PLATFORM_USER_MANAGE)
+                && strictSubset(targetSet, a.platformOrCompany());
     }
 
     public List<Role> assignableBrandRoles(Actor a, String workspaceId, Collection<Role> all) {

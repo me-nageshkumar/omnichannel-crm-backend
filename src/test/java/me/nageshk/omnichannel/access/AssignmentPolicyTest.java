@@ -222,6 +222,78 @@ class AssignmentPolicyTest {
         assertThat(policy.canDeactivateLogin(am, target(ACME, null, Map.of(A, agent)))).isFalse();
     }
 
+    // --- roleless customer users ----------------------------------------------------------------
+
+    @Test
+    void agentCannotManageRolelessLogin() {
+        Actor agentActor = brandUser(ACME, Map.of(A, agent));
+        Target roleless = target(ACME, null, Map.of());
+        assertThat(policy.canManageLogin(agentActor, roleless)).isFalse();
+        assertThat(policy.canDeactivateLogin(agentActor, roleless)).isFalse();
+    }
+
+    @Test
+    void workspaceManagerCannotManageRolelessLogin() {
+        Actor wm = brandUser(ACME, Map.of(A, workspaceManager, B, workspaceManager));
+        assertThat(policy.canManageLogin(wm, target(ACME, null, Map.of()))).isFalse();
+    }
+
+    @Test
+    void customerAdminManagesRolelessLogin() {
+        Actor ca = customerAdminOf(ACME, A);
+        Target roleless = target(ACME, null, Map.of());
+        assertThat(policy.canManageLogin(ca, roleless)).isTrue();
+        assertThat(policy.canDeactivateLogin(ca, roleless)).isTrue();
+        assertThat(policy.canManageLogin(customerAdminOf(OTHER, A), roleless)).isFalse();
+    }
+
+    // --- platform users -----------------------------------------------------------------------
+
+    @Test
+    void staffLeadWithPlatformUserManageManagesAccountManager() {
+        Set<String> codes = new HashSet<>(accountManager.getAuthorities());
+        codes.add("platform-user:manage");
+        Actor lead = platformUser(role("STAFF_LEAD", RoleLevel.PLATFORM, codes));
+        Target am = platformTarget(accountManager);
+        assertThat(policy.canManageLogin(lead, am)).isTrue();
+        assertThat(policy.canDeactivateLogin(lead, am)).isTrue();
+        assertThat(policy.canManageLogin(lead, platformTarget(role("STAFF_LEAD", RoleLevel.PLATFORM, codes))))
+                .isFalse();
+        assertThat(policy.canManageLogin(lead, platformTarget(device))).isFalse();
+    }
+
+    @Test
+    void accountManagerCannotManageAnotherAccountManager() {
+        Actor am = platformUser(accountManager);
+        assertThat(policy.canManageLogin(am, platformTarget(accountManager))).isFalse();
+        assertThat(policy.canDeactivateLogin(am, platformTarget(accountManager))).isFalse();
+        assertThat(policy.canManageLogin(am, platformTarget(role("EMPTY", RoleLevel.PLATFORM, Set.of()))))
+                .isFalse();
+    }
+
+    @Test
+    void nobodyManagesSuperAdminLogin() {
+        Target sa = platformTarget(superAdmin);
+        Set<String> everything = new HashSet<>(superAdminActor().platformOrCompany());
+        Actor lead = platformUser(role("STAFF_LEAD", RoleLevel.PLATFORM, everything));
+        for (Actor actor : List.of(superAdminActor(), lead, platformUser(accountManager))) {
+            assertThat(policy.canManageLogin(actor, sa)).isFalse();
+            assertThat(policy.canDeactivateLogin(actor, sa)).isFalse();
+        }
+        assertThat(policy.canManageLogin(superAdminActor(), platformTarget(accountManager))).isTrue();
+        assertThat(policy.canDeactivateLogin(superAdminActor(), platformTarget(device))).isTrue();
+    }
+
+    @Test
+    void customerAdminCannotManagePlatformUser() {
+        Actor ca = customerAdminOf(ACME, A);
+        Target empty = platformTarget(role("EMPTY", RoleLevel.PLATFORM, Set.of()));
+        for (Target t : List.of(platformTarget(accountManager), platformTarget(device), empty)) {
+            assertThat(policy.canManageLogin(ca, t)).isFalse();
+            assertThat(policy.canDeactivateLogin(ca, t)).isFalse();
+        }
+    }
+
     // --- strict subset ------------------------------------------------------------------------
 
     @Test
@@ -290,6 +362,10 @@ class AssignmentPolicyTest {
     }
 
     private static Target target(String customerId, Role companyRole, Map<String, Role> workspaceRoles) {
-        return new Target(customerId, companyRole, workspaceRoles);
+        return new Target(customerId, companyRole, null, workspaceRoles);
+    }
+
+    private static Target platformTarget(Role platformRole) {
+        return new Target(null, null, platformRole, Map.of());
     }
 }
