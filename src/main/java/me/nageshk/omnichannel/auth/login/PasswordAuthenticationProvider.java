@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.auth.login;
 
+import java.util.Locale;
 import me.nageshk.omnichannel.auth.AccountLockedException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.auth.LoginAttemptService;
@@ -36,7 +37,7 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
 
     @Override
     public Authentication authenticate(Authentication authentication) {
-        String username = authentication.getName();
+        String username = authentication.getName().toLowerCase(Locale.ROOT);
         String password = String.valueOf(authentication.getCredentials());
 
         if (attempts.isLoginBlocked(username)) {

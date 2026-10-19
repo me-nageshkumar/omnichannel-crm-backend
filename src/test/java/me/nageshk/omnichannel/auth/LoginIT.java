@@ -122,6 +122,15 @@ class LoginIT {
     }
 
     @Test
+    void lockoutCannotBeBypassedByChangingUsernameCase() throws Exception {
+        testUsers.create("casey", "pw", "WHATSAPP_DEVICE", null);
+        for (int i = 0; i < 5; i++) login("casey", "bad").andExpect(status().isUnauthorized());
+        login("CASEY", "pw")
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error").value("too_many_attempts"));
+    }
+
+    @Test
     void protectedEndpointWithoutTokenReturns401() throws Exception {
         mvc.perform(get("/api/status")).andExpect(status().isUnauthorized());
     }

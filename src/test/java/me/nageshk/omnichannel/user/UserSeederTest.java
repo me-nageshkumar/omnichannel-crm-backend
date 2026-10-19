@@ -141,4 +141,23 @@ class UserSeederTest {
                 .hasMessageContaining("omnichannel.device-user.password");
         verify(repo, never()).save(any());
     }
+
+    @Test
+    void lowerCasesConfiguredSuperAdminUsername() {
+        when(repo.existsByRoleId("sa-id")).thenReturn(false);
+        var sa = new OmnichannelProperties.SuperAdmin("Nagesh Kumar", "NageshK", HASH, "", "");
+        new UserSeeder(repo, roles, props(sa, device("", ""))).run(null);
+
+        assertThat(savedUser().getUsername()).isEqualTo("nageshk");
+    }
+
+    @Test
+    void lowerCasesConfiguredDeviceUsernameForExistsCheckAndSave() {
+        when(repo.existsByRoleId("sa-id")).thenReturn(true);
+        when(repo.existsByUsername("wabridge")).thenReturn(false);
+        new UserSeeder(repo, roles, props(superAdmin(""), device("WaBridge", HASH))).run(null);
+
+        assertThat(savedUser().getUsername()).isEqualTo("wabridge");
+        verify(repo).existsByUsername("wabridge");
+    }
 }

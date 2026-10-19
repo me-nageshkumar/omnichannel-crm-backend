@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.user;
 
+import java.util.Locale;
 import me.nageshk.omnichannel.access.BuiltInRoles;
 import me.nageshk.omnichannel.access.RoleRepository;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
@@ -45,7 +46,7 @@ public class UserSeeder implements ApplicationRunner {
             throw new IllegalStateException(
                     "omnichannel.super-admin.password (bcrypt hash) is required to seed the first super admin");
         }
-        User u = base(sa.name(), sa.username(), sa.password(), roleId(BuiltInRoles.SUPER_ADMIN));
+        User u = base(sa.name(), lower(sa.username()), sa.password(), roleId(BuiltInRoles.SUPER_ADMIN));
         u.setEmail(blankToNull(sa.email()));
         u.setMobileNumber(blankToNull(sa.mobileNumber()));
         u.setTwoFactor(TwoFactor.disabled());
@@ -55,12 +56,13 @@ public class UserSeeder implements ApplicationRunner {
 
     private void seedDeviceUser(OmnichannelProperties.DeviceUser du) {
         if (isBlank(du.username())) return;
-        if (users.existsByUsername(du.username())) return;
+        String username = lower(du.username());
+        if (users.existsByUsername(username)) return;
         if (isBlank(du.password())) {
             throw new IllegalStateException(
                     "omnichannel.device-user.password (bcrypt hash) is required when omnichannel.device-user.username is set");
         }
-        User u = base(du.name(), du.username(), du.password(), roleId(BuiltInRoles.WHATSAPP_DEVICE));
+        User u = base(du.name(), username, du.password(), roleId(BuiltInRoles.WHATSAPP_DEVICE));
         u.setTwoFactor(TwoFactor.disabled());
         users.save(u);
         log.info("seeded device user '{}'", u.getUsername());
@@ -81,6 +83,10 @@ public class UserSeeder implements ApplicationRunner {
         u.setActive(true);
         u.setTokenVersion(0L);
         return u;
+    }
+
+    private static String lower(String username) {
+        return username == null ? null : username.toLowerCase(Locale.ROOT);
     }
 
     private static boolean isBlank(String s) {
