@@ -41,6 +41,18 @@ export OMNICHANNEL_DEVICE_USER_PASSWORD='$2a$10$...'
 Set `OMNICHANNEL_JWT_SECRET` to a random string of at least 32 bytes outside development.
 Tests run against an embedded MongoDB (downloaded on first run) and seed their own users.
 
+## Console
+
+The browser console lives in the sibling repo `omnichannel_crm_frontend` (React + PatternFly).
+
+- Development: run this backend, then `npm run start:dev` in the frontend (port 9000; it proxies
+  `/api` and `/ws` here).
+- Production, one port: `npm run build` in the frontend, then here
+  `./mvnw -Pwith-frontend package`. The profile copies `../omnichannel_crm_frontend/dist` into the
+  jar's `static/` (override with `-Dfrontend.dist=/path/to/dist`) and fails if `index.html` is
+  missing. Deep links such as `/profile` are answered with `index.html`. Plain builds and tests
+  never need the frontend.
+
 ## Login
 
 Password first; users with two-factor on then present a time-based code from their authenticator app.

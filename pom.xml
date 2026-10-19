@@ -22,6 +22,8 @@
     <jjwt.version>0.12.6</jjwt.version>
     <totp.version>1.7.1</totp.version>
     <flapdoodle.version>4.20.0</flapdoodle.version>
+    <!-- `npm run build` output of the console; packaged only with -Pwith-frontend -->
+    <frontend.dist>${project.basedir}/../omnichannel_crm_frontend/dist</frontend.dist>
   </properties>
 
   <dependencies>
@@ -109,4 +111,59 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <!-- Packages the console into the jar: ./mvnw -Pwith-frontend package (after npm run build). -->
+      <id>with-frontend</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-enforcer-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>require-frontend-build</id>
+                <phase>validate</phase>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <rules>
+                    <requireFilesExist>
+                      <files>
+                        <file>${frontend.dist}/index.html</file>
+                      </files>
+                      <message>frontend build not found at ${frontend.dist}; run npm run build in omnichannel_crm_frontend</message>
+                    </requireFilesExist>
+                  </rules>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>copy-frontend</id>
+                <phase>process-resources</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${frontend.dist}</directory>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
