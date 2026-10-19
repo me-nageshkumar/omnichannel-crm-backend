@@ -6,6 +6,7 @@ import me.nageshk.omnichannel.auth.JwtAuthFilter;
 import me.nageshk.omnichannel.auth.login.DelegatingAuthConverter;
 import me.nageshk.omnichannel.auth.login.LoginFailureHandler;
 import me.nageshk.omnichannel.auth.login.LoginSuccessHandler;
+import me.nageshk.omnichannel.auth.login.OtpAuthenticationProvider;
 import me.nageshk.omnichannel.auth.login.PasswordAuthenticationProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -67,8 +68,8 @@ public class SecurityConfig {
 
     /** Providers for the two login steps. */
     @Bean
-    public AuthenticationManager loginManager(PasswordAuthenticationProvider password) {
-        return new ProviderManager(password);
+    public AuthenticationManager loginManager(PasswordAuthenticationProvider password, OtpAuthenticationProvider otp) {
+        return new ProviderManager(password, otp);
     }
 
     /** Allows the extension's service worker (origin chrome-extension://<id>) to call the REST API. */

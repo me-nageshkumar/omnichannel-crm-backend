@@ -12,8 +12,8 @@ public class DelegatingAuthConverter implements AuthenticationConverter {
 
     private final List<AuthenticationConverter> converters;
 
-    public DelegatingAuthConverter(PasswordAuthConverter password) {
-        this.converters = List.of(password);
+    public DelegatingAuthConverter(PasswordAuthConverter password, OtpAuthConverter otp) {
+        this.converters = List.of(password, otp);
     }
 
     @Override
