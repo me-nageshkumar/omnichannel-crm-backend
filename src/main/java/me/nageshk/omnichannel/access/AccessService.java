@@ -2,8 +2,10 @@ package me.nageshk.omnichannel.access;
 
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -16,6 +18,7 @@ import me.nageshk.omnichannel.tenant.WorkspaceRepository;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.WorkspaceRole;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
@@ -97,6 +100,37 @@ public class AccessService {
                 .filter(w -> user.customerId().equals(w.getCustomerId()))
                 .sorted(Comparator.comparing(Workspace::getName))
                 .toList();
+    }
+
+    /**
+     * The acting user for {@link AssignmentPolicy}: its customer exactly as stored (never null for a
+     * customer user), its granted global codes without the {@code SUPER_ADMIN} marker, and its
+     * effective set in every workspace it can act in.
+     */
+    public AssignmentPolicy.Actor actorOf(AuthenticatedUser user) {
+        Set<String> global = user.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(code -> !BuiltInRoles.SUPER_ADMIN.equals(code))
+                .collect(Collectors.toSet());
+        Map<String, Set<String>> perWorkspace = new HashMap<>();
+        for (Workspace w : workspacesOf(user)) perWorkspace.put(w.getId(), inWorkspace(user, w.getId()));
+        return new AssignmentPolicy.Actor(user.superAdmin(), user.customerId(), global, perWorkspace);
+    }
+
+    /**
+     * The user being acted on, for {@link AssignmentPolicy}: its role resolved by level (PLATFORM →
+     * {@code platformRole}, COMPANY → {@code companyRole}) and its BRAND workspace roles. Unknown
+     * roles, and workspace roles not at BRAND level, are left out.
+     */
+    public AssignmentPolicy.Target targetOf(User user) {
+        Role role = roles.byId(user.getRoleId()).orElse(null);
+        Role platformRole = role != null && role.getLevel() == RoleLevel.PLATFORM ? role : null;
+        Role companyRole = role != null && role.getLevel() == RoleLevel.COMPANY ? role : null;
+        Map<String, Role> workspaceRoles = new HashMap<>();
+        for (WorkspaceRole wr : user.getWorkspaceRoles()) {
+            roleAt(wr.roleId(), RoleLevel.BRAND).ifPresent(r -> workspaceRoles.put(wr.workspaceId(), r));
+        }
+        return new AssignmentPolicy.Target(user.getCustomerId(), companyRole, platformRole, workspaceRoles);
     }
 
     /**

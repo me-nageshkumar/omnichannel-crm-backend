@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.access;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -32,6 +33,11 @@ public class RoleCache {
 
     public Optional<Role> byName(String name) {
         return name == null ? Optional.empty() : Optional.ofNullable(snapshot().byName().get(name));
+    }
+
+    /** Every role, in no particular order. */
+    public Collection<Role> all() {
+        return snapshot().byId().values();
     }
 
     public synchronized void evictAll() {

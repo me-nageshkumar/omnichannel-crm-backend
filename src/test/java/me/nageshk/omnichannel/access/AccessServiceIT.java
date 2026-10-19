@@ -130,4 +130,52 @@ class AccessServiceIT {
 
         assertThat(access.inWorkspace(wm, w1.getId())).doesNotContain("user:manage").contains("user:view");
     }
+
+    @Test
+    void actorOfCustomerUserCarriesCustomerGlobalCodesAndWorkspaceSets() {
+        AuthenticatedUser wm = workspaceManagerInW1();
+        AssignmentPolicy.Actor actor = access.actorOf(wm);
+        assertThat(actor.superAdmin()).isFalse();
+        assertThat(actor.customerId()).isEqualTo(acme.getId());
+        assertThat(actor.platformOrCompany()).isEmpty();
+        assertThat(actor.perWorkspace()).containsOnlyKeys(w1.getId());
+        assertThat(actor.perWorkspace().get(w1.getId())).isEqualTo(access.inWorkspace(wm, w1.getId()));
+
+        AssignmentPolicy.Actor admin = access.actorOf(customerUser("admin", BuiltInRoles.CUSTOMER_ADMIN, List.of()));
+        assertThat(admin.customerId()).isEqualTo(acme.getId());
+        assertThat(admin.platformOrCompany()).contains("workspace:create", "company-user:manage");
+        assertThat(admin.perWorkspace()).containsOnlyKeys(w1.getId(), w2.getId());
+    }
+
+    @Test
+    void actorOfSuperAdminDropsTheMarker() {
+        AssignmentPolicy.Actor actor = access.actorOf(
+                access.load(testUsers.create("root", "pw", BuiltInRoles.SUPER_ADMIN, null)));
+        assertThat(actor.superAdmin()).isTrue();
+        assertThat(actor.customerId()).isNull();
+        assertThat(actor.platformOrCompany()).contains("platform-user:manage").doesNotContain(BuiltInRoles.SUPER_ADMIN);
+        assertThat(actor.perWorkspace()).isEmpty();
+    }
+
+    @Test
+    void targetOfResolvesRolesByLevel() {
+        AssignmentPolicy.Target root = access.targetOf(testUsers.create("root", "pw", BuiltInRoles.SUPER_ADMIN, null));
+        assertThat(root.customerId()).isNull();
+        assertThat(root.platformRole().getName()).isEqualTo(BuiltInRoles.SUPER_ADMIN);
+        assertThat(root.companyRole()).isNull();
+
+        AssignmentPolicy.Target admin = access.targetOf(testUsers.createInCustomer(acme.getId(), "admin",
+                BuiltInRoles.CUSTOMER_ADMIN, List.of()));
+        assertThat(admin.customerId()).isEqualTo(acme.getId());
+        assertThat(admin.companyRole().getName()).isEqualTo(BuiltInRoles.CUSTOMER_ADMIN);
+        assertThat(admin.platformRole()).isNull();
+
+        // a non-BRAND role stored as a workspace role is ignored
+        AssignmentPolicy.Target agent = access.targetOf(testUsers.createInCustomer(acme.getId(), "agent", null, List.of(
+                new WorkspaceRole(w1.getId(), testUsers.roleId(BuiltInRoles.AGENT)),
+                new WorkspaceRole(w2.getId(), testUsers.roleId(BuiltInRoles.CUSTOMER_ADMIN)))));
+        assertThat(agent.companyRole()).isNull();
+        assertThat(agent.workspaceRoles()).containsOnlyKeys(w1.getId());
+        assertThat(agent.workspaceRoles().get(w1.getId()).getName()).isEqualTo(BuiltInRoles.AGENT);
+    }
 }
