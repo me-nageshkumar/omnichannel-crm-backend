@@ -23,7 +23,7 @@
     <totp.version>1.7.1</totp.version>
     <flapdoodle.version>4.20.0</flapdoodle.version>
     <!-- `npm run build` output of the console; packaged only with -Pwith-frontend -->
-    <frontend.dist>${project.basedir}/../omnichannel_crm_frontend/dist</frontend.dist>
+    <frontend.dist>${project.basedir}/../omnichannel-crm-frontend/dist</frontend.dist>
   </properties>
 
   <dependencies>
@@ -131,7 +131,7 @@
                 </goals>
                 <configuration>
                   <target>
-                    <fail message="frontend build not found at ${frontend.dist}; run npm run build in omnichannel_crm_frontend">
+                    <fail message="frontend build not found at ${frontend.dist}; run npm run build in omnichannel-crm-frontend">
                       <condition>
                         <not>
                           <available file="${frontend.dist}/index.html" />

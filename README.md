@@ -14,8 +14,8 @@ Sibling checkouts in one directory:
   whatsapp-web.js/           # upstream https://github.com/wwebjs/whatsapp-web.js
   whatsapp-web-extension/    # the Chrome extension; its `npm run build` writes
                              # src/main/resources/wabridge/scripts/ in this repo
-  omnichannel_crm_frontend/  # the browser console (React + PatternFly)
-  omnichannel_crm_backend/   # this repo (Java 21, Spring Boot 3.5, package me.nageshk.omnichannel)
+  omnichannel-crm-frontend/  # the browser console (React + PatternFly)
+  omnichannel-crm-backend/   # this repo (Java 21, Spring Boot 3.5, package me.nageshk.omnichannel)
 ```
 
 This repo continues the history of `whatsapp-backend`, which it replaces.
@@ -46,12 +46,12 @@ Tests run against an embedded MongoDB (downloaded on first run) and seed their o
 
 ## Console
 
-The browser console lives in the sibling repo `omnichannel_crm_frontend` (React + PatternFly).
+The browser console lives in the sibling repo `omnichannel-crm-frontend` (React + PatternFly).
 
 - Development: run this backend, then `npm run start:dev` in the frontend (port 9000; it proxies
   `/api` and `/ws` here).
 - Production, one port: `npm run build` in the frontend, then here
-  `./mvnw -Pwith-frontend package`. The profile copies `../omnichannel_crm_frontend/dist` into the
+  `./mvnw -Pwith-frontend package`. The profile copies `../omnichannel-crm-frontend/dist` into the
   jar's `static/` (override with `-Dfrontend.dist=/path/to/dist`) and fails if `index.html` is
   missing. Deep links such as `/profile` are answered with `index.html`. Plain builds and tests
   never need the frontend.
