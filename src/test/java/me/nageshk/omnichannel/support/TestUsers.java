@@ -1,10 +1,11 @@
 package me.nageshk.omnichannel.support;
 
 import java.util.List;
+import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.access.BuiltInRoles;
+import me.nageshk.omnichannel.access.RoleCache;
 import me.nageshk.omnichannel.access.RoleRepository;
 import me.nageshk.omnichannel.access.RoleSeeder;
-import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.auth.JwtService;
 import me.nageshk.omnichannel.tenant.Customer;
 import me.nageshk.omnichannel.tenant.CustomerRepository;
@@ -38,10 +39,12 @@ public class TestUsers {
     private final MongoTemplate mongo;
     private final PasswordEncoder encoder;
     private final JwtService jwt;
+    private final AccessService access;
+    private final RoleCache roleCache;
 
     public TestUsers(UserRepository users, CustomerRepository customers, WorkspaceRepository workspaces,
             TeamRepository teams, RoleRepository roles, RoleSeeder roleSeeder, MongoTemplate mongo,
-            PasswordEncoder encoder, JwtService jwt) {
+            PasswordEncoder encoder, JwtService jwt, AccessService access, RoleCache roleCache) {
         this.users = users;
         this.customers = customers;
         this.workspaces = workspaces;
@@ -51,11 +54,13 @@ public class TestUsers {
         this.mongo = mongo;
         this.encoder = encoder;
         this.jwt = jwt;
+        this.access = access;
+        this.roleCache = roleCache;
     }
 
     /** An access token for an already-saved user. */
     public String accessToken(User user) {
-        return jwt.issueAccessToken(new AuthenticatedUser(user)).token();
+        return jwt.issueAccessToken(access.load(user)).token();
     }
 
     /** Creates a two-factor-off WHATSAPP_DEVICE user and returns an access token for it. */
@@ -107,6 +112,7 @@ public class TestUsers {
         roles.deleteAll();
         mongo.remove(new Query(), "system_state");
         roleSeeder.seed();
+        roleCache.evictAll();
     }
 
     private User base(String username, String rawPassword, String totpSecret) {

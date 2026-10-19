@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Set;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.user.TwoFactor;
 import me.nageshk.omnichannel.user.User;
@@ -34,7 +35,7 @@ class JwtServiceTest {
         u.setActive(true);
         u.setTwoFactor(TwoFactor.enabledWith("JBSWY3DPEHPK3PXP"));
         u.setTokenVersion(3L);
-        return new AuthenticatedUser(u);
+        return new AuthenticatedUser(u, Set.of());
     }
 
     @Test

@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -19,6 +20,17 @@ public class ApiExceptionHandler {
 
     private static ResponseEntity<Map<String, String>> body(HttpStatus status, String code, String message) {
         return ResponseEntity.status(status).body(Map.of("code", code, "message", message == null ? "" : message));
+    }
+
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<Map<String, String>> notFound(NotFoundException e) {
+        return body(HttpStatus.NOT_FOUND, "NOT_FOUND", e.getMessage());
+    }
+
+    /** Includes {@code @PreAuthorize} denials, which surface as {@link AccessDeniedException}. */
+    @ExceptionHandler({ForbiddenException.class, AccessDeniedException.class})
+    public ResponseEntity<Map<String, String>> forbidden(RuntimeException e) {
+        return body(HttpStatus.FORBIDDEN, "FORBIDDEN", e.getMessage());
     }
 
     @ExceptionHandler(NoDeviceException.class)

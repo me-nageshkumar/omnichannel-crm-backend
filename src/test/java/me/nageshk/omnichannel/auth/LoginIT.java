@@ -8,7 +8,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
 import me.nageshk.omnichannel.support.TestUsers;
+import me.nageshk.omnichannel.tenant.CustomerRepository;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +29,7 @@ class LoginIT {
     @Autowired MockMvc mvc;
     @Autowired TestUsers testUsers;
     @Autowired UserRepository repo;
+    @Autowired CustomerRepository customers;
 
     @BeforeEach
     void clean() {
@@ -89,6 +92,17 @@ class LoginIT {
         u.setActive(false);
         repo.save(u);
         login("old", "pw")
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("account_inactive"));
+    }
+
+    @Test
+    void userOfInactiveCustomerReturns401AccountInactive() throws Exception {
+        var acme = testUsers.customer("Acme");
+        acme.setActive(false);
+        customers.save(acme);
+        testUsers.createInCustomer(acme.getId(), "admin", "CUSTOMER_ADMIN", List.of());
+        login("admin", "pw")
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("account_inactive"));
     }

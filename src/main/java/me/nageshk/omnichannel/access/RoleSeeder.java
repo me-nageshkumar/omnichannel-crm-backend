@@ -37,10 +37,12 @@ public class RoleSeeder implements ApplicationRunner {
 
     private final RoleRepository roles;
     private final KnownAuthoritiesRepository known;
+    private final RoleCache cache;
 
-    public RoleSeeder(RoleRepository roles, KnownAuthoritiesRepository known) {
+    public RoleSeeder(RoleRepository roles, KnownAuthoritiesRepository known, RoleCache cache) {
         this.roles = roles;
         this.known = known;
+        this.cache = cache;
     }
 
     @Override
@@ -74,5 +76,6 @@ public class RoleSeeder implements ApplicationRunner {
         }
         state.setCodes(Arrays.stream(Authority.values()).map(Authority::code).collect(Collectors.toSet()));
         known.save(state);
+        cache.evictAll();
     }
 }

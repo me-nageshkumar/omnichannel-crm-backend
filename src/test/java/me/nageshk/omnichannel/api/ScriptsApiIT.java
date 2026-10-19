@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import me.nageshk.omnichannel.auth.JwtService;
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.scripts.ScriptCatalog;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,5 +67,19 @@ class ScriptsApiIT {
         assertThat(missing.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         ResponseEntity<String> anon = rest.getForEntity("/api/scripts/page", String.class);
         assertThat(anon.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void scriptsAreForbiddenWithoutWhatsappBridge() {
+        var acme = testUsers.customer("Acme");
+        HttpHeaders h = new HttpHeaders();
+        h.setBearerAuth(testUsers.accessToken(
+                testUsers.createInCustomer(acme.getId(), "admin", "CUSTOMER_ADMIN", List.of())));
+
+        for (String path : new String[] {"/api/scripts", "/api/scripts/page"}) {
+            ResponseEntity<JsonNode> res = rest.exchange(path, HttpMethod.GET, new HttpEntity<>(h), JsonNode.class);
+            assertThat(res.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(res.getBody().get("code").asText()).as(path).isEqualTo("FORBIDDEN");
+        }
     }
 }

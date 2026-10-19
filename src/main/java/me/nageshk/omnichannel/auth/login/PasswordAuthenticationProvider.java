@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
 /**
  * Checks lockout, loads the user, verifies the password, and counts failures. The reply must not
  * reveal whether a username exists: an unknown username still pays for one bcrypt compare, and the
- * active flag is only consulted after the password matched.
+ * enabled flag (user active and its customer, if any, active) is only consulted after the password
+ * matched; either being inactive answers {@code account_inactive}.
  */
 @Component
 public class PasswordAuthenticationProvider implements AuthenticationProvider {

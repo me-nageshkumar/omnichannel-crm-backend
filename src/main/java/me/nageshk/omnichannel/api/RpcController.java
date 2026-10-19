@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.concurrent.CompletableFuture;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Unlike /api/messages it does not require WhatsApp to be CONNECTED, so it doubles as a diagnostic.
  */
 @RestController
+@PreAuthorize("hasAuthority('whatsapp:bridge')")
 @RequestMapping("/api")
 public class RpcController {
 

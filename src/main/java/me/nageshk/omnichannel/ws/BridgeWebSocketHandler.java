@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.ws;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import me.nageshk.omnichannel.access.Authority;
 import me.nageshk.omnichannel.auth.AccessTokenAuthenticator;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
@@ -113,7 +114,9 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             closeQuietly(session, CLOSE_UNAUTHORIZED, "auth required");
             return;
         }
-        Optional<String> username = authenticator.authenticate(frame.token()).map(AuthenticatedUser::getUsername);
+        Optional<String> username = authenticator.authenticate(frame.token())
+                .filter(user -> user.hasAuthority(Authority.WHATSAPP_BRIDGE.code()))
+                .map(AuthenticatedUser::getUsername);
         if (username.isEmpty()) {
             closeQuietly(session, CLOSE_UNAUTHORIZED, "invalid token");
             return;

@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -89,6 +90,17 @@ class BridgeWebSocketIT {
         FakeDevice device = FakeDevice.connect(port);
         device.send(Envelope.auth(token));
         assertThat(device.awaitClose().getCode()).isEqualTo(4401);
+    }
+
+    @Test
+    void authWithCustomerUserTokenIsRefused() throws Exception {
+        var acme = testUsers.customer("Acme");
+        User admin = testUsers.createInCustomer(acme.getId(), "admin", "CUSTOMER_ADMIN", List.of());
+
+        FakeDevice device = FakeDevice.connect(port);
+        device.send(Envelope.auth(testUsers.accessToken(admin)));
+        assertThat(device.awaitClose().getCode()).isEqualTo(4401);
+        assertThat(registry.find("admin")).isEmpty();
     }
 
     @Test

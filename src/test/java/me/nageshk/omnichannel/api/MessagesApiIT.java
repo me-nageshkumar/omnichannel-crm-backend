@@ -8,6 +8,7 @@ import me.nageshk.omnichannel.auth.JwtService;
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.support.FakeDevice;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -214,5 +215,24 @@ class MessagesApiIT {
     void statusWithoutTokenIs401() {
         ResponseEntity<Map> res = rest.getForEntity("/api/status", Map.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void bridgeEndpointsAreForbiddenWithoutWhatsappBridge() {
+        var acme = testUsers.customer("Acme");
+        String token = testUsers.accessToken(
+                testUsers.createInCustomer(acme.getId(), "admin", "CUSTOMER_ADMIN", List.of()));
+
+        var calls = Map.of(
+                "/api/messages", HttpMethod.POST,
+                "/api/rpc", HttpMethod.POST,
+                "/api/status", HttpMethod.GET,
+                "/api/events", HttpMethod.GET);
+        calls.forEach((path, method) -> {
+            String body = method == HttpMethod.POST ? "{\"method\":\"getState\",\"chatId\":\"1@c.us\",\"content\":\"hi\"}" : null;
+            ResponseEntity<JsonNode> res = rest.exchange(path, method, new HttpEntity<>(body, authHeaders(token)), JsonNode.class);
+            assertThat(res.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(res.getBody().get("code").asText()).as(path).isEqualTo("FORBIDDEN");
+        });
     }
 }
