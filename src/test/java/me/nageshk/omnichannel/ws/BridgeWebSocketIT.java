@@ -11,6 +11,10 @@ import me.nageshk.omnichannel.support.FakeDevice;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
 import me.nageshk.omnichannel.user.UserRole;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -85,6 +89,21 @@ class BridgeWebSocketIT {
 
         FakeDevice device = FakeDevice.connect(port);
         device.send(Envelope.auth(token));
+        assertThat(device.awaitClose().getCode()).isEqualTo(4401);
+    }
+
+    @Test
+    void authWithRevokedTokenIsRefused() throws Exception {
+        HttpResponse<Void> logout = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/auth/logout"))
+                        .header("Authorization", "Bearer " + deviceToken)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertThat(logout.statusCode()).isEqualTo(204);
+
+        FakeDevice device = FakeDevice.connect(port);
+        device.send(Envelope.auth(deviceToken));
         assertThat(device.awaitClose().getCode()).isEqualTo(4401);
     }
 

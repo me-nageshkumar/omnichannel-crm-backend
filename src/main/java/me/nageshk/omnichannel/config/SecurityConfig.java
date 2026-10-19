@@ -22,6 +22,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -30,12 +31,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    public static final String AUTH_PATHS = "/api/auth/**";
+    public static final String LOGIN_PATH = "/api/auth/login";
+    public static final String VERIFY_OTP_PATH = "/api/auth/verify-otp";
 
     /**
-     * {@code POST /api/auth/**} is handled by an {@link AuthenticationFilter}: the converter picks
-     * login step one or two, the providers authenticate, and the handlers write the JSON reply.
-     * Every other request authenticates through the bearer {@link JwtAuthFilter}.
+     * {@code POST} to the login and verify-otp paths is handled by an {@link AuthenticationFilter}:
+     * the converter picks login step one or two, the providers authenticate, and the handlers write
+     * the JSON reply. Every other request, logout included, authenticates through the bearer
+     * {@link JwtAuthFilter}.
      */
     @Bean
     public SecurityFilterChain filterChain(
@@ -46,7 +49,9 @@ public class SecurityConfig {
             LoginSuccessHandler success,
             LoginFailureHandler failure) throws Exception {
         AuthenticationFilter loginFilter = new AuthenticationFilter(loginManager, converter);
-        loginFilter.setRequestMatcher(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AUTH_PATHS));
+        var paths = PathPatternRequestMatcher.withDefaults();
+        loginFilter.setRequestMatcher(new OrRequestMatcher(
+                paths.matcher(HttpMethod.POST, LOGIN_PATH), paths.matcher(HttpMethod.POST, VERIFY_OTP_PATH)));
         loginFilter.setSuccessHandler(success);
         loginFilter.setFailureHandler(failure);
 
@@ -56,7 +61,7 @@ public class SecurityConfig {
                 .httpBasic(b -> b.disable())
                 .formLogin(f -> f.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, AUTH_PATHS).permitAll()
+                        .requestMatchers(HttpMethod.POST, LOGIN_PATH, VERIFY_OTP_PATH).permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint(

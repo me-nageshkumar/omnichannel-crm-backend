@@ -66,6 +66,17 @@ curl -s -X POST localhost:8080/api/users/me/two-factor/confirm  -H "Authorizatio
   -H 'Content-Type: application/json' -d '{"secret":"...","otp":"123456"}'                      # 204
 curl -s -X POST localhost:8080/api/users/me/two-factor/disable  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"otp":"123456"}'                                     # 204
+curl -s localhost:8080/api/users/me -H "Authorization: Bearer $TOKEN"   # {id, name, username, email, mobileNumber, role, twoFactorEnabled}
+```
+
+A wrong code on `confirm`/`disable` is 400 `INVALID_OTP` (not 401), so the session survives a typo.
+
+Log out ends only the calling session: the token's id goes into `revoked_tokens` (TTL-indexed, cleared
+when the token would have expired) and is refused from then on, over REST and the WebSocket. Tokens
+issued before logout existed carry no id and simply run to expiry.
+
+```bash
+curl -s -X POST localhost:8080/api/auth/logout -H "Authorization: Bearer $TOKEN"   # 204; replaying $TOKEN is now 401
 ```
 
 ## API

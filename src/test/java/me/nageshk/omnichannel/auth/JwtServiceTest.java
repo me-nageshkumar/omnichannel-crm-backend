@@ -89,4 +89,21 @@ class JwtServiceTest {
         var svc = serviceAt(NOW);
         assertThat(svc.verifyPendingToken(svc.issueAccessToken(user()).token())).isEmpty();
     }
+
+    @Test
+    void accessTokenCarriesUniqueJti() {
+        var svc = serviceAt(NOW);
+        var a = svc.verifyAccessToken(svc.issueAccessToken(user()).token()).orElseThrow();
+        var b = svc.verifyAccessToken(svc.issueAccessToken(user()).token()).orElseThrow();
+
+        assertThat(a.jti()).isNotBlank();
+        assertThat(b.jti()).isNotBlank().isNotEqualTo(a.jti());
+        assertThat(a.expiresAt()).isEqualTo(NOW.plus(Duration.ofHours(1)));
+    }
+
+    @Test
+    void pendingTokenHasNoJti() {
+        var svc = serviceAt(NOW);
+        assertThat(svc.parse(svc.issuePendingToken("alice")).getId()).isNull();
+    }
 }

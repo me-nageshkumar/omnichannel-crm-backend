@@ -10,12 +10,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import org.springframework.stereotype.Service;
 
 /**
- * Issues and verifies two kinds of HS256 tokens: access tokens (subject + user claims) and
+ * Issues and verifies two kinds of HS256 tokens: access tokens (subject, a unique id + user claims) and
  * five-minute pending tokens handed out after a correct password when two-factor is required.
  */
 @Service
@@ -32,7 +33,8 @@ public class JwtService {
 
     public record IssuedToken(String token, Instant expiresAt) {}
 
-    public record AccessClaims(String username, long tokenVersion) {}
+    /** {@code jti} is null for access tokens issued before tokens carried one. */
+    public record AccessClaims(String username, long tokenVersion, String jti, Instant expiresAt) {}
 
     private final SecretKey key;
     private final Duration ttl;
@@ -48,6 +50,7 @@ public class JwtService {
         Instant now = clock.instant();
         Instant exp = now.plus(ttl);
         String token = Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(user.getUsername())
                 .claim(CLAIM_USER_ID, user.userId())
                 .claim(CLAIM_ROLE, user.role().name())
@@ -86,7 +89,8 @@ public class JwtService {
         return safeParse(token)
                 .filter(c -> c.get(CLAIM_AUTH_STATE) == null)
                 .filter(c -> c.getSubject() != null && !c.getSubject().isBlank())
-                .map(c -> new AccessClaims(c.getSubject(), c.get(CLAIM_TOKEN_VERSION, Long.class)));
+                .map(c -> new AccessClaims(
+                        c.getSubject(), c.get(CLAIM_TOKEN_VERSION, Long.class), c.getId(), c.getExpiration().toInstant()));
     }
 
     /** The username only when the token is a live pending token. */
