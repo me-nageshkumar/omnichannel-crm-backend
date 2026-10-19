@@ -173,6 +173,18 @@ class TeamsApiIT {
     }
 
     @Test
+    void nullMemberIdIs400() throws Exception {
+        Team t = team(brandA, "Sales", agent.getId());
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("name", "Sales");
+        body.put("memberIds", java.util.Arrays.asList((String) null));
+        send(put(teamsOf(brandA) + "/" + t.getId()), wmToken, body)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("NOT_IN_WORKSPACE"));
+        assertThat(teams.findById(t.getId()).orElseThrow().getMemberIds()).containsExactly(agent.getId());
+    }
+
+    @Test
     void teamOfOtherWorkspaceIs404() throws Exception {
         Team t = team(brandB, "Other");
         send(put(teamsOf(brandA) + "/" + t.getId()), bossToken, Map.of("name", "X", "memberIds", List.of()))

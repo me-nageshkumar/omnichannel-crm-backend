@@ -73,8 +73,8 @@ public class TeamService {
         Team t = teams.findByIdAndWorkspaceId(teamId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("team not found"));
         Map<String, User> byId = usersWithAccess(customerId, workspaceId);
-        List<String> members = memberIds == null ? List.of() : List.copyOf(new LinkedHashSet<>(memberIds));
-        if (!byId.keySet().containsAll(members)) {
+        List<String> members = memberIds == null ? List.of() : new ArrayList<>(new LinkedHashSet<>(memberIds));
+        if (members.stream().anyMatch(id -> id == null || !byId.containsKey(id))) {
             throw new NotInWorkspaceException("every member must be a user with access to this workspace");
         }
         t.setName(newName);
