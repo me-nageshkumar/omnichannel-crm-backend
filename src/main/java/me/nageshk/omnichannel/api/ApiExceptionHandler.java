@@ -33,6 +33,16 @@ public class ApiExceptionHandler {
         return body(HttpStatus.FORBIDDEN, "FORBIDDEN", e.getMessage());
     }
 
+    @ExceptionHandler(InvalidTokenException.class)
+    public ResponseEntity<Map<String, String>> invalidToken(InvalidTokenException e) {
+        return body(HttpStatus.UNAUTHORIZED, InvalidTokenException.CODE, e.getMessage());
+    }
+
+    @ExceptionHandler(WeakPasswordException.class)
+    public ResponseEntity<Map<String, String>> weakPassword(WeakPasswordException e) {
+        return body(HttpStatus.BAD_REQUEST, WeakPasswordException.CODE, e.getMessage());
+    }
+
     @ExceptionHandler(NoDeviceException.class)
     public ResponseEntity<Map<String, String>> noDevice(NoDeviceException e) {
         return body(HttpStatus.CONFLICT, e.code(), e.getMessage());

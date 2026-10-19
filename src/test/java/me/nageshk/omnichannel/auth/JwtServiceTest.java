@@ -111,4 +111,22 @@ class JwtServiceTest {
         var svc = serviceAt(NOW);
         assertThat(svc.parse(svc.issuePendingToken("alice")).getId()).isNull();
     }
+
+    @Test
+    void passwordChangeTokenIsTenMinutesAndOnlyVerifiesAsChangeToken() {
+        var svc = serviceAt(NOW);
+        String token = svc.issuePasswordChangeToken("alice");
+
+        assertThat(serviceAt(NOW.plus(Duration.ofMinutes(9))).verifyPasswordChangeToken(token)).contains("alice");
+        assertThat(serviceAt(NOW.plus(Duration.ofMinutes(11))).verifyPasswordChangeToken(token)).isEmpty();
+        assertThat(svc.verifyAccessToken(token)).isEmpty();
+        assertThat(svc.verifyPendingToken(token)).isEmpty();
+    }
+
+    @Test
+    void pendingAndAccessTokensAreNotPasswordChangeTokens() {
+        var svc = serviceAt(NOW);
+        assertThat(svc.verifyPasswordChangeToken(svc.issuePendingToken("alice"))).isEmpty();
+        assertThat(svc.verifyPasswordChangeToken(svc.issueAccessToken(user()).token())).isEmpty();
+    }
 }

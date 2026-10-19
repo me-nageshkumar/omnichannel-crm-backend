@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Writes the login reply. After a password with two-factor on: a pending token. Otherwise (password
- * without two-factor, or a verified OTP): the access token.
+ * without two-factor, or a verified OTP): a password-change token if the user must change its password,
+ * else the access token.
  */
 @Component
 public class LoginSuccessHandler implements AuthenticationSuccessHandler {
@@ -43,6 +44,8 @@ public class LoginSuccessHandler implements AuthenticationSuccessHandler {
         Map<String, Object> body;
         if (authentication instanceof PasswordAuthentication && user.twoFactorEnabled()) {
             body = Map.of("twoFactorRequired", true, "twoFactorToken", jwt.issuePendingToken(user.getUsername()));
+        } else if (user.mustChangePassword()) {
+            body = Map.of("passwordChangeRequired", true, "passwordChangeToken", jwt.issuePasswordChangeToken(user.getUsername()));
         } else {
             JwtService.IssuedToken issued = jwt.issueAccessToken(user);
             body = Map.of("token", issued.token(), "expiresAt", issued.expiresAt().toString());

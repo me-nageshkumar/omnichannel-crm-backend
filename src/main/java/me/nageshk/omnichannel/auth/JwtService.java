@@ -16,8 +16,9 @@ import me.nageshk.omnichannel.config.OmnichannelProperties;
 import org.springframework.stereotype.Service;
 
 /**
- * Issues and verifies two kinds of HS256 tokens: access tokens (subject, a unique id + user claims) and
- * five-minute pending tokens handed out after a correct password when two-factor is required.
+ * Issues and verifies HS256 tokens: access tokens (subject, a unique id + user claims), five-minute
+ * pending tokens handed out after a correct password when two-factor is required, and ten-minute
+ * password-change tokens for users who must set a new password. Only access tokens lack an {@code authState}.
  */
 @Service
 public class JwtService {
@@ -25,6 +26,8 @@ public class JwtService {
     public static final String CLAIM_AUTH_STATE = "authState";
     public static final String TWO_FA_PENDING = "TWO_FA_PENDING";
     public static final Duration PENDING_TTL = Duration.ofMinutes(5);
+    public static final String PASSWORD_CHANGE_PENDING = "PASSWORD_CHANGE_PENDING";
+    public static final Duration PASSWORD_CHANGE_TTL = Duration.ofMinutes(10);
 
     public static final String CLAIM_USER_ID = "userId";
     public static final String CLAIM_TOKEN_VERSION = "tokenVersion";
@@ -72,6 +75,18 @@ public class JwtService {
                 .compact();
     }
 
+    /** Ten-minute token accepted only by {@code POST /api/auth/initial-password}. */
+    public String issuePasswordChangeToken(String username) {
+        Instant now = clock.instant();
+        return Jwts.builder()
+                .subject(username)
+                .claim(CLAIM_AUTH_STATE, PASSWORD_CHANGE_PENDING)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plus(PASSWORD_CHANGE_TTL)))
+                .signWith(key)
+                .compact();
+    }
+
     /** Signature-checked claims; throws {@link JwtException} on any problem. */
     public Claims parse(String token) {
         return Jwts.parser()
@@ -95,6 +110,13 @@ public class JwtService {
     public Optional<String> verifyPendingToken(String token) {
         return safeParse(token)
                 .filter(c -> TWO_FA_PENDING.equals(c.get(CLAIM_AUTH_STATE, String.class)))
+                .map(Claims::getSubject);
+    }
+
+    /** The username only when the token is a live password-change token. */
+    public Optional<String> verifyPasswordChangeToken(String token) {
+        return safeParse(token)
+                .filter(c -> PASSWORD_CHANGE_PENDING.equals(c.get(CLAIM_AUTH_STATE, String.class)))
                 .map(Claims::getSubject);
     }
 

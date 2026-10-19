@@ -35,6 +35,7 @@ public class SecurityConfig {
 
     public static final String LOGIN_PATH = "/api/auth/login";
     public static final String VERIFY_OTP_PATH = "/api/auth/verify-otp";
+    public static final String INITIAL_PASSWORD_PATH = "/api/auth/initial-password";
 
     /**
      * {@code POST} to the login and verify-otp paths is handled by an {@link AuthenticationFilter}:
@@ -63,7 +64,7 @@ public class SecurityConfig {
                 .httpBasic(b -> b.disable())
                 .formLogin(f -> f.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, LOGIN_PATH, VERIFY_OTP_PATH).permitAll()
+                        .requestMatchers(HttpMethod.POST, LOGIN_PATH, VERIFY_OTP_PATH, INITIAL_PASSWORD_PATH).permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         // the console's static files and its client-side routes
