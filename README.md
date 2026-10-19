@@ -1,7 +1,8 @@
 # whatsapp-backend
 
-Spring Boot backend for the [whatsapp-web-extension](https://github.com/me-nageshkumar/whatsapp-web-extension)
-bridge: authenticates extensions, relays WhatsApp events, sends messages, and delivers the page
+Spring Boot backend for the omnichannel CRM. Today it serves the
+[whatsapp-web-extension](https://github.com/me-nageshkumar/whatsapp-web-extension) bridge:
+authenticates users and extensions, relays WhatsApp events, sends messages, and delivers the page
 script. Design specs and implementation plans live in `docs/superpowers/`.
 
 ## Repository layout
@@ -18,20 +19,63 @@ Three sibling checkouts in one directory:
 
 ## Run
 
+Needs MongoDB (default `mongodb://localhost:27017/omnichannel_crm`, override with
+`OMNICHANNEL_MONGODB_URI`). Users live in the `users` collection; two are seeded on first start
+and never overwritten afterwards:
+
+| User | Variables | Notes |
+|---|---|---|
+| Super admin (`SUPER_ADMIN`) | `OMNICHANNEL_SUPER_ADMIN_PASSWORD` (bcrypt hash, required until one exists), optional `_USERNAME` (default `nageshk`), `_NAME`, `_EMAIL`, `_MOBILE`, `_TOTP_SECRET` | Two-factor on when the TOTP secret is set |
+| Device user (`USER`) | `OMNICHANNEL_DEVICE_USER_USERNAME`, `OMNICHANNEL_DEVICE_USER_PASSWORD` (bcrypt hash) | For the Chrome extension; two-factor off; skipped when the username is blank |
+
 ```bash
+# bcrypt hash for a password (no {bcrypt} prefix)
+htpasswd -bnBC 10 "" 'your-password' | tr -d ':\n'
+
+export OMNICHANNEL_SUPER_ADMIN_PASSWORD='$2a$10$...'
+export OMNICHANNEL_SUPER_ADMIN_TOTP_SECRET='JBSWY3DPEHPK3PXP'   # any 32-char Base32, or enrol later via the API
+export OMNICHANNEL_DEVICE_USER_USERNAME=wabridge
+export OMNICHANNEL_DEVICE_USER_PASSWORD='$2a$10$...'
 ./mvnw spring-boot:run
 ```
 
-Default dev user: `demo` / `demo123` (see `src/main/resources/application.yml`). Set
-`WABRIDGE_JWT_SECRET` to a random string of at least 32 bytes outside development.
+Set `OMNICHANNEL_JWT_SECRET` to a random string of at least 32 bytes outside development.
+Tests run against an embedded MongoDB (downloaded on first run) and seed their own users.
+
+## Login
+
+Password first; users with two-factor on then present a time-based code from their authenticator app.
+
+```bash
+# step 1: password. Without two-factor the reply is {token, expiresAt}; with it, {twoFactorRequired, twoFactorToken}
+curl -s -X POST localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"nageshk","password":"..."}'
+
+# step 2: the six-digit code, with the pending token as bearer (valid five minutes)
+curl -s -X POST localhost:8080/api/auth/verify-otp -H "Authorization: Bearer $PENDING" \
+  -H 'Content-Type: application/json' -d '{"otp":"123456"}'
+```
+
+Errors: `invalid_credentials`, `account_inactive`, `invalid_otp`, `invalid_token` (401),
+`too_many_attempts` with `retryAfterSeconds` (429; five bad passwords lock for 30 min, three bad
+codes for 10 min). Access tokens embed the user's `tokenVersion`; bump it in Mongo to log a user out
+everywhere. Enrol or remove an authenticator as the logged-in user:
+
+```bash
+curl -s -X POST localhost:8080/api/users/me/two-factor/initiate -H "Authorization: Bearer $TOKEN"   # {secret, qrCodeDataUri, issuer, username}
+curl -s -X POST localhost:8080/api/users/me/two-factor/confirm  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"secret":"...","otp":"123456"}'                      # 204
+curl -s -X POST localhost:8080/api/users/me/two-factor/disable  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"otp":"123456"}'                                     # 204
+```
 
 ## API
 
 ```bash
-# login
+# login as the device user (two-factor off, so one step)
 TOKEN=$(curl -s -X POST localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"demo","password":"demo123"}' | jq -r .token)
+  -d '{"username":"wabridge","password":"..."}' | jq -r .token)
 
 # status of this user's extension
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/status
@@ -53,8 +97,9 @@ curl -s -X POST localhost:8080/api/rpc -H "Authorization: Bearer $TOKEN" -H 'Con
   -d '{"method":"getState"}'
 ```
 
-Error codes: `NO_DEVICE` / `WHATSAPP_NOT_READY` (409), `CHAT_NOT_FOUND` / `PAGE_ERROR` /
-`VALIDATION` (400), `DEVICE_DISCONNECTED` / `SEND_FAILED` (502), `TIMEOUT` (504).
+Error codes: `NO_DEVICE` / `WHATSAPP_NOT_READY` / `TWO_FACTOR_STATE` (409), `CHAT_NOT_FOUND` /
+`PAGE_ERROR` / `VALIDATION` (400), `INVALID_OTP` (401), `TOO_MANY_ATTEMPTS` (429),
+`DEVICE_DISCONNECTED` / `SEND_FAILED` (502), `TIMEOUT` (504).
 
 ## Page script delivery
 
