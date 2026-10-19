@@ -1,4 +1,4 @@
-# whatsapp-backend
+# omnichannel-crm-backend
 
 Spring Boot backend for the omnichannel CRM. Today it serves the
 [whatsapp-web-extension](https://github.com/me-nageshkumar/whatsapp-web-extension) bridge:
@@ -7,15 +7,18 @@ script. Design specs and implementation plans live in `docs/superpowers/`.
 
 ## Repository layout
 
-Three sibling checkouts in one directory:
+Sibling checkouts in one directory:
 
 ```
 <workspace>/
   whatsapp-web.js/           # upstream https://github.com/wwebjs/whatsapp-web.js
   whatsapp-web-extension/    # the Chrome extension; its `npm run build` writes
                              # src/main/resources/wabridge/scripts/ in this repo
-  whatsapp-backend/          # this repo (Java 21, Spring Boot 3.5, package me.nageshk.omnichannel)
+  omnichannel_crm_frontend/  # the browser console (React + PatternFly)
+  omnichannel_crm_backend/   # this repo (Java 21, Spring Boot 3.5, package me.nageshk.omnichannel)
 ```
+
+This repo continues the history of `whatsapp-backend`, which it replaces.
 
 ## Run
 
