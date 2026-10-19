@@ -18,6 +18,7 @@ and serving from the Spring Boot jar, so later slices only add screens and endpo
 - Login screen handling both login answers: token, or two-factor code needed.
 - Only SUPER_ADMIN can use the console.
 - Dashboard landing page, masthead with user menu (Profile, Log out).
+- Server-side logout: a logged-out token stops working immediately.
 - Profile page: the super admin's details and two-factor status, enable with app-install and setup
   help, disable.
 
@@ -31,6 +32,7 @@ and serving from the Spring Boot jar, so later slices only add screens and endpo
 - Editing profile details, changing password, forgot-password.
 - Dashboard content (charts, channels, WhatsApp screens).
 - Refresh tokens or cookie-based sessions.
+- "Log out everywhere" (bumping `tokenVersion`) as a UI action.
 
 ## Anti-goals
 
@@ -46,6 +48,8 @@ and serving from the Spring Boot jar, so later slices only add screens and endpo
 - Super admin seeded with two-factor **off** by default; can enable it from the UI.
 - The enable-two-factor screen shows which iOS/Android app to install and the steps to configure it.
 - Production: frontend served as static files by the Spring Boot app on one port.
+- Token stored in `localStorage` (not `sessionStorage`).
+- Server-side logout.
 
 ## Backend changes (`whatsapp-backend`)
 
@@ -67,6 +71,23 @@ super-admin-only rule. It does not rely on the token's `twoFactorEnabled` claim,
 **400 `{ code: "INVALID_OTP", message }`**. In the console, 401 means "your session is invalid"
 and logs you out, so a mistyped code must not return it. Lockout stays 429. Login and verify-otp
 are unchanged.
+
+### Server-side logout
+
+- Access tokens gain a `jti` claim (random UUID). Pending (two-factor) tokens are unchanged.
+- `POST /api/auth/logout` with `Authorization: Bearer <access token>` ─► 204. It records the token's
+  `jti` in a new collection `revoked_tokens` `{ _id: jti, username, expiresAt }` with a TTL index on
+  `expiresAt`, so Mongo deletes each entry once the token would have expired anyway.
+- `AccessTokenAuthenticator` rejects a token whose `jti` is in `revoked_tokens` (REST and the
+  WebSocket `auth` frame alike). A token without `jti` (issued before this change) is still
+  accepted until it expires.
+- Logout only ends the session it is called with; the same user's other tabs/devices and the
+  extension keep working. (Builder call: per-token revocation rather than bumping `tokenVersion`,
+  which would log the user out everywhere.)
+- Missing, invalid, expired or already-revoked token ─► 401, like any other protected call.
+- The login `AuthenticationFilter` matcher is narrowed from `POST /api/auth/**` to
+  `POST /api/auth/login` and `POST /api/auth/verify-otp`; `/api/auth/logout` is an ordinary
+  authenticated controller endpoint, not `permitAll`.
 
 ### Serving the frontend
 
@@ -97,15 +118,20 @@ are unchanged.
 
 ### Session handling
 
-- The access token, its `expiresAt`, and an in-progress `twoFactorToken` live in `sessionStorage`.
-  They survive a refresh and die with the tab.
+- The access token and its `expiresAt` live in `localStorage`: they survive refresh, closing the tab
+  and restarting the browser, until they expire (12 h) or the user logs out. All tabs share one
+  session; a `storage` event listener sends the other tabs to `/login` when one tab logs out.
+- The short-lived `twoFactorToken` stays in memory (React state) only; a refresh on the code screen
+  returns to `/login`.
 - One API client (a `fetch` wrapper) adds the bearer token. Any 401 from a non-auth call clears the
   session and routes to `/login` with a "Your session has expired" alert. The same happens when
   `expiresAt` passes.
 - After a successful login the app calls `GET /api/users/me`. If `role` is not `SUPER_ADMIN`, the
   session is cleared and the login page shows "This console is only available to the super admin."
   This is a console rule only; server-side role rules come with the later roles discussion.
-- Log out, in the masthead user menu, clears the session on the client. There is no server call.
+- Log out, in the masthead user menu, calls `POST /api/auth/logout`, then clears `localStorage` and
+  routes to `/login`. The local session is cleared even if the call fails (network down, token
+  already expired).
 
 ### Routes and screens
 
@@ -157,18 +183,19 @@ Dashboard and Profile. The masthead user dropdown shows the name, Profile and Lo
   - the protected-route redirect;
   - rendering of the profile details;
   - the enable flow: initiate, wrong code, then success;
-  - the disable flow.
+  - the disable flow;
+  - logout calling the server and clearing local state even when the call fails.
 - A green `npm run ci-checks` is the bar.
 
 ## Order of work
 
 1. **Backend plan** (TDD, embedded Mongo): seeder change, `GET /api/users/me`, the 400 for a wrong
-   code, SPA serving, and the `with-frontend` profile.
+   code, server-side logout, SPA serving, and the `with-frontend` profile.
 2. **Frontend plan**: seed import, shell, session and API client, login and verify, dashboard,
    profile.
 3. **Manual end-to-end**: build the frontend, run `mvn -Pwith-frontend package`, and run the jar
    against a reseeded local Mongo. Then log in without two-factor, enable it on Profile, log out,
-   log in with a code, and disable it again.
+   log in with a code, and disable it again. After logging out, replaying the old token returns 401.
 
 ## Known gaps carried forward (from the builder check)
 
