@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Disabled;
+import me.nageshk.omnichannel.support.TestUsers;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -23,6 +25,14 @@ class AuthControllerTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired JwtService jwt;
+    @Autowired TestUsers testUsers;
+    String deviceToken;
+
+    @BeforeEach
+    void seedDeviceUser() {
+        testUsers.deleteAll();
+        deviceToken = testUsers.tokenFor("demo");
+    }
 
     @Test
     @Disabled("demo user removed; replaced in Task 7")
@@ -60,7 +70,7 @@ class AuthControllerTest {
     @Test
     @Disabled("demo user removed; replaced in Task 7")
     void protectedEndpointWithTokenIsNotRejectedByAuth() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         mvc.perform(get("/api/status").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
     }

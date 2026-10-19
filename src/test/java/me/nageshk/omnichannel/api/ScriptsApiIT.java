@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.scripts.ScriptCatalog;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,11 +22,19 @@ class ScriptsApiIT {
 
     @Autowired TestRestTemplate rest;
     @Autowired JwtService jwt;
+    @Autowired TestUsers testUsers;
+    String deviceToken;
+
+    @BeforeEach
+    void seedDeviceUser() {
+        testUsers.deleteAll();
+        deviceToken = testUsers.tokenFor("demo");
+    }
     @Autowired ScriptCatalog catalog;
 
     private HttpHeaders auth() {
         HttpHeaders h = new HttpHeaders();
-        h.setBearerAuth(jwt.issue("demo").token());
+        h.setBearerAuth(deviceToken);
         return h;
     }
 

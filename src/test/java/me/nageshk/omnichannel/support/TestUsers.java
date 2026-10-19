@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.support;
 
+import me.nageshk.omnichannel.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.auth.JwtService;
 import me.nageshk.omnichannel.user.TwoFactor;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
@@ -18,10 +20,22 @@ public class TestUsers {
 
     private final UserRepository users;
     private final PasswordEncoder encoder;
+    private final JwtService jwt;
 
-    public TestUsers(UserRepository users, PasswordEncoder encoder) {
+    public TestUsers(UserRepository users, PasswordEncoder encoder, JwtService jwt) {
         this.users = users;
         this.encoder = encoder;
+        this.jwt = jwt;
+    }
+
+    /** An access token for an already-saved user. */
+    public String accessToken(User user) {
+        return jwt.issueAccessToken(new AuthenticatedUser(user)).token();
+    }
+
+    /** Creates a two-factor-off USER and returns an access token for it. */
+    public String tokenFor(String username) {
+        return accessToken(create(username, "pw", UserRole.USER, null));
     }
 
     /** Creates an active user; {@code totpSecret} null means two-factor off. */

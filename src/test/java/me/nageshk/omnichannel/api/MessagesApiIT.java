@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.support.FakeDevice;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -30,6 +32,14 @@ class MessagesApiIT {
     @LocalServerPort int port;
     @Autowired TestRestTemplate rest;
     @Autowired JwtService jwt;
+    @Autowired TestUsers testUsers;
+    String deviceToken;
+
+    @BeforeEach
+    void seedDeviceUser() {
+        testUsers.deleteAll();
+        deviceToken = testUsers.tokenFor("demo");
+    }
     @Autowired ObjectMapper mapper;
 
     private HttpHeaders authHeaders(String token) {
@@ -45,7 +55,7 @@ class MessagesApiIT {
 
     @Test
     void sendWithoutDeviceReturns409() {
-        ResponseEntity<JsonNode> res = postMessage(jwt.issue("demo").token(),
+        ResponseEntity<JsonNode> res = postMessage(deviceToken,
                 "{\"chatId\":\"1@c.us\",\"content\":\"hi\"}");
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(res.getBody().get("code").asText()).isEqualTo("NO_DEVICE");
@@ -53,7 +63,7 @@ class MessagesApiIT {
 
     @Test
     void sendWhenWhatsAppNotReadyReturns409() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
             ResponseEntity<JsonNode> res = postMessage(token, "{\"chatId\":\"1@c.us\",\"content\":\"hi\"}");
             assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -63,7 +73,7 @@ class MessagesApiIT {
 
     @Test
     void sendRoundTripsThroughDevice() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
             device.send(Envelope.event("ready", mapper.createObjectNode().put("pushname", "N")));
             Thread.sleep(200);
@@ -91,7 +101,7 @@ class MessagesApiIT {
 
     @Test
     void pageErrorMapsTo400() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
             device.send(Envelope.event("ready", mapper.createObjectNode()));
             Thread.sleep(200);
@@ -110,7 +120,7 @@ class MessagesApiIT {
 
     @Test
     void noResponseMapsTo504() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
             device.send(Envelope.event("ready", mapper.createObjectNode()));
             Thread.sleep(200);
@@ -123,14 +133,14 @@ class MessagesApiIT {
 
     @Test
     void validationErrorMapsTo400() {
-        ResponseEntity<JsonNode> res = postMessage(jwt.issue("demo").token(), "{\"content\":\"x\"}");
+        ResponseEntity<JsonNode> res = postMessage(deviceToken, "{\"content\":\"x\"}");
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody().get("code").asText()).isEqualTo("VALIDATION");
     }
 
     @Test
     void statusReflectsDevice() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         ResponseEntity<JsonNode> before = rest.exchange("/api/status", HttpMethod.GET,
                 new HttpEntity<>(authHeaders(token)), JsonNode.class);
         assertThat(before.getBody().get("deviceConnected").asBoolean()).isFalse();
@@ -148,7 +158,7 @@ class MessagesApiIT {
 
     @Test
     void rpcPassesAnyMethodThroughWithoutReadinessGate() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() ->
                     rest.exchange("/api/rpc", HttpMethod.POST,
@@ -167,14 +177,14 @@ class MessagesApiIT {
     @Test
     void rpcWithoutDeviceReturns409() {
         ResponseEntity<JsonNode> res = rest.exchange("/api/rpc", HttpMethod.POST,
-                new HttpEntity<>("{\"method\":\"getState\"}", authHeaders(jwt.issue("demo").token())), JsonNode.class);
+                new HttpEntity<>("{\"method\":\"getState\"}", authHeaders(deviceToken)), JsonNode.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(res.getBody().get("code").asText()).isEqualTo("NO_DEVICE");
     }
 
     @Test
     void eventsEndpointReturnsRecentEventsInOrderWithSeqCursor() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
             device.send(Envelope.event("ready", mapper.createObjectNode().put("pushname", "N")));
             device.send(Envelope.event("message", mapper.createObjectNode().put("body", "one")));

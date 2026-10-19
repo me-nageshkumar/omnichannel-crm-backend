@@ -36,9 +36,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith(BEARER)) {
-            jwt.verify(header.substring(BEARER.length())).ifPresent(username -> {
+            jwt.verifyAccessToken(header.substring(BEARER.length())).ifPresent(claims -> {
                 var auth = new UsernamePasswordAuthenticationToken(
-                        username, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+                        claims.username(), null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
                 SecurityContextHolder.getContext().setAuthentication(auth);
             });
         }

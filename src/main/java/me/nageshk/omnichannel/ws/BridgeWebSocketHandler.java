@@ -112,7 +112,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             closeQuietly(session, CLOSE_UNAUTHORIZED, "auth required");
             return;
         }
-        Optional<String> username = jwt.verify(frame.token());
+        Optional<String> username = jwt.verifyAccessToken(frame.token()).map(JwtService.AccessClaims::username);
         if (username.isEmpty()) {
             closeQuietly(session, CLOSE_UNAUTHORIZED, "invalid token");
             return;

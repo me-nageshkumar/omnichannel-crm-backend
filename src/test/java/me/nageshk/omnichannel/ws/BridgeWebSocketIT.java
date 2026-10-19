@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.support.FakeDevice;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,13 +38,21 @@ class BridgeWebSocketIT {
 
     @LocalServerPort int port;
     @Autowired JwtService jwt;
+    @Autowired TestUsers testUsers;
+    String deviceToken;
+
+    @BeforeEach
+    void seedDeviceUser() {
+        testUsers.deleteAll();
+        deviceToken = testUsers.tokenFor("demo");
+    }
     @Autowired DeviceRegistry registry;
     @Autowired Capture capture;
     @Autowired ObjectMapper mapper;
 
     @Test
     void authenticatesAndRegistersDevice() throws Exception {
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, jwt.issue("demo").token())) {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceToken)) {
             assertThat(registry.find("demo")).isPresent();
             assertThat(registry.find("demo").get().waState()).isEqualTo(DeviceSession.STATE_UNKNOWN);
         }
@@ -64,7 +74,7 @@ class BridgeWebSocketIT {
 
     @Test
     void secondDeviceReplacesFirstWith4409() throws Exception {
-        String token = jwt.issue("demo").token();
+        String token = deviceToken;
         FakeDevice first = FakeDevice.connectAndAuth(port, token);
         try (FakeDevice second = FakeDevice.connectAndAuth(port, token)) {
             assertThat(first.awaitClose().getCode()).isEqualTo(4409);
@@ -75,7 +85,7 @@ class BridgeWebSocketIT {
 
     @Test
     void pingGetsPong() throws Exception {
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, jwt.issue("demo").token())) {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceToken)) {
             device.send(Envelope.ping());
             assertThat(device.next().type()).isEqualTo(Envelope.PONG);
         }
@@ -83,7 +93,7 @@ class BridgeWebSocketIT {
 
     @Test
     void helloUpdatesStateAndUnknownMethodIsRejected() throws Exception {
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, jwt.issue("demo").token())) {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceToken)) {
             var params = mapper.createObjectNode().put("waState", "CONNECTED");
             params.set("info", mapper.createObjectNode().put("pushname", "Nagesh"));
             device.send(Envelope.request("h1", "hello", params));
@@ -104,7 +114,7 @@ class BridgeWebSocketIT {
 
     @Test
     void eventsArePublishedAndStateTracked() throws Exception {
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, jwt.issue("demo").token())) {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceToken)) {
             capture.events.clear();
 
             device.send(Envelope.event("ready", mapper.createObjectNode().put("pushname", "N").put("waVersion", "2.3000.1")));
@@ -127,7 +137,7 @@ class BridgeWebSocketIT {
 
     @Test
     void durableEventsAreAckedAndDuplicatesAreNotRepublished() throws Exception {
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, jwt.issue("demo").token())) {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceToken)) {
             capture.events.clear();
             var payload = mapper.createObjectNode().put("body", "offline msg");
 
@@ -155,7 +165,7 @@ class BridgeWebSocketIT {
 
     @Test
     void disconnectUnregistersDevice() throws Exception {
-        FakeDevice device = FakeDevice.connectAndAuth(port, jwt.issue("demo").token());
+        FakeDevice device = FakeDevice.connectAndAuth(port, deviceToken);
         device.close();
         Thread.sleep(200); // afterConnectionClosed runs on the container thread right after the handshake
         assertThat(registry.find("demo")).isEmpty();

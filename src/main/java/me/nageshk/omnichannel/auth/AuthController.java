@@ -25,16 +25,18 @@ public class AuthController {
 
     private final AuthenticationManager authManager;
     private final JwtService jwt;
+    private final MongoUserDetailsService users;
 
-    public AuthController(AuthenticationManager authManager, JwtService jwt) {
+    public AuthController(AuthenticationManager authManager, JwtService jwt, MongoUserDetailsService users) {
         this.authManager = authManager;
         this.jwt = jwt;
+        this.users = users;
     }
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest req) {
         authManager.authenticate(new UsernamePasswordAuthenticationToken(req.username(), req.password()));
-        JwtService.IssuedToken issued = jwt.issue(req.username());
+        JwtService.IssuedToken issued = jwt.issueAccessToken(users.loadUserByUsername(req.username()));
         return new LoginResponse(issued.token(), issued.expiresAt());
     }
 

@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.auth;
 
-import me.nageshk.omnichannel.config.OmnichannelProperties;
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -11,12 +11,28 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
 import javax.crypto.SecretKey;
+import me.nageshk.omnichannel.config.OmnichannelProperties;
 import org.springframework.stereotype.Service;
 
+/**
+ * Issues and verifies two kinds of HS256 tokens: access tokens (subject + user claims) and
+ * five-minute pending tokens handed out after a correct password when two-factor is required.
+ */
 @Service
 public class JwtService {
 
+    public static final String CLAIM_AUTH_STATE = "authState";
+    public static final String TWO_FA_PENDING = "TWO_FA_PENDING";
+    public static final Duration PENDING_TTL = Duration.ofMinutes(5);
+
+    public static final String CLAIM_USER_ID = "userId";
+    public static final String CLAIM_ROLE = "role";
+    public static final String CLAIM_TOKEN_VERSION = "tokenVersion";
+    public static final String CLAIM_TWO_FACTOR_ENABLED = "twoFactorEnabled";
+
     public record IssuedToken(String token, Instant expiresAt) {}
+
+    public record AccessClaims(String username, long tokenVersion) {}
 
     private final SecretKey key;
     private final Duration ttl;
@@ -28,11 +44,15 @@ public class JwtService {
         this.clock = clock;
     }
 
-    public IssuedToken issue(String username) {
+    public IssuedToken issueAccessToken(AuthenticatedUser user) {
         Instant now = clock.instant();
         Instant exp = now.plus(ttl);
         String token = Jwts.builder()
-                .subject(username)
+                .subject(user.getUsername())
+                .claim(CLAIM_USER_ID, user.userId())
+                .claim(CLAIM_ROLE, user.role().name())
+                .claim(CLAIM_TOKEN_VERSION, user.tokenVersion())
+                .claim(CLAIM_TWO_FACTOR_ENABLED, user.twoFactorEnabled())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
                 .signWith(key)
@@ -40,16 +60,45 @@ public class JwtService {
         return new IssuedToken(token, exp);
     }
 
-    public Optional<String> verify(String token) {
+    public String issuePendingToken(String username) {
+        Instant now = clock.instant();
+        return Jwts.builder()
+                .subject(username)
+                .claim(CLAIM_AUTH_STATE, TWO_FA_PENDING)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plus(PENDING_TTL)))
+                .signWith(key)
+                .compact();
+    }
+
+    /** Signature-checked claims; throws {@link JwtException} on any problem. */
+    public Claims parse(String token) {
+        return Jwts.parser()
+                .verifyWith(key)
+                .clock(() -> Date.from(clock.instant()))
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+    }
+
+    /** Empty for a bad signature, an expired token, or a pending token. */
+    public Optional<AccessClaims> verifyAccessToken(String token) {
+        return safeParse(token)
+                .filter(c -> c.get(CLAIM_AUTH_STATE) == null)
+                .filter(c -> c.getSubject() != null && !c.getSubject().isBlank())
+                .map(c -> new AccessClaims(c.getSubject(), c.get(CLAIM_TOKEN_VERSION, Long.class)));
+    }
+
+    /** The username only when the token is a live pending token. */
+    public Optional<String> verifyPendingToken(String token) {
+        return safeParse(token)
+                .filter(c -> TWO_FA_PENDING.equals(c.get(CLAIM_AUTH_STATE, String.class)))
+                .map(Claims::getSubject);
+    }
+
+    private Optional<Claims> safeParse(String token) {
         try {
-            String subject = Jwts.parser()
-                    .verifyWith(key)
-                    .clock(() -> Date.from(clock.instant()))
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload()
-                    .getSubject();
-            return Optional.ofNullable(subject).filter(s -> !s.isBlank());
+            return Optional.of(parse(token));
         } catch (JwtException | IllegalArgumentException e) {
             return Optional.empty();
         }
