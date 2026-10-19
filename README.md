@@ -13,7 +13,7 @@ Three sibling checkouts in one directory:
   whatsapp-web.js/           # upstream https://github.com/wwebjs/whatsapp-web.js
   whatsapp-web-extension/    # the Chrome extension; its `npm run build` writes
                              # src/main/resources/wabridge/scripts/ in this repo
-  whatsapp-backend/          # this repo (Java 21, Spring Boot 3.5, package me.nageshk.whatsapp)
+  whatsapp-backend/          # this repo (Java 21, Spring Boot 3.5, package me.nageshk.omnichannel)
 ```
 
 ## Run

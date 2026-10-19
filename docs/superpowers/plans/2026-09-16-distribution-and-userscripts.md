@@ -116,7 +116,7 @@ export async function executeNow(api, tabId, { code, version }) → 'userScripts
 ### Task 6 (optional): Managed channel served by the backend
 
 **Files (extension):** `pack.mjs` (`--channel=managed`: sign CRX with the `.pem` via the `crx3` package, write `update.xml`, `--sync` copies into the backend resources), `src/build/updateXml.js` + test.
-**Files (backend):** `src/main/resources/wabridge/extension/{whatsapp-bridge.crx,update.xml,manifest.json}`, `me.nageshk.whatsapp.extension.ExtensionCatalog`, `me.nageshk.whatsapp.api.ExtensionController`, `SecurityConfig` (permit `/extension/**`), tests `ExtensionCatalogTest`, `ExtensionApiIT`, README section.
+**Files (backend):** `src/main/resources/wabridge/extension/{whatsapp-bridge.crx,update.xml,manifest.json}`, `me.nageshk.omnichannel.extension.ExtensionCatalog`, `me.nageshk.omnichannel.api.ExtensionController`, `SecurityConfig` (permit `/extension/**`), tests `ExtensionCatalogTest`, `ExtensionApiIT`, README section.
 
 - [ ] **Step 1:** `updateXml(appId, version, codebaseUrl, sha256)` pure function + test producing the Omaha manifest:
   ```xml

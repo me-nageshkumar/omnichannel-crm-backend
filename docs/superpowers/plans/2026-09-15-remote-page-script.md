@@ -39,12 +39,12 @@ whatsapp-web-extension/
   tests/stamp.test.js, scripts.test.js, connection.test.js (+1), router.test.js (modify)
 server/src/main/resources/wabridge/scripts/page.js        # generated, committed
 server/src/main/resources/wabridge/scripts/manifest.json  # generated, committed
-server/src/main/java/me/nageshk/whatsapp/scripts/ScriptCatalog.java
-server/src/main/java/me/nageshk/whatsapp/api/ScriptsController.java
-server/src/main/java/me/nageshk/whatsapp/ws/BridgeWebSocketHandler.java   # modify: hello reply
-server/src/test/java/me/nageshk/whatsapp/scripts/ScriptCatalogTest.java
-server/src/test/java/me/nageshk/whatsapp/api/ScriptsApiIT.java
-server/src/test/java/me/nageshk/whatsapp/ws/BridgeWebSocketIT.java         # modify: hello has scripts
+server/src/main/java/me/nageshk/omnichannel/scripts/ScriptCatalog.java
+server/src/main/java/me/nageshk/omnichannel/api/ScriptsController.java
+server/src/main/java/me/nageshk/omnichannel/ws/BridgeWebSocketHandler.java   # modify: hello reply
+server/src/test/java/me/nageshk/omnichannel/scripts/ScriptCatalogTest.java
+server/src/test/java/me/nageshk/omnichannel/api/ScriptsApiIT.java
+server/src/test/java/me/nageshk/omnichannel/ws/BridgeWebSocketIT.java         # modify: hello has scripts
 ```
 
 ---
@@ -237,8 +237,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 2: ScriptCatalog (server)
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/scripts/ScriptCatalog.java`
-- Test: `whatsapp-backend/src/test/java/me/nageshk/whatsapp/scripts/ScriptCatalogTest.java`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/scripts/ScriptCatalog.java`
+- Test: `whatsapp-backend/src/test/java/me/nageshk/omnichannel/scripts/ScriptCatalogTest.java`
 
 **Interfaces:**
 - `record Script(String name, String version, String sha256, byte[] bytes)`
@@ -248,10 +248,10 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/scripts/ScriptCatalogTest.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/scripts/ScriptCatalogTest.java`:
 
 ```java
-package me.nageshk.whatsapp.scripts;
+package me.nageshk.omnichannel.scripts;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -316,10 +316,10 @@ Expected: compilation error, `ScriptCatalog` missing.
 
 - [ ] **Step 3: Implement ScriptCatalog**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/scripts/ScriptCatalog.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/scripts/ScriptCatalog.java`:
 
 ```java
-package me.nageshk.whatsapp.scripts;
+package me.nageshk.omnichannel.scripts;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -423,8 +423,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 3: Scripts endpoints and manifest in the hello reply
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/ScriptsController.java`, `whatsapp-backend/src/test/java/me/nageshk/whatsapp/api/ScriptsApiIT.java`
-- Modify: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/ws/BridgeWebSocketHandler.java` (constructor + `handleRequest`), `whatsapp-backend/src/test/java/me/nageshk/whatsapp/ws/BridgeWebSocketIT.java` (`helloUpdatesStateAndUnknownMethodIsRejected`), `whatsapp-backend/README.md`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/ScriptsController.java`, `whatsapp-backend/src/test/java/me/nageshk/omnichannel/api/ScriptsApiIT.java`
+- Modify: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/ws/BridgeWebSocketHandler.java` (constructor + `handleRequest`), `whatsapp-backend/src/test/java/me/nageshk/omnichannel/ws/BridgeWebSocketIT.java` (`helloUpdatesStateAndUnknownMethodIsRejected`), `whatsapp-backend/README.md`
 
 **Interfaces:**
 - `GET /api/scripts` → manifest JSON. `GET /api/scripts/{name}` → script bytes, `Content-Type: application/javascript;charset=UTF-8`, `ETag: "<sha256>"`, `Cache-Control: private, max-age=0, must-revalidate`; `If-None-Match` equal → 304; unknown → 404 `{code:"NOT_FOUND"}`.
@@ -432,16 +432,16 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/api/ScriptsApiIT.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/api/ScriptsApiIT.java`:
 
 ```java
-package me.nageshk.whatsapp.api;
+package me.nageshk.omnichannel.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import me.nageshk.whatsapp.auth.JwtService;
-import me.nageshk.whatsapp.scripts.ScriptCatalog;
+import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.scripts.ScriptCatalog;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -510,13 +510,13 @@ Expected: `ScriptsApiIT` 404s (no controller); the hello assertion fails (no `sc
 
 - [ ] **Step 3: Implement ScriptsController**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/ScriptsController.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/ScriptsController.java`:
 
 ```java
-package me.nageshk.whatsapp.api;
+package me.nageshk.omnichannel.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import me.nageshk.whatsapp.scripts.ScriptCatalog;
+import me.nageshk.omnichannel.scripts.ScriptCatalog;
 import java.util.Map;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -570,7 +570,7 @@ public class ScriptsController {
 
 - [ ] **Step 4: Advertise the manifest in the hello reply**
 
-In `BridgeWebSocketHandler`: add a constructor parameter `ScriptCatalog scripts` (import `me.nageshk.whatsapp.scripts.ScriptCatalog`), store it in a field, and change the hello branch to:
+In `BridgeWebSocketHandler`: add a constructor parameter `ScriptCatalog scripts` (import `me.nageshk.omnichannel.scripts.ScriptCatalog`), store it in a field, and change the hello branch to:
 
 ```java
             ObjectNode result = mapper.createObjectNode().put("ok", true);

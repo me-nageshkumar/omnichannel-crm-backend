@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Java 21, Spring Boot 3.x (use `3.5.6`; if Maven cannot resolve it, use the latest available `3.5.x`), Maven wrapper committed.
-- Package root: `me.nageshk.whatsapp`.
+- Package root: `me.nageshk.omnichannel`.
 - Wire protocol is exactly the envelope in the spec: `type` ∈ `auth|request|response|event|ping|pong`; fields `id, token, method, params, result, error{code,message}, name, payload`.
 - First WS frame must be `auth` within the auth timeout (default 5 s) or the server closes with code `4401`. A second device for the same user replaces the first; the old socket is closed with `4409`.
 - RPC timeout default 30 s. No token in URLs.
@@ -32,7 +32,7 @@ whatsapp-backend/
   mvnw, mvnw.cmd, .mvn/wrapper/maven-wrapper.properties
   README.md
   src/main/resources/application.yml
-  src/main/java/me/nageshk/whatsapp/
+  src/main/java/me/nageshk/omnichannel/
     WabridgeApplication.java              # @SpringBootApplication, @ConfigurationPropertiesScan
     config/WabridgeProperties.java        # typed config: jwt, users, ws, rpc
     config/ClockConfig.java               # Clock bean (injectable time for tests)
@@ -54,7 +54,7 @@ whatsapp-backend/
     api/MessagesController.java           # POST /api/messages
     api/StatusController.java             # GET /api/status
     api/ApiExceptionHandler.java
-  src/test/java/me/nageshk/whatsapp/
+  src/test/java/me/nageshk/omnichannel/
     WabridgeApplicationTests.java
     auth/JwtServiceTest.java
     auth/AuthControllerTest.java
@@ -73,8 +73,8 @@ Root-level modifications (Task 1): `.gitignore`, `.prettierignore`, `eslint.conf
 
 **Files:**
 - Modify: `.gitignore`, `.prettierignore`, `eslint.config.mjs` (ignores list at lines 57-64)
-- Create: `whatsapp-backend/pom.xml`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/WabridgeApplication.java`, `whatsapp-backend/src/main/resources/application.yml`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/config/WabridgeProperties.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/config/ClockConfig.java`
-- Test: `whatsapp-backend/src/test/java/me/nageshk/whatsapp/WabridgeApplicationTests.java`
+- Create: `whatsapp-backend/pom.xml`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/WabridgeApplication.java`, `whatsapp-backend/src/main/resources/application.yml`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/config/WabridgeProperties.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/config/ClockConfig.java`
+- Test: `whatsapp-backend/src/test/java/me/nageshk/omnichannel/WabridgeApplicationTests.java`
 
 **Interfaces:**
 - Produces: `WabridgeProperties` record (below) used by every later task; `Clock` bean.
@@ -193,10 +193,10 @@ Expected: `mvnw`, `mvnw.cmd`, `.mvn/wrapper/maven-wrapper.properties` created. R
 
 - [ ] **Step 4: Application class, properties, clock**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/WabridgeApplication.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/WabridgeApplication.java`:
 
 ```java
-package me.nageshk.whatsapp;
+package me.nageshk.omnichannel;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -211,10 +211,10 @@ public class WabridgeApplication {
 }
 ```
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/config/WabridgeProperties.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/config/WabridgeProperties.java`:
 
 ```java
-package me.nageshk.whatsapp.config;
+package me.nageshk.omnichannel.config;
 
 import java.time.Duration;
 import java.util.List;
@@ -237,10 +237,10 @@ public record WabridgeProperties(Jwt jwt, List<User> users, Ws ws, Rpc rpc) {
 }
 ```
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/config/ClockConfig.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/config/ClockConfig.java`:
 
 ```java
-package me.nageshk.whatsapp.config;
+package me.nageshk.omnichannel.config;
 
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
@@ -263,7 +263,7 @@ server:
 
 logging:
   level:
-    me.nageshk.whatsapp: INFO
+    me.nageshk.omnichannel: INFO
 
 wabridge:
   jwt:
@@ -284,14 +284,14 @@ wabridge:
 
 - [ ] **Step 5: Context-loads test**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/WabridgeApplicationTests.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/WabridgeApplicationTests.java`:
 
 ```java
-package me.nageshk.whatsapp;
+package me.nageshk.omnichannel;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import me.nageshk.whatsapp.config.WabridgeProperties;
+import me.nageshk.omnichannel.config.WabridgeProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -329,8 +329,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 2: JwtService
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/auth/JwtService.java`
-- Test: `whatsapp-backend/src/test/java/me/nageshk/whatsapp/auth/JwtServiceTest.java`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/auth/JwtService.java`
+- Test: `whatsapp-backend/src/test/java/me/nageshk/omnichannel/auth/JwtServiceTest.java`
 
 **Interfaces:**
 - Consumes: `WabridgeProperties.jwt()`, `Clock`.
@@ -341,14 +341,14 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/auth/JwtServiceTest.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/auth/JwtServiceTest.java`:
 
 ```java
-package me.nageshk.whatsapp.auth;
+package me.nageshk.omnichannel.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import me.nageshk.whatsapp.config.WabridgeProperties;
+import me.nageshk.omnichannel.config.WabridgeProperties;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -406,12 +406,12 @@ Expected: compilation error, `JwtService` does not exist.
 
 - [ ] **Step 3: Implement JwtService**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/auth/JwtService.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/auth/JwtService.java`:
 
 ```java
-package me.nageshk.whatsapp.auth;
+package me.nageshk.omnichannel.auth;
 
-import me.nageshk.whatsapp.config.WabridgeProperties;
+import me.nageshk.omnichannel.config.WabridgeProperties;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -487,8 +487,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 3: Security configuration and login endpoint
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/config/SecurityConfig.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/auth/JwtAuthFilter.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/auth/AuthController.java`
-- Test: `whatsapp-backend/src/test/java/me/nageshk/whatsapp/auth/AuthControllerTest.java`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/config/SecurityConfig.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/auth/JwtAuthFilter.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/auth/AuthController.java`
+- Test: `whatsapp-backend/src/test/java/me/nageshk/omnichannel/auth/AuthControllerTest.java`
 
 **Interfaces:**
 - Consumes: `JwtService.issue/verify`, `WabridgeProperties.users()`.
@@ -496,10 +496,10 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/auth/AuthControllerTest.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/auth/AuthControllerTest.java`:
 
 ```java
-package me.nageshk.whatsapp.auth;
+package me.nageshk.omnichannel.auth;
 
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.emptyString;
@@ -572,10 +572,10 @@ Expected: login tests fail (no controller → 401/403 from default security); pr
 
 - [ ] **Step 3: Implement the JWT filter**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/auth/JwtAuthFilter.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/auth/JwtAuthFilter.java`:
 
 ```java
-package me.nageshk.whatsapp.auth;
+package me.nageshk.omnichannel.auth;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -626,12 +626,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
 - [ ] **Step 4: Implement SecurityConfig**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/config/SecurityConfig.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/config/SecurityConfig.java`:
 
 ```java
-package me.nageshk.whatsapp.config;
+package me.nageshk.omnichannel.config;
 
-import me.nageshk.whatsapp.auth.JwtAuthFilter;
+import me.nageshk.omnichannel.auth.JwtAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
@@ -710,10 +710,10 @@ public class SecurityConfig {
 
 - [ ] **Step 5: Implement AuthController**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/auth/AuthController.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/auth/AuthController.java`:
 
 ```java
-package me.nageshk.whatsapp.auth;
+package me.nageshk.omnichannel.auth;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -780,8 +780,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 4: Protocol envelope
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/rpc/Envelope.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/rpc/RpcException.java`
-- Test: `whatsapp-backend/src/test/java/me/nageshk/whatsapp/rpc/EnvelopeTest.java`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/rpc/Envelope.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/rpc/RpcException.java`
+- Test: `whatsapp-backend/src/test/java/me/nageshk/omnichannel/rpc/EnvelopeTest.java`
 
 **Interfaces:**
 - Produces:
@@ -792,10 +792,10 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/rpc/EnvelopeTest.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/rpc/EnvelopeTest.java`:
 
 ```java
-package me.nageshk.whatsapp.rpc;
+package me.nageshk.omnichannel.rpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -856,10 +856,10 @@ Expected: compilation error, `Envelope` missing.
 
 - [ ] **Step 3: Implement Envelope and RpcException**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/rpc/Envelope.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/rpc/Envelope.java`:
 
 ```java
-package me.nageshk.whatsapp.rpc;
+package me.nageshk.omnichannel.rpc;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -919,10 +919,10 @@ public record Envelope(
 }
 ```
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/rpc/RpcException.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/rpc/RpcException.java`:
 
 ```java
-package me.nageshk.whatsapp.rpc;
+package me.nageshk.omnichannel.rpc;
 
 /** An error reported by the extension/page for an RPC, or a transport failure while performing one. */
 public class RpcException extends RuntimeException {
@@ -966,8 +966,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 5: DeviceSession and RpcDispatcher
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/ws/DeviceSession.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/rpc/RpcDispatcher.java`
-- Test: `whatsapp-backend/src/test/java/me/nageshk/whatsapp/rpc/RpcDispatcherTest.java`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/ws/DeviceSession.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/rpc/RpcDispatcher.java`
+- Test: `whatsapp-backend/src/test/java/me/nageshk/omnichannel/rpc/RpcDispatcherTest.java`
 
 **Interfaces:**
 - Consumes: `Envelope`, `RpcException`, `WabridgeProperties.rpc().timeout()`.
@@ -978,10 +978,10 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/rpc/RpcDispatcherTest.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/rpc/RpcDispatcherTest.java`:
 
 ```java
-package me.nageshk.whatsapp.rpc;
+package me.nageshk.omnichannel.rpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -993,7 +993,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.nageshk.whatsapp.ws.DeviceSession;
+import me.nageshk.omnichannel.ws.DeviceSession;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Iterator;
@@ -1107,14 +1107,14 @@ Expected: compilation errors for `DeviceSession` and `RpcDispatcher`.
 
 - [ ] **Step 3: Implement DeviceSession**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/ws/DeviceSession.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/ws/DeviceSession.java`:
 
 ```java
-package me.nageshk.whatsapp.ws;
+package me.nageshk.omnichannel.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.nageshk.whatsapp.rpc.Envelope;
+import me.nageshk.omnichannel.rpc.Envelope;
 import java.io.IOException;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -1191,14 +1191,14 @@ public final class DeviceSession {
 
 - [ ] **Step 4: Implement RpcDispatcher**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/rpc/RpcDispatcher.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/rpc/RpcDispatcher.java`:
 
 ```java
-package me.nageshk.whatsapp.rpc;
+package me.nageshk.omnichannel.rpc;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import me.nageshk.whatsapp.config.WabridgeProperties;
-import me.nageshk.whatsapp.ws.DeviceSession;
+import me.nageshk.omnichannel.config.WabridgeProperties;
+import me.nageshk.omnichannel.ws.DeviceSession;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.UUID;
@@ -1297,8 +1297,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 6: WebSocket handler, device registry, event publishing
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/ws/DeviceRegistry.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/ws/BridgeWebSocketHandler.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/config/WebSocketConfig.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/events/WhatsAppEvent.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/events/LoggingEventListener.java`
-- Test: `whatsapp-backend/src/test/java/me/nageshk/whatsapp/support/FakeDevice.java`, `whatsapp-backend/src/test/java/me/nageshk/whatsapp/ws/BridgeWebSocketIT.java`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/ws/DeviceRegistry.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/ws/BridgeWebSocketHandler.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/config/WebSocketConfig.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/events/WhatsAppEvent.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/events/LoggingEventListener.java`
+- Test: `whatsapp-backend/src/test/java/me/nageshk/omnichannel/support/FakeDevice.java`, `whatsapp-backend/src/test/java/me/nageshk/omnichannel/ws/BridgeWebSocketIT.java`
 
 **Interfaces:**
 - Consumes: `JwtService.verify`, `DeviceSession`, `RpcDispatcher.complete/failAll`, `Envelope`.
@@ -1310,13 +1310,13 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the test helper**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/support/FakeDevice.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/support/FakeDevice.java`:
 
 ```java
-package me.nageshk.whatsapp.support;
+package me.nageshk.omnichannel.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.nageshk.whatsapp.rpc.Envelope;
+import me.nageshk.omnichannel.rpc.Envelope;
 import java.net.URI;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -1397,18 +1397,18 @@ public class FakeDevice extends TextWebSocketHandler implements AutoCloseable {
 
 - [ ] **Step 2: Write the failing integration tests**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/ws/BridgeWebSocketIT.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/ws/BridgeWebSocketIT.java`:
 
 ```java
-package me.nageshk.whatsapp.ws;
+package me.nageshk.omnichannel.ws;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.nageshk.whatsapp.auth.JwtService;
-import me.nageshk.whatsapp.events.WhatsAppEvent;
-import me.nageshk.whatsapp.rpc.Envelope;
-import me.nageshk.whatsapp.support.FakeDevice;
+import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.events.WhatsAppEvent;
+import me.nageshk.omnichannel.rpc.Envelope;
+import me.nageshk.omnichannel.support.FakeDevice;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -1543,10 +1543,10 @@ Expected: compilation errors (`DeviceRegistry`, `WhatsAppEvent` missing).
 
 - [ ] **Step 4: Implement DeviceRegistry**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/ws/DeviceRegistry.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/ws/DeviceRegistry.java`:
 
 ```java
-package me.nageshk.whatsapp.ws;
+package me.nageshk.omnichannel.ws;
 
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1590,10 +1590,10 @@ public class DeviceRegistry {
 
 - [ ] **Step 5: Implement WhatsAppEvent and LoggingEventListener**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/events/WhatsAppEvent.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/events/WhatsAppEvent.java`:
 
 ```java
-package me.nageshk.whatsapp.events;
+package me.nageshk.omnichannel.events;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.context.ApplicationEvent;
@@ -1626,10 +1626,10 @@ public class WhatsAppEvent extends ApplicationEvent {
 }
 ```
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/events/LoggingEventListener.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/events/LoggingEventListener.java`:
 
 ```java
-package me.nageshk.whatsapp.events;
+package me.nageshk.omnichannel.events;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
@@ -1674,20 +1674,20 @@ public class LoggingEventListener {
 
 - [ ] **Step 6: Implement BridgeWebSocketHandler**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/ws/BridgeWebSocketHandler.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/ws/BridgeWebSocketHandler.java`:
 
 ```java
-package me.nageshk.whatsapp.ws;
+package me.nageshk.omnichannel.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import me.nageshk.whatsapp.auth.JwtService;
-import me.nageshk.whatsapp.config.WabridgeProperties;
-import me.nageshk.whatsapp.events.WhatsAppEvent;
-import me.nageshk.whatsapp.rpc.Envelope;
-import me.nageshk.whatsapp.rpc.RpcDispatcher;
-import me.nageshk.whatsapp.rpc.RpcException;
+import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.config.WabridgeProperties;
+import me.nageshk.omnichannel.events.WhatsAppEvent;
+import me.nageshk.omnichannel.rpc.Envelope;
+import me.nageshk.omnichannel.rpc.RpcDispatcher;
+import me.nageshk.omnichannel.rpc.RpcException;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1860,12 +1860,12 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
 
 - [ ] **Step 7: Implement WebSocketConfig**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/config/WebSocketConfig.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/config/WebSocketConfig.java`:
 
 ```java
-package me.nageshk.whatsapp.config;
+package me.nageshk.omnichannel.config;
 
-import me.nageshk.whatsapp.ws.BridgeWebSocketHandler;
+import me.nageshk.omnichannel.ws.BridgeWebSocketHandler;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import org.springframework.context.annotation.Bean;
@@ -1930,8 +1930,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 7: REST API for sending messages and status
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/NoDeviceException.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/MessagesController.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/StatusController.java`, `whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/ApiExceptionHandler.java`, `whatsapp-backend/README.md`
-- Test: `whatsapp-backend/src/test/java/me/nageshk/whatsapp/api/MessagesApiIT.java`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/NoDeviceException.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/MessagesController.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/StatusController.java`, `whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/ApiExceptionHandler.java`, `whatsapp-backend/README.md`
+- Test: `whatsapp-backend/src/test/java/me/nageshk/omnichannel/api/MessagesApiIT.java`
 
 **Interfaces:**
 - Consumes: `DeviceRegistry.find`, `RpcDispatcher.call`, `DeviceSession.waState/info`, `FakeDevice`.
@@ -1942,18 +1942,18 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing integration tests**
 
-`whatsapp-backend/src/test/java/me/nageshk/whatsapp/api/MessagesApiIT.java`:
+`whatsapp-backend/src/test/java/me/nageshk/omnichannel/api/MessagesApiIT.java`:
 
 ```java
-package me.nageshk.whatsapp.api;
+package me.nageshk.omnichannel.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.nageshk.whatsapp.auth.JwtService;
-import me.nageshk.whatsapp.rpc.Envelope;
-import me.nageshk.whatsapp.support.FakeDevice;
+import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.rpc.Envelope;
+import me.nageshk.omnichannel.support.FakeDevice;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -2108,10 +2108,10 @@ Expected: tests fail with 404 responses (controllers missing).
 
 - [ ] **Step 3: Implement NoDeviceException and controllers**
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/NoDeviceException.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/NoDeviceException.java`:
 
 ```java
-package me.nageshk.whatsapp.api;
+package me.nageshk.omnichannel.api;
 
 /** The current user has no connected extension, or its WhatsApp is not in CONNECTED state. */
 public class NoDeviceException extends RuntimeException {
@@ -2132,17 +2132,17 @@ public class NoDeviceException extends RuntimeException {
 }
 ```
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/MessagesController.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/MessagesController.java`:
 
 ```java
-package me.nageshk.whatsapp.api;
+package me.nageshk.omnichannel.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import me.nageshk.whatsapp.rpc.RpcDispatcher;
-import me.nageshk.whatsapp.ws.DeviceRegistry;
-import me.nageshk.whatsapp.ws.DeviceSession;
+import me.nageshk.omnichannel.rpc.RpcDispatcher;
+import me.nageshk.omnichannel.ws.DeviceRegistry;
+import me.nageshk.omnichannel.ws.DeviceSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.concurrent.CompletableFuture;
@@ -2196,15 +2196,15 @@ public class MessagesController {
 }
 ```
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/StatusController.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/StatusController.java`:
 
 ```java
-package me.nageshk.whatsapp.api;
+package me.nageshk.omnichannel.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.nageshk.whatsapp.ws.DeviceRegistry;
-import me.nageshk.whatsapp.ws.DeviceSession;
+import me.nageshk.omnichannel.ws.DeviceRegistry;
+import me.nageshk.omnichannel.ws.DeviceSession;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -2233,12 +2233,12 @@ public class StatusController {
 }
 ```
 
-`whatsapp-backend/src/main/java/me/nageshk/whatsapp/api/ApiExceptionHandler.java`:
+`whatsapp-backend/src/main/java/me/nageshk/omnichannel/api/ApiExceptionHandler.java`:
 
 ```java
-package me.nageshk.whatsapp.api;
+package me.nageshk.omnichannel.api;
 
-import me.nageshk.whatsapp.rpc.RpcException;
+import me.nageshk.omnichannel.rpc.RpcException;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;

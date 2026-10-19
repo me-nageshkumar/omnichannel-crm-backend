@@ -118,7 +118,7 @@ whatsapp-web-extension/
 
 whatsapp-backend/
   pom.xml, mvnw, .mvn/
-  src/main/java/me/nageshk/whatsapp/
+  src/main/java/me/nageshk/omnichannel/
     WabridgeApplication.java
     config/SecurityConfig.java        # stateless, JwtAuthFilter, permit /api/auth/login and /ws
     config/WebSocketConfig.java       # registers BridgeWebSocketHandler at /ws, allowed origins

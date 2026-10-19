@@ -24,7 +24,7 @@
 
 **Files:**
 - Modify: `whatsapp-web-extension/src/shared/protocol.js`, `whatsapp-web-extension/src/page/bridge.js`, `whatsapp-web-extension/tests/protocol.test.js`, `whatsapp-web-extension/tests/bridge.test.js`
-- Modify: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/rpc/Envelope.java`, `whatsapp-backend/src/test/java/me/nageshk/whatsapp/rpc/EnvelopeTest.java`
+- Modify: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/rpc/Envelope.java`, `whatsapp-backend/src/test/java/me/nageshk/omnichannel/rpc/EnvelopeTest.java`
 
 **Interfaces:**
 - JS: `DURABLE_EVENTS: Set<string>`, `isDurableEvent(name): boolean`, `eventAck(seq)`, `event(name, payload, ts?)` (ts optional third arg, omitted when undefined), `bridge.emit` passes `Date.now()`.
@@ -142,7 +142,7 @@ export class Outbox {
 ### Task 5: Server acks and de-duplication
 
 **Files:**
-- Create: `whatsapp-backend/src/main/java/me/nageshk/whatsapp/ws/EventSequenceTracker.java`
+- Create: `whatsapp-backend/src/main/java/me/nageshk/omnichannel/ws/EventSequenceTracker.java`
 - Modify: `BridgeWebSocketHandler.java` (handleEvent, hello logging), `WhatsAppEvent.java` (seq, ts), `RecentEventsStore.java` (+ `StoredEvent.seqFromDevice`, `capturedAt`), `LoggingEventListener.java`, `BridgeWebSocketIT.java`, `MessagesApiIT.java` (events endpoint shape), `whatsapp-backend/README.md`
 
 **Interfaces:**

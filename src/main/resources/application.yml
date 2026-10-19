@@ -3,7 +3,7 @@ server:
 
 logging:
   level:
-    me.nageshk.whatsapp: INFO
+    me.nageshk.omnichannel: INFO
 
 wabridge:
   jwt:
