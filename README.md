@@ -24,12 +24,12 @@ This repo continues the history of `whatsapp-backend`, which it replaces.
 
 Needs MongoDB (default `mongodb://localhost:27017/omnichannel_crm`, override with
 `OMNICHANNEL_MONGODB_URI`). Users live in the `users` collection; two are seeded on first start
-and never overwritten afterwards:
+and never overwritten afterwards (roles are seeded first, see [Roles and access](#roles-and-access)):
 
 | User | Variables | Notes |
 |---|---|---|
-| Super admin (`SUPER_ADMIN`) | `OMNICHANNEL_SUPER_ADMIN_PASSWORD` (bcrypt hash, required until one exists), optional `_USERNAME` (default `nageshk`), `_NAME`, `_EMAIL`, `_MOBILE` | Seeded with two-factor off; enable it later from the console Profile page or `/api/users/me/two-factor/*` |
-| Device user (`USER`) | `OMNICHANNEL_DEVICE_USER_USERNAME`, `OMNICHANNEL_DEVICE_USER_PASSWORD` (bcrypt hash) | For the Chrome extension; two-factor off; skipped when the username is blank |
+| Super admin (role `SUPER_ADMIN`) | `OMNICHANNEL_SUPER_ADMIN_PASSWORD` (bcrypt hash, required until one exists), optional `_USERNAME` (default `nageshk`), `_NAME`, `_EMAIL`, `_MOBILE` | Seeded with two-factor off; enable it later from the console Profile page or `/api/users/me/two-factor/*` |
+| Device user (role `WHATSAPP_DEVICE`) | `OMNICHANNEL_DEVICE_USER_USERNAME`, `OMNICHANNEL_DEVICE_USER_PASSWORD` (bcrypt hash) | For the Chrome extension; two-factor off; skipped when the username is blank |
 
 ```bash
 # bcrypt hash for a password (no {bcrypt} prefix)
@@ -70,6 +70,12 @@ curl -s -X POST localhost:8080/api/auth/verify-otp -H "Authorization: Bearer $PE
   -H 'Content-Type: application/json' -d '{"otp":"123456"}'
 ```
 
+A user created or reset by someone else has `mustChangePassword`; their login (and `verify-otp`) answers
+`{passwordChangeRequired: true, passwordChangeToken}` instead of a token, and the new password goes to
+`POST /api/auth/initial-password` (`{newPassword}`, at least 10 characters, bearer = the change token,
+valid ten minutes) which returns `{token, expiresAt}`. Bad password: 400 `WEAK_PASSWORD`; bad or expired
+change token: 401 `INVALID_TOKEN`.
+
 Errors: `invalid_credentials`, `account_inactive`, `invalid_otp`, `invalid_token` (401),
 `too_many_attempts` with `retryAfterSeconds` (429; five bad passwords lock for 30 min, three bad
 codes for 10 min). Access tokens embed the user's `tokenVersion`; bump it in Mongo to log a user out
@@ -81,7 +87,7 @@ curl -s -X POST localhost:8080/api/users/me/two-factor/confirm  -H "Authorizatio
   -H 'Content-Type: application/json' -d '{"secret":"...","otp":"123456"}'                      # 204
 curl -s -X POST localhost:8080/api/users/me/two-factor/disable  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"otp":"123456"}'                                     # 204
-curl -s localhost:8080/api/users/me -H "Authorization: Bearer $TOKEN"   # {id, name, username, email, mobileNumber, role, twoFactorEnabled}
+curl -s localhost:8080/api/users/me -H "Authorization: Bearer $TOKEN"   # {id, name, username, email, mobileNumber, role:{id,name}, superAdmin, customer, authorities, workspaces, mustChangePassword, twoFactorEnabled}
 ```
 
 A wrong code on `confirm`/`disable` is 400 `INVALID_OTP` (not 401), so the session survives a typo.
@@ -93,6 +99,58 @@ issued before logout existed carry no id and simply run to expiry.
 ```bash
 curl -s -X POST localhost:8080/api/auth/logout -H "Authorization: Bearer $TOKEN"   # 204; replaying $TOKEN is now 401
 ```
+
+## Roles and access
+
+Every logged-in user can use the console; what they see follows their authorities. The model:
+
+- **Tenancy:** customer (company) -> workspaces (brands) -> teams. Platform users (Super Admin,
+  Account Managers, the device user) belong to no customer; everyone else belongs to exactly one.
+- **Authorities** are code-defined permissions named `thing:action` (for example `user:manage`), each
+  with a level: PLATFORM, COMPANY or BRAND. `GET /api/authorities` lists them.
+- **Roles** are named bundles of authorities stored in `roles`. A role may hold authorities of its own
+  level or below (PLATFORM: platform only; COMPANY: company and brand; BRAND: brand only). Built-in:
+  `SUPER_ADMIN` (every platform authority, cannot be edited or given away), `ACCOUNT_MANAGER`,
+  `WHATSAPP_DEVICE`, `CUSTOMER_ADMIN`, `WORKSPACE_MANAGER`, `TEAM_LEAD`, `AGENT`. Only the Super Admin
+  edits roles or creates custom ones; every change is recorded in `role_changes`. Edits apply on the
+  user's next request (authorities are not in the JWT).
+- **Per-workspace access:** a user has an optional company role (applies in every workspace of the
+  customer, held by the Customer Admin) plus at most one brand role per workspace.
+- **Strict-subset rule:** to give a role, the caller must hold the managing authority and the role's
+  authorities must be a strict subset of the caller's own in that scope; to change an existing login
+  they must pass that check in every workspace where the target has a role. So a Workspace Manager
+  assigns Team Leads and Agents but not another Workspace Manager, and only the Customer Admin creates
+  Workspace Managers. `GET .../assignable-roles` returns what the caller may give.
+- **Isolation:** a customer, workspace, team or user the caller may not see answers 404 `NOT_FOUND`;
+  one they see but may not change answers 403 `FORBIDDEN`. Super Admin and Account Managers have no
+  access to brand pages. `IsolationIT` pins this for every brand endpoint.
+- **`whatsapp:bridge`:** the WhatsApp REST endpoints (`/api/status`, `/api/messages`, `/api/events`,
+  `/api/scripts`, `/api/rpc`) and the WebSocket `auth` frame require this authority, held by
+  `WHATSAPP_DEVICE` and the Super Admin. A Customer Admin token is refused.
+- **Startup:** the built-in roles are seeded (a catalogue authority the system has never seen is added
+  to the built-in roles that default to it; authorities already seen are never re-added, so removals
+  stick). Then users stored with the old `role` field are migrated, idempotently: `SUPER_ADMIN` and
+  `USER` map to the built-in `SUPER_ADMIN` and `WHATSAPP_DEVICE` roles, any other value stops startup
+  with a clear message, and the old field is removed.
+- Usernames are stored lower-case and unique across the platform. Temporary and new passwords need at
+  least 10 characters; a temporary password is shown only in the create or reset response.
+
+| Endpoint | Needs |
+|---|---|
+| `GET/POST /api/platform-users`, `PUT .../{id}`, `POST .../{id}/deactivate\|reactivate\|reset-password`, `GET .../assignable-roles` | `platform-user:manage` |
+| `GET/POST /api/roles`, `PUT/DELETE /api/roles/{id}`, `POST .../{id}/preview`, `GET .../{id}/changes`, `GET /api/authorities` | Super Admin |
+| `GET /api/customers`, `GET /api/customers/{id}` | `customer:view` |
+| `POST /api/customers`, `GET /api/customers/assignable-roles` | `customer:create` |
+| `PUT /api/customers/{id}`, `POST .../deactivate\|reactivate`, `POST .../admins`, `POST .../admins/{userId}/reset-password\|deactivate\|reactivate` | `customer:manage` |
+| `GET /api/workspaces` (mine), `POST /api/workspaces` | logged in / `workspace:create` |
+| `PUT /api/workspaces/{workspaceId}` | `workspace:settings` |
+| `GET /api/workspaces/{workspaceId}/users` | `user:view` |
+| `POST /api/workspaces/{workspaceId}/users`, `PUT\|DELETE .../users/{userId}`, `POST .../users/{userId}/reset-password`, `GET .../assignable-roles` | `user:manage` + strict-subset rule |
+| `GET /api/workspaces/{workspaceId}/teams` | `user:view` |
+| `POST /api/workspaces/{workspaceId}/teams`, `PUT .../teams/{teamId}` | `team:manage` |
+| `POST /api/users/{userId}/deactivate\|reactivate` | `company-user:manage` + strict-subset rule |
+| `POST /api/auth/initial-password` | password-change token |
+| `GET /api/users/me` | logged in |
 
 ## API
 
