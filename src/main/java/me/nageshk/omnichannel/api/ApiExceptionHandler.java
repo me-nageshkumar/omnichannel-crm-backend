@@ -108,6 +108,11 @@ public class ApiExceptionHandler {
         return body(HttpStatus.CONFLICT, AlreadyInWorkspaceException.CODE, e.getMessage());
     }
 
+    @ExceptionHandler(NotInWorkspaceException.class)
+    public ResponseEntity<Map<String, String>> notInWorkspace(NotInWorkspaceException e) {
+        return body(HttpStatus.BAD_REQUEST, NotInWorkspaceException.CODE, e.getMessage());
+    }
+
     @ExceptionHandler(LastAccessException.class)
     public ResponseEntity<Map<String, String>> lastAccess(LastAccessException e) {
         return body(HttpStatus.BAD_REQUEST, LastAccessException.CODE, e.getMessage());
