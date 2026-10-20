@@ -27,7 +27,12 @@ class InboxDevices {
      * @throws NoDeviceException if the number is disabled or its device is missing or not CONNECTED
      */
     DeviceSession requireReady(String workspaceId, WaWebChat chat) {
-        PhoneNumber number = numbers.findByIdAndWorkspaceId(chat.getPhoneNumberId(), workspaceId)
+        return requireReady(workspaceId, chat.getPhoneNumberId());
+    }
+
+    /** Same as {@link #requireReady(String, WaWebChat)}, for a number that has no chat yet. */
+    DeviceSession requireReady(String workspaceId, String phoneNumberId) {
+        PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("phone number not found"));
         if (number.getDisabled() != null || !access.isWorkspaceUsable(workspaceId)) {
             throw new NoDeviceException(NoDeviceException.NO_DEVICE, "the number is disabled");

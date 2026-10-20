@@ -73,8 +73,10 @@ public class InboxSendService {
     private final Clock clock;
 
     /**
-     * Callers check {@code inbox:send} and that the chat is visible to {@code me}. The future fails with the
-     * {@code RpcException} of a device error or timeout, in which case nothing is stored.
+     * Callers check {@code inbox:send} and that the chat is visible to {@code me}. The chat may be unsaved (no id):
+     * it is stored with the first message once the device accepted it, or merged into the row that exists for the
+     * same remote id by then. The future fails with the {@code RpcException} of a device error or timeout, in which
+     * case nothing is stored.
      *
      * @throws ChatClosedException if the chat is closed
      * @throws NoDeviceException if the number is disabled or its device is missing or not CONNECTED
@@ -266,6 +268,13 @@ public class InboxSendService {
      */
     private Recorded record(AuthenticatedUser me, String senderName, WaWebChat sent, Outgoing out, String type,
             String waMessageId, Instant at, int ack, Instant now) {
+        // a chat without an id is stored now, the device having accepted its first message; a row another writer
+        // created for the same remote id wins, and a lost race is retried by the caller
+        WaWebChat chat = sent.getId() == null
+                ? chats.findByPhoneNumberIdAndRemoteId(sent.getPhoneNumberId(), sent.getRemoteId()).orElse(sent)
+                : chats.findById(sent.getId()).orElse(sent);
+        if (chat.getId() == null) chat = chats.save(chat);
+
         WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(sent.getPhoneNumberId(), waMessageId)
                 .orElse(null);
         boolean inserted = message == null;
@@ -274,7 +283,7 @@ public class InboxSendService {
             message.setCustomerId(sent.getCustomerId());
             message.setWorkspaceId(sent.getWorkspaceId());
             message.setPhoneNumberId(sent.getPhoneNumberId());
-            message.setChatId(sent.getId());
+            message.setChatId(chat.getId());
             message.setWaMessageId(waMessageId);
             message.setDirection(MessageDirection.OUT);
             message.setType(type);
@@ -293,7 +302,6 @@ public class InboxSendService {
         message = messages.save(message);
         message = cacheMedia(message, out);
 
-        WaWebChat chat = chats.findById(sent.getId()).orElse(sent);
         InboxIngestService.foldOutbound(chat, message, message.getTimestamp());
         return new Recorded(chats.save(chat), message, inserted);
     }

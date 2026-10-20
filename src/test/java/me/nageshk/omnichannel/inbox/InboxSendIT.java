@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.contact.Contact;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.support.FakeDevice;
@@ -53,6 +54,7 @@ class InboxSendIT extends InboxApiTestBase {
     @Autowired TemplateService templateService;
     @Autowired TemplateMediaService templateMedia;
     @Autowired MessageTemplateRepository templates;
+    @Autowired InboxSendService sender;
 
     /** What the device saw and what the console got back. */
     record Exchange(ResponseEntity<JsonNode> response, Envelope request) {
@@ -536,6 +538,68 @@ class InboxSendIT extends InboxApiTestBase {
             Thread.sleep(200);
             assertThat(post(managerToken, chat, Map.of("templateId", "nope")).getStatusCode())
                     .isEqualTo(HttpStatus.NOT_FOUND);
+        }
+    }
+
+    @Test
+    void unsavedChatIsStoredWithTheFirstMessage() throws Exception {
+        Contact contact = contact(brand, "Nia", "919811111111");
+        WaWebChat fresh = new WaWebChat();
+        fresh.setCustomerId(acme.getId());
+        fresh.setWorkspaceId(brand.getId());
+        fresh.setPhoneNumberId(number.getId());
+        fresh.setRemoteId("919811111111@c.us");
+        fresh.setContactId(contact.getId());
+        fresh.setStatus(ChatStatus.OPEN);
+        fresh.setAssignedUserId(agent.getId());
+
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+            device.send(Envelope.event("ready", ready()));
+            Thread.sleep(200);
+            CompletableFuture<MessageView> sent = sender.send(access.load(agent), brand.getId(), fresh,
+                    new SendRequest("hi Nia", null, null));
+            Envelope req = device.next();
+            device.send(Envelope.response(req.id(), model(fresh, "true_919811111111@c.us_1", "hi Nia", "chat", 1)));
+            MessageView view = sent.get(5, TimeUnit.SECONDS);
+
+            WaWebChat stored = chats.findByPhoneNumberIdAndRemoteId(number.getId(), "919811111111@c.us").orElseThrow();
+            assertThat(view.chatId()).isEqualTo(stored.getId());
+            assertThat(stored.getAssignedUserId()).isEqualTo(agent.getId());
+            assertThat(stored.getLastMessage().text()).isEqualTo("hi Nia");
+            assertThat(messages.findByPhoneNumberIdAndWaMessageId(number.getId(), "true_919811111111@c.us_1")
+                    .orElseThrow().getChatId()).isEqualTo(stored.getId());
+        }
+    }
+
+    @Test
+    void unsavedChatFallsBackToTheRowAnInboundMessageCreatedMeanwhile() throws Exception {
+        // the same remote id gets a chat before the send's record step runs: the existing row wins
+        WaWebChat existing = chat("Nia", "919811111111", 1);
+        existing.setRemoteId("919811111111@c.us");
+        existing = chats.save(existing);
+        WaWebChat fresh = new WaWebChat();
+        fresh.setCustomerId(acme.getId());
+        fresh.setWorkspaceId(brand.getId());
+        fresh.setPhoneNumberId(number.getId());
+        fresh.setRemoteId("919811111111@c.us");
+        fresh.setContactId(existing.getContactId());
+        fresh.setStatus(ChatStatus.OPEN);
+        fresh.setAssignedUserId(manager.getId());
+
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+            device.send(Envelope.event("ready", ready()));
+            Thread.sleep(200);
+            CompletableFuture<MessageView> sent = sender.send(access.load(agent), brand.getId(), fresh,
+                    new SendRequest("hi again", null, null));
+            Envelope req = device.next();
+            device.send(Envelope.response(req.id(), model(fresh, "true_919811111111@c.us_2", "hi again", "chat", 1)));
+            MessageView view = sent.get(5, TimeUnit.SECONDS);
+
+            assertThat(view.chatId()).isEqualTo(existing.getId());
+            assertThat(chats.count()).isEqualTo(1);
+            // the existing row keeps its own state: it is claimed by the replying agent (claim on reply) and does
+            // not take the manager the unsaved chat was assigned to
+            assertThat(chats.findById(existing.getId()).orElseThrow().getAssignedUserId()).isEqualTo(agent.getId());
         }
     }
 }
