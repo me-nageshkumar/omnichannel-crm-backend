@@ -27,6 +27,7 @@ class ChatContactListenerIT {
 
     @Autowired ApplicationEventPublisher publisher;
     @Autowired ContactRepository contacts;
+    @Autowired ContactService service;
     @Autowired TestUsers testUsers;
     @Autowired ObjectMapper mapper;
 
@@ -252,7 +253,7 @@ class ChatContactListenerIT {
     @Test
     void listenerSwallowsErrors() {
         // a null payload never reaches the bus (LoggingEventListener would fail on it), so call the listener directly
-        ChatContactListener real = new ChatContactListener(new ContactService(contacts, java.time.Clock.systemUTC()));
+        ChatContactListener real = new ChatContactListener(service);
         assertThatCode(() -> real.on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message", null, null, null)))
                 .doesNotThrowAnyException();
         assertThatCode(() -> publish("message", mapper.createObjectNode())).doesNotThrowAnyException();

@@ -2,20 +2,161 @@ package me.nageshk.omnichannel.contact;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import me.nageshk.omnichannel.api.DuplicateException;
+import me.nageshk.omnichannel.api.NotFoundException;
+import me.nageshk.omnichannel.api.ValidationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 /** Contact logic that is not tied to one endpoint: creating and updating contacts from chats, CRUD, labels. */
 @Service
 public class ContactService {
 
+    public static final int MAX_NAME = 100;
+    public static final int MAX_ATTRIBUTE_VALUE = 500;
+
     private final ContactRepository contacts;
+    private final ContactLabelRepository labels;
+    private final ContactAttributeRepository attributes;
+    private final ContactNoteRepository notes;
+    private final MongoTemplate mongo;
     private final Clock clock;
 
-    public ContactService(ContactRepository contacts, Clock clock) {
+    public ContactService(ContactRepository contacts, ContactLabelRepository labels,
+            ContactAttributeRepository attributes, ContactNoteRepository notes, MongoTemplate mongo, Clock clock) {
         this.contacts = contacts;
+        this.labels = labels;
+        this.attributes = attributes;
+        this.notes = notes;
+        this.mongo = mongo;
         this.clock = clock;
+    }
+
+    public Contact require(String workspaceId, String id) {
+        return contacts.findByIdAndWorkspaceId(id, workspaceId).orElseThrow(() -> new NotFoundException("contact not found"));
+    }
+
+    /** A contact added by hand; the phone must be valid and new to the brand. */
+    public Contact create(String workspaceId, String customerId, String name, String rawPhone, Set<String> labelIds,
+            Map<String, String> attributeValues) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        String phone = Phones.normalise(rawPhone);
+        if (!Phones.isValid(phone)) errors.put("phone", "must be 8 to 15 digits with the country code, e.g. 919812345678");
+        String n = cleanName(name, errors);
+        Set<String> ls = checkedLabels(workspaceId, labelIds, errors);
+        Map<String, String> attrs = checkedAttributes(workspaceId, attributeValues, errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        if (contacts.findByWorkspaceIdAndPhone(workspaceId, phone).isPresent()) throw duplicatePhone();
+
+        Contact c = new Contact();
+        c.setWorkspaceId(workspaceId);
+        c.setCustomerId(customerId);
+        c.setPhone(phone);
+        c.setName(n);
+        c.setNameEdited(true);
+        c.setSource(ContactSource.MANUAL);
+        c.setLabels(ls);
+        attrs.values().removeIf(String::isEmpty);
+        c.setAttributes(attrs);
+        try {
+            return contacts.save(c);
+        } catch (DuplicateKeyException e) {
+            throw duplicatePhone();
+        }
+    }
+
+    /** Sets the name when given (blank clears it) and merges attribute values (a null or blank value clears one). */
+    public Contact update(String workspaceId, String id, String name, Map<String, String> attributeValues) {
+        Contact c = require(workspaceId, id);
+        Map<String, String> errors = new LinkedHashMap<>();
+        String n = name == null ? null : cleanName(name, errors);
+        Map<String, String> attrs = checkedAttributes(workspaceId, attributeValues, errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        if (name != null) {
+            c.setName(n);
+            c.setNameEdited(true);
+        }
+        attrs.forEach((k, v) -> {
+            if (v.isEmpty()) c.getAttributes().remove(k);
+            else c.getAttributes().put(k, v);
+        });
+        return contacts.save(c);
+    }
+
+    /** Deletes the contact and its notes. */
+    public void delete(String workspaceId, String id) {
+        Contact c = require(workspaceId, id);
+        contacts.delete(c);
+        notes.deleteByWorkspaceIdAndContactId(workspaceId, id);
+    }
+
+    public Contact addLabel(String workspaceId, String id, String labelId) {
+        require(workspaceId, id);
+        requireLabel(workspaceId, labelId);
+        mongo.updateFirst(byId(workspaceId, id), new Update().addToSet("labels", labelId), Contact.class);
+        return require(workspaceId, id);
+    }
+
+    public Contact removeLabel(String workspaceId, String id, String labelId) {
+        require(workspaceId, id);
+        requireLabel(workspaceId, labelId);
+        mongo.updateFirst(byId(workspaceId, id), new Update().pull("labels", labelId), Contact.class);
+        return require(workspaceId, id);
+    }
+
+    private void requireLabel(String workspaceId, String labelId) {
+        labels.findByIdAndWorkspaceId(labelId, workspaceId).orElseThrow(() -> new NotFoundException("label not found"));
+    }
+
+    private static Query byId(String workspaceId, String id) {
+        return new Query(Criteria.where("_id").is(id).and("workspaceId").is(workspaceId));
+    }
+
+    private static DuplicateException duplicatePhone() {
+        return new DuplicateException("phone", "this brand already has a contact with that phone number");
+    }
+
+    private static String cleanName(String raw, Map<String, String> errors) {
+        String n = raw == null ? "" : raw.trim();
+        if (n.length() > MAX_NAME) errors.put("name", "must be at most " + MAX_NAME + " characters");
+        return n.isEmpty() ? null : n;
+    }
+
+    private Set<String> checkedLabels(String workspaceId, Set<String> ids, Map<String, String> errors) {
+        Set<String> out = new LinkedHashSet<>();
+        if (ids == null || ids.isEmpty()) return out;
+        Set<String> mine = labels.findAllById(ids).stream().filter(l -> workspaceId.equals(l.getWorkspaceId()))
+                .map(ContactLabel::getId).collect(Collectors.toSet());
+        if (!mine.containsAll(ids)) errors.put("labels", "contains a label that does not exist in this brand");
+        out.addAll(ids);
+        return out;
+    }
+
+    /** Values trimmed (blank becomes the empty string, meaning clear); keys must be the brand's attribute ids. */
+    private Map<String, String> checkedAttributes(String workspaceId, Map<String, String> in, Map<String, String> errors) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (in == null || in.isEmpty()) return out;
+        Set<String> mine = attributes.findAllById(in.keySet()).stream()
+                .filter(a -> workspaceId.equals(a.getWorkspaceId())).map(ContactAttribute::getId)
+                .collect(Collectors.toSet());
+        for (Map.Entry<String, String> e : in.entrySet()) {
+            String v = e.getValue() == null ? "" : e.getValue().trim();
+            if (!mine.contains(e.getKey())) errors.put("attributes", "contains an attribute that does not exist in this brand");
+            else if (v.length() > MAX_ATTRIBUTE_VALUE)
+                errors.put("attributes", "values must be at most " + MAX_ATTRIBUTE_VALUE + " characters");
+            out.put(e.getKey(), v);
+        }
+        return out;
     }
 
     /**
