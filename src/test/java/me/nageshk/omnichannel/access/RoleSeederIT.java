@@ -44,7 +44,7 @@ class RoleSeederIT {
     void seedsSevenBuiltInRoles() {
         Map<String, Role> byName = roles.findAll().stream().collect(Collectors.toMap(Role::getName, Function.identity()));
         assertThat(byName.keySet()).containsExactlyInAnyOrder(BuiltInRoles.SUPER_ADMIN,
-                BuiltInRoles.ACCOUNT_MANAGER, BuiltInRoles.WHATSAPP_DEVICE, BuiltInRoles.CUSTOMER_ADMIN,
+                BuiltInRoles.ACCOUNT_MANAGER, BuiltInRoles.CUSTOMER_ADMIN,
                 BuiltInRoles.WORKSPACE_MANAGER, BuiltInRoles.TEAM_LEAD, BuiltInRoles.AGENT);
         byName.forEach((n, r) -> {
             assertThat(r.isBuiltIn()).isTrue();
@@ -66,7 +66,7 @@ class RoleSeederIT {
         Map<String, String> before = roles.findAll().stream().collect(Collectors.toMap(Role::getName, Role::getId));
         seeder.seed();
         List<Role> after = roles.findAll();
-        assertThat(after).hasSize(7);
+        assertThat(after).hasSize(6);
         assertThat(after.stream().collect(Collectors.toMap(Role::getName, Role::getId))).isEqualTo(before);
     }
 
@@ -90,7 +90,7 @@ class RoleSeederIT {
     void freshDatabaseCreatesDocumentsAndGivesDefaults() {
         clearAll();
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(17)
+        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(16)
                 .allMatch(AuthorityDefinition::isBuiltIn)
                 .allMatch(d -> "system".equals(d.getCreatedBy()));
         AuthorityDefinition cv = authorities.findById("customer:view").orElseThrow();
@@ -109,7 +109,7 @@ class RoleSeederIT {
         mongo.insert(new org.bson.Document("_id", KNOWN).append("codes",
                 Arrays.stream(Authority.values()).map(Authority::code).toList()), "system_state");
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(17);
+        assertThat(authorities.findAll()).hasSize(16);
         assertThat(role(BuiltInRoles.TEAM_LEAD).getAuthorities()).doesNotContain("user:view");
         assertThat(mongo.findById(KNOWN, org.bson.Document.class, "system_state")).isNull();
     }

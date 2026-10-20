@@ -30,7 +30,6 @@ class UserSeederTest {
         repo = mock(UserRepository.class);
         roles = mock(RoleRepository.class);
         when(roles.findByName(BuiltInRoles.SUPER_ADMIN)).thenReturn(Optional.of(role("sa-id")));
-        when(roles.findByName(BuiltInRoles.WHATSAPP_DEVICE)).thenReturn(Optional.of(role("dev-id")));
     }
 
     private static Role role(String id) {
@@ -39,9 +38,9 @@ class UserSeederTest {
         return r;
     }
 
-    private static OmnichannelProperties props(OmnichannelProperties.SuperAdmin sa, OmnichannelProperties.DeviceUser du) {
+    private static OmnichannelProperties props(OmnichannelProperties.SuperAdmin sa) {
         return new OmnichannelProperties(
-                new OmnichannelProperties.Jwt("s", Duration.ofHours(1)), sa, du,
+                new OmnichannelProperties.Jwt("s", Duration.ofHours(1)), sa,
                 new OmnichannelProperties.TwoFactor("Omnichannel CRM"),
                 new OmnichannelProperties.Ws("*"),
                 new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)));
@@ -49,10 +48,6 @@ class UserSeederTest {
 
     private static OmnichannelProperties.SuperAdmin superAdmin(String hash) {
         return new OmnichannelProperties.SuperAdmin("Nagesh Kumar", "nageshk", hash, "me@example.in", "9928088743");
-    }
-
-    private static OmnichannelProperties.DeviceUser device(String username, String hash) {
-        return new OmnichannelProperties.DeviceUser("WhatsApp Bridge", username, hash);
     }
 
     private User savedUser() {
@@ -64,7 +59,7 @@ class UserSeederTest {
     @Test
     void seedsSuperAdminWithTwoFactorOff() {
         when(repo.existsByRoleId("sa-id")).thenReturn(false);
-        new UserSeeder(repo, roles, props(superAdmin(HASH), device("", ""))).run(null);
+        new UserSeeder(repo, roles, props(superAdmin(HASH))).run(null);
 
         User u = savedUser();
         assertThat(u.getRoleId()).isEqualTo("sa-id");
@@ -81,7 +76,7 @@ class UserSeederTest {
     @Test
     void skipsSuperAdminWhenOneExists() {
         when(repo.existsByRoleId("sa-id")).thenReturn(true);
-        new UserSeeder(repo, roles, props(superAdmin(""), device("", ""))).run(null);
+        new UserSeeder(repo, roles, props(superAdmin(""))).run(null);
 
         verify(repo, never()).save(any());
     }
@@ -89,7 +84,7 @@ class UserSeederTest {
     @Test
     void failsWhenNoSuperAdminAndNoPasswordHash() {
         when(repo.existsByRoleId("sa-id")).thenReturn(false);
-        UserSeeder seeder = new UserSeeder(repo, roles, props(superAdmin(""), device("", "")));
+        UserSeeder seeder = new UserSeeder(repo, roles, props(superAdmin("")));
 
         assertThatThrownBy(() -> seeder.run(null))
                 .isInstanceOf(IllegalStateException.class)
@@ -98,66 +93,12 @@ class UserSeederTest {
     }
 
     @Test
-    void seedsDeviceUserWhenUsernameSet() {
-        when(repo.existsByRoleId("sa-id")).thenReturn(true);
-        when(repo.existsByUsername("wabridge")).thenReturn(false);
-        new UserSeeder(repo, roles, props(superAdmin(""), device("wabridge", HASH))).run(null);
-
-        User u = savedUser();
-        assertThat(u.getRoleId()).isEqualTo("dev-id");
-        assertThat(u.getUsername()).isEqualTo("wabridge");
-        assertThat(u.getName()).isEqualTo("WhatsApp Bridge");
-        assertThat(u.getPassword()).isEqualTo(HASH);
-        assertThat(u.isActive()).isTrue();
-        assertThat(u.getTwoFactor()).isEqualTo(TwoFactor.disabled());
-    }
-
-    @Test
-    void skipsDeviceUserWhenUsernameBlank() {
-        when(repo.existsByRoleId("sa-id")).thenReturn(true);
-        new UserSeeder(repo, roles, props(superAdmin(""), device("", HASH))).run(null);
-
-        verify(repo, never()).existsByUsername(any());
-        verify(repo, never()).save(any());
-    }
-
-    @Test
-    void skipsDeviceUserWhenExists() {
-        when(repo.existsByRoleId("sa-id")).thenReturn(true);
-        when(repo.existsByUsername("wabridge")).thenReturn(true);
-        new UserSeeder(repo, roles, props(superAdmin(""), device("wabridge", HASH))).run(null);
-
-        verify(repo, never()).save(any());
-    }
-
-    @Test
-    void failsWhenDeviceUsernameSetButPasswordBlank() {
-        when(repo.existsByRoleId("sa-id")).thenReturn(true);
-        when(repo.existsByUsername("wabridge")).thenReturn(false);
-        UserSeeder seeder = new UserSeeder(repo, roles, props(superAdmin(""), device("wabridge", "")));
-
-        assertThatThrownBy(() -> seeder.run(null))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("omnichannel.device-user.password");
-        verify(repo, never()).save(any());
-    }
-
-    @Test
     void lowerCasesConfiguredSuperAdminUsername() {
         when(repo.existsByRoleId("sa-id")).thenReturn(false);
         var sa = new OmnichannelProperties.SuperAdmin("Nagesh Kumar", "NageshK", HASH, "", "");
-        new UserSeeder(repo, roles, props(sa, device("", ""))).run(null);
+        new UserSeeder(repo, roles, props(sa)).run(null);
 
         assertThat(savedUser().getUsername()).isEqualTo("nageshk");
     }
 
-    @Test
-    void lowerCasesConfiguredDeviceUsernameForExistsCheckAndSave() {
-        when(repo.existsByRoleId("sa-id")).thenReturn(true);
-        when(repo.existsByUsername("wabridge")).thenReturn(false);
-        new UserSeeder(repo, roles, props(superAdmin(""), device("WaBridge", HASH))).run(null);
-
-        assertThat(savedUser().getUsername()).isEqualTo("wabridge");
-        verify(repo).existsByUsername("wabridge");
-    }
 }

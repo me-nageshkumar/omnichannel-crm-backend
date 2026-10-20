@@ -188,8 +188,8 @@ class InitialPasswordIT {
     }
 
     @Test
-    void deviceUserLoginUnchanged() throws Exception {
-        testUsers.create("newbie", "pw", "WHATSAPP_DEVICE", null);
+    void platformUserLoginUnchanged() throws Exception {
+        testUsers.create("newbie", "pw", "ACCOUNT_MANAGER", null);
         String body = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"newbie\",\"password\":\"pw\"}"))
                 .andExpect(status().isOk())

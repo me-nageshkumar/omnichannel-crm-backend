@@ -23,15 +23,13 @@ import org.springframework.stereotype.Component;
  * no longer exists. Idempotent; runs in every profile after the roles are seeded.
  */
 @Component
-@Order(2)
+@Order(3)
 public class UserRoleMigration implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(UserRoleMigration.class);
 
     /** Legacy enum value to the built-in role that replaces it. */
-    private static final Map<String, String> LEGACY_ROLES = Map.of(
-            "SUPER_ADMIN", BuiltInRoles.SUPER_ADMIN,
-            "USER", BuiltInRoles.WHATSAPP_DEVICE);
+    private static final Map<String, String> LEGACY_ROLES = Map.of("SUPER_ADMIN", BuiltInRoles.SUPER_ADMIN);
 
     private final MongoTemplate mongo;
     private final RoleRepository roles;

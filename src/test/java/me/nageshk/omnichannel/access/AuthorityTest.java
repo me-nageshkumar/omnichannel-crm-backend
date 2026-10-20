@@ -13,7 +13,7 @@ class AuthorityTest {
     @Test
     void codesAreUnique() {
         Set<String> codes = Arrays.stream(Authority.values()).map(Authority::code).collect(Collectors.toSet());
-        assertThat(codes).hasSize(Authority.values().length).hasSize(17);
+        assertThat(codes).hasSize(Authority.values().length).hasSize(16);
     }
 
     @Test
@@ -34,7 +34,7 @@ class AuthorityTest {
     @Test
     void defaultRolesAreBuiltInAndMayHoldTheAuthority() {
         Set<String> builtIn = Set.of(BuiltInRoles.SUPER_ADMIN, BuiltInRoles.ACCOUNT_MANAGER,
-                BuiltInRoles.WHATSAPP_DEVICE, BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER,
+                BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER,
                 BuiltInRoles.TEAM_LEAD, BuiltInRoles.AGENT);
         for (Authority a : Authority.values()) {
             for (String r : a.defaultRoles()) {

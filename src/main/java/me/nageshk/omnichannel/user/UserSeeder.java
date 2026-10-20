@@ -13,12 +13,12 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Seeds the first super admin and the extension's device user on startup. Existing users are never
+ * Seeds the first super admin on startup. Existing users are never
  * overwritten, so edits made directly in Mongo stick. Not active under the {@code test} profile:
  * integration tests seed their own users.
  */
 @Component
-@Order(3)
+@Order(4)
 @Profile("!test")
 public class UserSeeder implements ApplicationRunner {
 
@@ -37,7 +37,6 @@ public class UserSeeder implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         seedSuperAdmin(props.superAdmin());
-        seedDeviceUser(props.deviceUser());
     }
 
     private void seedSuperAdmin(OmnichannelProperties.SuperAdmin sa) {
@@ -52,20 +51,6 @@ public class UserSeeder implements ApplicationRunner {
         u.setTwoFactor(TwoFactor.disabled());
         users.save(u);
         log.info("seeded super admin '{}' (two-factor off)", u.getUsername());
-    }
-
-    private void seedDeviceUser(OmnichannelProperties.DeviceUser du) {
-        if (isBlank(du.username())) return;
-        String username = lower(du.username());
-        if (users.existsByUsername(username)) return;
-        if (isBlank(du.password())) {
-            throw new IllegalStateException(
-                    "omnichannel.device-user.password (bcrypt hash) is required when omnichannel.device-user.username is set");
-        }
-        User u = base(du.name(), username, du.password(), roleId(BuiltInRoles.WHATSAPP_DEVICE));
-        u.setTwoFactor(TwoFactor.disabled());
-        users.save(u);
-        log.info("seeded device user '{}'", u.getUsername());
     }
 
     private String roleId(String roleName) {

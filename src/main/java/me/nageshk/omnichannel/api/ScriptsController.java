@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** Serves the extension's server-delivered scripts (see ScriptCatalog). */
 @RestController
-@PreAuthorize("hasAuthority('DEVICE') or hasAuthority('whatsapp:bridge') or hasAuthority('SUPER_ADMIN')")
+@PreAuthorize("hasAuthority('DEVICE') or hasAuthority('SUPER_ADMIN')")
 @RequestMapping("/api/scripts")
 public class ScriptsController {
 

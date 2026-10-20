@@ -45,7 +45,7 @@ class LoginIT {
 
     @Test
     void loginWithoutTwoFactorReturnsAccessToken() throws Exception {
-        testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
+        testUsers.create("dev", "pw", "ACCOUNT_MANAGER", null);
         login("dev", "pw")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token", not(emptyString())))
@@ -73,7 +73,7 @@ class LoginIT {
 
     @Test
     void wrongPasswordReturns401InvalidCredentials() throws Exception {
-        testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
+        testUsers.create("dev", "pw", "ACCOUNT_MANAGER", null);
         login("dev", "nope")
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("invalid_credentials"));
@@ -88,7 +88,7 @@ class LoginIT {
 
     @Test
     void inactiveUserReturns401AccountInactive() throws Exception {
-        User u = testUsers.create("old", "pw", "WHATSAPP_DEVICE", null);
+        User u = testUsers.create("old", "pw", "ACCOUNT_MANAGER", null);
         u.setActive(false);
         repo.save(u);
         login("old", "pw")
@@ -110,7 +110,7 @@ class LoginIT {
     @Test
     void inactiveUserWithWrongPasswordReturnsInvalidCredentials() throws Exception {
         // The inactive state must not be revealed to someone who does not know the password.
-        User u = testUsers.create("old", "pw", "WHATSAPP_DEVICE", null);
+        User u = testUsers.create("old", "pw", "ACCOUNT_MANAGER", null);
         u.setActive(false);
         repo.save(u);
         login("old", "wrong")
@@ -120,13 +120,13 @@ class LoginIT {
 
     @Test
     void missingPasswordReturns401() throws Exception {
-        testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
+        testUsers.create("dev", "pw", "ACCOUNT_MANAGER", null);
         login("dev", null).andExpect(status().isUnauthorized());
     }
 
     @Test
     void sixthFailureReturns429() throws Exception {
-        testUsers.create("locked", "pw", "WHATSAPP_DEVICE", null);
+        testUsers.create("locked", "pw", "ACCOUNT_MANAGER", null);
         for (int i = 0; i < 5; i++) login("locked", "bad").andExpect(status().isUnauthorized());
         login("locked", "bad")
                 .andExpect(status().isTooManyRequests())
@@ -137,7 +137,7 @@ class LoginIT {
 
     @Test
     void lockoutCannotBeBypassedByChangingUsernameCase() throws Exception {
-        testUsers.create("casey", "pw", "WHATSAPP_DEVICE", null);
+        testUsers.create("casey", "pw", "ACCOUNT_MANAGER", null);
         for (int i = 0; i < 5; i++) login("casey", "bad").andExpect(status().isUnauthorized());
         login("CASEY", "pw")
                 .andExpect(status().isTooManyRequests())

@@ -18,7 +18,7 @@ class TotpServiceTest {
         TimeProvider fixed = () -> NOW_SECONDS;
         var props = new OmnichannelProperties(
                 new OmnichannelProperties.Jwt("s", Duration.ofHours(1)),
-                null, null,
+                null,
                 new OmnichannelProperties.TwoFactor("Omnichannel CRM"),
                 new OmnichannelProperties.Ws("*"),
                 new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)));

@@ -24,11 +24,6 @@ omnichannel:
     password: ${OMNICHANNEL_SUPER_ADMIN_PASSWORD:}
     email: ${OMNICHANNEL_SUPER_ADMIN_EMAIL:}
     mobile-number: ${OMNICHANNEL_SUPER_ADMIN_MOBILE:}
-  # Two-factor-off user for the Chrome extension. Seeding skipped when username is blank.
-  device-user:
-    name: ${OMNICHANNEL_DEVICE_USER_NAME:WhatsApp Bridge}
-    username: ${OMNICHANNEL_DEVICE_USER_USERNAME:}
-    password: ${OMNICHANNEL_DEVICE_USER_PASSWORD:}
   two-factor:
     issuer: Omnichannel CRM
   ws:

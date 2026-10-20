@@ -30,13 +30,13 @@ class ScriptsApiIT {
     @BeforeEach
     void seedDeviceUser() {
         testUsers.deleteAll();
-        deviceToken = testUsers.tokenFor("demo");
+        deviceToken = testDevices.connected("919928088743").deviceKey();
     }
     @Autowired ScriptCatalog catalog;
 
     private HttpHeaders auth() {
         HttpHeaders h = new HttpHeaders();
-        h.setBearerAuth(deviceToken);
+        h.set("Authorization", "Device " + deviceToken);
         return h;
     }
 
@@ -73,7 +73,7 @@ class ScriptsApiIT {
     @Test
     void deviceKeyCanFetchScripts() {
         HttpHeaders h = new HttpHeaders();
-        h.set("Authorization", "Device " + testDevices.connected("919928088743").deviceKey());
+        h.set("Authorization", "Device " + deviceToken);
         ResponseEntity<JsonNode> res = rest.exchange("/api/scripts", HttpMethod.GET, new HttpEntity<>(h), JsonNode.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         ResponseEntity<byte[]> page = rest.exchange("/api/scripts/page", HttpMethod.GET, new HttpEntity<>(h), byte[].class);

@@ -45,7 +45,7 @@ class LogoutIT {
         testUsers.deleteAll();
         revoked.deleteAll();
         attempts.clearLogin("dev");
-        user = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
+        user = testUsers.create("dev", "pw", "ACCOUNT_MANAGER", null);
     }
 
     private ResultActions logout(String token) throws Exception {

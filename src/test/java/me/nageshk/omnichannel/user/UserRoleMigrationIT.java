@@ -39,14 +39,12 @@ class UserRoleMigrationIT {
     @Test
     void mapsLegacyRolesToRoleIds() {
         insert("root", "SUPER_ADMIN");
-        insert("dev", "USER");
         migration.migrate();
 
         Document root = raw("root");
         assertThat(root.getString("roleId")).isEqualTo(testUsers.roleId(BuiltInRoles.SUPER_ADMIN));
         assertThat(root.containsKey("role")).isFalse();
         assertThat(root.getList("workspaceRoles", Object.class)).isEmpty();
-        assertThat(raw("dev").getString("roleId")).isEqualTo(testUsers.roleId(BuiltInRoles.WHATSAPP_DEVICE));
     }
 
     @Test

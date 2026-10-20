@@ -90,7 +90,7 @@ class TwoFactorEnrolmentIT {
 
     @Test
     void initiateWhenAlreadyEnabledReturns409() throws Exception {
-        User u = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", TestUsers.TEST_SECRET);
+        User u = testUsers.create("dev", "pw", "ACCOUNT_MANAGER", TestUsers.TEST_SECRET);
         postAs(testUsers.accessToken(u), "initiate", "{}")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TWO_FACTOR_STATE"));
@@ -98,7 +98,7 @@ class TwoFactorEnrolmentIT {
 
     @Test
     void disableWithValidCodeClearsSecret() throws Exception {
-        User u = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", TestUsers.TEST_SECRET);
+        User u = testUsers.create("dev", "pw", "ACCOUNT_MANAGER", TestUsers.TEST_SECRET);
         postAs(testUsers.accessToken(u), "disable", "{\"otp\":\"" + codeFor(TestUsers.TEST_SECRET) + "\"}")
                 .andExpect(status().isNoContent());
 
@@ -115,7 +115,7 @@ class TwoFactorEnrolmentIT {
 
     @Test
     void disableWithWrongCodeReturns400() throws Exception {
-        User u = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", TestUsers.TEST_SECRET);
+        User u = testUsers.create("dev", "pw", "ACCOUNT_MANAGER", TestUsers.TEST_SECRET);
         postAs(testUsers.accessToken(u), "disable", "{\"otp\":\"000000\"}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_OTP"));

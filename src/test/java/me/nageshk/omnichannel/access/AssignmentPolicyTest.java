@@ -31,7 +31,7 @@ class AssignmentPolicyTest {
     void seedDefaults() {
         superAdmin = role(SUPER_ADMIN, RoleLevel.PLATFORM, Set.of());
         accountManager = defaultRole(ACCOUNT_MANAGER);
-        device = defaultRole(WHATSAPP_DEVICE);
+        device = role("SUPPORT", RoleLevel.PLATFORM, Set.of("customer:view"));
         customerAdmin = defaultRole(CUSTOMER_ADMIN);
         workspaceManager = defaultRole(WORKSPACE_MANAGER);
         teamLead = defaultRole(TEAM_LEAD);
@@ -265,7 +265,7 @@ class AssignmentPolicyTest {
         assertThat(policy.canDisableLogin(lead, am)).isTrue();
         assertThat(policy.canManageLogin(lead, platformTarget(role("STAFF_LEAD", RoleLevel.PLATFORM, codes))))
                 .isFalse();
-        assertThat(policy.canManageLogin(lead, platformTarget(device))).isFalse();
+        assertThat(policy.canManageLogin(lead, platformTarget(device))).isTrue();
     }
 
     @Test

@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.StreamSupport;
 import me.nageshk.omnichannel.access.BuiltInRoles;
+import me.nageshk.omnichannel.access.RoleLevel;
+import me.nageshk.omnichannel.access.Role;
 import me.nageshk.omnichannel.auth.LoginAttemptService;
 import me.nageshk.omnichannel.support.TestUsers;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +39,8 @@ class PlatformUsersApiIT {
     @Autowired TestUsers testUsers;
     @Autowired UserRepository users;
     @Autowired LoginAttemptService attempts;
+    @Autowired me.nageshk.omnichannel.access.RoleRepository roles;
+    @Autowired me.nageshk.omnichannel.access.RoleCache roleCache;
 
     User root;
     String rootToken;
@@ -189,16 +193,22 @@ class PlatformUsersApiIT {
     @Test
     void editChangesDetailsAndRole() throws Exception {
         User am = testUsers.create("manager", "pw", BuiltInRoles.ACCOUNT_MANAGER, null);
+        Role support = new Role();
+        support.setName("SUPPORT");
+        support.setLevel(RoleLevel.PLATFORM);
+        support.setAuthorities(java.util.Set.of("customer:view"));
+        support = roles.save(support);
+        roleCache.evictAll();
         Map<String, Object> edit = Map.of("name", "Bridge", "email", "b@example.com", "mobileNumber", "+910000000000",
-                "roleId", testUsers.roleId(BuiltInRoles.WHATSAPP_DEVICE));
+                "roleId", support.getId());
         send(put("/api/platform-users/" + am.getId()), rootToken, edit)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Bridge"))
                 .andExpect(jsonPath("$.email").value("b@example.com"))
-                .andExpect(jsonPath("$.role.name").value(BuiltInRoles.WHATSAPP_DEVICE));
+                .andExpect(jsonPath("$.role.name").value("SUPPORT"));
         User saved = users.findById(am.getId()).orElseThrow();
         assertThat(saved.getName()).isEqualTo("Bridge");
-        assertThat(saved.getRoleId()).isEqualTo(testUsers.roleId(BuiltInRoles.WHATSAPP_DEVICE));
+        assertThat(saved.getRoleId()).isEqualTo(support.getId());
     }
 
     @Test
@@ -224,7 +234,7 @@ class PlatformUsersApiIT {
     void assignableRolesArePlatformRolesExceptSuperAdmin() throws Exception {
         JsonNode roles = json(send(get("/api/platform-users/assignable-roles"), rootToken, null).andExpect(status().isOk()));
         List<String> names = StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asText()).toList();
-        assertThat(names).containsExactlyInAnyOrder(BuiltInRoles.ACCOUNT_MANAGER, BuiltInRoles.WHATSAPP_DEVICE);
+        assertThat(names).containsExactlyInAnyOrder(BuiltInRoles.ACCOUNT_MANAGER);
     }
 
     @Test

@@ -28,7 +28,7 @@ public class RoleService {
     public record PreviewChange(String assigner, String assigned, boolean nowAssignable) {}
 
     private static final Set<String> BUILT_IN_NAMES = Set.of(BuiltInRoles.SUPER_ADMIN, BuiltInRoles.ACCOUNT_MANAGER,
-            BuiltInRoles.WHATSAPP_DEVICE, BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER,
+            BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER,
             BuiltInRoles.TEAM_LEAD, BuiltInRoles.AGENT);
 
     private final RoleRepository roles;

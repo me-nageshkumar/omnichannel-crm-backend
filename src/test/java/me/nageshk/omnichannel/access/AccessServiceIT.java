@@ -111,7 +111,7 @@ class AccessServiceIT {
 
         assertThat(superAdmin.superAdmin()).isTrue();
         assertThat(superAdmin.hasAuthority("platform-user:manage")).isTrue();
-        assertThat(superAdmin.hasAuthority("whatsapp:bridge")).isTrue();
+        assertThat(superAdmin.hasAuthority("phone-number:view-all")).isTrue();
         assertThat(superAdmin.hasAuthority("SUPER_ADMIN")).isTrue();
         assertThat(superAdmin.hasAuthority("user:manage")).isFalse();
         assertThat(manager.hasAuthority("customer:create")).isTrue();

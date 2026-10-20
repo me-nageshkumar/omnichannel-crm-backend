@@ -27,12 +27,12 @@ class MongoUserDetailsServiceIT {
 
     @Test
     void loadsActiveUserWithRoleId() {
-        testUsers.create("alice", "pw", "WHATSAPP_DEVICE", null);
+        testUsers.create("alice", "pw", "ACCOUNT_MANAGER", null);
 
         UserDetails details = service.loadUserByUsername("alice");
 
         assertThat(details).isInstanceOf(AuthenticatedUser.class);
-        assertThat(((AuthenticatedUser) details).roleId()).isEqualTo(testUsers.roleId("WHATSAPP_DEVICE"));
+        assertThat(((AuthenticatedUser) details).roleId()).isEqualTo(testUsers.roleId("ACCOUNT_MANAGER"));
         assertThat(details.isEnabled()).isTrue();
         assertThat(((AuthenticatedUser) details).tokenVersion()).isZero();
         assertThat(((AuthenticatedUser) details).twoFactorEnabled()).isFalse();
@@ -40,7 +40,7 @@ class MongoUserDetailsServiceIT {
 
     @Test
     void inactiveUserIsDisabled() {
-        User u = testUsers.create("bob", "pw", "WHATSAPP_DEVICE", null);
+        User u = testUsers.create("bob", "pw", "ACCOUNT_MANAGER", null);
         u.setActive(false);
         repo.save(u);
 

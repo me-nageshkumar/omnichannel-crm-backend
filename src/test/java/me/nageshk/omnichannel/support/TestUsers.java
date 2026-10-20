@@ -63,9 +63,9 @@ public class TestUsers {
         return jwt.issueAccessToken(access.load(user)).token();
     }
 
-    /** Creates a two-factor-off WHATSAPP_DEVICE user and returns an access token for it. */
+    /** Creates a two-factor-off ACCOUNT_MANAGER user and returns an access token for it. */
     public String tokenFor(String username) {
-        return accessToken(create(username, "pw", BuiltInRoles.WHATSAPP_DEVICE, null));
+        return accessToken(create(username, "pw", BuiltInRoles.ACCOUNT_MANAGER, null));
     }
 
     /** Creates an active platform user with the named role; {@code totpSecret} null means two-factor off. */

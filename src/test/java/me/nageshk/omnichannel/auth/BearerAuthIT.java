@@ -50,7 +50,7 @@ class BearerAuthIT {
     @BeforeEach
     void seed() {
         testUsers.deleteAll();
-        user = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
+        user = testUsers.create("dev", "pw", "ACCOUNT_MANAGER", null);
     }
 
     private ResultActions getStatus(String token) throws Exception {

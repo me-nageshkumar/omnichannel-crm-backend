@@ -149,7 +149,7 @@ class CurrentUserIT {
 
     @Test
     void reflectsTwoFactorChangeWithoutNewToken() throws Exception {
-        User u = testUsers.create("dev", "pw", "WHATSAPP_DEVICE", null);
+        User u = testUsers.create("dev", "pw", "ACCOUNT_MANAGER", null);
         String token = testUsers.accessToken(u);
         u.setTwoFactor(TwoFactor.enabledWith(TestUsers.TEST_SECRET));
         repo.save(u);
