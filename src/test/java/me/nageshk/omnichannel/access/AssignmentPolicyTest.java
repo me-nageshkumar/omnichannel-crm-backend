@@ -67,18 +67,18 @@ class AssignmentPolicyTest {
 
     @Test
     void teamLeadWithUserManageGivesAgentButNotTeamLead() {
-        teamLead.setAuthorities(Set.of("user:view", "user:manage"));
+        teamLead.setAuthorities(Set.of("user:view", "user:manage", "contact:view", "contact:annotate"));
         Actor tl = brandUser(ACME, Map.of(A, teamLead));
         assertThat(policy.assignableBrandRoles(tl, A, all)).containsExactly(agent);
     }
 
     @Test
     void emptyRoleIsAssignableByAnyManager() {
-        assertThat(agent.getAuthorities()).isEmpty();
-        assertThat(policy.canGiveBrandRole(customerAdminOf(ACME, A), A, agent)).isTrue();
-        assertThat(policy.canGiveBrandRole(brandUser(ACME, Map.of(A, workspaceManager)), A, agent)).isTrue();
+        Role empty = role("EMPTY", RoleLevel.BRAND, Set.of());
+        assertThat(policy.canGiveBrandRole(customerAdminOf(ACME, A), A, empty)).isTrue();
+        assertThat(policy.canGiveBrandRole(brandUser(ACME, Map.of(A, workspaceManager)), A, empty)).isTrue();
         Role managerOnly = role("MANAGER_ONLY", RoleLevel.BRAND, Set.of("user:manage"));
-        assertThat(policy.canGiveBrandRole(brandUser(ACME, Map.of(A, managerOnly)), A, agent)).isTrue();
+        assertThat(policy.canGiveBrandRole(brandUser(ACME, Map.of(A, managerOnly)), A, empty)).isTrue();
     }
 
     @Test

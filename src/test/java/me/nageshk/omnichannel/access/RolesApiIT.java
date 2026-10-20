@@ -233,9 +233,10 @@ class RolesApiIT {
     @Test
     void previewReportsTeamLeadLosingAgent() {
         call(HttpMethod.PUT, "/api/roles/" + idOf("TEAM_LEAD"),
-                Map.of("description", "lead", "authorities", List.of("user:view", "user:manage")));
+                Map.of("description", "lead", "authorities",
+                        List.of("user:view", "user:manage", "contact:view", "contact:annotate")));
         ResponseEntity<JsonNode> res = call(HttpMethod.POST, "/api/roles/" + idOf("AGENT") + "/preview",
-                Map.of("authorities", List.of("team:manage")));
+                Map.of("authorities", List.of("contact:view", "contact:annotate", "team:manage")));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         List<JsonNode> changes = StreamSupport.stream(res.getBody().get("changes").spliterator(), false).toList();
         assertThat(changes).anySatisfy(c -> {

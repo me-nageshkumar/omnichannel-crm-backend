@@ -114,6 +114,8 @@ public class TestUsers {
         mongo.remove(new Query(), "authorities");
         mongo.remove(new Query(), "phone_numbers");
         mongo.remove(new Query(), "connect_codes");
+        for (String c : List.of("contacts", "contact_labels", "contact_attributes", "contact_notes", "contact_filters"))
+            mongo.remove(new Query(), c);
         roleSeeder.seed();
         roleCache.evictAll();
     }
