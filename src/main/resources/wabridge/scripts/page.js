@@ -25,9 +25,9 @@
     mod
   ));
 
-  // ../../../whatsapp-web.js/src/util/Injected/Utils.js
+  // ../whatsapp-web.js/src/util/Injected/Utils.js
   var require_Utils = __commonJS({
-    "../../../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
+    "../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
       "use strict";
       exports.LoadUtils = () => {
         window.WWebJS = {};
@@ -1263,9 +1263,9 @@
     }
   });
 
-  // ../../../whatsapp-web.js/src/util/Constants.js
+  // ../whatsapp-web.js/src/util/Constants.js
   var require_Constants = __commonJS({
-    "../../../whatsapp-web.js/src/util/Constants.js"(exports) {
+    "../whatsapp-web.js/src/util/Constants.js"(exports) {
       "use strict";
       exports.WhatsWebURL = "https://web.whatsapp.com/";
       exports.DefaultOptions = {
@@ -1693,7 +1693,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "64875dea21fd" : "dev";
+  var BUILD = true ? "bfba9e6c0911" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
