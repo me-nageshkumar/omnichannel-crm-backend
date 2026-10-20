@@ -46,12 +46,21 @@ public final class PlaceholderParser {
             int close = text.indexOf("}}", open + 2);
             if (close < 0) throw new PlaceholderSyntaxException("unclosed \"{{\"");
             String raw = text.substring(open + 2, close);
-            PlaceholderRef ref = classify(raw.strip(), raw);
+            PlaceholderRef ref = classify(trimSpaces(raw), raw);
             refs.putIfAbsent(ref.name(), ref);
             out.append("{{").append(ref.name()).append("}}");
             pos = close + 2;
         }
         return out.append(text, pos, text.length()).toString();
+    }
+
+    /** Trims ASCII spaces only: tabs, line breaks and non-breaking spaces are not allowed inside the braces. */
+    private static String trimSpaces(String s) {
+        int from = 0;
+        int to = s.length();
+        while (from < to && s.charAt(from) == ' ') from++;
+        while (to > from && s.charAt(to - 1) == ' ') to--;
+        return s.substring(from, to);
     }
 
     private static PlaceholderRef classify(String inner, String raw) {

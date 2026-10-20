@@ -112,6 +112,17 @@ class PlaceholderParserTest {
     }
 
     @Test
+    void onlyAsciiSpacesMayPadAPlaceholder() {
+        rejects("{{\tname}}", "invalid placeholder \"{{\tname}}\"");
+        rejects("{{name\n}}", "invalid placeholder \"{{name\n}}\"");
+        rejects("{{\u00A0name}}", "invalid placeholder \"{{\u00A0name}}\"");
+        rejects("{{name\u00A0}}", "invalid placeholder \"{{name\u00A0}}\"");
+        rejects("{{ \tcontact.name }}", "invalid placeholder \"{{ \tcontact.name }}\"");
+        assertThat(PlaceholderParser.parse("{{  name  }}")).containsExactly(
+                new PlaceholderRef("name", PlaceholderKind.AGENT, null));
+    }
+
+    @Test
     void rejectsLongName() {
         String ok = "a".repeat(40);
         assertThat(PlaceholderParser.parse("{{" + ok + "}}")).hasSize(1);
