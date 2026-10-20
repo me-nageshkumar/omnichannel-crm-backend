@@ -94,6 +94,30 @@ class ContactsApiIT extends ContactApiTestBase {
     }
 
     @Test
+    void blankNameClearsName() throws Exception {
+        Contact c = contact(brandA, "Pushname", "919812345679");
+        send(put(url() + "/" + c.getId()), leadToken, Map.of("attributes", Map.of())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Pushname"));
+        send(put(url() + "/" + c.getId()), leadToken, Map.of("name", "   ")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").doesNotExist());
+        Contact after = contacts.findById(c.getId()).orElseThrow();
+        assertThat(after.getName()).isNull();
+        assertThat(after.isNameEdited()).isTrue();
+    }
+
+    @Test
+    void blankAttributeValueClearsAttribute() throws Exception {
+        ContactAttribute city = attribute(brandA, "City");
+        Contact c = contact(brandA, "Asha", "919812345680");
+        c.getAttributes().put(city.getId(), "Pune");
+        contacts.save(c);
+        send(put(url() + "/" + c.getId()), leadToken, Map.of("attributes", Map.of(city.getId(), "")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attributes." + city.getId()).doesNotExist());
+        assertThat(contacts.findById(c.getId()).orElseThrow().getAttributes()).doesNotContainKey(city.getId());
+    }
+
+    @Test
     void updateSetsNameAndMergesAttributes() throws Exception {
         ContactAttribute city = attribute(brandA, "City");
         ContactAttribute size = attribute(brandA, "Size");
