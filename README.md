@@ -135,6 +135,24 @@ Every logged-in user can use the console; what they see follows their authoritie
 - Usernames are stored lower-case and unique across the platform. Temporary and new passwords need at
   least 10 characters; a temporary password is shown only in the create or reset response.
 
+### Authorities
+
+Authorities live in Mongo and the Super Admin manages them on the Authorities page
+(`/api/authorities`; `GET`, `POST`, `PUT /{code}`, `DELETE /{code}`, `GET /{code}/history`,
+`GET /needs-creating`).
+
+- **Workflow:** guard the method with `@PreAuthorize("hasAuthority('thing:action')")`, deploy, then create
+  the code on the Authorities page (group, level, description) and add it to roles. Until it is created
+  nobody holds it, so the method stays closed.
+- **Statuses:** `ACTIVE` (created and checked in code at the right level), `NOT_CHECKED` (created, but no
+  check for it was found in code, so a typo is possible), `WRONG_LEVEL` (the code's checks sit at a
+  different level than the authority), and `NEEDS_CREATING` (checked in code but not yet created).
+- **Built-ins:** the authorities the system ships with can change group and description but not level,
+  and cannot be deleted. Deleting or re-levelling any authority a role still holds answers 409
+  `AUTHORITY_IN_USE` with the role names.
+- **Limit:** the scanner only finds literal codes inside `@PreAuthorize`. Codes built at runtime, and
+  checks made outside `@PreAuthorize`, are not found and show as `NOT_CHECKED`.
+
 | Endpoint | Needs |
 |---|---|
 | `GET/POST /api/platform-users`, `PUT .../{id}`, `POST .../{id}/deactivate\|reactivate\|reset-password`, `GET .../assignable-roles` | `platform-user:manage` |

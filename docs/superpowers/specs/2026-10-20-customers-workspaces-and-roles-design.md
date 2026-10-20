@@ -119,6 +119,8 @@ COMPANY or BRAND. The full list lives in one place in code (an enum or catalogue
 its name, level, a one-line description shown in the console, and the built-in roles that get it by
 default. New features add authorities; authorities are never created from the console.
 
+> Superseded in part: `docs/superpowers/specs/2026-10-20-authority-management-design.md` lets the Super Admin create authorities from the console, replacing "never created from the console".
+
 First-slice catalogue:
 
 | Authority | Level | Meaning | Default roles |
