@@ -85,7 +85,9 @@ class InboxStreamBrokerTest {
         assertThat(created.get(0).events).hasSize(1);
         String event = created.get(0).events.get(0);
         assertThat(event).startsWith("event:chat\ndata:");
-        assertThat(event).contains("\"visible\":false").contains("\"chat\":{").contains("\"id\":\"c1\"");
+        assertThat(event).contains("\"visible\":false").contains("\"chat\":{").contains("\"id\":\"c1\"")
+                .contains("\"phoneNumberId\":\"pn1\"")
+                .doesNotContain("contact").doesNotContain("lastMessage").doesNotContain("assignedUser");
     }
 
     @Test
@@ -166,6 +168,38 @@ class InboxStreamBrokerTest {
         assertThat(created.get(0).completed).isTrue();
         assertThat(created.get(0).events).isEmpty();
         assertThat(broker.subscribers(PN)).isZero();
+    }
+
+    @Test
+    void subscribeRacingWithLastRemovalNeverOrphansTheNewSubscriber() throws Exception {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            for (int i = 0; i < 500; i++) {
+                String pn = "race" + i;
+                SseEmitter first = broker.subscribe(pn, () -> mine("u1"));
+                java.util.concurrent.CyclicBarrier barrier = new java.util.concurrent.CyclicBarrier(2);
+                var removal = pool.submit(() -> {
+                    barrier.await();
+                    // a failed send drops (and removes) the only subscriber
+                    ((RecordingEmitter) first).failOnSend = true;
+                    broker.ping();
+                    return null;
+                });
+                var subscribe = pool.submit(() -> {
+                    barrier.await();
+                    return broker.subscribe(pn, () -> mine("u1"));
+                });
+                removal.get();
+                RecordingEmitter second = (RecordingEmitter) subscribe.get();
+
+                broker.ping();
+
+                assertThat(second.events).as("subscriber %d must be reachable", i).isNotEmpty();
+                assertThat(broker.subscribers(pn)).isEqualTo(1);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

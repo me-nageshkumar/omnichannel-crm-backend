@@ -45,7 +45,12 @@ public class InboxStreamBroker {
     public SseEmitter subscribe(String phoneNumberId, Supplier<InboxScope> scope) {
         SseEmitter emitter = emitterFactory.apply(0L);
         Subscriber subscriber = new Subscriber(emitter, scope);
-        subscribers.computeIfAbsent(phoneNumberId, k -> ConcurrentHashMap.newKeySet()).add(subscriber);
+        // compute() is atomic per key, so it cannot interleave with remove() dropping the emptied set
+        subscribers.compute(phoneNumberId, (k, set) -> {
+            Set<Subscriber> target = set == null ? ConcurrentHashMap.newKeySet() : set;
+            target.add(subscriber);
+            return target;
+        });
         Runnable remove = () -> remove(phoneNumberId, subscriber);
         emitter.onCompletion(remove);
         emitter.onTimeout(remove);
@@ -53,10 +58,15 @@ public class InboxStreamBroker {
         return emitter;
     }
 
-    /** Sends the chat to every subscriber of the number, flagged {@code visible} per their scope. */
+    /**
+     * Sends the chat to every subscriber of the number, flagged {@code visible} per their scope. A subscriber who
+     * may not see the chat gets only its id and phone number id with {@code visible: false} (enough to drop the
+     * row), never its contents.
+     */
     public void push(String phoneNumberId, WaWebChat chat, ChatView view) {
         forEach(phoneNumberId, chat, false, (s, visible) -> send(phoneNumberId, s, "chat",
-                Map.of("chat", view, "visible", visible)));
+                Map.of("chat", visible ? view : Map.of("id", chat.getId(), "phoneNumberId", phoneNumberId),
+                        "visible", visible)));
     }
 
     /** Sends the message only to subscribers who can see the chat. */
@@ -131,7 +141,10 @@ public class InboxStreamBroker {
     }
 
     private void remove(String phoneNumberId, Subscriber s) {
-        subscribers.computeIfPresent(phoneNumberId, (k, set) -> {
+        subscribers.compute(phoneNumberId, (k, set) -> {
+            if (set == null) {
+                return null;
+            }
             set.remove(s);
             return set.isEmpty() ? null : set;
         });
