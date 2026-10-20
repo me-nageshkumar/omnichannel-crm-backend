@@ -8,5 +8,7 @@ public interface MessageTemplateRepository extends MongoRepository<MessageTempla
 
     Optional<MessageTemplate> findByIdAndWorkspaceId(String id, String workspaceId);
 
+    boolean existsByWorkspaceId(String workspaceId);
+
     Optional<MessageTemplate> findByWorkspaceIdAndNameKey(String workspaceId, String nameKey);
 }

@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.template;
 
 import com.mongodb.client.gridfs.model.GridFSFile;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -52,25 +53,40 @@ public class TemplateMediaService {
     /** Stores an upload after checking its size and sniffing its type from the first bytes. */
     public MediaView upload(AuthenticatedUser me, String workspaceId, MultipartFile file) {
         if (file == null || file.isEmpty()) throw new ValidationException("file", "is required");
-        if (file.getSize() > MAX_SIZE) throw new ValidationException("file", "is larger than 16 MB");
-        String fileName = cleanName(file.getOriginalFilename());
+        return store(me, workspaceId, file.getOriginalFilename(), file.getSize(), file::getInputStream);
+    }
+
+    /** Stores bytes the server holds (such as the bundled demo image) with the same checks as an upload. */
+    public MediaView upload(AuthenticatedUser me, String workspaceId, String fileName, byte[] bytes) {
+        if (bytes == null || bytes.length == 0) throw new ValidationException("file", "is required");
+        return store(me, workspaceId, fileName, bytes.length, () -> new ByteArrayInputStream(bytes));
+    }
+
+    /** A source that can be opened more than once: once to sniff the head, once to store. */
+    private interface Source {
+        InputStream open() throws IOException;
+    }
+
+    private MediaView store(AuthenticatedUser me, String workspaceId, String originalName, long size, Source source) {
+        if (size > MAX_SIZE) throw new ValidationException("file", "is larger than 16 MB");
+        String fileName = cleanName(originalName);
         byte[] head;
-        try (InputStream in = file.getInputStream()) {
+        try (InputStream in = source.open()) {
             head = in.readNBytes(MediaSniffer.HEAD);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
         String mime = MediaSniffer.detect(head, fileName)
                 .orElseThrow(() -> new ValidationException("file", "is not a supported file type"));
-        Document meta = metadata(workspaceId, fileName, mime, file.getSize(), MediaSniffer.isOpus(head),
+        Document meta = metadata(workspaceId, fileName, mime, size, MediaSniffer.isOpus(head),
                 me.getUsername(), Instant.now(clock));
         ObjectId id;
-        try (InputStream in = file.getInputStream()) {
+        try (InputStream in = source.open()) {
             id = gridFs.store(in, fileName, mime, meta);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        return new MediaView(id.toHexString(), fileName, mime, file.getSize());
+        return new MediaView(id.toHexString(), fileName, mime, size);
     }
 
     /** The file for streaming; 404 when it does not exist in this brand. */

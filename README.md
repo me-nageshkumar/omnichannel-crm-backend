@@ -297,6 +297,51 @@ Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, 
 /{id}`, `POST|DELETE /{id}/labels/{labelId}`, `GET|POST /{id}/notes`, `PUT|DELETE /{id}/notes/{noteId}`),
 `contact-labels`, `contact-attributes` and `contact-filters` (`GET`, `POST`, `PUT|DELETE /{id}`).
 
+## Message templates
+
+Reusable messages a brand sends, in `message_templates` (everything scoped by `workspaceId`; another
+brand's template, media or contact answers 404). Package `me.nageshk.omnichannel.template`. A name is
+unique per brand ignoring case, archived templates included.
+
+- **Types:** `TEXT`, `IMAGE`, `VIDEO`, `DOCUMENT`, `AUDIO`, `LOCATION`, `CONTACT_CARD`, `POLL`. Media types
+  (not TEXT, LOCATION, CONTACT_CARD, POLL) need a `mediaId` from `POST .../template-media`; the file's type is
+  read from its first bytes, not from what the browser says, and must fit the template type. Media is at
+  most 16 MB; an `AUDIO` template may be a `voiceNote` only for Ogg/Opus.
+- **Placeholders:** `{{name}}` with the grammar `[a-z][a-z0-9_]{0,39}`, spaces inside the braces allowed, at
+  most 20 distinct per template. Any other Mustache (sections, partials, `{{{x}}}`, `{{&x}}`) is rejected.
+  Three forms:
+  - `{{contact.name}}`, `{{contact.phone}}` (`CONTACT_FIELD`), a fallback is required;
+  - `{{contact.attributes.<key>}}` (`CONTACT_ATTRIBUTE`), the key of one of the brand's contact attributes
+    (it is fixed when the attribute is created), a fallback is required. The template is bound to the
+    attribute; if it is deleted the placeholder is `missing`, the fallback is used and the view carries a
+    warning;
+  - `{{anything_else}}` (`AGENT`), filled by the agent at send time, with a `label`, optional `example`,
+    and `required` or an optional `fallback`.
+  Placeholders are allowed in the TEXT body, the IMAGE, VIDEO and DOCUMENT caption, the LOCATION name and
+  address, the CONTACT_CARD full name and organization, and the POLL question and options; anywhere else
+  is a field error.
+- **Render:** `POST .../templates/{id}/render {contactId?, values: {name: text}}` returns `{type, content,
+  media, vcard, missing, warnings}` with every placeholder filled. Contact and agent text is inserted as
+  data and never interpreted. Without `contactId` every contact placeholder uses its fallback. `missing`
+  lists required agent placeholders that had no value. Agent values are trimmed and cut to 1000 characters.
+- **Lifecycle:** archive and unarchive keep the template; delete is refused with 409 `TEMPLATE_IN_USE`
+  once a template has been used. `duplicate` copies into another brand of the same customer (attributes
+  are rebound by key, the media file is copied).
+- **Demo data:** with `OMNICHANNEL_SEED_DEMO=true`, `TemplateDemoSeeder` adds Welcome, Order shipped,
+  New collection (with a bundled image), Store location and Feedback poll to "Demo Fashion" and
+  "Demo Electronics", as `demo-manager`, unless the brand has a template already.
+
+| Authority (BRAND) | Allows | Agent | Team Lead | Workspace Manager | Customer Admin |
+|---|---|---|---|---|---|
+| `template:view` | list, view, categories, render, download media | yes | yes | yes | yes |
+| `template:manage` | create, edit, archive, delete, duplicate (also needs it in the target brand), upload media | | yes | yes | yes |
+
+Rendering with a `contactId` also needs `contact:view`.
+
+Endpoints are under `/api/workspaces/{workspaceId}`: `templates` (`GET ?q=&type=&category=&status=`, status
+defaults to `ACTIVE`; `POST` create; `GET|PUT|DELETE /{id}`; `GET /categories`; `POST /{id}/archive|unarchive|
+duplicate|render`) and `template-media` (`POST` multipart `file`, `GET /{mediaId}`).
+
 ## API
 
 ```bash
