@@ -8,6 +8,7 @@ import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.api.ForbiddenException;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -29,6 +30,7 @@ public class ContactBulkService {
 
     public record Result(long matched, long changed) {}
 
+    private volatile int deleteBatchSize = MAX_IDS;
     private final MongoTemplate mongo;
     private final ContactQuery query;
     private final ContactLabelRepository labels;
@@ -87,16 +89,32 @@ public class ContactBulkService {
         return new Result(matched, changed);
     }
 
+    /** Deletes in id-ordered batches that load only {@code _id}, so memory stays flat however many contacts match. */
     private Result delete(String workspaceId, Criteria criteria) {
-        List<String> ids = mongo.find(new Query(criteria), Contact.class).stream().map(Contact::getId).toList();
-        long deleted = ids.isEmpty() ? 0 : mongo.remove(new Query(Criteria.where("workspaceId").is(workspaceId)
-                .and("_id").in(ids)), Contact.class).getDeletedCount();
-        for (int i = 0; i < ids.size(); i += MAX_IDS) {
-            List<String> chunk = ids.subList(i, Math.min(ids.size(), i + MAX_IDS));
-            mongo.remove(new Query(Criteria.where("workspaceId").is(workspaceId).and("contactId").in(chunk)),
+        long matched = 0;
+        long deleted = 0;
+        String last = null;
+        while (true) {
+            Criteria page = last == null ? criteria
+                    : new Criteria().andOperator(criteria, Criteria.where("_id").gt(last));
+            Query q = new Query(page).with(Sort.by("_id")).limit(deleteBatchSize);
+            q.fields().include("_id");
+            List<String> ids = mongo.find(q, Contact.class).stream().map(Contact::getId).toList();
+            if (ids.isEmpty()) break;
+            matched += ids.size();
+            deleted += mongo.remove(new Query(Criteria.where("workspaceId").is(workspaceId).and("_id").in(ids)),
+                    Contact.class).getDeletedCount();
+            mongo.remove(new Query(Criteria.where("workspaceId").is(workspaceId).and("contactId").in(ids)),
                     ContactNote.class);
+            last = ids.get(ids.size() - 1);
+            if (ids.size() < deleteBatchSize) break;
         }
-        return new Result(ids.size(), deleted);
+        return new Result(matched, deleted);
+    }
+
+    /** Test hook: how many contacts one delete batch removes. */
+    void setDeleteBatchSize(int size) {
+        this.deleteBatchSize = size;
     }
 
     private Criteria criteria(String workspaceId, Selection s) {

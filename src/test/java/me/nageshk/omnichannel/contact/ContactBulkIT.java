@@ -13,9 +13,15 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import me.nageshk.omnichannel.tenant.Workspace;
 import org.springframework.mock.web.MockMultipartFile;
 
 class ContactBulkIT extends ContactApiTestBase {
+
+    @Autowired MongoTemplate mongo;
+    @Autowired ContactBulkService bulkService;
 
     ContactLabel vip;
     ContactLabel lead;
@@ -153,6 +159,55 @@ class ContactBulkIT extends ContactApiTestBase {
                 .andExpect(jsonPath("$.matched").value(2)).andExpect(jsonPath("$.changed").value(2));
         assertThat(contacts.findAll()).extracting(Contact::getName).containsExactlyInAnyOrder("Bela", "Other");
         assertThat(notes.count()).isZero();
+    }
+
+    @Test
+    void bulkDeleteByFilterDeletesAllInBatches() throws Exception {
+        List<Contact> matching = new ArrayList<>();
+        for (int i = 0; i < 2500; i++) matching.add(bulkContact(brandA, "Zed " + i, String.format("9190%08d", i)));
+        Contact keep = bulkContact(brandA, "Keep", "919099999998");
+        Contact foreign = bulkContact(brandB, "Zed foreign", "919099999999");
+        mongo.insertAll(matching);
+        mongo.insertAll(List.of(keep, foreign));
+        List<ContactNote> noteDocs = new ArrayList<>();
+        for (int i = 0; i < 2500; i += 250) noteDocs.add(noteDoc(brandA, matching.get(i).getId()));
+        noteDocs.add(noteDoc(brandA, keep.getId()));
+        noteDocs.add(noteDoc(brandB, foreign.getId()));
+        mongo.insertAll(noteDocs);
+        long before = contacts.count();
+
+        bulkService.setDeleteBatchSize(700);
+        try {
+            send(post(bulk()), bossToken, request(Map.of("filter", Map.of("q", "Zed")), "DELETE"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.matched").value(2500)).andExpect(jsonPath("$.changed").value(2500));
+        } finally {
+            bulkService.setDeleteBatchSize(ContactBulkService.MAX_IDS);
+        }
+        assertThat(contacts.count()).isEqualTo(before - 2500);
+        assertThat(contacts.findById(keep.getId())).isPresent();
+        assertThat(contacts.findById(foreign.getId())).isPresent();
+        assertThat(notes.findAll()).extracting(ContactNote::getContactId)
+                .containsExactlyInAnyOrder(keep.getId(), foreign.getId());
+    }
+
+    private Contact bulkContact(Workspace w, String name, String phone) {
+        Contact c = new Contact();
+        c.setWorkspaceId(w.getId());
+        c.setCustomerId(acme.getId());
+        c.setName(name);
+        c.setPhone(phone);
+        c.setSource(ContactSource.MANUAL);
+        return c;
+    }
+
+    private ContactNote noteDoc(Workspace w, String contactId) {
+        ContactNote n = new ContactNote();
+        n.setWorkspaceId(w.getId());
+        n.setContactId(contactId);
+        n.setText("note");
+        n.setCreatedByUsername("agent");
+        return n;
     }
 
     private ContactNote note(Contact c) {
