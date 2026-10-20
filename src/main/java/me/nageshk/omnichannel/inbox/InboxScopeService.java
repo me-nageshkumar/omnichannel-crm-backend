@@ -4,6 +4,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.access.Authority;
+import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.inbox.InboxScope.Level;
 import me.nageshk.omnichannel.inbox.InboxScope.ListScope;
@@ -24,10 +25,15 @@ public class InboxScopeService {
     }
 
     /**
-     * @throws me.nageshk.omnichannel.api.NotFoundException if the user has no access to the workspace
+     * The widest scope the user's authorities in the workspace grant. Requires {@code inbox:view}, so
+     * callers are safe even without a {@code @PreAuthorize} check.
+     *
+     * @throws NotFoundException if the user has no access to the workspace or lacks {@code inbox:view}
+     *     there (also for a disabled workspace, which grants no authorities)
      */
     public InboxScope scopeOf(AuthenticatedUser me, String workspaceId) {
         Set<String> authorities = access.inWorkspace(me, workspaceId);
+        if (!authorities.contains(Authority.INBOX_VIEW.code())) throw new NotFoundException("workspace not found");
         if (authorities.contains(Authority.INBOX_VIEW_ALL.code())) {
             return new InboxScope(Level.ALL, me.userId(), teamIds(workspaceId, null));
         }

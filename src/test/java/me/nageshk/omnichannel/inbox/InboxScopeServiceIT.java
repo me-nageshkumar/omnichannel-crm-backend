@@ -5,8 +5,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.access.BuiltInRoles;
+import me.nageshk.omnichannel.access.Role;
+import me.nageshk.omnichannel.access.RoleCache;
+import me.nageshk.omnichannel.access.RoleLevel;
+import me.nageshk.omnichannel.access.RoleRepository;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.inbox.InboxScope.Level;
@@ -31,6 +36,8 @@ class InboxScopeServiceIT {
     @Autowired AccessService access;
     @Autowired TestUsers testUsers;
     @Autowired TeamRepository teams;
+    @Autowired RoleRepository roles;
+    @Autowired RoleCache roleCache;
 
     Customer acme;
     Workspace brand;
@@ -110,5 +117,19 @@ class InboxScopeServiceIT {
         AuthenticatedUser stranger = brandUser("stranger", BuiltInRoles.AGENT, other);
 
         assertThatThrownBy(() -> scopes.scopeOf(stranger, brand.getId())).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void brandRoleWithoutInboxViewIsNotFound() {
+        Role custom = new Role();
+        custom.setName("No inbox");
+        custom.setLevel(RoleLevel.BRAND);
+        custom.setAuthorities(Set.of("workspace:settings"));
+        roles.save(custom);
+        roleCache.evictAll();
+        AuthenticatedUser user = brandUser("noinbox", "No inbox", brand);
+
+        assertThatThrownBy(() -> scopes.scopeOf(user, brand.getId()))
+                .isInstanceOf(NotFoundException.class).hasMessage("workspace not found");
     }
 }
