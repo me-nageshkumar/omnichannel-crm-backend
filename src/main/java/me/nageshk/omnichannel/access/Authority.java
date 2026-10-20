@@ -45,6 +45,8 @@ public enum Authority {
     }
 
     public String code() { return code; }
+    /** The part of the code before the colon. */
+    public String group() { return code.substring(0, code.indexOf(':')); }
     public RoleLevel level() { return level; }
     public String description() { return description; }
     public Set<String> defaultRoles() { return defaultRoles; }

@@ -24,6 +24,14 @@ class AuthorityTest {
     }
 
     @Test
+    void groupIsPrefix() {
+        assertThat(Authority.COMPANY_USER_MANAGE.group()).isEqualTo("company-user");
+        for (Authority a : Authority.values()) {
+            assertThat(a.group()).matches("^[a-z-]+$");
+        }
+    }
+
+    @Test
     void defaultRolesAreBuiltInAndMayHoldTheAuthority() {
         Set<String> builtIn = Set.of(BuiltInRoles.SUPER_ADMIN, BuiltInRoles.ACCOUNT_MANAGER,
                 BuiltInRoles.WHATSAPP_DEVICE, BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER,
