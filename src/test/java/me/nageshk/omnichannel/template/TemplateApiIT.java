@@ -140,7 +140,7 @@ class TemplateApiIT extends TemplateApiTestBase {
         Map<String, Object> image = text("A", "hi");
         image.put("type", "IMAGE");
         send(post(url()), leadToken, image).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fields.type").value("not supported yet"));
+                .andExpect(jsonPath("$.fields.mediaId").value("is required"));
         Map<String, Object> media = text("A", "hi");
         media.put("mediaId", "abc");
         send(post(url()), leadToken, media).andExpect(status().isBadRequest())

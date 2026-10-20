@@ -15,8 +15,6 @@ public record TemplateView(String id, String workspaceId, String channel, String
 
     public record Person(String username, String name) {}
 
-    public record MediaView(String mediaId, String fileName, String mimeType, long size) {}
-
     public record PlaceholderView(String name, PlaceholderKind kind, String attributeKey, String attributeId,
             String attributeName, boolean missing, String label, String example, boolean required, String fallback) {}
 

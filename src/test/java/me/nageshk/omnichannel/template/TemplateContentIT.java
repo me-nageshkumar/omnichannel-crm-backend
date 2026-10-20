@@ -154,7 +154,9 @@ class TemplateContentIT extends TemplateApiTestBase {
     }
 
     @Test
-    void mediaTypesStayUnsupportedUntilTaskFive() throws Exception {
-        assertThat(fieldsOf(request("IMAGE", map("caption", "hi")), "type")).isEqualTo("not supported yet");
+    void mediaTypesNeedMedia() throws Exception {
+        assertThat(fieldsOf(request("IMAGE", map("caption", "hi")), "mediaId")).isEqualTo("is required");
+        assertThat(fieldsOf(request("AUDIO", map("voiceNote", true)), "mediaId")).isEqualTo("is required");
+        rejected(request("DOCUMENT", map("caption", "x".repeat(1025))), "content.caption");
     }
 }

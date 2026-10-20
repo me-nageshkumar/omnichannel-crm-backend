@@ -41,10 +41,13 @@ public class TemplateService {
     private final UserRepository users;
     private final WorkspaceRepository workspaces;
     private final ContactAttributeRepository attributes;
+    private final TemplateMediaService media;
 
     public TemplateService(MessageTemplateRepository templates, TemplateValidator validator, MongoTemplate mongo,
-            UserRepository users, WorkspaceRepository workspaces, ContactAttributeRepository attributes) {
+            UserRepository users, WorkspaceRepository workspaces, ContactAttributeRepository attributes,
+            TemplateMediaService media) {
         this.attributes = attributes;
+        this.media = media;
         this.templates = templates;
         this.validator = validator;
         this.mongo = mongo;
@@ -125,6 +128,7 @@ public class TemplateService {
         MessageTemplate t = require(workspaceId, id);
         if (t.getLastUsedAt() != null) throw new TemplateInUseException();
         templates.delete(t);
+        if (t.getMedia() != null) media.delete(t.getMedia().getMediaId());
     }
 
     private TemplateView setStatus(AuthenticatedUser me, String workspaceId, String id, TemplateStatus status) {
@@ -148,7 +152,6 @@ public class TemplateService {
             errors.put("category", "must be at most " + MAX_CATEGORY + " characters");
         }
         if (update && r.version() == null) errors.put("version", "is required");
-        if (r.mediaId() != null && !r.mediaId().isBlank()) errors.put("mediaId", "is not allowed for this type");
 
         TemplateContent content = null;
         List<PlaceholderRef> refs = List.of();
@@ -158,6 +161,7 @@ public class TemplateService {
             content = r.content();
             refs = validator.validate(type, content, errors);
         }
+        TemplateMediaService.Meta file = media(t, type, r, content, errors);
         List<TemplatePlaceholder> placeholders = placeholders(t.getWorkspaceId(), refs, r.placeholders(),
                 update ? t.getPlaceholders() : List.of(), errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
@@ -174,12 +178,61 @@ public class TemplateService {
         t.setPlaceholders(placeholders);
         t.setUpdatedByUsername(who[0]);
         t.setUpdatedByName(who[1]);
+        String oldMediaId = t.getMedia() == null ? null : t.getMedia().getMediaId();
+        t.setMedia(file == null ? null : ref(file.view()));
         if (update) t.setVersion(r.version());
+        MessageTemplate saved;
         try {
-            return templates.save(t);
+            saved = templates.save(t);
         } catch (DuplicateKeyException e) {
             throw clash(name);
         }
+        if (oldMediaId != null && (file == null || !oldMediaId.equals(file.view().mediaId()))) media.delete(oldMediaId);
+        return saved;
+    }
+
+    /**
+     * Checks the request's file against the type: media types need an uploaded file of this brand with an allowed MIME
+     * type that no other template uses; other types take none. Returns the file's details, or null when there is none.
+     */
+    private TemplateMediaService.Meta media(MessageTemplate t, TemplateType type, TemplateRequest r,
+            TemplateContent content, Map<String, String> errors) {
+        String id = r.mediaId() == null || r.mediaId().isBlank() ? null : r.mediaId().trim();
+        if (type == null) return null;
+        if (!TemplateMediaTypes.takesMedia(type)) {
+            if (id != null) errors.put("mediaId", "is not allowed for this type");
+            return null;
+        }
+        if (id == null) {
+            errors.put("mediaId", "is required");
+            return null;
+        }
+        TemplateMediaService.Meta file = media.meta(t.getWorkspaceId(), id).orElse(null);
+        if (file == null) {
+            errors.put("mediaId", "not found");
+            return null;
+        }
+        String mime = file.view().mimeType();
+        if (!TemplateMediaTypes.allows(type, mime)) {
+            errors.put("mediaId", TemplateMediaTypes.describe(mime) + " can't be used for "
+                    + TemplateMediaTypes.describe(type) + " template");
+        } else if (mongo.exists(new Query(Criteria.where("media.mediaId").is(id)
+                .and("_id").ne(t.getId())), MessageTemplate.class)) {
+            errors.put("mediaId", "is used by another template");
+        } else if (type == TemplateType.AUDIO && content != null && Boolean.TRUE.equals(content.getVoiceNote())
+                && !file.opus()) {
+            errors.put("content.voiceNote", "is allowed only for Ogg/Opus audio");
+        }
+        return file;
+    }
+
+    private static TemplateMediaRef ref(MediaView v) {
+        TemplateMediaRef m = new TemplateMediaRef();
+        m.setMediaId(v.mediaId());
+        m.setFileName(v.fileName());
+        m.setMimeType(v.mimeType());
+        m.setSize(v.size());
+        return m;
     }
 
     /** One placeholder per detected ref, in order; settings for placeholders not in the content are dropped. */

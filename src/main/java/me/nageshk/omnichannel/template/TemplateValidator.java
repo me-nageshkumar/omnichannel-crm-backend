@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 public class TemplateValidator {
 
     public static final int MAX_BODY = 4096;
+    public static final int MAX_CAPTION = 1024;
     public static final int MAX_PLACEHOLDERS = 20;
     public static final int MAX_LOCATION_TEXT = 256;
     public static final int MAX_CARD_TEXT = 256;
@@ -43,7 +44,8 @@ public class TemplateValidator {
             case LOCATION -> location(content, errors, found);
             case CONTACT_CARD -> contactCard(content, errors, found);
             case POLL -> poll(content, errors, found);
-            default -> errors.put("type", "not supported yet");
+            case IMAGE, VIDEO, DOCUMENT -> caption(content, errors, found);
+            case AUDIO -> content.setVoiceNote(Boolean.TRUE.equals(content.getVoiceNote()));
         }
         return new ArrayList<>(found.values());
     }
@@ -73,7 +75,8 @@ public class TemplateValidator {
                 out.setOptions(in.getOptions());
                 out.setAllowMultiple(Boolean.TRUE.equals(in.getAllowMultiple()));
             }
-            default -> { }
+            case IMAGE, VIDEO, DOCUMENT -> out.setCaption(in.getCaption());
+            case AUDIO -> out.setVoiceNote(Boolean.TRUE.equals(in.getVoiceNote()));
         }
         return out;
     }
@@ -85,6 +88,10 @@ public class TemplateValidator {
             return;
         }
         c.setBody(placeholders("content.body", body, errors, found));
+    }
+
+    private void caption(TemplateContent c, Map<String, String> errors, Map<String, PlaceholderRef> found) {
+        c.setCaption(optional("content.caption", c.getCaption(), MAX_CAPTION, errors, found));
     }
 
     private void location(TemplateContent c, Map<String, String> errors, Map<String, PlaceholderRef> found) {

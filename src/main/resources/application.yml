@@ -8,8 +8,8 @@ spring:
       request-timeout: 15m
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      max-file-size: 16MB
+      max-request-size: 17MB
   mongodb:
     uri: ${OMNICHANNEL_MONGODB_URI:mongodb://localhost:27017/omnichannel_crm}
   data:
