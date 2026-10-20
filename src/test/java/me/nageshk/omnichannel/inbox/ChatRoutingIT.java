@@ -32,7 +32,6 @@ import tools.jackson.databind.node.ObjectNode;
 @SpringBootTest
 class ChatRoutingIT {
 
-    private static final String PN = "pn-route";
     private static final long T = 1_700_000_000L;
 
     static class ActionRecorder {
@@ -73,6 +72,7 @@ class ChatRoutingIT {
     Customer acme;
     Workspace brand;
     Workspace other;
+    String pn;
 
     @BeforeEach
     void setUp() {
@@ -80,6 +80,7 @@ class ChatRoutingIT {
         acme = testUsers.customer("Acme");
         brand = testUsers.workspace(acme.getId(), "Brand A");
         other = testUsers.workspace(acme.getId(), "Brand B");
+        pn = testUsers.phoneNumber(acme.getId(), brand.getId(), "9199000" + System.nanoTime() % 100000).getId();
     }
 
     @AfterEach
@@ -110,7 +111,7 @@ class ChatRoutingIT {
     }
 
     private void configure(RoutingMode mode, String teamId, String userId) {
-        settings.put(brand.getId(), PN,
+        settings.put(brand.getId(), pn,
                 new InboxSettingService.SettingsRequest(new InboxSetting.Routing(mode, teamId, userId), null, null));
     }
 
@@ -124,11 +125,11 @@ class ChatRoutingIT {
         p.put("timestamp", epochSeconds);
         p.put("body", "hi");
         publisher.publishEvent(
-                new WhatsAppEvent(this, PN, brand.getId(), acme.getId(), "message_create", p, null, null));
+                new WhatsAppEvent(this, pn, brand.getId(), acme.getId(), "message_create", p, null, null));
     }
 
     private WaWebChat chat(String digits) {
-        return chats.findByPhoneNumberIdAndRemoteId(PN, digits + "@c.us").orElseThrow();
+        return chats.findByPhoneNumberIdAndRemoteId(pn, digits + "@c.us").orElseThrow();
     }
 
     @Test
@@ -196,7 +197,7 @@ class ChatRoutingIT {
         assertThat(chat("919922222222").getAssignedUserId()).isEqualTo(c.getId());
         assertThat(chat("919933333333").getAssignedUserId()).isEqualTo(a.getId());
         assertThat(chat("919911111111").getAssignedTeamId()).isEqualTo(support.getId());
-        assertThat(settingRepo.findByPhoneNumberId(PN).orElseThrow().getRoundRobinCursor()).isEqualTo(a.getId());
+        assertThat(settingRepo.findByPhoneNumberId(pn).orElseThrow().getRoundRobinCursor()).isEqualTo(a.getId());
     }
 
     @Test
@@ -306,5 +307,69 @@ class ChatRoutingIT {
         });
         assertThat(recorder.actions).singleElement()
                 .satisfies(e -> assertThat(e.action().getType()).isEqualTo(ActionType.ROUTED));
+    }
+
+    @Test
+    void roundRobinRestartsAtFirstMemberWhenCursorUserLeftTheTeam() {
+        User a = agent("a");
+        User b = agent("b");
+        User gone = agent("gone");
+        Team support = team("Support", a, b);
+        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
+        InboxSetting s = settingRepo.findByPhoneNumberId(pn).orElseThrow();
+        s.setRoundRobinCursor(gone.getId());
+        settingRepo.save(s);
+
+        message("919911111111", false, T);
+
+        assertThat(chat("919911111111").getAssignedUserId()).isEqualTo(a.getId());
+        assertThat(settingRepo.findByPhoneNumberId(pn).orElseThrow().getRoundRobinCursor()).isEqualTo(a.getId());
+    }
+
+    @Test
+    void roundRobinCursorStaysWhenNoMemberIsEligible() {
+        User a = agent("a");
+        User b = agent("b");
+        Team support = team("Support", a, b);
+        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
+        InboxSetting s = settingRepo.findByPhoneNumberId(pn).orElseThrow();
+        s.setRoundRobinCursor(a.getId());
+        settingRepo.save(s);
+        for (User u : List.of(a, b)) {
+            u.setActive(false);
+            users.save(u);
+        }
+
+        message("919911111111", false, T);
+
+        assertThat(chat("919911111111").getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(settingRepo.findByPhoneNumberId(pn).orElseThrow().getRoundRobinCursor()).isEqualTo(a.getId());
+    }
+
+    @Test
+    void teamModeWithADeletedTeamLeavesTheChatUntouched() {
+        Team support = team("Support", agent("a"));
+        configure(RoutingMode.TEAM, support.getId(), null);
+        teams.deleteById(support.getId());
+
+        message("919911111111", false, T);
+
+        WaWebChat c = chat("919911111111");
+        assertThat(c.getAssignedTeamId()).isNull();
+        assertThat(c.getAssignedUserId()).isNull();
+        assertThat(actions.findAll()).isEmpty();
+    }
+
+    @Test
+    void userModeWithADeletedUserLeavesTheChatUntouched() {
+        User a = agent("a");
+        configure(RoutingMode.USER, null, a.getId());
+        users.deleteById(a.getId());
+
+        message("919911111111", false, T);
+
+        WaWebChat c = chat("919911111111");
+        assertThat(c.getAssignedUserId()).isNull();
+        assertThat(actions.findAll()).isEmpty();
     }
 }

@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.inbox;
 
+import me.nageshk.omnichannel.api.NotFoundException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -24,7 +25,6 @@ import org.springframework.data.mongodb.core.query.Query;
 @SpringBootTest
 class InboxSettingServiceIT {
 
-    private static final String PN = "pn-settings";
 
     @Autowired InboxSettingService settings;
     @Autowired TeamRepository teams;
@@ -34,6 +34,7 @@ class InboxSettingServiceIT {
     Customer acme;
     Workspace brand;
     Workspace other;
+    String pn;
 
     @BeforeEach
     void setUp() {
@@ -41,6 +42,7 @@ class InboxSettingServiceIT {
         acme = testUsers.customer("Acme");
         brand = testUsers.workspace(acme.getId(), "Brand A");
         other = testUsers.workspace(acme.getId(), "Brand B");
+        pn = testUsers.phoneNumber(acme.getId(), brand.getId(), "9199000" + System.nanoTime() % 100000).getId();
     }
 
     @AfterEach
@@ -72,7 +74,7 @@ class InboxSettingServiceIT {
 
     @Test
     void defaultsWhenNothingStored() {
-        InboxSetting s = settings.get(brand.getId(), PN);
+        InboxSetting s = settings.get(brand.getId(), pn);
 
         assertThat(s.getId()).isNull();
         assertThat(s.getRouting().mode()).isEqualTo(RoutingMode.NONE);
@@ -85,19 +87,19 @@ class InboxSettingServiceIT {
     void putStoresAndGetReturns() {
         Team t = team(brand);
 
-        settings.put(brand.getId(), PN, new InboxSettingService.SettingsRequest(
+        settings.put(brand.getId(), pn, new InboxSettingService.SettingsRequest(
                 new InboxSetting.Routing(RoutingMode.TEAM, t.getId(), "ignored"), false, true));
 
-        InboxSetting s = settings.get(brand.getId(), PN);
+        InboxSetting s = settings.get(brand.getId(), pn);
         assertThat(s.getId()).isNotNull();
         assertThat(s.getCustomerId()).isEqualTo(acme.getId());
         assertThat(s.getRouting()).isEqualTo(new InboxSetting.Routing(RoutingMode.TEAM, t.getId(), null));
         assertThat(s.isClaimOnReply()).isFalse();
         assertThat(s.isKeepAssignmentOnClose()).isTrue();
 
-        settings.put(brand.getId(), PN, request(RoutingMode.NONE, null, null));
+        settings.put(brand.getId(), pn, request(RoutingMode.NONE, null, null));
         assertThat(mongo.count(new Query(), InboxSetting.class)).isEqualTo(1);
-        assertThat(settings.get(brand.getId(), PN).isClaimOnReply()).isFalse();
+        assertThat(settings.get(brand.getId(), pn).isClaimOnReply()).isFalse();
     }
 
     @Test
@@ -105,9 +107,9 @@ class InboxSettingServiceIT {
         Team foreign = team(other);
 
         for (RoutingMode mode : List.of(RoutingMode.TEAM, RoutingMode.ROUND_ROBIN)) {
-            assertField(() -> settings.put(brand.getId(), PN, request(mode, null, null)), "teamId", "required");
-            assertField(() -> settings.put(brand.getId(), PN, request(mode, "nope", null)), "teamId", "unknown team");
-            assertField(() -> settings.put(brand.getId(), PN, request(mode, foreign.getId(), null)),
+            assertField(() -> settings.put(brand.getId(), pn, request(mode, null, null)), "teamId", "required");
+            assertField(() -> settings.put(brand.getId(), pn, request(mode, "nope", null)), "teamId", "unknown team");
+            assertField(() -> settings.put(brand.getId(), pn, request(mode, foreign.getId(), null)),
                     "teamId", "unknown team");
         }
     }
@@ -119,12 +121,25 @@ class InboxSettingServiceIT {
         User insider = testUsers.createInCustomer(acme.getId(), "insider", null,
                 List.of(new WorkspaceRole(brand.getId(), testUsers.roleId(BuiltInRoles.AGENT))));
 
-        assertField(() -> settings.put(brand.getId(), PN, request(RoutingMode.USER, null, null)),
+        assertField(() -> settings.put(brand.getId(), pn, request(RoutingMode.USER, null, null)),
                 "userId", "required");
-        assertField(() -> settings.put(brand.getId(), PN, request(RoutingMode.USER, null, outsider.getId())),
+        assertField(() -> settings.put(brand.getId(), pn, request(RoutingMode.USER, null, outsider.getId())),
                 "userId", "unknown user");
 
-        settings.put(brand.getId(), PN, request(RoutingMode.USER, null, insider.getId()));
-        assertThat(settings.get(brand.getId(), PN).getRouting().userId()).isEqualTo(insider.getId());
+        settings.put(brand.getId(), pn, request(RoutingMode.USER, null, insider.getId()));
+        assertThat(settings.get(brand.getId(), pn).getRouting().userId()).isEqualTo(insider.getId());
+    }
+
+    @Test
+    void settingsOfAnotherWorkspacesNumberAreNeitherReadableNorWritable() {
+        String foreign = testUsers.phoneNumber(acme.getId(), other.getId(), "919900001").getId();
+        settings.put(other.getId(), foreign, request(RoutingMode.NONE, null, null));
+
+        assertThatThrownBy(() -> settings.get(brand.getId(), foreign)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> settings.put(brand.getId(), foreign, request(RoutingMode.NONE, null, null)))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> settings.put(brand.getId(), "no-such-number", request(RoutingMode.NONE, null, null)))
+                .isInstanceOf(NotFoundException.class);
+        assertThat(settings.get(other.getId(), foreign).getWorkspaceId()).isEqualTo(other.getId());
     }
 }

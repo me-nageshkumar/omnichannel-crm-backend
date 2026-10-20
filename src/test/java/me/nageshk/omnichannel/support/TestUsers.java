@@ -7,6 +7,8 @@ import me.nageshk.omnichannel.access.RoleCache;
 import me.nageshk.omnichannel.access.RoleRepository;
 import me.nageshk.omnichannel.access.RoleSeeder;
 import me.nageshk.omnichannel.auth.JwtService;
+import me.nageshk.omnichannel.phone.PhoneNumber;
+import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.tenant.Customer;
 import me.nageshk.omnichannel.tenant.CustomerRepository;
 import me.nageshk.omnichannel.tenant.TeamRepository;
@@ -34,6 +36,7 @@ public class TestUsers {
     private final CustomerRepository customers;
     private final WorkspaceRepository workspaces;
     private final TeamRepository teams;
+    private final PhoneNumberRepository phoneNumbers;
     private final RoleRepository roles;
     private final RoleSeeder roleSeeder;
     private final MongoTemplate mongo;
@@ -43,12 +46,13 @@ public class TestUsers {
     private final RoleCache roleCache;
 
     public TestUsers(UserRepository users, CustomerRepository customers, WorkspaceRepository workspaces,
-            TeamRepository teams, RoleRepository roles, RoleSeeder roleSeeder, MongoTemplate mongo,
+            TeamRepository teams, PhoneNumberRepository phoneNumbers, RoleRepository roles, RoleSeeder roleSeeder, MongoTemplate mongo,
             PasswordEncoder encoder, JwtService jwt, AccessService access, RoleCache roleCache) {
         this.users = users;
         this.customers = customers;
         this.workspaces = workspaces;
         this.teams = teams;
+        this.phoneNumbers = phoneNumbers;
         this.roles = roles;
         this.roleSeeder = roleSeeder;
         this.mongo = mongo;
@@ -97,6 +101,15 @@ public class TestUsers {
         w.setCustomerId(customerId);
         w.setName(name);
         return workspaces.save(w);
+    }
+
+    /** A saved WhatsApp Web number of the workspace. */
+    public PhoneNumber phoneNumber(String customerId, String workspaceId, String number) {
+        PhoneNumber n = new PhoneNumber();
+        n.setCustomerId(customerId);
+        n.setWorkspaceId(workspaceId);
+        n.setNumber(number);
+        return phoneNumbers.save(n);
     }
 
     public String roleId(String name) {

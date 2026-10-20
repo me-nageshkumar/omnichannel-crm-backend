@@ -2,8 +2,9 @@ package me.nageshk.omnichannel.inbox;
 
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
+import me.nageshk.omnichannel.phone.PhoneNumber;
+import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.tenant.TeamRepository;
-import me.nageshk.omnichannel.tenant.WorkspaceRepository;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserAdminService;
 import org.springframework.stereotype.Service;
@@ -19,31 +20,45 @@ public class InboxSettingService {
 
     private final InboxSettingRepository settings;
     private final TeamRepository teams;
-    private final WorkspaceRepository workspaces;
+    private final PhoneNumberRepository phoneNumbers;
     private final UserAdminService userAdmin;
 
     public InboxSettingService(InboxSettingRepository settings, TeamRepository teams,
-            WorkspaceRepository workspaces, UserAdminService userAdmin) {
+            PhoneNumberRepository phoneNumbers, UserAdminService userAdmin) {
         this.settings = settings;
         this.teams = teams;
-        this.workspaces = workspaces;
+        this.phoneNumbers = phoneNumbers;
         this.userAdmin = userAdmin;
     }
 
-    /** The stored settings, or an unsaved default (mode NONE, claim on reply, assignment not kept on close). */
+    /**
+     * The stored settings, or an unsaved default (mode NONE, claim on reply, assignment not kept on close).
+     *
+     * @throws NotFoundException if the settings stored for the number belong to another workspace
+     */
     public InboxSetting get(String workspaceId, String phoneNumberId) {
-        return settings.findByPhoneNumberId(phoneNumberId).orElseGet(() -> {
-            InboxSetting s = new InboxSetting();
-            s.setWorkspaceId(workspaceId);
-            s.setPhoneNumberId(phoneNumberId);
-            return s;
-        });
+        InboxSetting stored = settings.findByPhoneNumberId(phoneNumberId).orElse(null);
+        if (stored != null && !workspaceId.equals(stored.getWorkspaceId()))
+            throw new NotFoundException("phone number not found");
+        return stored != null ? stored : unsaved(workspaceId, phoneNumberId);
     }
 
-    /** Replaces the routing; the fields the mode does not use are dropped. */
+    private static InboxSetting unsaved(String workspaceId, String phoneNumberId) {
+        InboxSetting s = new InboxSetting();
+        s.setWorkspaceId(workspaceId);
+        s.setPhoneNumberId(phoneNumberId);
+        return s;
+    }
+
+    /**
+     * Replaces the routing; the fields the mode does not use are dropped.
+     *
+     * @throws NotFoundException unless the number belongs to the workspace
+     */
     public InboxSetting put(String workspaceId, String phoneNumberId, SettingsRequest request) {
-        String customerId = workspaces.findById(workspaceId)
-                .orElseThrow(() -> new NotFoundException("workspace not found")).getCustomerId();
+        PhoneNumber number = phoneNumbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
+                .orElseThrow(() -> new NotFoundException("phone number not found"));
+        String customerId = number.getCustomerId();
         InboxSetting.Routing wanted = request.routing();
         if (wanted == null || wanted.mode() == null) throw new ValidationException("mode", "required");
         InboxSetting.Routing routing = switch (wanted.mode()) {
@@ -54,6 +69,7 @@ public class InboxSettingService {
                     checkedUser(customerId, workspaceId, wanted.userId()));
         };
         InboxSetting s = get(workspaceId, phoneNumberId);
+        s.setWorkspaceId(number.getWorkspaceId());
         s.setCustomerId(customerId);
         s.setRouting(routing);
         if (request.claimOnReply() != null) s.setClaimOnReply(request.claimOnReply());

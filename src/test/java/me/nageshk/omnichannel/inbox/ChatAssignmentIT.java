@@ -31,7 +31,6 @@ import org.springframework.data.mongodb.core.query.Query;
 @SpringBootTest
 class ChatAssignmentIT {
 
-    private static final String PN = "pn-assign";
 
     static class Recorder {
         final List<Object> events = new CopyOnWriteArrayList<>();
@@ -68,6 +67,7 @@ class ChatAssignmentIT {
     Customer acme;
     Workspace brand;
     Workspace other;
+    String pn;
     User manager;
     AuthenticatedUser me;
 
@@ -77,6 +77,7 @@ class ChatAssignmentIT {
         acme = testUsers.customer("Acme");
         brand = testUsers.workspace(acme.getId(), "Brand A");
         other = testUsers.workspace(acme.getId(), "Brand B");
+        pn = testUsers.phoneNumber(acme.getId(), brand.getId(), "9199000" + System.nanoTime() % 100000).getId();
         manager = user("manager", brand);
         me = access.load(manager);
     }
@@ -111,14 +112,14 @@ class ChatAssignmentIT {
         WaWebChat c = new WaWebChat();
         c.setCustomerId(acme.getId());
         c.setWorkspaceId(brand.getId());
-        c.setPhoneNumberId(PN);
+        c.setPhoneNumberId(pn);
         c.setRemoteId("919911111111@c.us");
         c.setStatus(ChatStatus.OPEN);
         return chats.save(c);
     }
 
     private void configure(boolean claimOnReply, boolean keepAssignmentOnClose) {
-        settings.put(brand.getId(), PN, new InboxSettingService.SettingsRequest(
+        settings.put(brand.getId(), pn, new InboxSettingService.SettingsRequest(
                 new InboxSetting.Routing(RoutingMode.NONE, null, null), claimOnReply, keepAssignmentOnClose));
     }
 
@@ -296,5 +297,53 @@ class ChatAssignmentIT {
 
         assertThat(result.getAssignedUserId()).isNull();
         assertThat(actions.findAll()).isEmpty();
+    }
+
+    @Test
+    void userOnlyAssignKeepsTeamWhenUserIsMember() {
+        User agent = user("agent", brand);
+        Team support = team("Support", agent);
+        WaWebChat c = assignment.assign(me, chat(), null, support.getId());
+
+        WaWebChat result = assignment.assign(me, c, agent.getId(), null);
+
+        assertThat(result.getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(result.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(actions.findAll()).anySatisfy(a -> {
+            assertThat(a.getToUserId()).isEqualTo(agent.getId());
+            assertThat(a.getToTeamId()).isEqualTo(support.getId());
+            assertThat(a.getToTeamName()).isEqualTo("Support");
+        });
+    }
+
+    @Test
+    void userOnlyAssignClearsTeamWhenUserIsNotMember() {
+        User agent = user("agent", brand);
+        User member = user("member", brand);
+        Team support = team("Support", member);
+        WaWebChat c = assignment.assign(me, chat(), null, support.getId());
+
+        WaWebChat result = assignment.assign(me, c, agent.getId(), null);
+
+        assertThat(result.getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(result.getAssignedTeamId()).isNull();
+    }
+
+    @Test
+    void claimOnReplyKeepsTheQueueTeam() {
+        Team support = team("Support", manager);
+        WaWebChat c = assignment.assign(me, chat(), null, support.getId());
+
+        WaWebChat claimed = assignment.claimOnReply(me, c);
+
+        assertThat(claimed.getAssignedUserId()).isEqualTo(manager.getId());
+        assertThat(claimed.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(chats.findById(c.getId()).orElseThrow().getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(actions.findAll()).anySatisfy(a -> {
+            assertThat(a.getType()).isEqualTo(ActionType.ASSIGNED);
+            assertThat(a.getToUserId()).isEqualTo(manager.getId());
+            assertThat(a.getToTeamId()).isEqualTo(support.getId());
+            assertThat(a.getToTeamName()).isEqualTo("Support");
+        });
     }
 }

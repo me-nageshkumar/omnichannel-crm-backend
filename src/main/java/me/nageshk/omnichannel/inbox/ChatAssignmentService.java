@@ -42,9 +42,10 @@ public class ChatAssignmentService {
     }
 
     /**
-     * Assigns the chat to a user, a team or both, replacing the previous assignment. A team given without a user
-     * keeps the current assignee only while they are a member; a user who is not a member of the given team is
-     * dropped, leaving the chat in the team queue.
+     * Assigns the chat to a user, a team or both. A team given without a user keeps the current assignee only
+     * while they are a member. A user given without a team keeps the chat's current team only if the user is a
+     * member of it, else the team is cleared. A user who is not a member of the given team is dropped, leaving
+     * the chat in the team queue.
      *
      * @throws ValidationException with {@code fields.userId} / {@code fields.teamId} for a target that is
      *         missing, not a user with access to the workspace, or not a team of it
@@ -56,6 +57,10 @@ public class ChatAssignmentService {
         User user = noUser ? null : userWithAccess(chat, userId);
         Team team = noTeam ? null : teams.findByIdAndWorkspaceId(teamId, chat.getWorkspaceId())
                 .orElseThrow(() -> new ValidationException("teamId", "unknown team"));
+        if (noTeam && user != null && chat.getAssignedTeamId() != null) {
+            team = teams.findByIdAndWorkspaceId(chat.getAssignedTeamId(), chat.getWorkspaceId())
+                    .filter(t -> t.getMemberIds().contains(userId)).orElse(null);
+        }
         if (noUser && team != null && chat.getAssignedUserId() != null) {
             user = users.findById(chat.getAssignedUserId()).orElse(null);
         }
