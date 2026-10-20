@@ -2,12 +2,16 @@ package me.nageshk.omnichannel.access;
 
 import java.time.Instant;
 import java.util.regex.Pattern;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One authority a role may hold, stored so a Super Admin can manage the catalogue. */
 @Document("authorities")
+@Getter
+@Setter
 public class AuthorityDefinition {
 
     public static final Pattern CODE_PATTERN =
@@ -40,25 +44,4 @@ public class AuthorityDefinition {
 
     @Version
     private Long version;
-
-    public String getCode() { return code; }
-    public void setCode(String code) { this.code = code; }
-    public String getGroup() { return group; }
-    public void setGroup(String group) { this.group = group; }
-    public RoleLevel getLevel() { return level; }
-    public void setLevel(RoleLevel level) { this.level = level; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public boolean isBuiltIn() { return builtIn; }
-    public void setBuiltIn(boolean builtIn) { this.builtIn = builtIn; }
-    public Instant getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-    public String getCreatedBy() { return createdBy; }
-    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
-    public Instant getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
-    public String getUpdatedBy() { return updatedBy; }
-    public void setUpdatedBy(String updatedBy) { this.updatedBy = updatedBy; }
-    public Long getVersion() { return version; }
-    public void setVersion(Long version) { this.version = version; }
 }

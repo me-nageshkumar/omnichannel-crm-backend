@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -23,6 +25,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
         @CompoundIndex(name = "ws_lastMessageAt", def = "{'workspaceId': 1, 'lastMessageAt': -1}"),
         @CompoundIndex(name = "ws_labels", def = "{'workspaceId': 1, 'labels': 1}")
 })
+@Getter
+@Setter
 public class Contact {
 
     @Id
@@ -43,33 +47,4 @@ public class Contact {
     private Instant lastUpdateTime;
     @Version
     private Long version;
-
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
-    public String getWorkspaceId() { return workspaceId; }
-    public void setWorkspaceId(String workspaceId) { this.workspaceId = workspaceId; }
-    public String getCustomerId() { return customerId; }
-    public void setCustomerId(String customerId) { this.customerId = customerId; }
-    public String getWaId() { return waId; }
-    public void setWaId(String waId) { this.waId = waId; }
-    public String getPhone() { return phone; }
-    public void setPhone(String phone) { this.phone = phone; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public boolean isNameEdited() { return nameEdited; }
-    public void setNameEdited(boolean nameEdited) { this.nameEdited = nameEdited; }
-    public Set<String> getLabels() { return labels; }
-    public void setLabels(Set<String> labels) { this.labels = labels; }
-    public Map<String, String> getAttributes() { return attributes; }
-    public void setAttributes(Map<String, String> attributes) { this.attributes = attributes; }
-    public ContactSource getSource() { return source; }
-    public void setSource(ContactSource source) { this.source = source; }
-    public Instant getLastMessageAt() { return lastMessageAt; }
-    public void setLastMessageAt(Instant lastMessageAt) { this.lastMessageAt = lastMessageAt; }
-    public Instant getCreationTime() { return creationTime; }
-    public void setCreationTime(Instant creationTime) { this.creationTime = creationTime; }
-    public Instant getLastUpdateTime() { return lastUpdateTime; }
-    public void setLastUpdateTime(Instant lastUpdateTime) { this.lastUpdateTime = lastUpdateTime; }
-    public Long getVersion() { return version; }
-    public void setVersion(Long version) { this.version = version; }
 }

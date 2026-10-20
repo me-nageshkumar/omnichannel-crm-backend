@@ -4,6 +4,8 @@ import me.nageshk.omnichannel.enablement.Disabled;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -13,6 +15,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A platform user. Field names are stable: JWT claims and API responses reuse them. */
 @Document("users")
+@Getter
+@Setter
 public class User {
 
     @Id
@@ -52,42 +56,8 @@ public class User {
     @LastModifiedDate
     private Instant lastUpdateTime;
 
-    public String getId() { return id; }
-    public Long getVersion() { return version; }
-    public void setVersion(Long version) { this.version = version; }
-    public void setId(String id) { this.id = id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getUsername() { return username; }
-    public void setUsername(String username) { this.username = username; }
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password; }
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
-    public String getMobileNumber() { return mobileNumber; }
-    public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
-    public String getRoleId() { return roleId; }
-    public void setRoleId(String roleId) { this.roleId = roleId; }
-    public String getCustomerId() { return customerId; }
-    public void setCustomerId(String customerId) { this.customerId = customerId; }
-    public List<WorkspaceRole> getWorkspaceRoles() { return workspaceRoles; }
     public void setWorkspaceRoles(List<WorkspaceRole> workspaceRoles) {
         this.workspaceRoles = workspaceRoles == null ? new ArrayList<>() : workspaceRoles;
     }
-    public boolean isMustChangePassword() { return mustChangePassword; }
-    public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
-    public boolean isActive() { return active; }
     public List<BrandDisable> getBrandDisables() { return brandDisables == null ? new ArrayList<>() : brandDisables; }
-    public void setBrandDisables(List<BrandDisable> brandDisables) { this.brandDisables = brandDisables; }
-    public Disabled getDisabled() { return disabled; }
-    public void setDisabled(Disabled disabled) { this.disabled = disabled; }
-    public void setActive(boolean active) { this.active = active; }
-    public TwoFactor getTwoFactor() { return twoFactor; }
-    public void setTwoFactor(TwoFactor twoFactor) { this.twoFactor = twoFactor; }
-    public long getTokenVersion() { return tokenVersion; }
-    public void setTokenVersion(long tokenVersion) { this.tokenVersion = tokenVersion; }
-    public Instant getCreationTime() { return creationTime; }
-    public void setCreationTime(Instant creationTime) { this.creationTime = creationTime; }
-    public Instant getLastUpdateTime() { return lastUpdateTime; }
-    public void setLastUpdateTime(Instant lastUpdateTime) { this.lastUpdateTime = lastUpdateTime; }
 }

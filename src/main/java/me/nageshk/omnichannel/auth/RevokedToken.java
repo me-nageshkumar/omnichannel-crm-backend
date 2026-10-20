@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.auth;
 
 import java.time.Instant;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -10,6 +12,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
  * the token would have expired anyway.
  */
 @Document("revoked_tokens")
+@Getter
+@NoArgsConstructor
 public class RevokedToken {
 
     @Id
@@ -20,15 +24,9 @@ public class RevokedToken {
     @Indexed(expireAfter = "0s")
     private Instant expiresAt;
 
-    public RevokedToken() {}
-
     public RevokedToken(String jti, String username, Instant expiresAt) {
         this.jti = jti;
         this.username = username;
         this.expiresAt = expiresAt;
     }
-
-    public String getJti() { return jti; }
-    public String getUsername() { return username; }
-    public Instant getExpiresAt() { return expiresAt; }
 }
