@@ -117,6 +117,11 @@ public class ApiExceptionHandler {
                 "code", AuthorityInUseException.CODE, "message", String.valueOf(e.getMessage()), "roles", e.roles()));
     }
 
+    @ExceptionHandler(TemplateInUseException.class)
+    public ResponseEntity<Map<String, String>> templateInUse(TemplateInUseException e) {
+        return body(HttpStatus.CONFLICT, TemplateInUseException.CODE, e.getMessage());
+    }
+
     @ExceptionHandler(InvalidConnectCodeException.class)
     public ResponseEntity<Map<String, String>> invalidConnectCode(InvalidConnectCodeException e) {
         return body(HttpStatus.BAD_REQUEST, InvalidConnectCodeException.CODE, e.getMessage());

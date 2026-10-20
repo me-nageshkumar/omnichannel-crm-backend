@@ -59,7 +59,12 @@ public enum Authority {
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     CONTACT_FIELD_MANAGE("contact-field:manage", RoleLevel.BRAND,
             "Create, rename and delete contact labels and attributes",
-            CUSTOMER_ADMIN, WORKSPACE_MANAGER);
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    TEMPLATE_VIEW("template:view", RoleLevel.BRAND, "See the brand's message templates and preview them",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD, AGENT),
+    TEMPLATE_MANAGE("template:manage", RoleLevel.BRAND,
+            "Create, edit, duplicate, archive and delete message templates, upload template media",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD);
 
     private final String code;
     private final RoleLevel level;
