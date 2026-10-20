@@ -125,6 +125,12 @@ class LoginIT {
     }
 
     @Test
+    void malformedJsonReturns401() throws Exception {
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("{bad"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void sixthFailureReturns429() throws Exception {
         testUsers.create("locked", "pw", "ACCOUNT_MANAGER", null);
         for (int i = 0; i < 5; i++) login("locked", "bad").andExpect(status().isUnauthorized());

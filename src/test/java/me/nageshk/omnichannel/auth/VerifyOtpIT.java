@@ -83,6 +83,13 @@ class VerifyOtpIT {
     }
 
     @Test
+    void malformedJsonReturns401() throws Exception {
+        mvc.perform(post("/api/auth/verify-otp").contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + pendingToken()).content("{bad"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void verifyOtpWithoutBearerReturns401InvalidToken() throws Exception {
         verify(null, currentCode())
                 .andExpect(status().isUnauthorized())

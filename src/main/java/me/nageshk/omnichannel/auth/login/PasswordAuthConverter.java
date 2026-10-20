@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.auth.login;
 
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
@@ -30,7 +31,7 @@ public class PasswordAuthConverter implements AuthenticationConverter {
         LoginRequest body;
         try {
             body = mapper.readValue(request.getInputStream(), LoginRequest.class);
-        } catch (IOException e) {
+        } catch (IOException | JacksonException e) {
             throw new AuthenticationServiceException("malformed login request", e);
         }
         if (body == null || isBlank(body.username()) || isBlank(body.password())) {
