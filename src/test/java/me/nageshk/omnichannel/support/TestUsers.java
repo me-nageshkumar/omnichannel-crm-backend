@@ -111,6 +111,7 @@ public class TestUsers {
         teams.deleteAll();
         roles.deleteAll();
         mongo.remove(new Query(), "system_state");
+        mongo.remove(new Query(), "authorities");
         roleSeeder.seed();
         roleCache.evictAll();
     }

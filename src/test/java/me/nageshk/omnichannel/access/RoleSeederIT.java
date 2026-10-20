@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.access;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -18,12 +19,13 @@ class RoleSeederIT {
 
     @Autowired RoleSeeder seeder;
     @Autowired RoleRepository roles;
-    @Autowired KnownAuthoritiesRepository known;
+    @Autowired AuthorityDefinitionRepository authorities;
     @Autowired MongoTemplate mongo;
 
     @BeforeEach
     void clean() {
         mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "roles");
+        mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "authorities");
         mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "system_state");
         seeder.seed();
     }
@@ -70,17 +72,72 @@ class RoleSeederIT {
         assertThat(role(BuiltInRoles.TEAM_LEAD).getAuthorities()).doesNotContain("user:view");
     }
 
+    private static final String KNOWN = "known-authorities";
+
+    private void clearAll() {
+        for (String c : List.of("roles", "authorities", "system_state"))
+            mongo.remove(new org.springframework.data.mongodb.core.query.Query(), c);
+    }
+
     @Test
-    void newAuthorityIsAddedToDefaults() {
-        KnownAuthorities k = known.findById(KnownAuthorities.ID).orElseThrow();
-        k.getCodes().remove("team:manage");
-        known.save(k);
-        Role wm = role(BuiltInRoles.WORKSPACE_MANAGER);
-        wm.getAuthorities().remove("team:manage");
-        roles.save(wm);
+    void freshDatabaseCreatesDocumentsAndGivesDefaults() {
+        clearAll();
         seeder.seed();
-        assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities()).contains("team:manage");
-        assertThat(known.findById(KnownAuthorities.ID).orElseThrow().getCodes()).contains("team:manage");
+        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(11)
+                .allMatch(AuthorityDefinition::isBuiltIn)
+                .allMatch(d -> "system".equals(d.getCreatedBy()));
+        AuthorityDefinition cv = authorities.findById("customer:view").orElseThrow();
+        assertThat(cv.getGroup()).isEqualTo("customer");
+        assertThat(cv.getLevel()).isEqualTo(RoleLevel.PLATFORM);
+        assertThat(cv.getDescription()).isEqualTo(Authority.CUSTOMER_VIEW.description());
+        assertThat(role(BuiltInRoles.ACCOUNT_MANAGER).getAuthorities()).contains("customer:view");
+    }
+
+    @Test
+    void migrationKeepsRemovalsAndDropsKnownAuthorities() {
+        Role tl = role(BuiltInRoles.TEAM_LEAD);
+        tl.getAuthorities().remove("user:view");
+        roles.save(tl);
+        mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "authorities");
+        mongo.insert(new org.bson.Document("_id", KNOWN).append("codes",
+                Arrays.stream(Authority.values()).map(Authority::code).toList()), "system_state");
+        seeder.seed();
+        assertThat(authorities.findAll()).hasSize(11);
+        assertThat(role(BuiltInRoles.TEAM_LEAD).getAuthorities()).doesNotContain("user:view");
+        assertThat(mongo.findById(KNOWN, org.bson.Document.class, "system_state")).isNull();
+    }
+
+    @Test
+    void secondStartChangesNothing() {
+        AuthorityDefinition d = authorities.findById("customer:view").orElseThrow();
+        d.setDescription("x");
+        d.setGroup("y");
+        authorities.save(d);
+        seeder.seed();
+        AuthorityDefinition after = authorities.findById("customer:view").orElseThrow();
+        assertThat(after.getDescription()).isEqualTo("x");
+        assertThat(after.getGroup()).isEqualTo("y");
+    }
+
+    @Test
+    void builtInDriftIsCorrected() {
+        AuthorityDefinition d = authorities.findById("customer:view").orElseThrow();
+        d.setLevel(RoleLevel.BRAND);
+        d.setBuiltIn(false);
+        authorities.save(d);
+        seeder.seed();
+        AuthorityDefinition after = authorities.findById("customer:view").orElseThrow();
+        assertThat(after.getLevel()).isEqualTo(RoleLevel.PLATFORM);
+        assertThat(after.isBuiltIn()).isTrue();
+    }
+
+    @Test
+    void removedDefaultStaysRemovedAfterMigration() {
+        Role am = role(BuiltInRoles.ACCOUNT_MANAGER);
+        am.getAuthorities().remove("customer:view");
+        roles.save(am);
+        seeder.seed();
+        assertThat(role(BuiltInRoles.ACCOUNT_MANAGER).getAuthorities()).doesNotContain("customer:view");
     }
 
     @Test
