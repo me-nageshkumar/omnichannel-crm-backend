@@ -244,11 +244,14 @@ public class InboxSendService {
     private WaWebMessage cacheMedia(WaWebMessage message, Outgoing out) {
         WaWebMessage.Media media = message.getMedia();
         if (out.mediaBytes() == null || media == null || media.mediaId() != null) return message;
+        // an ingest-created row may lack what the template knows
+        String mimetype = media.mimetype() != null ? media.mimetype() : out.media().mimetype();
+        String filename = media.filename() != null ? media.filename() : out.media().filename();
+        Long size = media.size() != null ? media.size() : out.media().size();
         try {
             String mediaId = chatMedia.store(message.getWorkspaceId(), message.getPhoneNumberId(), message.getId(),
-                    media.mimetype(), media.filename(), out.mediaBytes());
-            message.setMedia(new WaWebMessage.Media(media.mimetype(), media.filename(), media.size(), mediaId,
-                    clock.instant()));
+                    mimetype, filename, out.mediaBytes());
+            message.setMedia(new WaWebMessage.Media(mimetype, filename, size, mediaId, clock.instant()));
             return messages.save(message);
         } catch (RuntimeException e) {
             log.warn("could not keep the media of {}: {}", message.getWaMessageId(), e.toString());

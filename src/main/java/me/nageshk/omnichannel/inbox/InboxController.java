@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.inbox;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
@@ -198,9 +199,17 @@ public class InboxController {
     }
 
     private static ResponseEntity<Resource> download(ChatMediaService.MediaFile f) {
-        String type = f.mimeType() == null ? "application/octet-stream" : f.mimeType();
-        boolean inline = !type.startsWith("image/svg") && (type.startsWith("image/") || type.startsWith("video/")
-                || type.startsWith("audio/"));
+        String type = f.mimeType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : f.mimeType();
+        boolean inline;
+        try {
+            MediaType parsed = MediaType.parseMediaType(type);
+            String main = parsed.getType();
+            inline = !parsed.getSubtype().toLowerCase(Locale.ROOT).startsWith("svg")
+                    && (main.equalsIgnoreCase("image") || main.equalsIgnoreCase("video")
+                    || main.equalsIgnoreCase("audio"));
+        } catch (RuntimeException e) {
+            inline = false;
+        }
         ContentDisposition disposition = (inline ? ContentDisposition.inline() : ContentDisposition.attachment())
                 .filename(f.fileName(), StandardCharsets.UTF_8).build();
         return ResponseEntity.ok()

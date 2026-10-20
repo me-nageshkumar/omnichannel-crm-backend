@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import me.nageshk.omnichannel.api.NotFoundException;
@@ -148,12 +149,12 @@ public class ChatMediaService {
         return v == null || !v.isString() || v.asString().isBlank() ? null : v.asString();
     }
 
-    /** The type if it parses as a media type, else {@code application/octet-stream}. */
+    /** The type in lower case if it parses as a media type, else {@code application/octet-stream}. */
     private static String mimeOrFallback(String mimetype) {
         if (mimetype == null || mimetype.isBlank()) return FALLBACK_TYPE;
         try {
             MediaType.parseMediaType(mimetype);
-            return mimetype;
+            return mimetype.toLowerCase(Locale.ROOT);
         } catch (RuntimeException e) {
             return FALLBACK_TYPE;
         }

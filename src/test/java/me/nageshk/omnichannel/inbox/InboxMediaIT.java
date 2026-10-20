@@ -191,6 +191,64 @@ class InboxMediaIT extends InboxApiTestBase {
     }
 
     @Test
+    void svgIsAlwaysAnAttachmentWhateverItsCase() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        for (String type : List.of("image/svg+xml", "image/SVG+xml")) {
+            WaWebMessage m = message(chat, 10, null);
+            m.setType("image");
+            m.setMedia(new WaWebMessage.Media(type, "x.svg", null, null, null));
+            WaWebMessage svg = messages.save(m);
+
+            var ex = viaDevice(() -> bytes(managerToken, chat, svg),
+                    req -> Envelope.response(req.id(), reply("<svg/>".getBytes(), type, "x.svg")));
+
+            assertThat(ex.getValue().getStatusCode()).as(type).isEqualTo(HttpStatus.OK);
+            assertThat(ex.getValue().getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)).as(type)
+                    .startsWith("attachment");
+            assertThat(ex.getValue().getHeaders().getContentType().toString()).as(type).isEqualTo("image/svg+xml");
+        }
+    }
+
+    @Test
+    void emptyOrMalformedDataIs410() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        for (ObjectNode bad : List.of(reply(new byte[0], "image/png", "a.png"),
+                mapper.createObjectNode().put("data", "not base64 !!!").put("mimetype", "image/png"))) {
+            WaWebMessage m = imageMessage(chat);
+
+            var ex = viaDevice(() -> json(managerToken, chat, m), req -> Envelope.response(req.id(), bad));
+
+            assertThat(ex.getValue().getStatusCode()).as(bad.toString()).isEqualTo(HttpStatus.GONE);
+            assertThat(messages.findById(m.getId()).orElseThrow().getMedia().mediaId()).isNull();
+        }
+    }
+
+    @Test
+    void deviceThatIsNotReadyIs409() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        WaWebMessage m = imageMessage(chat);
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+            Thread.sleep(200);
+
+            ResponseEntity<JsonNode> res = json(managerToken, chat, m);
+
+            assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(res.getBody().get("code").asString()).isEqualTo("WHATSAPP_NOT_READY");
+            assertThat(device.poll(Duration.ofMillis(300))).isEmpty();
+        }
+    }
+
+    /** The other half, a 3 MB frame from an authenticated device, is {@link #aLargeFileCrossesTheSocket()}. */
+    @Test
+    void anUnauthenticatedSocketKeepsTheSmallFrameLimit() throws Exception {
+        try (FakeDevice device = FakeDevice.connect(port)) {
+            device.send(Envelope.event("noise", mapper.createObjectNode().put("pad", "x".repeat(16 * 1024))));
+
+            assertThat(device.awaitClose().getCode()).isEqualTo(1009);
+        }
+    }
+
+    @Test
     void unavailableMediaIs410() throws Exception {
         WaWebChat chat = chatWithAarav();
         WaWebMessage m = imageMessage(chat);
