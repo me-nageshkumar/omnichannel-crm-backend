@@ -1,5 +1,8 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.enablement.EnableLevel;
+import me.nageshk.omnichannel.enablement.Enablement;
 import me.nageshk.omnichannel.api.DuplicateException;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
@@ -16,8 +19,10 @@ public class WorkspaceService {
 
     private final WorkspaceRepository workspaces;
     private final TeamRepository teams;
+    private final Enablement enablement;
 
-    public WorkspaceService(WorkspaceRepository workspaces, TeamRepository teams) {
+    public WorkspaceService(WorkspaceRepository workspaces, TeamRepository teams, Enablement enablement) {
+        this.enablement = enablement;
         this.workspaces = workspaces;
         this.teams = teams;
     }
@@ -64,6 +69,24 @@ public class WorkspaceService {
         } catch (DuplicateKeyException e) {
             throw duplicateName();
         }
+    }
+
+    /** Disables or enables the customer's workspace at {@code level}; 404 if not the customer's. */
+    public Workspace setEnabled(String customerId, String workspaceId, boolean enabled, AuthenticatedUser me,
+            EnableLevel level) {
+        Workspace w = workspaces.findByIdAndCustomerId(workspaceId, customerId)
+                .orElseThrow(() -> new NotFoundException("workspace not found"));
+        boolean before = w.getDisabled() == null;
+        if (enabled) {
+            if (before) return w;
+            enablement.checkEnable(w.getDisabled(), level);
+            w.setDisabled(null);
+        } else {
+            w.setDisabled(enablement.disable(w.getDisabled(), me, level));
+        }
+        Workspace saved = workspaces.save(w);
+        if (before != enabled) enablement.record("WORKSPACE", workspaceId, before, enabled, me, level);
+        return saved;
     }
 
     private Workspace insert(Workspace w) {

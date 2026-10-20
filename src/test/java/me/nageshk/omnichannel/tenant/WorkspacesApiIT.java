@@ -145,4 +145,68 @@ class WorkspacesApiIT {
         assertThat(names(send(get("/api/workspaces"), globexBossToken, null))).containsExactly("Globex Shop");
         assertThat(names(send(get("/api/workspaces"), testUsers.tokenFor("device"), null))).isEmpty();
     }
+
+    private JsonNode meWorkspaces(String token) throws Exception {
+        return mapper.readTree(send(get("/api/users/me"), token, null).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString()).get("workspaces");
+    }
+
+    @Test
+    void customerAdminDisablesBrand() throws Exception {
+        send(post("/api/workspaces/" + brandA.getId() + "/disable"), bossToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Brand A"))
+                .andExpect(jsonPath("$.disabled.level").value("COMPANY"))
+                .andExpect(jsonPath("$.disabled.by").value("boss"));
+
+        assertThat(meWorkspaces(wmToken)).isEmpty();
+        JsonNode bossSees = meWorkspaces(bossToken);
+        assertThat(bossSees.get(0).get("name").asText()).isEqualTo("Brand A");
+        assertThat(bossSees.get(0).get("disabled").get("level").asText()).isEqualTo("COMPANY");
+        assertThat(bossSees.get(1).get("disabled").isNull()).isTrue();
+        assertThat(names(send(get("/api/workspaces"), bossToken, null))).containsExactly("Brand A", "Brand B");
+        assertThat(names(send(get("/api/workspaces"), wmToken, null))).isEmpty();
+
+        send(post("/api/workspaces/" + brandA.getId() + "/enable"), bossToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disabled").isEmpty());
+        assertThat(names(send(get("/api/workspaces"), wmToken, null))).containsExactly("Brand A");
+    }
+
+    @Test
+    void disabledBrandRefusesActions() throws Exception {
+        send(post("/api/workspaces/" + brandA.getId() + "/disable"), bossToken, null).andExpect(status().isOk());
+        send(put("/api/workspaces/" + brandA.getId()), bossToken, Map.of("name", "Renamed"))
+                .andExpect(status().isForbidden());
+        send(get("/api/workspaces/" + brandA.getId() + "/users"), wmToken, null).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void platformDisableCannotBeEnabledByCustomerAdmin() throws Exception {
+        String amToken = testUsers.accessToken(testUsers.create("am", "pw", BuiltInRoles.ACCOUNT_MANAGER, null));
+        send(post("/api/customers/" + acme.getId() + "/workspaces/" + brandA.getId() + "/disable"), amToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disabled.level").value("PLATFORM"));
+        send(post("/api/workspaces/" + brandA.getId() + "/enable"), bossToken, null)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("DISABLED_AT_HIGHER_LEVEL"));
+        send(post("/api/customers/" + acme.getId() + "/workspaces/" + brandA.getId() + "/enable"), amToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disabled").isEmpty());
+    }
+
+    @Test
+    void otherCustomersBrandIs404() throws Exception {
+        send(post("/api/workspaces/" + globexShop.getId() + "/disable"), bossToken, null)
+                .andExpect(status().isNotFound());
+        String amToken = testUsers.accessToken(testUsers.create("am", "pw", BuiltInRoles.ACCOUNT_MANAGER, null));
+        send(post("/api/customers/" + acme.getId() + "/workspaces/" + globexShop.getId() + "/disable"), amToken, null)
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void managerCannotDisableBrand() throws Exception {
+        send(post("/api/workspaces/" + brandA.getId() + "/disable"), wmToken, null)
+                .andExpect(status().isForbidden());
+    }
 }

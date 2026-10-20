@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.enablement.Disabled;
 import java.time.Instant;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
@@ -17,6 +18,7 @@ public class Workspace {
 
     private String customerId;
     private String name;
+    private Disabled disabled;
 
     @CreatedDate
     private Instant creationTime;
@@ -30,6 +32,8 @@ public class Workspace {
     public void setCustomerId(String customerId) { this.customerId = customerId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+    public Disabled getDisabled() { return disabled; }
+    public void setDisabled(Disabled disabled) { this.disabled = disabled; }
     public Instant getCreationTime() { return creationTime; }
     public void setCreationTime(Instant creationTime) { this.creationTime = creationTime; }
     public Instant getLastUpdateTime() { return lastUpdateTime; }

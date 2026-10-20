@@ -33,6 +33,7 @@ public class User {
     /** Null for platform users. */
     private String customerId;
     private List<WorkspaceRole> workspaceRoles = new ArrayList<>();
+    private List<BrandDisable> brandDisables = new ArrayList<>();
     private boolean mustChangePassword;
     private boolean active;
     private Disabled disabled;
@@ -76,6 +77,8 @@ public class User {
     public boolean isMustChangePassword() { return mustChangePassword; }
     public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
     public boolean isActive() { return active; }
+    public List<BrandDisable> getBrandDisables() { return brandDisables == null ? new ArrayList<>() : brandDisables; }
+    public void setBrandDisables(List<BrandDisable> brandDisables) { this.brandDisables = brandDisables; }
     public Disabled getDisabled() { return disabled; }
     public void setDisabled(Disabled disabled) { this.disabled = disabled; }
     public void setActive(boolean active) { this.active = active; }

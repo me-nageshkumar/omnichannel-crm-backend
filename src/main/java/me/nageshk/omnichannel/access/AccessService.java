@@ -26,7 +26,9 @@ import org.springframework.stereotype.Service;
  * become the principal's {@code GrantedAuthority}s; BRAND authorities are checked per workspace,
  * from SpEL as {@code @access.has(#workspaceId, 'user:manage')}.
  *
- * <p>Access to a workspace means a BRAND role in it or a COMPANY role in its customer. Platform staff,
+ * <p>Access to a workspace means a BRAND role in it or a COMPANY role in its customer. A disabled
+ * workspace, or a brand access switched off for the user, is not found for BRAND-role holders; a
+ * disabled workspace gives COMPANY-role holders no authorities there. Platform staff,
  * the Super Admin included, have no brand access in this slice. A workspace without access is
  * reported as not found, so other tenants' ids are not confirmed to exist.
  */
@@ -62,9 +64,15 @@ public class AccessService {
     public Set<String> inWorkspace(AuthenticatedUser user, String workspaceId) {
         NotFoundException notFound = new NotFoundException("workspace not found");
         if (user.customerId() == null || workspaceId == null) throw notFound;
-        workspaces.findByIdAndCustomerId(workspaceId, user.customerId()).orElseThrow(() -> notFound);
+        Workspace workspace = workspaces.findByIdAndCustomerId(workspaceId, user.customerId())
+                .orElseThrow(() -> notFound);
 
         Optional<Role> companyRole = companyRole(user.roleId());
+        if (companyRole.isEmpty() && (workspace.getDisabled() != null || user.brandDisabled(workspaceId))) {
+            throw notFound;
+        }
+        // a disabled brand stays visible to its company's admins, who may do nothing in it but enable it
+        if (workspace.getDisabled() != null) return Set.of();
         Optional<Role> workspaceRole = user.workspaceRoles().stream()
                 .filter(wr -> workspaceId.equals(wr.workspaceId()))
                 .findFirst()
@@ -87,6 +95,15 @@ public class AccessService {
         return inWorkspace(user, workspaceId).contains(authority);
     }
 
+    /** The workspace exists, is enabled, and so is its customer: its numbers may connect. */
+    public boolean isWorkspaceUsable(String workspaceId) {
+        return workspaceId != null && workspaces.findById(workspaceId)
+                .filter(w -> w.getDisabled() == null)
+                .flatMap(w -> customers.findById(w.getCustomerId()))
+                .map(Customer::isActive)
+                .orElse(false);
+    }
+
     /** The user's COMPANY role's COMPANY and BRAND codes; empty without a COMPANY role. */
     public Set<String> companyCodes(AuthenticatedUser user) {
         if (user.customerId() == null) return Set.of();
@@ -102,9 +119,10 @@ public class AccessService {
         Set<String> ids = user.workspaceRoles().stream()
                 .filter(wr -> roleAt(wr.roleId(), RoleLevel.BRAND).isPresent())
                 .map(WorkspaceRole::workspaceId)
+                .filter(id -> !user.brandDisabled(id))
                 .collect(Collectors.toSet());
         return workspaces.findAllById(ids).stream()
-                .filter(w -> user.customerId().equals(w.getCustomerId()))
+                .filter(w -> user.customerId().equals(w.getCustomerId()) && w.getDisabled() == null)
                 .sorted(Comparator.comparing(Workspace::getName))
                 .toList();
     }

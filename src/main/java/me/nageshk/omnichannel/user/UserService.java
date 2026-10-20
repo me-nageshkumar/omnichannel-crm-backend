@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.enablement.Disabled;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -43,7 +44,7 @@ public class UserService {
     public record RoleRef(String id, String name) {}
 
     /** A workspace the user can act in; {@code role} is null when access comes from the COMPANY role. */
-    public record WorkspaceAccess(String id, String name, RoleRef role, Set<String> authorities) {}
+    public record WorkspaceAccess(String id, String name, RoleRef role, Set<String> authorities, Disabled disabled) {}
 
     private final UserRepository users;
     private final AccessService access;
@@ -77,7 +78,8 @@ public class UserService {
                         w.getId(),
                         w.getName(),
                         companyWide ? null : workspaceRole(u, w.getId()),
-                        new TreeSet<>(access.inWorkspace(principal, w.getId()))))
+                        new TreeSet<>(access.inWorkspace(principal, w.getId())),
+                        w.getDisabled()))
                 .toList();
         return new CurrentUser(
                 u.getId(), u.getName(), u.getUsername(), u.getEmail(), u.getMobileNumber(),

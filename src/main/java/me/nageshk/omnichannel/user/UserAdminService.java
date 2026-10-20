@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.enablement.Disabled;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.enablement.EnableLevel;
 import me.nageshk.omnichannel.enablement.Enablement;
@@ -149,6 +150,40 @@ public class UserAdminService {
     }
 
     /** Deactivating revokes every issued token; reactivating does not bring them back. */
+    /**
+     * Switches the target's access to one brand off or on. The caller must be able to change the
+     * target there; the record outlives the target's role in the brand.
+     */
+    public User setBrandAccessEnabled(Actor actor, AuthenticatedUser me, User target, String workspaceId,
+            boolean enabled, EnableLevel level) {
+        if (!policy.canChangeInWorkspace(actor, access.targetOf(target), workspaceId)) {
+            throw new ForbiddenException("you may not " + (enabled ? "enable" : "disable") + " this user here");
+        }
+        List<BrandDisable> list = new ArrayList<>(target.getBrandDisables());
+        Disabled current = brandDisabled(target, workspaceId);
+        list.removeIf(b -> workspaceId.equals(b.workspaceId()));
+        if (enabled) {
+            if (current == null) return target;
+            enablement.checkEnable(current, level);
+        } else {
+            list.add(new BrandDisable(workspaceId, enablement.disable(current, me, level)));
+        }
+        target.setBrandDisables(list);
+        User saved = users.save(target);
+        if ((current == null) == !enabled) {
+            enablement.record("BRAND_ACCESS", target.getId() + "@" + workspaceId, current == null, enabled, me, level);
+        }
+        return saved;
+    }
+
+    /** The target's brand-access disable for the workspace, or null. */
+    public static Disabled brandDisabled(User target, String workspaceId) {
+        return target.getBrandDisables().stream()
+                .filter(b -> workspaceId.equals(b.workspaceId()))
+                .map(BrandDisable::disabled)
+                .findFirst().orElse(null);
+    }
+
     public User setEnabled(Actor actor, AuthenticatedUser me, User target, boolean enabled, EnableLevel level) {
         if (!policy.canDisableLogin(actor, access.targetOf(target))) {
             throw new ForbiddenException("you may not " + (enabled ? "enable" : "disable") + " this user");

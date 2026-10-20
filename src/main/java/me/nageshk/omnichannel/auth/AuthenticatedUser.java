@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.auth;
 
+import me.nageshk.omnichannel.user.BrandDisable;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -23,6 +24,7 @@ public class AuthenticatedUser implements UserDetails {
     private final String customerId;
     private final String roleId;
     private final List<WorkspaceRole> workspaceRoles;
+    private final Set<String> brandDisabled;
     private final boolean active;
     private final boolean mustChangePassword;
     private final boolean twoFactorEnabled;
@@ -44,6 +46,8 @@ public class AuthenticatedUser implements UserDetails {
         this.customerId = user.getCustomerId();
         this.roleId = user.getRoleId();
         this.workspaceRoles = List.copyOf(user.getWorkspaceRoles());
+        this.brandDisabled = user.getBrandDisables().stream().map(BrandDisable::workspaceId)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         this.active = user.isActive() && customerActive;
         this.mustChangePassword = user.isMustChangePassword();
         this.twoFactorEnabled = user.getTwoFactor() != null && user.getTwoFactor().enabled();
@@ -57,6 +61,8 @@ public class AuthenticatedUser implements UserDetails {
     public String customerId() { return customerId; }
     public String roleId() { return roleId; }
     public List<WorkspaceRole> workspaceRoles() { return workspaceRoles; }
+    /** Whether the user's access to this workspace was switched off. */
+    public boolean brandDisabled(String workspaceId) { return brandDisabled.contains(workspaceId); }
     public boolean superAdmin() { return grantedAuthorities.contains(BuiltInRoles.SUPER_ADMIN); }
     public boolean mustChangePassword() { return mustChangePassword; }
     public boolean twoFactorEnabled() { return twoFactorEnabled; }

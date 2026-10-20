@@ -414,4 +414,69 @@ class WorkspaceUsersApiIT {
                 .andExpect(jsonPath("$.level").value("PLATFORM"));
         assertThat(users.findById(agent.getId()).orElseThrow().isActive()).isFalse();
     }
+
+    private User inAAndB(String username) {
+        return testUsers.createInCustomer(acme.getId(), username, null,
+                List.of(role(brandA, BuiltInRoles.AGENT), role(brandB, BuiltInRoles.AGENT)));
+    }
+
+    private List<String> myWorkspaceNames(String token) throws Exception {
+        List<String> names = new java.util.ArrayList<>();
+        json(send(get("/api/users/me"), token, null).andExpect(status().isOk())).get("workspaces")
+                .forEach(w -> names.add(w.get("name").asText()));
+        return names;
+    }
+
+    @Test
+    void managerDisablesAgentInBrand() throws Exception {
+        User both = inAAndB("both");
+        String bothToken = testUsers.accessToken(both);
+
+        send(post(usersOf(brandA) + "/" + both.getId() + "/disable"), wmToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("both"))
+                .andExpect(jsonPath("$.brandDisabled.level").value("BRAND"))
+                .andExpect(jsonPath("$.brandDisabled.by").value("wm"));
+
+        assertThat(myWorkspaceNames(bothToken)).containsExactly("Brand B");
+        assertThat(users.findById(both.getId()).orElseThrow().isActive()).isTrue();
+        send(get(usersOf(brandA)), wmToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.username=='both')].brandDisabled.level").value("BRAND"));
+
+        send(post(usersOf(brandA) + "/" + both.getId() + "/enable"), wmToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.brandDisabled").isEmpty());
+        assertThat(myWorkspaceNames(bothToken)).containsExactly("Brand A", "Brand B");
+    }
+
+    @Test
+    void brandDisableSurvivesReAdd() throws Exception {
+        User both = inAAndB("both");
+        send(post(usersOf(brandA) + "/" + both.getId() + "/disable"), wmToken, null).andExpect(status().isOk());
+        send(delete(usersOf(brandA) + "/" + both.getId()), bossToken, null).andExpect(status().isNoContent());
+        send(post(usersOf(brandA)), bossToken,
+                Map.of("userId", both.getId(), "roleId", testUsers.roleId(BuiltInRoles.AGENT)))
+                .andExpect(status().isCreated());
+
+        assertThat(myWorkspaceNames(testUsers.accessToken(users.findById(both.getId()).orElseThrow())))
+                .containsExactly("Brand B");
+    }
+
+    @Test
+    void managerCannotEnableAgentAdminDisabled() throws Exception {
+        User both = inAAndB("both");
+        send(post(usersOf(brandA) + "/" + both.getId() + "/disable"), bossToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.brandDisabled.level").value("COMPANY"));
+        send(post(usersOf(brandA) + "/" + both.getId() + "/enable"), wmToken, null)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("DISABLED_AT_HIGHER_LEVEL"));
+    }
+
+    @Test
+    void agentCannotDisableBrandAccess() throws Exception {
+        User both = inAAndB("both");
+        send(post(usersOf(brandA) + "/" + wm.getId() + "/disable"), testUsers.accessToken(both), null)
+                .andExpect(status().isForbidden());
+    }
 }

@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.tenant.WorkspaceController.WorkspaceView;
 import me.nageshk.omnichannel.enablement.Disabled;
 import me.nageshk.omnichannel.enablement.EnableLevel;
 import jakarta.validation.Valid;
@@ -40,11 +41,9 @@ public class CustomerController {
 
     public record CustomerView(String id, String name, boolean active, Disabled disabled, Instant creationTime) {}
 
-    public record WorkspaceRef(String id, String name) {}
-
     public record PageView(List<CustomerView> items, long total, int page) {}
 
-    public record Detail(CustomerView customer, List<WorkspaceRef> workspaces, List<UserSummary> admins) {}
+    public record Detail(CustomerView customer, List<WorkspaceView> workspaces, List<UserSummary> admins) {}
 
     public record AdminRequest(@NotBlank String name, @NotBlank String username, String email, String mobileNumber,
             String temporaryPassword) {
@@ -67,8 +66,11 @@ public class CustomerController {
     private final CustomerService service;
     private final UserAdminService userAdmin;
     private final AccessService access;
+    private final WorkspaceService workspaceService;
 
-    public CustomerController(CustomerService service, UserAdminService userAdmin, AccessService access) {
+    public CustomerController(CustomerService service, UserAdminService userAdmin, AccessService access,
+            WorkspaceService workspaceService) {
+        this.workspaceService = workspaceService;
         this.service = service;
         this.userAdmin = userAdmin;
         this.access = access;
@@ -96,7 +98,7 @@ public class CustomerController {
     public Detail detail(@PathVariable String id) {
         Customer c = service.require(id);
         return new Detail(view(c),
-                service.workspacesOf(c).stream().map(w -> new WorkspaceRef(w.getId(), w.getName())).toList(),
+                service.workspacesOf(c).stream().map(WorkspaceController::view).toList(),
                 userAdmin.summaries(service.adminsOf(c)));
     }
 
@@ -126,6 +128,22 @@ public class CustomerController {
     @PreAuthorize("hasAuthority('customer:manage')")
     public CustomerView enable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
         return view(service.setEnabled(id, true, me));
+    }
+
+    @PostMapping("/{id}/workspaces/{workspaceId}/disable")
+    @PreAuthorize("hasAuthority('customer:manage')")
+    public WorkspaceView disableWorkspace(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id,
+            @PathVariable String workspaceId) {
+        return WorkspaceController.view(workspaceService.setEnabled(service.require(id).getId(), workspaceId, false, me,
+                EnableLevel.PLATFORM));
+    }
+
+    @PostMapping("/{id}/workspaces/{workspaceId}/enable")
+    @PreAuthorize("hasAuthority('customer:manage')")
+    public WorkspaceView enableWorkspace(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id,
+            @PathVariable String workspaceId) {
+        return WorkspaceController.view(workspaceService.setEnabled(service.require(id).getId(), workspaceId, true, me,
+                EnableLevel.PLATFORM));
     }
 
     @GetMapping("/{id}/users")

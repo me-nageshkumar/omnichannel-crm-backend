@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.enablement.Disabled;
+import me.nageshk.omnichannel.enablement.EnableLevel;
 import java.util.List;
 import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
@@ -24,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/workspaces")
 public class WorkspaceController {
 
-    public record WorkspaceView(String id, String name) {}
+    public record WorkspaceView(String id, String name, Disabled disabled) {}
 
     public record NameRequest(String name) {}
 
@@ -55,7 +57,20 @@ public class WorkspaceController {
         return view(service.rename(me.customerId(), workspaceId, req.name()));
     }
 
-    private static WorkspaceView view(Workspace w) {
-        return new WorkspaceView(w.getId(), w.getName());
+    /** Customer Admin: acts at COMPANY level, on its own customer's workspaces only. */
+    @PostMapping("/{workspaceId}/disable")
+    @PreAuthorize("hasAuthority('workspace:enable')")
+    public WorkspaceView disable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId) {
+        return view(service.setEnabled(me.customerId(), workspaceId, false, me, EnableLevel.COMPANY));
+    }
+
+    @PostMapping("/{workspaceId}/enable")
+    @PreAuthorize("hasAuthority('workspace:enable')")
+    public WorkspaceView enable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId) {
+        return view(service.setEnabled(me.customerId(), workspaceId, true, me, EnableLevel.COMPANY));
+    }
+
+    static WorkspaceView view(Workspace w) {
+        return new WorkspaceView(w.getId(), w.getName(), w.getDisabled());
     }
 }

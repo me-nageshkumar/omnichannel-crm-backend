@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.enablement.Disabled;
+import me.nageshk.omnichannel.enablement.Enablement;
 import com.fasterxml.jackson.annotation.JsonUnwrapped;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -34,7 +36,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorkspaceUserController {
 
     /** A row of the list: the summary, whether its access comes from a COMPANY role, and whether the caller may manage the login. */
-    public record WorkspaceUser(@JsonUnwrapped UserSummary user, boolean allBrands, boolean manageable) {}
+    public record WorkspaceUser(@JsonUnwrapped UserSummary user, boolean allBrands, boolean manageable,
+            Disabled brandDisabled) {}
 
     /** Either a new login ({@code userId} absent) or an existing user of the customer ({@code userId}), with a role here. */
     public record AddRequest(String userId, String name, String username, String email, String mobileNumber,
@@ -48,8 +51,11 @@ public class WorkspaceUserController {
     private final UserAdminService admin;
     private final AccessService access;
     private final AssignmentPolicy policy;
+    private final Enablement enablement;
 
-    public WorkspaceUserController(UserAdminService admin, AccessService access, AssignmentPolicy policy) {
+    public WorkspaceUserController(UserAdminService admin, AccessService access, AssignmentPolicy policy,
+            Enablement enablement) {
+        this.enablement = enablement;
         this.admin = admin;
         this.access = access;
         this.policy = policy;
@@ -63,7 +69,8 @@ public class WorkspaceUserController {
         List<UserSummary> summaries = admin.summaries(list);
         return IntStream.range(0, list.size())
                 .mapToObj(i -> new WorkspaceUser(summaries.get(i), admin.hasCompanyRole(list.get(i)),
-                        policy.canManageLogin(actor, access.targetOf(list.get(i)))))
+                        policy.canManageLogin(actor, access.targetOf(list.get(i))),
+                        UserAdminService.brandDisabled(list.get(i), workspaceId)))
                 .toList();
     }
 
@@ -111,6 +118,29 @@ public class WorkspaceUserController {
         User target = admin.requireInWorkspace(me.customerId(), workspaceId, userId);
         admin.resetPassword(access.actorOf(me), target, req.temporaryPassword());
         return TemporaryPasswordResponse.reset(req.temporaryPassword());
+    }
+
+    @PostMapping("/users/{userId}/disable")
+    @PreAuthorize("@access.has(#workspaceId, 'user:enable')")
+    public WorkspaceUser disable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String userId) {
+        return setBrandAccess(me, workspaceId, userId, false);
+    }
+
+    @PostMapping("/users/{userId}/enable")
+    @PreAuthorize("@access.has(#workspaceId, 'user:enable')")
+    public WorkspaceUser enable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String userId) {
+        return setBrandAccess(me, workspaceId, userId, true);
+    }
+
+    private WorkspaceUser setBrandAccess(AuthenticatedUser me, String workspaceId, String userId, boolean enabled) {
+        User target = admin.requireInWorkspace(me.customerId(), workspaceId, userId);
+        Actor actor = access.actorOf(me);
+        User saved = admin.setBrandAccessEnabled(actor, me, target, workspaceId, enabled,
+                enablement.levelOf(me, "user:enable", workspaceId));
+        return new WorkspaceUser(admin.summary(saved), admin.hasCompanyRole(saved),
+                policy.canManageLogin(actor, access.targetOf(saved)), UserAdminService.brandDisabled(saved, workspaceId));
     }
 
     @GetMapping("/assignable-roles")
