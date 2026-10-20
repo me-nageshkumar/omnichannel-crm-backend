@@ -10,12 +10,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
-import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.api.NoDeviceException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
-import me.nageshk.omnichannel.phone.PhoneNumber;
-import me.nageshk.omnichannel.phone.PhoneNumberService;
 import me.nageshk.omnichannel.rpc.RpcDispatcher;
 import me.nageshk.omnichannel.template.RenderRequest;
 import me.nageshk.omnichannel.template.RenderedTemplate;
@@ -27,7 +24,6 @@ import me.nageshk.omnichannel.template.TemplateStatus;
 import me.nageshk.omnichannel.template.TemplateType;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
-import me.nageshk.omnichannel.ws.DeviceRegistry;
 import me.nageshk.omnichannel.ws.DeviceSession;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
@@ -54,18 +50,17 @@ public class InboxSendService {
 
     /** What goes to the device and what is stored for it; {@code body} may be null. */
     private record Outgoing(String content, ObjectNode options, String type, String body,
-            WaWebMessage.Media media, WaWebMessage.Location location, String templateId) {
+            WaWebMessage.Media media, byte[] mediaBytes, WaWebMessage.Location location, String templateId) {
     }
 
     /** The stored message and the chat after it; {@code inserted} is false when the ingest listener got there first. */
     private record Recorded(WaWebChat chat, WaWebMessage message, boolean inserted) {
     }
 
-    private final DeviceRegistry registry;
+    private final InboxDevices devices;
     private final RpcDispatcher dispatcher;
     private final ObjectMapper mapper;
-    private final AccessService access;
-    private final PhoneNumberService phoneNumbers;
+    private final ChatMediaService chatMedia;
     private final TemplateRenderer renderer;
     private final TemplateMediaService templateMedia;
     private final TemplateService templates;
@@ -88,7 +83,7 @@ public class InboxSendService {
     public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
             SendRequest req) {
         if (chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
-        DeviceSession device = requireReadyDevice(workspaceId, chat);
+        DeviceSession device = devices.requireReady(workspaceId, chat);
         Outgoing out = outgoing(me, workspaceId, chat, req);
 
         ObjectNode params = mapper.createObjectNode();
@@ -97,19 +92,6 @@ public class InboxSendService {
         params.set("options", out.options());
         params.put("sendSeen", true);
         return dispatcher.call(device, "sendMessage", params).thenApply(result -> afterSend(me, chat, out, result));
-    }
-
-    private DeviceSession requireReadyDevice(String workspaceId, WaWebChat chat) {
-        PhoneNumber number = phoneNumbers.requireInWorkspace(workspaceId, chat.getPhoneNumberId());
-        if (number.getDisabled() != null || !access.isWorkspaceUsable(workspaceId)) {
-            throw new NoDeviceException(NoDeviceException.NO_DEVICE, "the number is disabled");
-        }
-        DeviceSession device = registry.find(number.getId()).orElseThrow(() -> new NoDeviceException(
-                NoDeviceException.NO_DEVICE, "no extension connected for number " + number.getId()));
-        if (!device.confirmed() || !DeviceSession.STATE_CONNECTED.equals(device.waState())) {
-            throw new NoDeviceException(NoDeviceException.WHATSAPP_NOT_READY, "WhatsApp state is " + device.waState());
-        }
-        return device;
     }
 
     // ---- request to outgoing message ----
@@ -124,7 +106,7 @@ public class InboxSendService {
             if (text.length() > MAX_TEXT) {
                 throw new ValidationException("text", "must be at most " + MAX_TEXT + " characters");
             }
-            return new Outgoing(text, mapper.createObjectNode(), null, text, null, null, null);
+            return new Outgoing(text, mapper.createObjectNode(), null, text, null, null, null, null);
         }
         String templateId = req.templateId().strip();
         if (templates.require(workspaceId, templateId).getStatus() == TemplateStatus.ARCHIVED) {
@@ -149,14 +131,15 @@ public class InboxSendService {
         switch (r.type()) {
             case TEXT -> {
                 if (c.getLinkPreview() != null) options.put("linkPreview", c.getLinkPreview());
-                return new Outgoing(c.getBody(), options, "chat", c.getBody(), null, null, templateId);
+                return new Outgoing(c.getBody(), options, "chat", c.getBody(), null, null, null, templateId);
             }
             case IMAGE, VIDEO, DOCUMENT, AUDIO -> {
                 String caption = c.getCaption() == null ? "" : c.getCaption();
                 TemplateMediaService.MediaFile file = templateMedia.open(workspaceId, r.media().mediaId());
                 ObjectNode media = options.putObject("media");
                 media.put("mimetype", file.mimeType());
-                media.put("data", Base64.getEncoder().encodeToString(read(file)));
+                byte[] bytes = read(file);
+                media.put("data", Base64.getEncoder().encodeToString(bytes));
                 media.put("filename", file.fileName());
                 if (!caption.isEmpty()) options.put("caption", caption);
                 boolean voice = r.type() == TemplateType.AUDIO
@@ -171,10 +154,9 @@ public class InboxSendService {
                     case DOCUMENT -> "document";
                     default -> voice ? "ptt" : "audio";
                 };
-                // media copy in Task 8: the bytes are not stored with the message yet, so mediaId stays null
                 WaWebMessage.Media stored = new WaWebMessage.Media(file.mimeType(), file.fileName(), file.size(),
                         null, null);
-                return new Outgoing(caption, options, type, caption.isEmpty() ? null : caption, stored, null,
+                return new Outgoing(caption, options, type, caption.isEmpty() ? null : caption, stored, bytes, null,
                         templateId);
             }
             case LOCATION -> {
@@ -183,7 +165,7 @@ public class InboxSendService {
                 location.put("latitude", c.getLatitude());
                 location.put("longitude", c.getLongitude());
                 if (description != null) location.put("description", description);
-                return new Outgoing("", options, "location", null, null,
+                return new Outgoing("", options, "location", null, null, null,
                         new WaWebMessage.Location(c.getLatitude(), c.getLongitude(), description), templateId);
             }
             case POLL -> {
@@ -192,7 +174,7 @@ public class InboxSendService {
                 ArrayNode choices = poll.putArray("pollOptions");
                 c.getOptions().forEach(choices::add);
                 poll.putObject("options").put("allowMultipleAnswers", Boolean.TRUE.equals(c.getAllowMultiple()));
-                return new Outgoing("", options, "poll_creation", c.getQuestion(), null, null, templateId);
+                return new Outgoing("", options, "poll_creation", c.getQuestion(), null, null, null, templateId);
             }
             default -> throw new IllegalStateException("cannot send a " + r.type() + " template");
         }
@@ -256,6 +238,25 @@ public class InboxSendService {
     }
 
     /**
+     * Keeps the bytes of a template's media with the stored message, so opening it never asks the phone. A failure
+     * is logged: the message was sent, and the console can still fetch the media from the phone.
+     */
+    private WaWebMessage cacheMedia(WaWebMessage message, Outgoing out) {
+        WaWebMessage.Media media = message.getMedia();
+        if (out.mediaBytes() == null || media == null || media.mediaId() != null) return message;
+        try {
+            String mediaId = chatMedia.store(message.getWorkspaceId(), message.getPhoneNumberId(), message.getId(),
+                    media.mimetype(), media.filename(), out.mediaBytes());
+            message.setMedia(new WaWebMessage.Media(media.mimetype(), media.filename(), media.size(), mediaId,
+                    clock.instant()));
+            return messages.save(message);
+        } catch (RuntimeException e) {
+            log.warn("could not keep the media of {}: {}", message.getWaMessageId(), e.toString());
+            return message;
+        }
+    }
+
+    /**
      * Upserts the message by {@code (phoneNumberId, waMessageId)} and folds it into the chat. A row the ingest
      * listener stored first (its {@code message_create} can beat the RPC result) is taken over: the console is its
      * source and sender, its status only moves up.
@@ -287,6 +288,7 @@ public class InboxSendService {
         message.setTemplateId(out.templateId());
         InboxIngestService.applyAck(message, ack, now);
         message = messages.save(message);
+        message = cacheMedia(message, out);
 
         WaWebChat chat = chats.findById(sent.getId()).orElse(sent);
         InboxIngestService.foldOutbound(chat, message, message.getTimestamp());

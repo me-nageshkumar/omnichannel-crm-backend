@@ -404,7 +404,8 @@ class InboxSendIT extends InboxApiTestBase {
         assertThat(stored.getMedia().mimetype()).isEqualTo("image/png");
         assertThat(stored.getMedia().filename()).isEqualTo("logo.png");
         assertThat(stored.getMedia().size()).isEqualTo(png().length);
-        assertThat(stored.getMedia().mediaId()).isNull();
+        assertThat(stored.getMedia().mediaId()).isNotNull();
+        assertThat(stored.getMedia().downloadedAt()).isNotNull();
     }
 
     @Test

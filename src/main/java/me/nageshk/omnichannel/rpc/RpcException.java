@@ -9,6 +9,7 @@ public class RpcException extends RuntimeException {
     public static final String WHATSAPP_NOT_READY = "WHATSAPP_NOT_READY";
     public static final String DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED";
     public static final String SEND_FAILED = "SEND_FAILED";
+    public static final String MEDIA_UNAVAILABLE = "MEDIA_UNAVAILABLE";
 
     private final String code;
 

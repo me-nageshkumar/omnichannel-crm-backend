@@ -25,9 +25,9 @@
     mod
   ));
 
-  // ../whatsapp-web.js/src/util/Injected/Utils.js
+  // ../../../whatsapp-web.js/src/util/Injected/Utils.js
   var require_Utils = __commonJS({
-    "../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
+    "../../../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
       "use strict";
       exports.LoadUtils = () => {
         window.WWebJS = {};
@@ -1263,9 +1263,9 @@
     }
   });
 
-  // ../whatsapp-web.js/src/util/Constants.js
+  // ../../../whatsapp-web.js/src/util/Constants.js
   var require_Constants = __commonJS({
-    "../whatsapp-web.js/src/util/Constants.js"(exports) {
+    "../../../whatsapp-web.js/src/util/Constants.js"(exports) {
       "use strict";
       exports.WhatsWebURL = "https://web.whatsapp.com/";
       exports.DefaultOptions = {
@@ -1424,7 +1424,8 @@
     METHOD_NOT_FOUND: "METHOD_NOT_FOUND",
     PAGE_ERROR: "PAGE_ERROR",
     CHAT_NOT_FOUND: "CHAT_NOT_FOUND",
-    WHATSAPP_NOT_READY: "WHATSAPP_NOT_READY"
+    WHATSAPP_NOT_READY: "WHATSAPP_NOT_READY",
+    MEDIA_UNAVAILABLE: "MEDIA_UNAVAILABLE"
   });
   var CloseCodes = Object.freeze({
     PING_TIMEOUT: 4e3,
@@ -1604,6 +1605,36 @@
         return msg ? normalizeMessageModel(window.WWebJS.getMessageModel(msg)) : null;
       }
     );
+    methods.set("downloadMedia", async ({ messageId } = {}) => {
+      if (typeof window.WWebJS === "undefined") {
+        throw codedError(
+          ErrorCodes.WHATSAPP_NOT_READY,
+          "WWebJS helpers are not loaded yet"
+        );
+      }
+      if (typeof messageId !== "string" || messageId === "") {
+        throw codedError(
+          ErrorCodes.PAGE_ERROR,
+          "messageId must be a non-empty string"
+        );
+      }
+      const resolved = await window.WWebJS.resolveMediaBlob(messageId);
+      if (!resolved) {
+        throw codedError(
+          ErrorCodes.MEDIA_UNAVAILABLE,
+          "Media is no longer available on the phone"
+        );
+      }
+      const data = await window.WWebJS.arrayBufferToBase64Async(
+        await resolved.blob.arrayBuffer()
+      );
+      return {
+        data,
+        mimetype: resolved.mimetype,
+        filename: resolved.filename,
+        filesize: resolved.filesize
+      };
+    });
     return methods;
   }
 
@@ -1662,7 +1693,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "e4f8d0d723de" : "dev";
+  var BUILD = true ? "64875dea21fd" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {

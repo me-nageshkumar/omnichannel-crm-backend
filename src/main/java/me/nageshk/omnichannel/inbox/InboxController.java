@@ -1,8 +1,10 @@
 package me.nageshk.omnichannel.inbox;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.inbox.InboxScope.ListScope;
@@ -11,7 +13,11 @@ import me.nageshk.omnichannel.phone.PhoneNumberView;
 import me.nageshk.omnichannel.tenant.TeamService;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserAdminService;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,11 +75,13 @@ public class InboxController {
     private final UserAdminService userAdmin;
     private final TeamService teamService;
     private final InboxSendService sender;
+    private final WaWebMessageRepository messageRepository;
+    private final ChatMediaService chatMedia;
 
     public InboxController(InboxQueryService query, InboxScopeService scopeService, InboxStreamBroker broker,
             InboxViews views, InboxSettingService settings, ChatAssignmentService assignment,
             PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService,
-            InboxSendService sender) {
+            InboxSendService sender, WaWebMessageRepository messageRepository, ChatMediaService chatMedia) {
         this.query = query;
         this.scopeService = scopeService;
         this.broker = broker;
@@ -84,6 +92,8 @@ public class InboxController {
         this.userAdmin = userAdmin;
         this.teamService = teamService;
         this.sender = sender;
+        this.messageRepository = messageRepository;
+        this.chatMedia = chatMedia;
     }
 
     @GetMapping("/phone-numbers")
@@ -171,6 +181,34 @@ public class InboxController {
             @PathVariable String workspaceId, @PathVariable String chatId,
             @RequestBody(required = false) SendRequest req) {
         return sender.send(me, workspaceId, query.requireVisible(me, workspaceId, chatId), req);
+    }
+
+    /**
+     * The file of a message, fetched from the phone the first time. Images, video and audio display inline; anything
+     * else (and SVG, which can carry script) downloads.
+     */
+    @GetMapping("/chats/{chatId}/messages/{messageId}/media")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
+    public CompletableFuture<ResponseEntity<Resource>> media(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @PathVariable String chatId, @PathVariable String messageId) {
+        WaWebChat chat = query.requireVisible(me, workspaceId, chatId);
+        WaWebMessage message = messageRepository.findByIdAndChatId(messageId, chat.getId())
+                .orElseThrow(() -> new NotFoundException("message not found"));
+        return chatMedia.fetchIfNeeded(chat, message).thenApply(InboxController::download);
+    }
+
+    private static ResponseEntity<Resource> download(ChatMediaService.MediaFile f) {
+        String type = f.mimeType() == null ? "application/octet-stream" : f.mimeType();
+        boolean inline = !type.startsWith("image/svg") && (type.startsWith("image/") || type.startsWith("video/")
+                || type.startsWith("audio/"));
+        ContentDisposition disposition = (inline ? ContentDisposition.inline() : ContentDisposition.attachment())
+                .filename(f.fileName(), StandardCharsets.UTF_8).build();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, type)
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .header("X-Content-Type-Options", "nosniff")
+                .contentLength(f.size())
+                .body(f.resource());
     }
 
     @PostMapping("/chats/{chatId}/assign")

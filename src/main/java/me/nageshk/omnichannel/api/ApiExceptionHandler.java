@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.api;
 
 import me.nageshk.omnichannel.auth.AccountLockedException;
 import me.nageshk.omnichannel.inbox.ChatClosedException;
+import me.nageshk.omnichannel.inbox.MediaUnavailableException;
 import me.nageshk.omnichannel.rpc.RpcException;
 import me.nageshk.omnichannel.user.InvalidOtpException;
 import me.nageshk.omnichannel.user.TwoFactorStateException;
@@ -55,6 +56,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ChatClosedException.class)
     public ResponseEntity<Map<String, String>> chatClosed(ChatClosedException e) {
         return body(HttpStatus.CONFLICT, ChatClosedException.CODE, e.getMessage());
+    }
+
+    @ExceptionHandler(MediaUnavailableException.class)
+    public ResponseEntity<Map<String, String>> mediaUnavailable(MediaUnavailableException e) {
+        return body(HttpStatus.GONE, MediaUnavailableException.CODE, e.getMessage());
     }
 
     @ExceptionHandler(TwoFactorStateException.class)
@@ -176,6 +182,7 @@ public class ApiExceptionHandler {
         HttpStatus status = switch (e.code()) {
             case RpcException.DEVICE_DISCONNECTED, RpcException.SEND_FAILED -> HttpStatus.BAD_GATEWAY;
             case RpcException.WHATSAPP_NOT_READY -> HttpStatus.CONFLICT;
+            case RpcException.MEDIA_UNAVAILABLE -> HttpStatus.GONE;
             default -> HttpStatus.BAD_REQUEST;
         };
         return body(status, e.code(), e.getMessage());
@@ -191,6 +198,7 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, String>> wrapped(Exception e) {
         Throwable cause = e.getCause();
         if (cause instanceof RpcException rpc) return rpc(rpc);
+        if (cause instanceof MediaUnavailableException media) return mediaUnavailable(media);
         if (cause instanceof TimeoutException t) return timeout(t);
         return body(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL", String.valueOf(cause));
     }

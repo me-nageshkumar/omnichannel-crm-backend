@@ -19,6 +19,7 @@ import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.enablement.EnableLevel;
 import me.nageshk.omnichannel.enablement.Enablement;
+import me.nageshk.omnichannel.inbox.InboxCleanup;
 import me.nageshk.omnichannel.phone.DeviceAccessChanged.Reason;
 import me.nageshk.omnichannel.phone.PhoneNumberStatus.Status;
 import me.nageshk.omnichannel.tenant.Customer;
@@ -51,12 +52,14 @@ public class PhoneNumberService {
     private final ApplicationEventPublisher events;
     private final ConnectCodeRepository codes;
     private final AccessService access;
+    private final InboxCleanup inboxCleanup;
     private final Clock clock;
 
     public PhoneNumberService(PhoneNumberRepository numbers, WorkspaceRepository workspaces,
             CustomerRepository customers, Enablement enablement, LiveDevices live, ApplicationEventPublisher events,
-            ConnectCodeRepository codes, AccessService access, Clock clock) {
+            ConnectCodeRepository codes, AccessService access, InboxCleanup inboxCleanup, Clock clock) {
         this.codes = codes;
+        this.inboxCleanup = inboxCleanup;
         this.access = access;
         this.clock = clock;
         this.numbers = numbers;
@@ -113,6 +116,7 @@ public class PhoneNumberService {
     }
 
     public void delete(PhoneNumber n) {
+        inboxCleanup.deleteForNumber(n.getId());
         codes.deleteByPhoneNumberId(n.getId());
         numbers.delete(n);
         publish(n, Reason.DELETED);

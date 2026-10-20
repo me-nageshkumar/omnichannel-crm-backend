@@ -34,6 +34,8 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     public static final int CLOSE_UNAUTHORIZED = 4401;
     public static final int CLOSE_REPLACED = 4409;
     public static final int CLOSE_WRONG_NUMBER = 4412;
+    /** The largest frame an authenticated device may send: 16 MB of media as base64, plus the envelope. */
+    static final int MAX_DEVICE_FRAME = 24 * 1024 * 1024;
 
     private static final Logger log = LoggerFactory.getLogger(BridgeWebSocketHandler.class);
 
@@ -129,6 +131,9 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         cancelAuthTimer(session.getId());
+        // a downloadMedia answer is a file of up to 16 MB as base64 in one frame; the container default is 8 KB, and
+        // only a device that proved its key gets the larger limit
+        session.setTextMessageSizeLimit(MAX_DEVICE_FRAME);
         DeviceSession device = new DeviceSession(principal.get(), session, mapper);
         registry.register(device).ifPresent(old -> {
             log.info("[{}] replacing device {} with {}", old.phoneNumberId(), old.sessionId(), device.sessionId());
