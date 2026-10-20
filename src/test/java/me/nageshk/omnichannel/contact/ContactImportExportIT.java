@@ -9,7 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -152,11 +152,11 @@ class ContactImportExportIT extends ContactApiTestBase {
                 .andExpect(jsonPath("$.skipped").value(4)));
         assertThat(r.get("problems")).hasSize(4);
         assertThat(r.get("problems").get(0).get("row").asInt()).isEqualTo(3);
-        assertThat(r.get("problems").get(0).get("reason").asText()).contains("phone");
+        assertThat(r.get("problems").get(0).get("reason").asString()).contains("phone");
         assertThat(r.get("problems").get(1).get("row").asInt()).isEqualTo(4);
         assertThat(r.get("problems").get(2).get("row").asInt()).isEqualTo(5);
         assertThat(r.get("problems").get(3).get("row").asInt()).isEqualTo(6);
-        assertThat(r.get("problems").get(3).get("reason").asText()).contains("name");
+        assertThat(r.get("problems").get(3).get("reason").asString()).contains("name");
     }
 
     @Test

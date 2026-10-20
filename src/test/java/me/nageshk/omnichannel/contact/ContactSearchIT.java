@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -68,7 +68,7 @@ class ContactSearchIT extends ContactApiTestBase {
     private List<String> names(Map<String, Object> request) throws Exception {
         JsonNode body = json(send(post(searchUrl()), agentToken, request).andExpect(status().isOk()));
         List<String> out = new ArrayList<>();
-        body.get("items").forEach(i -> out.add(i.path("name").asText()));
+        body.get("items").forEach(i -> out.add(i.path("name").asString()));
         return out;
     }
 
@@ -88,7 +88,7 @@ class ContactSearchIT extends ContactApiTestBase {
         JsonNode body = json(send(post(searchUrl()), agentToken, Map.of()).andExpect(status().isOk()));
         assertThat(body.get("total").asInt()).isEqualTo(1);
         assertThat(body.get("page").asInt()).isZero();
-        assertThat(body.get("items").get(0).get("name").asText()).isEqualTo("Asha");
+        assertThat(body.get("items").get(0).get("name").asString()).isEqualTo("Asha");
     }
 
     @Test
@@ -207,18 +207,18 @@ class ContactSearchIT extends ContactApiTestBase {
         JsonNode p0 = json(send(post(searchUrl()), agentToken, Map.of()).andExpect(status().isOk()));
         assertThat(p0.get("total").asInt()).isEqualTo(61);
         assertThat(p0.get("items")).hasSize(50);
-        assertThat(p0.get("items").get(0).get("name").asText()).isEqualTo("C59");
+        assertThat(p0.get("items").get(0).get("name").asString()).isEqualTo("C59");
         JsonNode p1 = json(send(post(searchUrl()), agentToken, Map.of("page", 1)).andExpect(status().isOk()));
         assertThat(p1.get("page").asInt()).isEqualTo(1);
         assertThat(p1.get("items")).hasSize(11);
         // contacts with no message come last in the default order
-        assertThat(p1.get("items").get(10).get("name").asText()).isEqualTo("NoMessage");
+        assertThat(p1.get("items").get(10).get("name").asString()).isEqualTo("NoMessage");
 
         JsonNode byName = json(send(post(searchUrl()), agentToken, Map.of("sort", "NAME")).andExpect(status().isOk()));
-        assertThat(byName.get("items").get(0).get("name").asText()).isEqualTo("C00");
-        assertThat(byName.get("items").get(49).get("name").asText()).isEqualTo("C49");
+        assertThat(byName.get("items").get(0).get("name").asString()).isEqualTo("C00");
+        assertThat(byName.get("items").get(49).get("name").asString()).isEqualTo("C49");
         JsonNode byCreated = json(send(post(searchUrl()), agentToken, Map.of("sort", "CREATED")).andExpect(status().isOk()));
-        assertThat(byCreated.get("items").get(0).get("name").asText()).isEqualTo("NoMessage");
+        assertThat(byCreated.get("items").get(0).get("name").asString()).isEqualTo("NoMessage");
         send(post(searchUrl()), agentToken, Map.of("sort", "BOGUS")).andExpect(status().isBadRequest());
     }
 
@@ -242,7 +242,7 @@ class ContactSearchIT extends ContactApiTestBase {
                 .andExpect(jsonPath("$.name").value("VIPs"))
                 .andExpect(jsonPath("$.createdBy").value("lead"))
                 .andExpect(jsonPath("$.filter.labelsAny[0]").value(vip.getId()))
-                .andExpect(jsonPath("$.creationTime").isNotEmpty())).get("id").asText();
+                .andExpect(jsonPath("$.creationTime").isNotEmpty())).get("id").asString();
 
         send(get(url), agentToken, null).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(id)).andExpect(jsonPath("$[0].name").value("VIPs"));

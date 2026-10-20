@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import me.nageshk.omnichannel.rpc.RpcDispatcher;
 import me.nageshk.omnichannel.ws.DeviceRegistry;
 import me.nageshk.omnichannel.ws.DeviceSession;

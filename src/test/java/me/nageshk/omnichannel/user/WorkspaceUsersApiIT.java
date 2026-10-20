@@ -8,8 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,7 +25,7 @@ import me.nageshk.omnichannel.tenant.Workspace;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -126,7 +126,7 @@ class WorkspaceUsersApiIT {
 
     private static JsonNode byUsername(JsonNode list, String username) {
         return StreamSupport.stream(list.spliterator(), false)
-                .filter(u -> username.equals(u.get("username").asText()))
+                .filter(u -> username.equals(u.get("username").asString()))
                 .findFirst().orElse(null);
     }
 
@@ -135,16 +135,16 @@ class WorkspaceUsersApiIT {
         testUsers.createInCustomer(acme.getId(), "bonly", null, List.of(role(brandB, BuiltInRoles.AGENT)));
 
         JsonNode list = json(send(get(usersOf(brandA)), wmToken, null).andExpect(status().isOk()));
-        assertThat(StreamSupport.stream(list.spliterator(), false).map(u -> u.get("username").asText()).toList())
+        assertThat(StreamSupport.stream(list.spliterator(), false).map(u -> u.get("username").asString()).toList())
                 .containsExactlyInAnyOrder("boss", "wm", "lead", "agent");
         JsonNode bossRow = byUsername(list, "boss");
         assertThat(bossRow.get("allBrands").asBoolean()).isTrue();
         assertThat(bossRow.get("manageable").asBoolean()).isFalse();
-        assertThat(bossRow.get("role").get("name").asText()).isEqualTo(BuiltInRoles.CUSTOMER_ADMIN);
+        assertThat(bossRow.get("role").get("name").asString()).isEqualTo(BuiltInRoles.CUSTOMER_ADMIN);
         JsonNode agentRow = byUsername(list, "agent");
         assertThat(agentRow.get("allBrands").asBoolean()).isFalse();
         assertThat(agentRow.get("manageable").asBoolean()).isTrue();
-        assertThat(agentRow.get("workspaceRoles").get(0).get("role").get("name").asText()).isEqualTo(BuiltInRoles.AGENT);
+        assertThat(agentRow.get("workspaceRoles").get(0).get("role").get("name").asString()).isEqualTo(BuiltInRoles.AGENT);
         assertThat(agentRow.has("password")).isFalse();
         assertThat(agentRow.has("tokenVersion")).isFalse();
         assertThat(byUsername(list, "wm").get("manageable").asBoolean()).isFalse();
@@ -342,11 +342,11 @@ class WorkspaceUsersApiIT {
     void assignableRolesForWorkspaceManagerAreTeamLeadAndAgent() throws Exception {
         JsonNode roles = json(send(get("/api/workspaces/" + brandA.getId() + "/assignable-roles"), wmToken, null)
                 .andExpect(status().isOk()));
-        assertThat(StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asText()).toList())
+        assertThat(StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asString()).toList())
                 .containsExactly(BuiltInRoles.AGENT, BuiltInRoles.TEAM_LEAD);
         JsonNode bossRoles = json(send(get("/api/workspaces/" + brandB.getId() + "/assignable-roles"), bossToken, null)
                 .andExpect(status().isOk()));
-        assertThat(StreamSupport.stream(bossRoles.spliterator(), false).map(r -> r.get("name").asText()).toList())
+        assertThat(StreamSupport.stream(bossRoles.spliterator(), false).map(r -> r.get("name").asString()).toList())
                 .containsExactly(BuiltInRoles.AGENT, BuiltInRoles.TEAM_LEAD, BuiltInRoles.WORKSPACE_MANAGER);
         send(get("/api/workspaces/" + brandB.getId() + "/assignable-roles"), wmToken, null)
                 .andExpect(status().isNotFound());
@@ -423,7 +423,7 @@ class WorkspaceUsersApiIT {
     private List<String> myWorkspaceNames(String token) throws Exception {
         List<String> names = new java.util.ArrayList<>();
         json(send(get("/api/users/me"), token, null).andExpect(status().isOk())).get("workspaces")
-                .forEach(w -> names.add(w.get("name").asText()));
+                .forEach(w -> names.add(w.get("name").asString()));
         return names;
     }
 

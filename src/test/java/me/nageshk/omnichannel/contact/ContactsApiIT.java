@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +29,7 @@ class ContactsApiIT extends ContactApiTestBase {
 
     private String addNote(Contact c, String token, String text) throws Exception {
         return json(send(post(noteUrl(c)), token, Map.of("text", text)).andExpect(status().isCreated()))
-                .get("id").asText();
+                .get("id").asString();
     }
 
     @Test
@@ -48,7 +48,7 @@ class ContactsApiIT extends ContactApiTestBase {
                 .andExpect(jsonPath("$.labels[0]").value(vip.getId()))
                 .andExpect(jsonPath("$.attributes." + city.getId()).value("Pune"))
                 .andExpect(jsonPath("$.creationTime").isNotEmpty()));
-        Contact stored = contacts.findById(created.get("id").asText()).orElseThrow();
+        Contact stored = contacts.findById(created.get("id").asString()).orElseThrow();
         assertThat(stored.isNameEdited()).isTrue();
         assertThat(stored.getWorkspaceId()).isEqualTo(brandA.getId());
         assertThat(stored.getCustomerId()).isEqualTo(acme.getId());

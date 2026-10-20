@@ -7,8 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +19,7 @@ import me.nageshk.omnichannel.user.WorkspaceRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -101,14 +101,14 @@ class TeamsApiIT {
         ResultActions result = send(get(teamsOf(brandA)), leadToken, null).andExpect(status().isOk());
         JsonNode list = mapper.readTree(result.andReturn().getResponse().getContentAsString());
         assertThat(list).hasSize(2);
-        assertThat(list.get(0).get("name").asText()).isEqualTo("Returns");
+        assertThat(list.get(0).get("name").asString()).isEqualTo("Returns");
         assertThat(list.get(0).get("members")).isEmpty();
         JsonNode sales = list.get(1);
         assertThat(sales.get("members")).hasSize(2);
         JsonNode first = sales.get("members").get(0);
-        assertThat(first.get("id").asText()).isEqualTo(agent.getId());
-        assertThat(first.get("name").asText()).isEqualTo("Test agent");
-        assertThat(first.get("username").asText()).isEqualTo("agent");
+        assertThat(first.get("id").asString()).isEqualTo(agent.getId());
+        assertThat(first.get("name").asString()).isEqualTo("Test agent");
+        assertThat(first.get("username").asString()).isEqualTo("agent");
         assertThat(first.size()).isEqualTo(3);
         send(get(teamsOf(brandB)), leadToken, null).andExpect(status().isNotFound());
     }

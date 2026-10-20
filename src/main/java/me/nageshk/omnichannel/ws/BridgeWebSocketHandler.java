@@ -3,9 +3,10 @@ package me.nageshk.omnichannel.ws;
 import me.nageshk.omnichannel.phone.DeviceKeys;
 import me.nageshk.omnichannel.phone.DevicePrincipal;
 import me.nageshk.omnichannel.phone.PhoneConnections;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
@@ -87,7 +88,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         Envelope frame;
         try {
             frame = mapper.readValue(message.getPayload(), Envelope.class);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             log.warn("Unparseable frame from {}: {}", session.getId(), e.getMessage());
             return;
         }
@@ -150,7 +151,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         if ("hello".equals(frame.method())) {
             JsonNode params = frame.params();
             if (params != null) {
-                if (params.hasNonNull("waState")) device.setWaState(params.get("waState").asText());
+                if (params.hasNonNull("waState")) device.setWaState(params.get("waState").asString());
                 if (params.hasNonNull("info")) device.setInfo(params.get("info"));
                 JsonNode outbox = params.path("outbox");
                 log.info("[{}] hello waState={} outbox pending={} dropped={}", device.phoneNumberId(),
@@ -221,7 +222,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
                 device.setWaState(DeviceSession.STATE_CONNECTED);
                 device.setInfo(payload);
             }
-            case "change_state" -> device.setWaState(payload.path("state").asText(DeviceSession.STATE_UNKNOWN));
+            case "change_state" -> device.setWaState(payload.path("state").asString(DeviceSession.STATE_UNKNOWN));
             case "disconnected" -> device.setWaState("DISCONNECTED");
             default -> { /* no state change */ }
         }

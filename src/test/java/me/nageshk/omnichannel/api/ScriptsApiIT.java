@@ -2,7 +2,7 @@ package me.nageshk.omnichannel.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import me.nageshk.omnichannel.auth.JwtService;
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.scripts.ScriptCatalog;
@@ -11,13 +11,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ScriptsApiIT {
 
@@ -44,7 +46,7 @@ class ScriptsApiIT {
     void manifestListsPageScript() {
         ResponseEntity<JsonNode> res = rest.exchange("/api/scripts", HttpMethod.GET, new HttpEntity<>(auth()), JsonNode.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(res.getBody().get("page").get("sha256").asText()).isEqualTo(catalog.find("page").orElseThrow().sha256());
+        assertThat(res.getBody().get("page").get("sha256").asString()).isEqualTo(catalog.find("page").orElseThrow().sha256());
     }
 
     @Test
@@ -103,7 +105,7 @@ class ScriptsApiIT {
         for (String path : new String[] {"/api/scripts", "/api/scripts/page"}) {
             ResponseEntity<JsonNode> res = rest.exchange(path, HttpMethod.GET, new HttpEntity<>(h), JsonNode.class);
             assertThat(res.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);
-            assertThat(res.getBody().get("code").asText()).as(path).isEqualTo("FORBIDDEN");
+            assertThat(res.getBody().get("code").asString()).as(path).isEqualTo("FORBIDDEN");
         }
     }
 }

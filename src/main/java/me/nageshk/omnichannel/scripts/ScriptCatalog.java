@@ -1,7 +1,7 @@
 package me.nageshk.omnichannel.scripts;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
@@ -41,7 +41,7 @@ public class ScriptCatalog {
         } catch (IOException e) {
             throw new IllegalStateException("cannot read script manifest " + manifestResource, e);
         }
-        manifest.fields().forEachRemaining(entry -> {
+        manifest.properties().forEach(entry -> {
             String name = entry.getKey();
             JsonNode meta = entry.getValue();
             Resource res = scriptLoader.apply(name);
@@ -55,13 +55,13 @@ public class ScriptCatalog {
                 throw new IllegalStateException("cannot read script '" + name + "'", e);
             }
             String actual = sha256Hex(bytes);
-            String expected = meta.path("sha256").asText();
+            String expected = meta.path("sha256").asString();
             if (!actual.equals(expected)) {
                 throw new IllegalStateException("script '" + name + "' sha256 mismatch: manifest=" + expected + " actual=" + actual
                         + " (run `npm run build` in extension/ and commit the resources)");
             }
-            scripts.put(name, new Script(name, meta.path("version").asText(), actual, bytes));
-            log.info("script '{}' version {} ({} bytes) ready", name, meta.path("version").asText(), bytes.length);
+            scripts.put(name, new Script(name, meta.path("version").asString(), actual, bytes));
+            log.info("script '{}' version {} ({} bytes) ready", name, meta.path("version").asString(), bytes.length);
         });
     }
 

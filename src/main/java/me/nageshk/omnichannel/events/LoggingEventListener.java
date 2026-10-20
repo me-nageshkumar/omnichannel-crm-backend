@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.events;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -15,13 +15,13 @@ public class LoggingEventListener {
     /** WhatsApp ids arrive either flattened to a string or as a Wid object {server,user,_serialized}. */
     public static String wid(JsonNode node) {
         if (node == null || node.isMissingNode() || node.isNull()) return "";
-        if (node.isTextual()) return node.asText();
+        if (node.isTextual()) return node.asString();
         if (node.isObject()) {
             JsonNode s = node.get("_serialized");
-            if (s != null && s.isTextual()) return s.asText();
+            if (s != null && s.isTextual()) return s.asString();
             JsonNode user = node.get("user");
             JsonNode server = node.get("server");
-            if (user != null && server != null) return user.asText() + "@" + server.asText();
+            if (user != null && server != null) return user.asString() + "@" + server.asString();
         }
         return node.toString();
     }
@@ -29,11 +29,11 @@ public class LoggingEventListener {
     /** Message key: `_serialized` when present, otherwise rebuilt from its parts. */
     static String messageId(JsonNode id) {
         if (id == null || !id.isObject()) return "";
-        String s = id.path("_serialized").asText("");
+        String s = id.path("_serialized").asString("");
         if (!s.isEmpty()) return s;
         String remote = wid(id.get("remote"));
         if (remote.isEmpty() || !id.hasNonNull("id")) return "";
-        return id.path("fromMe").asBoolean(false) + "_" + remote + "_" + id.path("id").asText();
+        return id.path("fromMe").asBoolean(false) + "_" + remote + "_" + id.path("id").asString();
     }
 
     /** " seq=N capturedAt=ISO" for durable events, empty otherwise. */
@@ -54,8 +54,8 @@ public class LoggingEventListener {
                     wid(p.path("id").path("remote")),
                     wid(p.path("from")),
                     wid(p.path("to")),
-                    p.path("type").asText(),
-                    p.path("body").asText(),
+                    p.path("type").asString(),
+                    p.path("body").asString(),
                     origin(event));
             case "message_ack" -> log.info(
                     "[{}] message_ack id={} ack={}{}",
@@ -67,8 +67,8 @@ public class LoggingEventListener {
                     "[{}] ready wid={} pushname={} waVersion={}",
                     event.phoneNumberId(),
                     wid(p.path("wid")),
-                    p.path("pushname").asText(),
-                    p.path("waVersion").asText());
+                    p.path("pushname").asString(),
+                    p.path("waVersion").asString());
             default -> log.info("[{}] {} {}", event.phoneNumberId(), event.name(), p);
         }
     }

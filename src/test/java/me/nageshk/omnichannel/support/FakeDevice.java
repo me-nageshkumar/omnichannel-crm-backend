@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.support;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import me.nageshk.omnichannel.rpc.Envelope;
 import java.net.URI;
 import java.util.concurrent.BlockingQueue;

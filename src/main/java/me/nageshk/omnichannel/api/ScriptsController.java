@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import me.nageshk.omnichannel.scripts.ScriptCatalog;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;

@@ -7,8 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.StreamSupport;
@@ -18,7 +18,7 @@ import me.nageshk.omnichannel.user.WorkspaceRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -70,7 +70,7 @@ class WorkspacesApiIT {
 
     private List<String> names(ResultActions result) throws Exception {
         JsonNode body = mapper.readTree(result.andReturn().getResponse().getContentAsString());
-        return StreamSupport.stream(body.spliterator(), false).map(w -> w.get("name").asText()).toList();
+        return StreamSupport.stream(body.spliterator(), false).map(w -> w.get("name").asString()).toList();
     }
 
     @Test
@@ -81,7 +81,7 @@ class WorkspacesApiIT {
                 .andExpect(jsonPath("$.id").isNotEmpty())
                 .andReturn().getResponse().getContentAsString());
 
-        Workspace created = workspaces.findById(body.get("id").asText()).orElseThrow();
+        Workspace created = workspaces.findById(body.get("id").asString()).orElseThrow();
         assertThat(created.getCustomerId()).isEqualTo(acme.getId());
         List<Team> ts = teams.findByWorkspaceIdOrderByName(created.getId());
         assertThat(ts).extracting(Team::getName).containsExactly("General");
@@ -161,8 +161,8 @@ class WorkspacesApiIT {
 
         assertThat(meWorkspaces(wmToken)).isEmpty();
         JsonNode bossSees = meWorkspaces(bossToken);
-        assertThat(bossSees.get(0).get("name").asText()).isEqualTo("Brand A");
-        assertThat(bossSees.get(0).get("disabled").get("level").asText()).isEqualTo("COMPANY");
+        assertThat(bossSees.get(0).get("name").asString()).isEqualTo("Brand A");
+        assertThat(bossSees.get(0).get("disabled").get("level").asString()).isEqualTo("COMPANY");
         assertThat(bossSees.get(1).get("disabled").isNull()).isTrue();
         assertThat(names(send(get("/api/workspaces"), bossToken, null))).containsExactly("Brand A", "Brand B");
         assertThat(names(send(get("/api/workspaces"), wmToken, null))).isEmpty();

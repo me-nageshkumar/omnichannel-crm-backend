@@ -39,7 +39,7 @@ class ContactFieldsApiIT extends ContactApiTestBase {
 
     @Test
     void renameKeepsIdAndCountsContacts() throws Exception {
-        String id = json(send(post(labelsUrl()), wmToken, Map.of("name", "Lead", "color", "blue"))).get("id").asText();
+        String id = json(send(post(labelsUrl()), wmToken, Map.of("name", "Lead", "color", "blue"))).get("id").asString();
         Contact c = contact(brandA, "Asha", "919800000001");
         c.getLabels().add(id);
         contacts.save(c);
@@ -66,7 +66,7 @@ class ContactFieldsApiIT extends ContactApiTestBase {
         send(post(base(brandB) + "/contact-labels"), wmBToken, Map.of("name", "VIP", "color", "blue"))
                 .andExpect(status().isCreated());
         // renaming onto another label's name is a duplicate too
-        String other = json(send(post(labelsUrl()), wmToken, Map.of("name", "Other", "color", "blue"))).get("id").asText();
+        String other = json(send(post(labelsUrl()), wmToken, Map.of("name", "Other", "color", "blue"))).get("id").asString();
         send(put(labelsUrl() + "/" + other), wmToken, Map.of("name", "VIP", "color", "blue"))
                 .andExpect(status().isConflict());
         // renaming a label to its own name in another case is allowed

@@ -7,8 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import java.time.Instant;
 import me.nageshk.omnichannel.auth.LoginAttemptService;
@@ -16,7 +16,7 @@ import me.nageshk.omnichannel.support.TestUsers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -70,7 +70,7 @@ class TwoFactorEnrolmentIT {
     void confirmEnablesTwoFactor() throws Exception {
         String token = testUsers.tokenFor("dev");
         String body = postAs(token, "initiate", "{}").andReturn().getResponse().getContentAsString();
-        String secret = mapper.readTree(body).get("secret").asText();
+        String secret = mapper.readTree(body).get("secret").asString();
 
         postAs(token, "confirm", "{\"secret\":\"" + secret + "\",\"otp\":\"" + codeFor(secret) + "\"}")
                 .andExpect(status().isNoContent());

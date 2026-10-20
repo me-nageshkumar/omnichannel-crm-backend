@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.events;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.springframework.context.ApplicationEvent;
 
 /**

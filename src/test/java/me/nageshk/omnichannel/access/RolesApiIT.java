@@ -2,7 +2,7 @@ package me.nageshk.omnichannel.access;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.StreamSupport;
@@ -11,13 +11,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class RolesApiIT {
 
@@ -54,7 +56,7 @@ class RolesApiIT {
     private JsonNode roleNamed(String name) {
         JsonNode all = call(HttpMethod.GET, "/api/roles", null).getBody();
         return StreamSupport.stream(all.spliterator(), false)
-                .filter(r -> r.get("name").asText().equals(name)).findFirst().orElseThrow();
+                .filter(r -> r.get("name").asString().equals(name)).findFirst().orElseThrow();
     }
 
     @Test
@@ -62,9 +64,9 @@ class RolesApiIT {
         ResponseEntity<JsonNode> res = call(HttpMethod.GET, "/api/authorities", null);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode userManage = StreamSupport.stream(res.getBody().spliterator(), false)
-                .filter(a -> a.get("code").asText().equals("user:manage")).findFirst().orElseThrow();
-        assertThat(userManage.get("level").asText()).isEqualTo("BRAND");
-        assertThat(userManage.get("description").asText()).isNotBlank();
+                .filter(a -> a.get("code").asString().equals("user:manage")).findFirst().orElseThrow();
+        assertThat(userManage.get("level").asString()).isEqualTo("BRAND");
+        assertThat(userManage.get("description").asString()).isNotBlank();
         assertThat(res.getBody().size()).isEqualTo(Authority.values().length);
     }
 
@@ -81,7 +83,7 @@ class RolesApiIT {
         assertThat(roleNamed("AGENT").get("userCount").asInt()).isZero();
         // ordered by level (PLATFORM, COMPANY, BRAND) then name
         List<String> levels = StreamSupport.stream(res.getBody().spliterator(), false)
-                .map(r -> r.get("level").asText()).toList();
+                .map(r -> r.get("level").asString()).toList();
         assertThat(levels).isSortedAccordingTo(
                 (a, b) -> RoleLevel.valueOf(a).compareTo(RoleLevel.valueOf(b)));
     }
@@ -91,7 +93,7 @@ class RolesApiIT {
         ResponseEntity<JsonNode> res = create("SUPPORT_LEAD", "BRAND", List.of("user:view", "team:manage"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(res.getBody().get("builtIn").asBoolean()).isFalse();
-        assertThat(res.getBody().get("level").asText()).isEqualTo("BRAND");
+        assertThat(res.getBody().get("level").asString()).isEqualTo("BRAND");
         assertThat(roles.findByName("SUPPORT_LEAD")).isPresent();
         assertThat(roles.findByName("SUPPORT_LEAD").get().getAuthorities())
                 .containsExactlyInAnyOrder("user:view", "team:manage");
@@ -101,7 +103,7 @@ class RolesApiIT {
     void rejectsAuthorityAboveLevel() {
         ResponseEntity<JsonNode> res = create("TOO_HIGH", "BRAND", List.of("customer:create"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(res.getBody().get("code").asText()).isEqualTo("VALIDATION");
+        assertThat(res.getBody().get("code").asString()).isEqualTo("VALIDATION");
         assertThat(res.getBody().get("fields").has("authorities")).isTrue();
         assertThat(roles.findByName("TOO_HIGH")).isEmpty();
     }
@@ -110,7 +112,7 @@ class RolesApiIT {
     void rejectsUnknownAuthority() {
         ResponseEntity<JsonNode> res = create("MYSTERY", "BRAND", List.of("nope:nothing"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(res.getBody().get("code").asText()).isEqualTo("VALIDATION");
+        assertThat(res.getBody().get("code").asString()).isEqualTo("VALIDATION");
     }
 
     @Test
@@ -118,7 +120,7 @@ class RolesApiIT {
         ResponseEntity<JsonNode> res = create("lower", "BRAND", List.of());
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody().get("fields").has("name")).isTrue();
-        assertThat(res.getBody().get("message").asText()).isNotBlank();
+        assertThat(res.getBody().get("message").asString()).isNotBlank();
     }
 
     @Test
@@ -126,8 +128,8 @@ class RolesApiIT {
         assertThat(create("TWICE", "BRAND", List.of()).getStatusCode()).isEqualTo(HttpStatus.CREATED);
         ResponseEntity<JsonNode> dup = create("TWICE", "BRAND", List.of());
         assertThat(dup.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(dup.getBody().get("code").asText()).isEqualTo("DUPLICATE");
-        assertThat(dup.getBody().get("field").asText()).isEqualTo("name");
+        assertThat(dup.getBody().get("code").asString()).isEqualTo("DUPLICATE");
+        assertThat(dup.getBody().get("field").asString()).isEqualTo("name");
         ResponseEntity<JsonNode> builtIn = create("AGENT", "BRAND", List.of());
         assertThat(builtIn.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
@@ -137,19 +139,19 @@ class RolesApiIT {
         roles.deleteById(idOf("SUPER_ADMIN"));
         ResponseEntity<JsonNode> res = create("SUPER_ADMIN", "PLATFORM", List.of());
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(res.getBody().get("code").asText()).isEqualTo("DUPLICATE");
+        assertThat(res.getBody().get("code").asString()).isEqualTo("DUPLICATE");
     }
 
     @Test
     void customRoleCannotBeRenamedToBuiltInName() {
-        String id = create("RENAME_ME", "BRAND", List.of()).getBody().get("id").asText();
+        String id = create("RENAME_ME", "BRAND", List.of()).getBody().get("id").asString();
         ResponseEntity<JsonNode> res = call(HttpMethod.PUT, "/api/roles/" + id,
                 Map.of("name", "AGENT", "description", "d", "authorities", List.of()));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         ResponseEntity<JsonNode> ok = call(HttpMethod.PUT, "/api/roles/" + id,
                 Map.of("name", "RENAMED", "description", "d", "authorities", List.of()));
         assertThat(ok.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(ok.getBody().get("name").asText()).isEqualTo("RENAMED");
+        assertThat(ok.getBody().get("name").asString()).isEqualTo("RENAMED");
     }
 
     @Test
@@ -168,7 +170,7 @@ class RolesApiIT {
         ResponseEntity<JsonNode> res = call(HttpMethod.PUT, "/api/roles/" + idOf("TEAM_LEAD"),
                 Map.of("name", "CAPTAIN", "description", "d", "authorities", List.of()));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(res.getBody().get("code").asText()).isEqualTo("VALIDATION");
+        assertThat(res.getBody().get("code").asString()).isEqualTo("VALIDATION");
         assertThat(roles.findByName("TEAM_LEAD")).isPresent();
     }
 
@@ -188,17 +190,17 @@ class RolesApiIT {
 
     @Test
     void cannotDeleteRoleInUse() {
-        String id = create("BUSY", "PLATFORM", List.of()).getBody().get("id").asText();
+        String id = create("BUSY", "PLATFORM", List.of()).getBody().get("id").asString();
         testUsers.create("busy-user", "pw", "BUSY", null);
         ResponseEntity<JsonNode> res = call(HttpMethod.DELETE, "/api/roles/" + id, null);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(res.getBody().get("code").asText()).isEqualTo("ROLE_IN_USE");
+        assertThat(res.getBody().get("code").asString()).isEqualTo("ROLE_IN_USE");
         assertThat(roles.findByName("BUSY")).isPresent();
     }
 
     @Test
     void deletesUnusedCustomRole() {
-        String id = create("TEMP", "BRAND", List.of()).getBody().get("id").asText();
+        String id = create("TEMP", "BRAND", List.of()).getBody().get("id").asString();
         assertThat(call(HttpMethod.DELETE, "/api/roles/" + id, null).getStatusCode())
                 .isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(roles.findByName("TEMP")).isEmpty();
@@ -208,7 +210,7 @@ class RolesApiIT {
 
     @Test
     void everyChangeIsAudited() {
-        String id = create("AUDITED", "BRAND", List.of("user:view")).getBody().get("id").asText();
+        String id = create("AUDITED", "BRAND", List.of("user:view")).getBody().get("id").asString();
         call(HttpMethod.PUT, "/api/roles/" + id,
                 Map.of("description", "new text", "authorities", List.of("team:manage")));
         call(HttpMethod.DELETE, "/api/roles/" + id, null);
@@ -217,17 +219,17 @@ class RolesApiIT {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode changes = res.getBody();
         assertThat(changes.size()).isEqualTo(3);
-        assertThat(changes.get(0).get("action").asText()).isEqualTo("DELETED");
-        assertThat(changes.get(0).get("removed").get(0).asText()).isEqualTo("team:manage");
-        assertThat(changes.get(1).get("action").asText()).isEqualTo("UPDATED");
-        assertThat(changes.get(1).get("added").get(0).asText()).isEqualTo("team:manage");
-        assertThat(changes.get(1).get("removed").get(0).asText()).isEqualTo("user:view");
-        assertThat(changes.get(1).get("descriptionBefore").asText()).isEqualTo("d");
-        assertThat(changes.get(1).get("descriptionAfter").asText()).isEqualTo("new text");
-        assertThat(changes.get(2).get("action").asText()).isEqualTo("CREATED");
-        assertThat(changes.get(2).get("added").get(0).asText()).isEqualTo("user:view");
-        assertThat(changes.get(2).get("changedBy").asText()).isEqualTo("root");
-        assertThat(changes.get(2).get("roleName").asText()).isEqualTo("AUDITED");
+        assertThat(changes.get(0).get("action").asString()).isEqualTo("DELETED");
+        assertThat(changes.get(0).get("removed").get(0).asString()).isEqualTo("team:manage");
+        assertThat(changes.get(1).get("action").asString()).isEqualTo("UPDATED");
+        assertThat(changes.get(1).get("added").get(0).asString()).isEqualTo("team:manage");
+        assertThat(changes.get(1).get("removed").get(0).asString()).isEqualTo("user:view");
+        assertThat(changes.get(1).get("descriptionBefore").asString()).isEqualTo("d");
+        assertThat(changes.get(1).get("descriptionAfter").asString()).isEqualTo("new text");
+        assertThat(changes.get(2).get("action").asString()).isEqualTo("CREATED");
+        assertThat(changes.get(2).get("added").get(0).asString()).isEqualTo("user:view");
+        assertThat(changes.get(2).get("changedBy").asString()).isEqualTo("root");
+        assertThat(changes.get(2).get("roleName").asString()).isEqualTo("AUDITED");
     }
 
     @Test
@@ -240,11 +242,11 @@ class RolesApiIT {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         List<JsonNode> changes = StreamSupport.stream(res.getBody().get("changes").spliterator(), false).toList();
         assertThat(changes).anySatisfy(c -> {
-            assertThat(c.get("assigner").asText()).isEqualTo("TEAM_LEAD");
-            assertThat(c.get("assigned").asText()).isEqualTo("AGENT");
+            assertThat(c.get("assigner").asString()).isEqualTo("TEAM_LEAD");
+            assertThat(c.get("assigned").asString()).isEqualTo("AGENT");
             assertThat(c.get("nowAssignable").asBoolean()).isFalse();
         });
-        assertThat(changes).noneSatisfy(c -> assertThat(c.get("assigner").asText()).isEqualTo("AGENT"));
+        assertThat(changes).noneSatisfy(c -> assertThat(c.get("assigner").asString()).isEqualTo("AGENT"));
     }
 
     @Test
@@ -259,8 +261,8 @@ class RolesApiIT {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         List<JsonNode> changes = StreamSupport.stream(res.getBody().get("changes").spliterator(), false).toList();
         assertThat(changes).anySatisfy(c -> {
-            assertThat(c.get("assigner").asText()).isEqualTo("CUSTOMER_ADMIN");
-            assertThat(c.get("assigned").asText()).isEqualTo("WORKSPACE_MANAGER");
+            assertThat(c.get("assigner").asString()).isEqualTo("CUSTOMER_ADMIN");
+            assertThat(c.get("assigned").asString()).isEqualTo("WORKSPACE_MANAGER");
             assertThat(c.get("nowAssignable").asBoolean()).isFalse();
         });
     }
@@ -310,7 +312,7 @@ class RolesApiIT {
         ResponseEntity<JsonNode> res = create("GHOSTLY", "BRAND", List.of("ghost:code"));
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(res.getBody().get("code").asText()).isEqualTo("VALIDATION");
-        assertThat(res.getBody().get("fields").get("authorities").asText()).contains("ghost:code");
+        assertThat(res.getBody().get("code").asString()).isEqualTo("VALIDATION");
+        assertThat(res.getBody().get("fields").get("authorities").asString()).contains("ghost:code");
     }
 }

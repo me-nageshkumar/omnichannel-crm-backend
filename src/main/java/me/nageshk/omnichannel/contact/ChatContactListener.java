@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.contact;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +41,7 @@ public class ChatContactListener {
 
     private static String senderName(JsonNode p) {
         for (JsonNode n : new JsonNode[] {p.path("notifyName"), p.path("_data").path("notifyName"), p.path("pushname")}) {
-            String s = n.isTextual() ? n.asText().trim() : "";
+            String s = n.isTextual() ? n.asString().trim() : "";
             if (!s.isEmpty()) return s;
         }
         return null;

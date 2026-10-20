@@ -3,7 +3,7 @@ package me.nageshk.omnichannel.scripts;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -25,7 +25,7 @@ class ScriptCatalogTest {
         String sha = ScriptCatalog.sha256Hex(CODE);
         ScriptCatalog catalog = new ScriptCatalog(mapper, manifest(sha), Map.of("page", new ByteArrayResource(CODE))::get);
 
-        assertThat(catalog.manifest().get("page").get("sha256").asText()).isEqualTo(sha);
+        assertThat(catalog.manifest().get("page").get("sha256").asString()).isEqualTo(sha);
         assertThat(catalog.find("page")).isPresent();
         assertThat(catalog.find("page").get().version()).isEqualTo("abcdef123456");
         assertThat(catalog.find("page").get().bytes()).isEqualTo(CODE);
@@ -51,6 +51,6 @@ class ScriptCatalogTest {
         // Guards the generated files in src/main/resources against hand edits or a forgotten rebuild.
         ScriptCatalog catalog = new ScriptCatalog(mapper);
         assertThat(catalog.find("page")).isPresent();
-        assertThat(catalog.manifest().get("page").get("version").asText()).hasSize(12);
+        assertThat(catalog.manifest().get("page").get("version").asString()).hasSize(12);
     }
 }

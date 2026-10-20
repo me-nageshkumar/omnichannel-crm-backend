@@ -2,7 +2,7 @@ package me.nageshk.omnichannel.rpc;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 /** One frame of the extension <-> server protocol. Unused fields are null and omitted on the wire. */
 @JsonInclude(JsonInclude.Include.NON_NULL)

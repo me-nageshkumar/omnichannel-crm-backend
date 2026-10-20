@@ -2,9 +2,9 @@ package me.nageshk.omnichannel.ws;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -28,7 +28,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpEntity;
@@ -37,6 +38,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.socket.CloseStatus;
 
+@AutoConfigureTestRestTemplate
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "omnichannel.rpc.auth-timeout=1s")
@@ -127,9 +129,9 @@ class BridgeWebSocketIT {
         Envelope reply = device.next();
         assertThat(reply.id()).isEqualTo("auth");
         assertThat(reply.result().get("ok").asBoolean()).isTrue();
-        assertThat(reply.result().get("phoneNumberId").asText()).isEqualTo(number.getId());
-        assertThat(reply.result().get("number").asText()).isEqualTo(NUMBER);
-        assertThat(reply.result().get("brandName").asText()).isEqualTo("Brand A");
+        assertThat(reply.result().get("phoneNumberId").asString()).isEqualTo(number.getId());
+        assertThat(reply.result().get("number").asString()).isEqualTo(NUMBER);
+        assertThat(reply.result().get("brandName").asString()).isEqualTo("Brand A");
         assertThat(registry.find(number.getId())).isPresent();
         assertThat(live.stateOf(number.getId())).contains(LiveDevices.LiveState.WAITING_FOR_LOGIN);
         device.close();
@@ -191,7 +193,7 @@ class BridgeWebSocketIT {
             assertThat(device.next().seq()).isEqualTo(1L);
             WhatsAppEvent e = capture.events.poll(5, TimeUnit.SECONDS);
             assertThat(e).as("seq 1 of a new device is not a duplicate").isNotNull();
-            assertThat(e.payload().get("body").asText()).isEqualTo("new");
+            assertThat(e.payload().get("body").asString()).isEqualTo("new");
         }
     }
 
@@ -200,7 +202,7 @@ class BridgeWebSocketIT {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, key)) {
             Envelope reply = hello(device, NUMBER + "@c.us");
             assertThat(reply.result().get("ok").asBoolean()).isTrue();
-            assertThat(reply.result().get("scripts").get("page").get("sha256").asText()).hasSize(64);
+            assertThat(reply.result().get("scripts").get("page").get("sha256").asString()).hasSize(64);
             assertThat(registry.find(number.getId()).orElseThrow().confirmed()).isTrue();
             assertThat(live.stateOf(number.getId())).contains(LiveDevices.LiveState.CONNECTED);
             assertThat(numbers.findById(number.getId()).orElseThrow().getLastConnectedAt()).isNotNull();
@@ -260,7 +262,7 @@ class BridgeWebSocketIT {
             Envelope ack = device.next();
             assertThat(ack.type()).isEqualTo(Envelope.EVENT_ACK);
             assertThat(ack.seq()).isEqualTo(1L);
-            assertThat(capture.events.poll(5, TimeUnit.SECONDS).payload().get("body").asText()).isEqualTo("offline");
+            assertThat(capture.events.poll(5, TimeUnit.SECONDS).payload().get("body").asString()).isEqualTo("offline");
         }
     }
 
@@ -276,7 +278,7 @@ class BridgeWebSocketIT {
 
             device.send(Envelope.durableEvent("message", mapper.createObjectNode().put("body", "y"), 6, 1L, NUMBER));
             assertThat(device.next().seq()).isEqualTo(6L);
-            assertThat(capture.events.poll(5, TimeUnit.SECONDS).payload().get("body").asText()).isEqualTo("y");
+            assertThat(capture.events.poll(5, TimeUnit.SECONDS).payload().get("body").asString()).isEqualTo("y");
         }
     }
 

@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.ws;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import me.nageshk.omnichannel.events.LoggingEventListener;
 
 /**

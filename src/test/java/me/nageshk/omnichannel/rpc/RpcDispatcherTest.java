@@ -8,8 +8,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import me.nageshk.omnichannel.ws.DeviceSession;
 import java.io.IOException;
 import java.time.Duration;
@@ -53,7 +53,7 @@ class RpcDispatcherTest {
         assertThat(frame.type()).isEqualTo(Envelope.REQUEST);
         assertThat(frame.id()).isEqualTo("id-1");
         assertThat(frame.method()).isEqualTo("sendMessage");
-        assertThat(frame.params().get("chatId").asText()).isEqualTo("1@c.us");
+        assertThat(frame.params().get("chatId").asString()).isEqualTo("1@c.us");
         assertThat(future).isNotDone();
 
         JsonNode result = mapper.createObjectNode().put("ok", true);

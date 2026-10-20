@@ -2,8 +2,8 @@ package me.nageshk.omnichannel.rpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 class EnvelopeTest {
@@ -18,7 +18,7 @@ class EnvelopeTest {
         assertThat(env.type()).isEqualTo(Envelope.REQUEST);
         assertThat(env.id()).isEqualTo("abc");
         assertThat(env.method()).isEqualTo("sendMessage");
-        assertThat(env.params().get("chatId").asText()).isEqualTo("1@c.us");
+        assertThat(env.params().get("chatId").asString()).isEqualTo("1@c.us");
     }
 
     @Test

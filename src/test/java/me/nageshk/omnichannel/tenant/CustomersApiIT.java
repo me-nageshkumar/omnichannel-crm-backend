@@ -7,8 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +27,7 @@ import me.nageshk.omnichannel.user.WorkspaceRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -112,7 +112,7 @@ class CustomersApiIT {
                 .andExpect(jsonPath("$.user.password").doesNotExist())
                 .andExpect(jsonPath("$.temporaryPassword").value(TEMP)));
 
-        Customer acme = customers.findById(body.get("customer").get("id").asText()).orElseThrow();
+        Customer acme = customers.findById(body.get("customer").get("id").asString()).orElseThrow();
         assertThat(acme.getCreatedBy()).isEqualTo(am.getId());
         List<Workspace> ws = workspaces.findByCustomerIdOrderByName(acme.getId());
         assertThat(ws).extracting(Workspace::getName).containsExactly("Acme");
@@ -129,7 +129,7 @@ class CustomersApiIT {
 
         JsonNode named = json(send(post("/api/customers"), amToken, newCustomer("Globex", "Globex Shoes", "gowner"))
                 .andExpect(status().isCreated()));
-        assertThat(workspaces.findByCustomerIdOrderByName(named.get("customer").get("id").asText()))
+        assertThat(workspaces.findByCustomerIdOrderByName(named.get("customer").get("id").asString()))
                 .extracting(Workspace::getName).containsExactly("Globex Shoes");
     }
 
@@ -182,7 +182,7 @@ class CustomersApiIT {
         assertThat(first.get("items").size()).isEqualTo(50);
         assertThat(first.get("total").asLong()).isEqualTo(56);
         assertThat(first.get("page").asInt()).isZero();
-        assertThat(first.get("items").get(0).get("name").asText()).isEqualTo("Cust 01");
+        assertThat(first.get("items").get(0).get("name").asString()).isEqualTo("Cust 01");
 
         JsonNode second = json(send(get("/api/customers").param("page", "1"), amToken, null).andExpect(status().isOk()));
         assertThat(second.get("items").size()).isEqualTo(6);
@@ -193,7 +193,7 @@ class CustomersApiIT {
 
         JsonNode inactive = json(send(get("/api/customers").param("active", "false"), amToken, null).andExpect(status().isOk()));
         assertThat(inactive.get("total").asLong()).isEqualTo(1);
-        assertThat(inactive.get("items").get(0).get("name").asText()).isEqualTo("Zeta");
+        assertThat(inactive.get("items").get(0).get("name").asString()).isEqualTo("Zeta");
 
         JsonNode activeZ = json(send(get("/api/customers").param("q", "zet").param("active", "true"), amToken, null).andExpect(status().isOk()));
         assertThat(activeZ.get("total").asLong()).isZero();
@@ -206,7 +206,7 @@ class CustomersApiIT {
     void detailShowsWorkspacesAndAdmins() throws Exception {
         JsonNode created = json(send(post("/api/customers"), amToken, newCustomer("Acme", null, "owner"))
                 .andExpect(status().isCreated()));
-        String id = created.get("customer").get("id").asText();
+        String id = created.get("customer").get("id").asString();
         Workspace shoes = testUsers.workspace(id, "Acme Shoes");
         testUsers.createInCustomer(id, "agent", null,
                 List.of(new WorkspaceRole(shoes.getId(), testUsers.roleId(BuiltInRoles.AGENT))));
@@ -216,11 +216,11 @@ class CustomersApiIT {
                 .andExpect(jsonPath("$.customer.name").value("Acme"))
                 .andExpect(jsonPath("$.admins[0].password").doesNotExist()));
         List<String> wsNames = StreamSupport.stream(detail.get("workspaces").spliterator(), false)
-                .map(w -> w.get("name").asText()).toList();
+                .map(w -> w.get("name").asString()).toList();
         assertThat(wsNames).containsExactly("Acme", "Acme Shoes");
         assertThat(detail.get("admins").size()).isEqualTo(1);
-        assertThat(detail.get("admins").get(0).get("username").asText()).isEqualTo("owner");
-        assertThat(detail.get("admins").get(0).get("role").get("name").asText()).isEqualTo(BuiltInRoles.CUSTOMER_ADMIN);
+        assertThat(detail.get("admins").get(0).get("username").asString()).isEqualTo("owner");
+        assertThat(detail.get("admins").get(0).get("role").get("name").asString()).isEqualTo(BuiltInRoles.CUSTOMER_ADMIN);
     }
 
     @Test
@@ -306,7 +306,7 @@ class CustomersApiIT {
         send(post("/api/customers/" + id + "/admins"), token, admin("second")).andExpect(status().isForbidden());
         assertThat(users.findByUsername("second")).isEmpty();
         JsonNode roles = json(send(get("/api/customers/assignable-roles"), token, null).andExpect(status().isOk()));
-        assertThat(StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asText()).toList())
+        assertThat(StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asString()).toList())
                 .containsExactly(BuiltInRoles.CUSTOMER_ADMIN);
     }
 

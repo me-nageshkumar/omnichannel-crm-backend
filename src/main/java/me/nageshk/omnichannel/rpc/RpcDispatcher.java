@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.rpc;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.ws.DeviceSession;
 import java.io.IOException;

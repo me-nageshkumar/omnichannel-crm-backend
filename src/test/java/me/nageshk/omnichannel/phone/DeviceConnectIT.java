@@ -5,8 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -22,7 +22,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -71,7 +71,7 @@ class DeviceConnectIT {
         wmToken = testUsers.accessToken(testUsers.createInCustomer(acme.getId(), "wm", null,
                 List.of(new WorkspaceRole(brandA.getId(), testUsers.roleId(BuiltInRoles.WORKSPACE_MANAGER)))));
         id = json(send(post(base()), wmToken, Map.of("number", "919928088743"))
-                .andExpect(status().isCreated())).get("id").asText();
+                .andExpect(status().isCreated())).get("id").asString();
     }
 
     @AfterEach
@@ -99,7 +99,7 @@ class DeviceConnectIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.matchesPattern(
                         "^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$")))
-                .andExpect(jsonPath("$.expiresAt").value(clock.instant().plus(Duration.ofMinutes(15)).toString()))).get("code").asText();
+                .andExpect(jsonPath("$.expiresAt").value(clock.instant().plus(Duration.ofMinutes(15)).toString()))).get("code").asString();
     }
 
     private ResultActions connect(String code, String ip) throws Exception {
@@ -121,7 +121,7 @@ class DeviceConnectIT {
                 .andExpect(jsonPath("$.number").value("919928088743"))
                 .andExpect(jsonPath("$.brandName").value("Brand A"))
                 .andExpect(jsonPath("$.deviceKeyId").value(org.hamcrest.Matchers.matchesPattern("^[0-9a-f]{8}$"))));
-        String key = body.get("deviceKey").asText();
+        String key = body.get("deviceKey").asString();
         assertThat(key).startsWith("dk_").hasSizeGreaterThan(40);
         assertThat(keys.authenticate(key)).hasValueSatisfying(p -> {
             assertThat(p.phoneNumberId()).isEqualTo(id);
@@ -199,15 +199,15 @@ class DeviceConnectIT {
 
     @Test
     void redeemReplacesOldKey() throws Exception {
-        String first = json(connect(code(), "10.0.0.1")).get("deviceKey").asText();
-        String second = json(connect(code(), "10.0.0.1")).get("deviceKey").asText();
+        String first = json(connect(code(), "10.0.0.1")).get("deviceKey").asString();
+        String second = json(connect(code(), "10.0.0.1")).get("deviceKey").asString();
         assertThat(keys.authenticate(first)).isEmpty();
         assertThat(keys.authenticate(second)).isPresent();
     }
 
     @Test
     void revokeDeviceClearsKey() throws Exception {
-        String key = json(connect(code(), "10.0.0.1")).get("deviceKey").asText();
+        String key = json(connect(code(), "10.0.0.1")).get("deviceKey").asString();
         send(post(base() + "/" + id + "/revoke-device"), wmToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hasDevice").value(false));
@@ -216,7 +216,7 @@ class DeviceConnectIT {
 
     @Test
     void keyRefusedWhileBrandDisabledAndWorksAfterEnable() throws Exception {
-        String key = json(connect(code(), "10.0.0.1")).get("deviceKey").asText();
+        String key = json(connect(code(), "10.0.0.1")).get("deviceKey").asString();
         send(post("/api/workspaces/" + brandA.getId() + "/disable"), bossToken, null).andExpect(status().isOk());
         assertThat(keys.authenticate(key)).isEmpty();
         send(post("/api/workspaces/" + brandA.getId() + "/enable"), bossToken, null).andExpect(status().isOk());

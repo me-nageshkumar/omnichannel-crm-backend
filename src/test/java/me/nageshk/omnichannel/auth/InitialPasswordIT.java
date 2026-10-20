@@ -8,8 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.user.User;
@@ -17,7 +17,7 @@ import me.nageshk.omnichannel.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -65,7 +65,7 @@ class InitialPasswordIT {
     }
 
     private String changeToken() throws Exception {
-        return login("temporary-pw").get("passwordChangeToken").asText();
+        return login("temporary-pw").get("passwordChangeToken").asString();
     }
 
     @Test
@@ -78,7 +78,7 @@ class InitialPasswordIT {
                 .andExpect(jsonPath("$.passwordChangeToken", not(emptyString())))
                 .andExpect(jsonPath("$.token").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(jwt.verifyPasswordChangeToken(mapper.readTree(body).get("passwordChangeToken").asText()))
+        assertThat(jwt.verifyPasswordChangeToken(mapper.readTree(body).get("passwordChangeToken").asString()))
                 .contains(new JwtService.PasswordChangeClaims("newbie", 0L));
     }
 
@@ -90,7 +90,7 @@ class InitialPasswordIT {
         assertThat(first.has("passwordChangeToken")).isFalse();
 
         mvc.perform(post("/api/auth/verify-otp").contentType(MediaType.APPLICATION_JSON)
-                        .header("Authorization", "Bearer " + first.get("twoFactorToken").asText())
+                        .header("Authorization", "Bearer " + first.get("twoFactorToken").asString())
                         .content("{\"otp\":\"" + VerifyOtpIT.currentCode() + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.passwordChangeRequired").value(true))
@@ -114,12 +114,12 @@ class InitialPasswordIT {
                 .andExpect(jsonPath("$.expiresAt", not(emptyString())))
                 .andReturn().getResponse().getContentAsString();
         JsonNode json = mapper.readTree(body);
-        assertThat(Instant.parse(json.get("expiresAt").asText())).isAfter(Instant.now());
+        assertThat(Instant.parse(json.get("expiresAt").asString())).isAfter(Instant.now());
 
         User saved = repo.findByUsername("newbie").orElseThrow();
         assertThat(saved.isMustChangePassword()).isFalse();
         assertThat(saved.getTokenVersion()).isEqualTo(1L);
-        mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + json.get("token").asText()))
+        mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + json.get("token").asString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mustChangePassword").value(false));
     }
@@ -195,7 +195,7 @@ class InitialPasswordIT {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         JsonNode json = mapper.readTree(body);
-        assertThat(json.fieldNames()).toIterable().containsExactlyInAnyOrder("token", "expiresAt");
+        assertThat(json.propertyNames()).containsExactlyInAnyOrder("token", "expiresAt");
     }
 
     @Test

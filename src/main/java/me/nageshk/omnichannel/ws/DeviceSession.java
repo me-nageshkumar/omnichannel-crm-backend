@@ -1,7 +1,7 @@
 package me.nageshk.omnichannel.ws;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import me.nageshk.omnichannel.phone.DevicePrincipal;
 import me.nageshk.omnichannel.rpc.Envelope;

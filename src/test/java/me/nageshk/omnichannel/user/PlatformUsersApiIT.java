@@ -7,8 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +21,7 @@ import me.nageshk.omnichannel.support.TestUsers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -92,14 +92,14 @@ class PlatformUsersApiIT {
                 .andExpect(jsonPath("$.user.tokenVersion").doesNotExist()));
 
         User saved = users.findByUsername("ann").orElseThrow();
-        assertThat(saved.getId()).isEqualTo(body.get("user").get("id").asText());
+        assertThat(saved.getId()).isEqualTo(body.get("user").get("id").asString());
         assertThat(saved.getCustomerId()).isNull();
         assertThat(saved.isMustChangePassword()).isTrue();
         assertThat(saved.getPassword()).isNotEqualTo(TEMP);
         login("ann", TEMP).andExpect(status().isOk()).andExpect(jsonPath("$.passwordChangeRequired").value(true));
 
         JsonNode list = json(send(get("/api/platform-users"), rootToken, null).andExpect(status().isOk()));
-        List<String> usernames = StreamSupport.stream(list.spliterator(), false).map(u -> u.get("username").asText()).toList();
+        List<String> usernames = StreamSupport.stream(list.spliterator(), false).map(u -> u.get("username").asString()).toList();
         assertThat(usernames).contains("ann").doesNotContain("root");
     }
 
@@ -233,7 +233,7 @@ class PlatformUsersApiIT {
     @Test
     void assignableRolesArePlatformRolesExceptSuperAdmin() throws Exception {
         JsonNode roles = json(send(get("/api/platform-users/assignable-roles"), rootToken, null).andExpect(status().isOk()));
-        List<String> names = StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asText()).toList();
+        List<String> names = StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asString()).toList();
         assertThat(names).containsExactlyInAnyOrder(BuiltInRoles.ACCOUNT_MANAGER);
     }
 

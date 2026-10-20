@@ -2,8 +2,8 @@ package me.nageshk.omnichannel.ws;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import me.nageshk.omnichannel.ws.NumberCheck.Result;
 import org.junit.jupiter.api.Test;
 

@@ -2,7 +2,7 @@ package me.nageshk.omnichannel.access;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.StreamSupport;
@@ -12,7 +12,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -20,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /** End to end: an authority created in the console gates a real endpoint and reaches the Super Admin. */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AuthorityLifecycleIT {
 
@@ -74,7 +76,7 @@ class AuthorityLifecycleIT {
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(probe(pu).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
 
-        ResponseEntity<JsonNode> edited = call(root, HttpMethod.PUT, "/api/roles/" + role.getBody().get("id").asText(),
+        ResponseEntity<JsonNode> edited = call(root, HttpMethod.PUT, "/api/roles/" + role.getBody().get("id").asString(),
                 Map.of("name", "PROBER", "description", "d", "authorities", List.of("test:probe")));
         assertThat(edited.getStatusCode()).as(String.valueOf(edited.getBody())).isEqualTo(HttpStatus.OK);
 
