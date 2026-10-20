@@ -91,6 +91,9 @@ abstract class ContactApiTestBase {
         ContactAttribute a = new ContactAttribute();
         a.setWorkspaceId(w.getId());
         a.setName(name);
+        a.setKey(AttributeKeys.generate(name,
+                attributes.findByWorkspaceIdOrderByNameKey(w.getId()).stream().map(ContactAttribute::getKey)
+                        .collect(java.util.stream.Collectors.toSet())));
         return attributes.save(a);
     }
 

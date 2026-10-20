@@ -75,6 +75,37 @@ class ContactFieldsApiIT extends ContactApiTestBase {
     }
 
     @Test
+    void createdAttributeHasKey() throws Exception {
+        send(post(attributesUrl()), wmToken, Map.of("name", "Preferred size"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.key").value("preferred_size"));
+        send(post(attributesUrl()), wmToken, Map.of("name", "Preferred-Size!"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.key").value("preferred_size_2"));
+        // the same name in another brand starts over
+        send(post(base(brandB) + "/contact-attributes"), wmBToken, Map.of("name", "Preferred size"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.key").value("preferred_size"));
+    }
+
+    @Test
+    void renameKeepsKey() throws Exception {
+        String id = json(send(post(attributesUrl()), wmToken, Map.of("name", "City"))).get("id").asString();
+        send(put(attributesUrl() + "/" + id), wmToken, Map.of("name", "Home town"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Home town"))
+                .andExpect(jsonPath("$.key").value("city"));
+        assertThat(attributes.findById(id).orElseThrow().getKey()).isEqualTo("city");
+    }
+
+    @Test
+    void listShowsKey() throws Exception {
+        send(post(attributesUrl()), wmToken, Map.of("name", "City")).andExpect(status().isCreated());
+        send(get(attributesUrl()), agentToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].key").value("city"));
+    }
+
+    @Test
     void badColorIs400() throws Exception {
         send(post(labelsUrl()), wmToken, Map.of("name", "VIP", "color", "pink"))
                 .andExpect(status().isBadRequest())

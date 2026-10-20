@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.contact;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.mongodb.repository.MongoRepository;
@@ -12,4 +13,8 @@ public interface ContactAttributeRepository extends MongoRepository<ContactAttri
     Optional<ContactAttribute> findByIdAndWorkspaceId(String id, String workspaceId);
 
     Optional<ContactAttribute> findByWorkspaceIdAndNameKey(String workspaceId, String nameKey);
+
+    Optional<ContactAttribute> findByWorkspaceIdAndKey(String workspaceId, String key);
+
+    List<ContactAttribute> findByWorkspaceIdAndIdIn(String workspaceId, Collection<String> ids);
 }

@@ -4,7 +4,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import me.nageshk.omnichannel.phone.DemoSeeder;
 import me.nageshk.omnichannel.tenant.Customer;
 import me.nageshk.omnichannel.tenant.CustomerRepository;
@@ -81,9 +83,10 @@ public class ContactDemoSeeder implements ApplicationRunner {
         ContactLabel lead = label(brand, "Lead", "blue");
         ContactLabel customerLabel = label(brand, "Customer", "green");
         ContactLabel followUp = label(brand, "Follow-up", "orange");
-        ContactAttribute city = attribute(brand, "City");
-        ContactAttribute email = attribute(brand, "Email");
-        ContactAttribute size = attribute(brand, "Preferred size");
+        Set<String> keys = new HashSet<>();
+        ContactAttribute city = attribute(brand, "City", keys);
+        ContactAttribute email = attribute(brand, "Email", keys);
+        ContactAttribute size = attribute(brand, "Preferred size", keys);
         ContactLabel[] cycle = {customerLabel, lead, vip, followUp};
 
         Instant now = clock.instant();
@@ -135,10 +138,12 @@ public class ContactDemoSeeder implements ApplicationRunner {
         return labels.save(l);
     }
 
-    private ContactAttribute attribute(Workspace brand, String name) {
+    private ContactAttribute attribute(Workspace brand, String name, Set<String> taken) {
         ContactAttribute a = new ContactAttribute();
         a.setWorkspaceId(brand.getId());
         a.setName(name);
+        a.setKey(AttributeKeys.generate(name, taken));
+        taken.add(a.getKey());
         return attributes.save(a);
     }
 }

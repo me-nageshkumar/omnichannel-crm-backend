@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.contact;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -111,11 +112,20 @@ public class ContactFieldService {
         if (clash != null && !clash.getId().equals(a.getId())) throw duplicate(n);
         a.setName(n);
         a.setDescription(d);
+        if (a.getKey() == null) a.setKey(AttributeKeys.generate(n, takenKeys(a.getWorkspaceId())));
         try {
             return attributes.save(a);
         } catch (DuplicateKeyException e) {
             throw duplicate(n);
         }
+    }
+
+    private Set<String> takenKeys(String workspaceId) {
+        Set<String> taken = new HashSet<>();
+        attributes.findByWorkspaceIdOrderByNameKey(workspaceId).forEach(x -> {
+            if (x.getKey() != null) taken.add(x.getKey());
+        });
+        return taken;
     }
 
     private static DuplicateException duplicate(String name) {
@@ -143,6 +153,6 @@ public class ContactFieldService {
     private AttributeView view(ContactAttribute a) {
         long n = mongo.count(new Query(Criteria.where("workspaceId").is(a.getWorkspaceId())
                 .and("attributes." + a.getId()).exists(true)), Contact.class);
-        return new AttributeView(a.getId(), a.getName(), a.getDescription(), n);
+        return new AttributeView(a.getId(), a.getKey(), a.getName(), a.getDescription(), n);
     }
 }
