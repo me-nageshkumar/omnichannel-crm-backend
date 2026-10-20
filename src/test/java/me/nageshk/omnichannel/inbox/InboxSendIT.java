@@ -223,27 +223,33 @@ class InboxSendIT extends InboxApiTestBase {
     @Test
     void nullResultStoresAPendingPlaceholder() throws Exception {
         WaWebChat chat = chatWithAarav();
-        Exchange ex = sendOk(managerToken, chat, Map.of("text", "hello"), mapper.nullNode());
+        Exchange ex = sendOk(managerToken, chat, Map.of("text", "console says hi"), mapper.nullNode());
 
         assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
         WaWebMessage stored = only(chat);
         assertThat(stored.getWaMessageId()).startsWith("console:");
         assertThat(stored.getStatus()).isEqualTo(MessageStatus.PENDING);
         assertThat(stored.getSource()).isEqualTo(MessageSource.CONSOLE);
-        assertThat(stored.getBody()).isEqualTo("hello");
-        assertThat(chats.findById(chat.getId()).orElseThrow().getLastMessage().text()).isEqualTo("hello");
+        assertThat(stored.getBody()).isEqualTo("console says hi");
+        WaWebChat.LastMessage preview = chats.findById(chat.getId()).orElseThrow().getLastMessage();
+        assertThat(preview.direction()).isEqualTo(MessageDirection.OUT);
+        assertThat(preview.text()).isEqualTo("console says hi");
+        assertThat(preview.status()).isEqualTo(MessageStatus.PENDING);
     }
 
     @Test
     void deviceFailureStoresNothing() throws Exception {
         WaWebChat chat = chatWithAarav();
-        Exchange ex = viaDevice(managerToken, chat, Map.of("text", "hello"),
+        Exchange ex = viaDevice(managerToken, chat, Map.of("text", "console says hi"),
                 req -> Envelope.errorResponse(req.id(), "CHAT_NOT_FOUND", "Chat not found"));
 
         assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(ex.response().getBody().get("code").asString()).isEqualTo("CHAT_NOT_FOUND");
         assertThat(messages.findAll().stream().filter(m -> chat.getId().equals(m.getChatId()))).isEmpty();
-        assertThat(chats.findById(chat.getId()).orElseThrow().getLastMessage().text()).isEqualTo("hello");
+        WaWebChat.LastMessage preview = chats.findById(chat.getId()).orElseThrow().getLastMessage();
+        assertThat(preview.direction()).isEqualTo(MessageDirection.IN);
+        assertThat(preview.text()).isEqualTo("hello");
+        assertThat(chats.findById(chat.getId()).orElseThrow().getLastOutboundAt()).isNull();
     }
 
     @Test
@@ -498,6 +504,27 @@ class InboxSendIT extends InboxApiTestBase {
         MessageTemplate after = templates.findById(id).orElseThrow();
         assertThat(after.getLastUsedAt()).isNotNull();
         assertThat(after.getVersion()).isEqualTo(before.getVersion());
+    }
+
+    @Test
+    void archivedTemplateIsRejectedBeforeTheDevice() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        String id = textTemplate("Old", "Hi {{contact.name}}", nameSetting());
+        templateService.archive(managerMe(), brand.getId(), id);
+
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+            device.send(Envelope.event("ready", ready()));
+            Thread.sleep(200);
+
+            ResponseEntity<JsonNode> res = post(managerToken, chat, Map.of("templateId", id));
+
+            assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(res.getBody().get("code").asString()).isEqualTo("VALIDATION");
+            assertThat(res.getBody().get("fields").get("templateId").asString()).isEqualTo("archived");
+            assertThat(device.poll(Duration.ofSeconds(1))).isEmpty();
+        }
+        assertThat(messages.count()).isZero();
+        assertThat(templates.findById(id).orElseThrow().getLastUsedAt()).isNull();
     }
 
     @Test

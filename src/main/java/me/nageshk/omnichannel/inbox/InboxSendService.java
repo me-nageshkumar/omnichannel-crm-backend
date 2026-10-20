@@ -23,6 +23,7 @@ import me.nageshk.omnichannel.template.TemplateContent;
 import me.nageshk.omnichannel.template.TemplateMediaService;
 import me.nageshk.omnichannel.template.TemplateRenderer;
 import me.nageshk.omnichannel.template.TemplateService;
+import me.nageshk.omnichannel.template.TemplateStatus;
 import me.nageshk.omnichannel.template.TemplateType;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserRepository;
@@ -126,6 +127,9 @@ public class InboxSendService {
             return new Outgoing(text, mapper.createObjectNode(), null, text, null, null, null);
         }
         String templateId = req.templateId().strip();
+        if (templates.require(workspaceId, templateId).getStatus() == TemplateStatus.ARCHIVED) {
+            throw new ValidationException("templateId", "archived");
+        }
         RenderedTemplate rendered = renderer.render(me, workspaceId, templateId,
                 new RenderRequest(chat.getContactId(), req.values()));
         if (rendered.type() == TemplateType.CONTACT_CARD) {
