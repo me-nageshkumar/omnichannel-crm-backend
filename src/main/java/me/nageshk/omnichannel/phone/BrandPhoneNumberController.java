@@ -59,11 +59,15 @@ public class BrandPhoneNumberController {
         return service.view(service.relabel(service.requireInWorkspace(workspaceId, id), req.label()));
     }
 
+    /** A number disabled above the caller's level cannot be deleted (and re-added) to get around the disable. */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
-    public void delete(@PathVariable String workspaceId, @PathVariable String id) {
-        service.delete(service.requireInWorkspace(workspaceId, id));
+    public void delete(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id) {
+        PhoneNumber n = service.requireInWorkspace(workspaceId, id);
+        enablement.checkEnable(n.getDisabled(), enablement.levelOf(me, MANAGE, workspaceId));
+        service.delete(n);
     }
 
     @PostMapping("/{id}/disable")

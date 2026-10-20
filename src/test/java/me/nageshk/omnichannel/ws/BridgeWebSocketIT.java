@@ -156,11 +156,43 @@ class BridgeWebSocketIT {
     }
 
     @Test
-    void disabledNumberKeyCloses4401() throws Exception {
+    void disabledNumberKeyCloses4403() throws Exception {
         postAs(wmToken, numberPath("disable"));
         FakeDevice device = FakeDevice.connect(port);
         device.send(Envelope.auth(key));
-        assertThat(device.awaitClose().getCode()).isEqualTo(4401);
+        CloseStatus status = device.awaitClose();
+        assertThat(status.getCode()).isEqualTo(4403);
+        assertThat(status.getReason()).isEqualTo("This number, its brand or its company is disabled.");
+    }
+
+    @Test
+    void disabledBrandKeyCloses4403AndWorksAfterEnable() throws Exception {
+        postAs(bossToken, "/api/workspaces/" + brandA.getId() + "/disable");
+        FakeDevice refused = FakeDevice.connect(port);
+        refused.send(Envelope.auth(key));
+        assertThat(refused.awaitClose().getCode()).isEqualTo(4403);
+        postAs(bossToken, "/api/workspaces/" + brandA.getId() + "/enable");
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, key)) {
+            assertThat(device.isOpen()).isTrue();
+        }
+    }
+
+    @Test
+    void newKeyStartsAFreshEventSequence() throws Exception {
+        try (FakeDevice device = confirmed()) {
+            device.send(Envelope.durableEvent("message", mapper.createObjectNode().put("body", "old"), 5, 1L));
+            assertThat(device.next().seq()).isEqualTo(5L);
+            assertThat(capture.events.poll(5, TimeUnit.SECONDS)).isNotNull();
+        }
+        String again = testDevices.redeem(numbers.findById(number.getId()).orElseThrow()).deviceKey();
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, again)) {
+            hello(device, NUMBER + "@c.us");
+            device.send(Envelope.durableEvent("message", mapper.createObjectNode().put("body", "new"), 1, 1L));
+            assertThat(device.next().seq()).isEqualTo(1L);
+            WhatsAppEvent e = capture.events.poll(5, TimeUnit.SECONDS);
+            assertThat(e).as("seq 1 of a new device is not a duplicate").isNotNull();
+            assertThat(e.payload().get("body").asText()).isEqualTo("new");
+        }
     }
 
     @Test

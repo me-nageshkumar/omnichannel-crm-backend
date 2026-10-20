@@ -81,6 +81,12 @@ public class DeviceKeys {
                         n.getDeviceKeyId(), brandName(n)));
     }
 
+    /** Whether a refused key is unknown (revoked, replaced, never issued) or belongs to a disabled number. */
+    public boolean isDisabledKey(String deviceKey) {
+        if (deviceKey == null || !deviceKey.startsWith(Secrets.KEY_PREFIX)) return false;
+        return numbers.findByDeviceKeyHash(Secrets.sha256(deviceKey)).filter(n -> !usable(n)).isPresent();
+    }
+
     boolean usable(PhoneNumber n) {
         return n.getDisabled() == null && access.isWorkspaceUsable(n.getWorkspaceId());
     }

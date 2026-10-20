@@ -120,7 +120,11 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         }
         Optional<DevicePrincipal> principal = keys.authenticate(frame.token());
         if (principal.isEmpty()) {
-            closeQuietly(session, CLOSE_UNAUTHORIZED, "invalid device key");
+            if (keys.isDisabledKey(frame.token())) {
+                closeQuietly(session, DeviceDisconnector.CLOSE_DISABLED, DeviceDisconnector.DISABLED_REASON);
+            } else {
+                closeQuietly(session, CLOSE_UNAUTHORIZED, "invalid device key");
+            }
             return;
         }
         cancelAuthTimer(session.getId());
@@ -129,6 +133,11 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             log.info("[{}] replacing device {} with {}", old.phoneNumberId(), old.sessionId(), device.sessionId());
             old.close(CLOSE_REPLACED, "replaced by newer connection");
         });
+        // a disable committed between the key check and registering was not seen by DeviceDisconnector
+        if (keys.authenticate(frame.token()).isEmpty()) {
+            device.close(DeviceDisconnector.CLOSE_DISABLED, DeviceDisconnector.DISABLED_REASON);
+            return;
+        }
         ObjectNode ok = mapper.createObjectNode().put("ok", true)
                 .put("phoneNumberId", principal.get().phoneNumberId())
                 .put("number", principal.get().number())
@@ -197,7 +206,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             log.debug("[{}] dropping {} before the number is confirmed", device.phoneNumberId(), frame.name());
             return;
         }
-        if (seq != null && sequences.isDuplicate(device.phoneNumberId(), seq)) {
+        if (seq != null && sequences.isDuplicate(sequenceKey(device), seq)) {
             log.debug("[{}] duplicate event seq={} ({}), re-acking", device.phoneNumberId(), seq, frame.name());
             sendAck(device, seq);
             return;
@@ -220,9 +229,14 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         publisher.publishEvent(new WhatsAppEvent(this, p.phoneNumberId(), p.workspaceId(), p.customerId(),
                 frame.name(), payload, seq, frame.ts()));
         if (seq != null) {
-            sequences.record(device.phoneNumberId(), seq);
+            sequences.record(sequenceKey(device), seq);
             sendAck(device, seq);
         }
+    }
+
+    /** Sequence numbers belong to one device key: a new key's extension may start again at 1. */
+    private static String sequenceKey(DeviceSession device) {
+        return device.phoneNumberId() + ":" + device.principal().deviceKeyId();
     }
 
     private void sendAck(DeviceSession device, long seq) {

@@ -212,12 +212,16 @@ unique across the platform; a brand may have several). The extension connects fo
    phoneNumberId, number, brandName}`. Wrong or expired: 400 `INVALID_CONNECT_CODE`; ten failures from
    one IP in 15 minutes: 429 `TOO_MANY_ATTEMPTS`; disabled: 403 `DISABLED`. The key (`dk_…`, hashed at
    rest) never expires on its own; a new code redeemed replaces it, "revoke device" deletes it.
+   The per-IP limit uses the socket's remote address. Behind a reverse proxy every client shares the
+   proxy's address, so configure trusted forwarded headers (`server.forward-headers-strategy` with the
+   proxy's address only) before deploying, or one client's bad codes lock out every browser.
 3. The WebSocket `auth` frame carries the key. The server forwards nothing until WhatsApp Web reports
    the onboarded number (`info.pnWid`, else a `…@c.us` `wid`; a `…@lid` id never confirms). Events
    before that are not acknowledged, so the extension replays them; an event whose `acct` is another
    number is acknowledged and dropped.
 
-Close codes: 4401 bad key or no auth in 5 s, 4403 number/brand/company disabled, 4409 replaced by a
+Close codes: 4401 unknown key or no auth in 5 s, 4403 number/brand/company disabled (also at auth, so
+the extension keeps its key and retries), 4409 replaced by a
 newer connection or key, 4410 device removed (revoked or number deleted), 4412 logged in to a different
 number (recorded and shown in the console). Disabling, revoking or deleting closes the live socket in
 the same request. Status shown per number: `DISABLED` (with `disabledBecause` NUMBER/BRAND/CUSTOMER),

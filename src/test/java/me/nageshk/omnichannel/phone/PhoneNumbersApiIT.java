@@ -246,4 +246,23 @@ class PhoneNumbersApiIT {
         assertThat(numbers.count()).isZero();
         send(delete(numbersOf(brandA) + "/" + a), wmToken, null).andExpect(status().isNotFound());
     }
+
+    @Test
+    void managerCannotDeleteNumberDisabledAbove() throws Exception {
+        String id = add(brandA, "919928088743", wmToken);
+        send(post("/api/phone-numbers/" + id + "/disable"), amToken, null).andExpect(status().isOk());
+        send(delete(numbersOf(brandA) + "/" + id), wmToken, null)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("DISABLED_AT_HIGHER_LEVEL"));
+        send(delete(numbersOf(brandA) + "/" + id), bossToken, null).andExpect(status().isForbidden());
+        assertThat(numbers.count()).isEqualTo(1);
+        send(delete("/api/phone-numbers/" + id), amToken, null).andExpect(status().isNoContent());
+    }
+
+    @Test
+    void managerMayDeleteNumberTheyDisabled() throws Exception {
+        String id = add(brandA, "919928088743", wmToken);
+        send(post(numbersOf(brandA) + "/" + id + "/disable"), wmToken, null).andExpect(status().isOk());
+        send(delete(numbersOf(brandA) + "/" + id), wmToken, null).andExpect(status().isNoContent());
+    }
 }
