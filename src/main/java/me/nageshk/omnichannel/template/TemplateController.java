@@ -82,4 +82,14 @@ public class TemplateController {
     public void delete(@PathVariable String workspaceId, @PathVariable String id) {
         service.delete(workspaceId, id);
     }
+
+    /** Copies the template into another brand of the same customer; the caller needs manage there too. */
+    @PostMapping("/{id}/duplicate")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@access.has(#workspaceId, 'template:manage')")
+    public TemplateView duplicate(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id, @RequestBody(required = false) DuplicateRequest req) {
+        return service.duplicate(me, workspaceId, id, req == null ? null : req.targetWorkspaceId(),
+                req == null ? null : req.name());
+    }
 }

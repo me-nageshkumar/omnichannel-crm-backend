@@ -6,7 +6,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.api.DuplicateException;
+import me.nageshk.omnichannel.api.ForbiddenException;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.TemplateInUseException;
 import me.nageshk.omnichannel.api.ValidationException;
@@ -42,10 +44,12 @@ public class TemplateService {
     private final WorkspaceRepository workspaces;
     private final ContactAttributeRepository attributes;
     private final TemplateMediaService media;
+    private final AccessService access;
 
     public TemplateService(MessageTemplateRepository templates, TemplateValidator validator, MongoTemplate mongo,
             UserRepository users, WorkspaceRepository workspaces, ContactAttributeRepository attributes,
-            TemplateMediaService media) {
+            TemplateMediaService media, AccessService access) {
+        this.access = access;
         this.attributes = attributes;
         this.media = media;
         this.templates = templates;
@@ -113,6 +117,84 @@ public class TemplateService {
     public TemplateView update(AuthenticatedUser me, String workspaceId, String id, TemplateRequest r) {
         MessageTemplate t = require(workspaceId, id);
         return view(save(t, who(me), r, t.getType(), true));
+    }
+
+    /**
+     * Copies a template into the target brand (possibly the same one) as a new ACTIVE template with the given name.
+     * The target must be a brand of the caller's customer (else 404) where the caller can manage templates (else 403).
+     * Attribute placeholders are bound by key in the target; a key the target lacks stays with no attribute and reads
+     * as missing. The media file is copied, not shared.
+     */
+    public TemplateView duplicate(AuthenticatedUser me, String workspaceId, String id, String targetWorkspaceId,
+            String newName) {
+        MessageTemplate src = require(workspaceId, id);
+        Map<String, String> errors = new LinkedHashMap<>();
+        if (targetWorkspaceId == null || targetWorkspaceId.isBlank()) errors.put("targetWorkspaceId", "is required");
+        String name = newName == null ? "" : newName.trim();
+        if (name.isEmpty() || name.length() > MAX_NAME) errors.put("name", "must be 1 to " + MAX_NAME + " characters");
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+
+        String target = targetWorkspaceId.trim();
+        Workspace brand = me.customerId() == null ? null
+                : workspaces.findByIdAndCustomerId(target, me.customerId()).orElse(null);
+        if (brand == null) throw new NotFoundException("workspace not found");
+        if (!access.has(target, "template:manage")) throw new ForbiddenException("template:manage is required");
+
+        String nameKey = name.toLowerCase();
+        if (templates.findByWorkspaceIdAndNameKey(target, nameKey).isPresent()) throw clash(name);
+
+        String[] who = who(me);
+        MessageTemplate copy = new MessageTemplate();
+        copy.setWorkspaceId(target);
+        copy.setCustomerId(brand.getCustomerId());
+        copy.setChannel(src.getChannel());
+        copy.setName(name);
+        copy.setNameKey(nameKey);
+        copy.setCategory(src.getCategory());
+        copy.setType(src.getType());
+        copy.setContent(src.getContent());
+        copy.setStatus(TemplateStatus.ACTIVE);
+        copy.setCreatedByUsername(who[0]);
+        copy.setCreatedByName(who[1]);
+        copy.setUpdatedByUsername(who[0]);
+        copy.setUpdatedByName(who[1]);
+        copy.setPlaceholders(src.getPlaceholders().stream().map(p -> rebound(target, p)).toList());
+        String copiedMediaId = null;
+        if (src.getMedia() != null) {
+            copiedMediaId = media.copy(workspaceId, src.getMedia().getMediaId(), target);
+            TemplateMediaRef m = new TemplateMediaRef();
+            m.setMediaId(copiedMediaId);
+            m.setFileName(src.getMedia().getFileName());
+            m.setMimeType(src.getMedia().getMimeType());
+            m.setSize(src.getMedia().getSize());
+            copy.setMedia(m);
+        }
+        try {
+            return view(templates.save(copy));
+        } catch (DuplicateKeyException e) {
+            if (copiedMediaId != null) media.delete(copiedMediaId);
+            throw clash(name);
+        } catch (RuntimeException e) {
+            if (copiedMediaId != null) media.delete(copiedMediaId);
+            throw e;
+        }
+    }
+
+    /** A copy of the placeholder for the target brand: an attribute placeholder is bound to the target's key or to none. */
+    private TemplatePlaceholder rebound(String targetWorkspaceId, TemplatePlaceholder p) {
+        TemplatePlaceholder c = new TemplatePlaceholder();
+        c.setName(p.getName());
+        c.setKind(p.getKind());
+        c.setAttributeKey(p.getAttributeKey());
+        c.setLabel(p.getLabel());
+        c.setExample(p.getExample());
+        c.setRequired(p.isRequired());
+        c.setFallback(p.getFallback());
+        if (p.getKind() == PlaceholderKind.CONTACT_ATTRIBUTE) {
+            c.setAttributeId(attributes.findByWorkspaceIdAndKey(targetWorkspaceId, p.getAttributeKey())
+                    .map(ContactAttribute::getId).orElse(null));
+        }
+        return c;
     }
 
     public TemplateView archive(AuthenticatedUser me, String workspaceId, String id) {
@@ -257,7 +339,8 @@ public class TemplateService {
             if (ref.kind() == PlaceholderKind.CONTACT_ATTRIBUTE) {
                 p.setAttributeKey(ref.attributeKey());
                 p.setAttributeId(bind(workspaceId, ref, previous));
-                if (p.getAttributeId() == null) {
+                if (p.getAttributeId() == null && previous.stream().noneMatch(o -> o.getName().equals(ref.name())
+                        && o.getKind() == PlaceholderKind.CONTACT_ATTRIBUTE)) {
                     errors.put(field, "Unknown contact attribute \"" + ref.attributeKey() + "\"");
                 }
             }
