@@ -25,10 +25,20 @@ public class ContactController {
 
     public record UpdateRequest(String name, Map<String, String> attributes) {}
 
-    private final ContactService service;
+    public record SearchRequest(ContactFilterSpec filter, String filterId, ContactSort sort, Integer page) {}
 
-    public ContactController(ContactService service) {
+    private final ContactService service;
+    private final ContactSearchService search;
+
+    public ContactController(ContactService service, ContactSearchService search) {
         this.service = service;
+        this.search = search;
+    }
+
+    @PostMapping("/search")
+    @PreAuthorize("@access.has(#workspaceId, 'contact:view')")
+    public ContactSearchService.Page search(@PathVariable String workspaceId, @RequestBody SearchRequest req) {
+        return search.search(workspaceId, req.filter(), req.filterId(), req.sort(), req.page());
     }
 
     @GetMapping("/{id}")
