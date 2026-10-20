@@ -2,6 +2,10 @@ server:
   port: 8080
 
 spring:
+  mvc:
+    async:
+      # CSV exports stream under the async timeout; the default (~30 s) cuts off big downloads to slow clients.
+      request-timeout: 15m
   servlet:
     multipart:
       max-file-size: 5MB

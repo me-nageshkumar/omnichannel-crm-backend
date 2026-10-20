@@ -265,7 +265,8 @@ A brand's people, in `contacts` (one per brand and WhatsApp person; everything i
   named `contacts-<brand>-<yyyyMMdd>.csv`: `phone, name, number_hidden, source, labels` (names joined by
   `;`), one column per attribute, `created, last_message`. More than 100 000 rows (property
   `omnichannel.contacts.export-limit`) answers 400 `TOO_MANY_ROWS`. Cells that start with `= + - @` get a
-  leading apostrophe so spreadsheets do not run them.
+  leading apostrophe so spreadsheets do not run them. The stream runs under
+  `spring.mvc.async.request-timeout`, set to `15m` so large downloads to slow clients are not cut off.
 - **Bulk:** `POST .../contacts/count {selection}` and `.../contacts/bulk {selection, action,
   labelIds?, attributeId?, value?}` with `selection` exactly one of `ids` (at most 1000), `filter`,
   `filterId`; actions `ADD_LABELS`, `REMOVE_LABELS`, `SET_ATTRIBUTE`, `CLEAR_ATTRIBUTE`, `DELETE` (also
