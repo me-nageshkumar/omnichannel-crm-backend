@@ -27,8 +27,9 @@ public class InboxPushListener {
             if (broker.subscribers(chat.getPhoneNumberId()) == 0) {
                 return;
             }
+            // no chat push here: every publisher follows MessageUpserted with ChatChanged, or (the media cache) leaves
+            // the chat summary as it was
             broker.pushMessage(chat.getPhoneNumberId(), chat, views.message(event.message()));
-            broker.push(chat.getPhoneNumberId(), chat, views.chat(chat));
         } catch (RuntimeException e) {
             log.warn("Could not push message {} to the inbox stream", event.message().getId(), e);
         }

@@ -8,12 +8,16 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
+import me.nageshk.omnichannel.events.IngestionFailedException;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.rpc.RpcDispatcher;
 import me.nageshk.omnichannel.rpc.RpcException;
 import me.nageshk.omnichannel.scripts.ScriptCatalog;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -35,6 +39,9 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     public static final int CLOSE_REPLACED = 4409;
     public static final int CLOSE_WRONG_NUMBER = 4412;
     /** The largest frame an authenticated device may send: 16 MB of media as base64, plus the envelope. */
+    /** After this many failed attempts to store one event it is acknowledged anyway. */
+    static final int MAX_INGEST_ATTEMPTS = 3;
+    private static final int MAX_TRACKED_FAILURES = 1000;
     static final int MAX_DEVICE_FRAME = 24 * 1024 * 1024;
 
     private static final Logger log = LoggerFactory.getLogger(BridgeWebSocketHandler.class);
@@ -49,6 +56,14 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     private final OmnichannelProperties props;
     private final ScriptCatalog scripts;
     private final EventSequenceTracker sequences;
+    /** Failed storage attempts per device key and seq; bounded, the oldest entries go first. */
+    private final Map<String, Integer> ingestFailures = Collections.synchronizedMap(
+            new LinkedHashMap<>(16, 0.75f, false) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Integer> eldest) {
+                    return size() > MAX_TRACKED_FAILURES;
+                }
+            });
     private final ConcurrentHashMap<String, ScheduledFuture<?>> authTimers = new ConcurrentHashMap<>();
 
     public BridgeWebSocketHandler(
@@ -212,6 +227,11 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             log.debug("[{}] dropping {} before the number is confirmed", device.phoneNumberId(), frame.name());
             return;
         }
+        if (!device.isOpen()) {
+            // closing after a storage failure: frames still in flight must not be acked, the outbox replays them
+            log.debug("[{}] ignoring {} seq={} on a closing connection", device.phoneNumberId(), frame.name(), seq);
+            return;
+        }
         if (seq != null && sequences.isDuplicate(sequenceKey(device), seq)) {
             log.debug("[{}] duplicate event seq={} ({}), re-acking", device.phoneNumberId(), seq, frame.name());
             sendAck(device, seq);
@@ -232,12 +252,47 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             default -> { /* no state change */ }
         }
         DevicePrincipal p = device.principal();
-        publisher.publishEvent(new WhatsAppEvent(this, p.phoneNumberId(), p.workspaceId(), p.customerId(),
-                frame.name(), payload, seq, frame.ts()));
+        try {
+            publisher.publishEvent(new WhatsAppEvent(this, p.phoneNumberId(), p.workspaceId(), p.customerId(),
+                    frame.name(), payload, seq, frame.ts()));
+        } catch (IngestionFailedException e) {
+            if (!ingestionFailed(device, frame, e)) return;
+        }
         if (seq != null) {
+            ingestFailures.remove(failureKey(device, seq));
             sequences.record(sequenceKey(device), seq);
             sendAck(device, seq);
         }
+    }
+
+    /**
+     * The database failed while storing a durable event. The event is not recorded or acked, and the connection is
+     * closed: the extension acks cumulatively and resends only after reconnecting, so a later ack on this socket
+     * would make it drop the failed event. After {@value #MAX_INGEST_ATTEMPTS} failures of the same event it is
+     * acked anyway (and logged at ERROR) so one poisoned event cannot block the outbox forever.
+     *
+     * @return true if the event should be acked now
+     */
+    private boolean ingestionFailed(DeviceSession device, Envelope frame, IngestionFailedException e) {
+        Long seq = frame.seq();
+        if (seq == null) {
+            log.warn("[{}] {} could not be stored: {}", device.phoneNumberId(), frame.name(), e.getMessage());
+            return false;
+        }
+        int failures = ingestFailures.merge(failureKey(device, seq), 1, Integer::sum);
+        if (failures >= MAX_INGEST_ATTEMPTS) {
+            log.error("[{}] giving up on {} seq={} message={} after {} failed attempts, acking it: {}",
+                    device.phoneNumberId(), frame.name(), seq, e.waMessageId(), failures, e.getMessage());
+            return true;
+        }
+        log.warn("[{}] {} seq={} message={} could not be stored (attempt {}), closing so the outbox replays it: {}",
+                device.phoneNumberId(), frame.name(), seq, e.waMessageId(), failures, e.getMessage());
+        device.close(CloseStatus.SERVER_ERROR.getCode(), "could not store event");
+        return false;
+    }
+
+    private static String failureKey(DeviceSession device, long seq) {
+        return sequenceKey(device) + ":" + seq;
     }
 
     /** Sequence numbers belong to one device key: a new key's extension may start again at 1. */

@@ -31,6 +31,8 @@ public class InboxQueryService {
 
     /** Contacts a search term may match before the chat list is cut off. */
     static final int MAX_SEARCH_CONTACTS = 200;
+    /** The longest search text used; the rest is ignored. */
+    static final int MAX_SEARCH_LENGTH = 100;
 
     private final MongoTemplate mongo;
     private final WaWebChatRepository chats;
@@ -68,7 +70,7 @@ public class InboxQueryService {
         if (status != null) all.add(where("status").is(status));
         if (unreadOnly) all.add(where("unreadCount").gt(0));
         if (q != null && !q.isBlank()) {
-            List<String> contactIds = matchingContacts(workspaceId, q.strip());
+            List<String> contactIds = matchingContacts(workspaceId, cut(q.strip()));
             if (contactIds.isEmpty()) return new ChatsPage(List.of(), false);
             all.add(where("contactId").in(contactIds));
         }
@@ -176,6 +178,12 @@ public class InboxQueryService {
         if (updated == null) throw new NotFoundException("chat not found");
         publisher.publishEvent(new InboxEvents.ChatChanged(updated));
         return updated;
+    }
+
+    /** A longer search text only costs the regex engine time; no name or phone is that long a prefix anyway. */
+    private static String cut(String q) {
+        return q.codePointCount(0, q.length()) <= MAX_SEARCH_LENGTH ? q
+                : q.substring(0, q.offsetByCodePoints(0, MAX_SEARCH_LENGTH));
     }
 
     private List<String> matchingContacts(String workspaceId, String q) {

@@ -138,6 +138,15 @@ class InboxApiIT extends InboxApiTestBase {
     }
 
     @Test
+    void searchTextIsCutAtOneHundredCharacters() throws Exception {
+        chat("a".repeat(100) + "b", "914", 1);
+
+        assertThat(names(json(send(get(chatsUrl()).param("q", "a".repeat(100) + "z".repeat(50)), managerToken, null))))
+                .containsExactly("a".repeat(100) + "b");
+        assertThat(names(json(send(get(chatsUrl()).param("q", "a".repeat(99) + "z"), managerToken, null)))).isEmpty();
+    }
+
+    @Test
     void closedFilterAndUnreadFilter() throws Exception {
         WaWebChat closed = chat("Closed", "911", 1);
         closed.setStatus(ChatStatus.CLOSED);

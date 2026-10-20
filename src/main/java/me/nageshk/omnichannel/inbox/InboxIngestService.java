@@ -9,16 +9,19 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import me.nageshk.omnichannel.contact.Contact;
 import me.nageshk.omnichannel.contact.ContactService;
+import me.nageshk.omnichannel.events.IngestionFailedException;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 
 /**
- * Persists the chats and messages seen by a WhatsApp Web number (contact, chat, message, chat summary, in that
- * order) and publishes {@link InboxEvents}. A duplicate-key or optimistic-lock failure is retried once.
+ * Persists the chats and messages seen by a WhatsApp Web number (contact, chat row, then the chat summary, then the
+ * message row, in that order) and publishes {@link InboxEvents}. A duplicate-key or optimistic-lock failure is
+ * retried once; a database failure that still prevents persisting throws {@link IngestionFailedException}.
  */
 @Service
 public class InboxIngestService {
@@ -62,7 +65,11 @@ public class InboxIngestService {
         String waMessageId = MessagePayloads.waMessageId(p);
         if (waMessageId.isEmpty()) return Optional.empty();
         Progress progress = new Progress();
-        return publish(retrying(() -> storeMessage(event, p, remote, lid, waMessageId, progress)));
+        try {
+            return publish(retrying(() -> storeMessage(event, p, remote, lid, waMessageId, progress)));
+        } catch (DataAccessException e) {
+            throw new IngestionFailedException(event.name(), waMessageId, e);
+        }
     }
 
     /** A {@code message_ack} event; an ack for a message we never stored is dropped. */
@@ -71,7 +78,11 @@ public class InboxIngestService {
         if (p == null || !p.isObject()) return Optional.empty();
         String waMessageId = MessagePayloads.waMessageId(p.path("message"));
         if (waMessageId.isEmpty()) return Optional.empty();
-        return publish(retrying(() -> storeAck(event, p, waMessageId)));
+        try {
+            return publish(retrying(() -> storeAck(event, p, waMessageId)));
+        } catch (DataAccessException e) {
+            throw new IngestionFailedException(event.name(), waMessageId, e);
+        }
     }
 
     /** What earlier attempts of one ingestion already persisted, so a retry still reports it. */

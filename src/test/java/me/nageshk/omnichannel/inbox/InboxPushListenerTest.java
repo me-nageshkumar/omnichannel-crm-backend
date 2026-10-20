@@ -2,8 +2,8 @@ package me.nageshk.omnichannel.inbox;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -13,7 +13,6 @@ import me.nageshk.omnichannel.inbox.InboxEvents.ChatChanged;
 import me.nageshk.omnichannel.inbox.InboxEvents.MessageUpserted;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
 
 class InboxPushListenerTest {
 
@@ -43,12 +42,11 @@ class InboxPushListenerTest {
     }
 
     @Test
-    void messageUpsertedPushesMessageBeforeChat() {
+    void messageUpsertedPushesOnlyTheMessageBecauseChatChangedFollowsIt() {
         listener.on(new MessageUpserted(chat, message, true));
 
-        InOrder order = inOrder(broker);
-        order.verify(broker).pushMessage(PN, chat, messageView);
-        order.verify(broker).push(PN, chat, chatView);
+        verify(broker).pushMessage(PN, chat, messageView);
+        verify(broker, never()).push(any(), any(), any());
     }
 
     @Test

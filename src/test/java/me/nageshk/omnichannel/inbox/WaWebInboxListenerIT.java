@@ -902,6 +902,21 @@ class WaWebInboxListenerIT {
     }
 
     @Test
+    void databaseFailureReachesThePublisherSoTheEventIsNotAcked() {
+        ContactService failing = mock(ContactService.class);
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("db down")).when(failing)
+                .upsertFromChat(any(), any(), any(), any(), any(), any());
+        WaWebInboxListener listener = new WaWebInboxListener(
+                new InboxIngestService(failing, chats, messages, actions, publisher, clock));
+        WhatsAppEvent event = new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
+                message("919812345678@c.us", false, T), null, null);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> listener.on(event))
+                .isInstanceOf(me.nageshk.omnichannel.events.IngestionFailedException.class)
+                .hasRootCauseInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
+    }
+
+    @Test
     void failureInAnEventSubscriberDoesNotEscape() {
         ApplicationEventPublisher boom = mock(ApplicationEventPublisher.class);
         doThrow(new IllegalStateException("subscriber failed")).when(boom).publishEvent(any(Object.class));

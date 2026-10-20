@@ -11,6 +11,10 @@ import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserAdminService;
 import me.nageshk.omnichannel.user.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 /** Applies a number's routing setting to a new or reopened chat and records the {@code ROUTED} action. */
@@ -18,7 +22,7 @@ import org.springframework.stereotype.Service;
 public class ChatRoutingService {
 
     private final InboxSettingService settings;
-    private final InboxSettingRepository settingRepo;
+    private final MongoTemplate mongo;
     private final TeamRepository teams;
     private final UserRepository users;
     private final UserAdminService userAdmin;
@@ -27,11 +31,11 @@ public class ChatRoutingService {
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
 
-    public ChatRoutingService(InboxSettingService settings, InboxSettingRepository settingRepo, TeamRepository teams,
+    public ChatRoutingService(InboxSettingService settings, MongoTemplate mongo, TeamRepository teams,
             UserRepository users, UserAdminService userAdmin, WaWebChatRepository chats,
             WaWebChatActionRepository actions, ApplicationEventPublisher publisher, Clock clock) {
         this.settings = settings;
-        this.settingRepo = settingRepo;
+        this.mongo = mongo;
         this.teams = teams;
         this.users = users;
         this.userAdmin = userAdmin;
@@ -59,16 +63,21 @@ public class ChatRoutingService {
             case USER -> {
                 User user = routing.userId() == null ? null : users.findById(routing.userId()).orElse(null);
                 if (user == null) return chat;
-                return routed(chat, user, null);
+                if (reachable(chat).get(user.getId()) != null && eligible(user, chat.getWorkspaceId())) {
+                    return routed(chat, user, null);
+                }
+                // the configured user can no longer take chats: the team queue if one is set, else nobody
+                Team team = team(chat, routing.teamId());
+                return team == null ? chat : routed(chat, null, team);
             }
             case ROUND_ROBIN -> {
                 Team team = team(chat, routing.teamId());
                 if (team == null) return chat;
                 User next = nextMember(chat, setting, team);
                 if (next != null) {
-                    setting.setCustomerId(chat.getCustomerId());
-                    setting.setRoundRobinCursor(next.getId());
-                    settingRepo.save(setting);
+                    // only the cursor: saving the whole setting could revert an edit made since it was read
+                    mongo.updateFirst(new Query(Criteria.where("phoneNumberId").is(chat.getPhoneNumberId())),
+                            new Update().set("roundRobinCursor", next.getId()), InboxSetting.class);
                 }
                 return routed(chat, next, team);
             }
@@ -86,14 +95,19 @@ public class ChatRoutingService {
     private User nextMember(WaWebChat chat, InboxSetting setting, Team team) {
         List<String> members = team.getMemberIds();
         if (members.isEmpty()) return null;
-        Map<String, User> reachable = userAdmin.withAccessTo(chat.getCustomerId(), chat.getWorkspaceId()).stream()
-                .collect(Collectors.toMap(User::getId, Function.identity()));
+        Map<String, User> reachable = reachable(chat);
         int start = members.indexOf(setting.getRoundRobinCursor()) + 1;
         for (int i = 0; i < members.size(); i++) {
             User u = reachable.get(members.get((start + i) % members.size()));
             if (u != null && eligible(u, chat.getWorkspaceId())) return u;
         }
         return null;
+    }
+
+    /** The users with access to the chat's workspace, by id. */
+    private Map<String, User> reachable(WaWebChat chat) {
+        return userAdmin.withAccessTo(chat.getCustomerId(), chat.getWorkspaceId()).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
     }
 
     private static boolean eligible(User u, String workspaceId) {

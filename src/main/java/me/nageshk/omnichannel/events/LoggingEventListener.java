@@ -6,7 +6,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
-/** PoC consumer: logs every WhatsApp event. Later consumers (DB, webhooks) subscribe the same way. */
+/**
+ * Logs every WhatsApp event: a one-line summary at INFO without message content, and the bodies and payloads at
+ * DEBUG only, so customers' conversations stay out of the production logs.
+ */
 @Component
 public class LoggingEventListener {
 
@@ -47,16 +50,19 @@ public class LoggingEventListener {
     public void on(WhatsAppEvent event) {
         JsonNode p = event.payload();
         switch (event.name()) {
-            case "message", "message_create" -> log.info(
-                    "[{}] {} id={} chat={} from={} to={} type={} body={}{}",
-                    event.phoneNumberId(), event.name(),
-                    messageId(p.path("id")),
-                    wid(p.path("id").path("remote")),
-                    wid(p.path("from")),
-                    wid(p.path("to")),
-                    p.path("type").asString(),
-                    p.path("body").asString(),
-                    origin(event));
+            case "message", "message_create" -> {
+                log.info("[{}] {} id={} chat={} type={}{}",
+                        event.phoneNumberId(), event.name(),
+                        messageId(p.path("id")),
+                        wid(p.path("id").path("remote")),
+                        p.path("type").asString(),
+                        origin(event));
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] {} id={} from={} to={} body={}", event.phoneNumberId(), event.name(),
+                            messageId(p.path("id")), wid(p.path("from")), wid(p.path("to")),
+                            p.path("body").asString());
+                }
+            }
             case "message_ack" -> log.info(
                     "[{}] message_ack id={} ack={}{}",
                     event.phoneNumberId(),
@@ -69,7 +75,10 @@ public class LoggingEventListener {
                     wid(p.path("wid")),
                     p.path("pushname").asString(),
                     p.path("waVersion").asString());
-            default -> log.info("[{}] {} {}", event.phoneNumberId(), event.name(), p);
+            default -> {
+                log.info("[{}] {}{}", event.phoneNumberId(), event.name(), origin(event));
+                log.debug("[{}] {} payload={}", event.phoneNumberId(), event.name(), p);
+            }
         }
     }
 }

@@ -68,6 +68,8 @@ class ChatRoutingIT {
     @Autowired MongoTemplate mongo;
     @Autowired ObjectMapper mapper;
     @Autowired ActionRecorder recorder;
+    @Autowired me.nageshk.omnichannel.user.UserAdminService userAdmin;
+    @Autowired java.time.Clock clock;
 
     Customer acme;
     Workspace brand;
@@ -177,6 +179,90 @@ class ChatRoutingIT {
             assertThat(x.getToUserId()).isEqualTo(a.getId());
             assertThat(x.getToUserName()).isEqualTo("Test a");
         });
+    }
+
+    @Test
+    void userModeWithADisabledUserLeavesTheChatUnassigned() {
+        User a = agent("a");
+        configure(RoutingMode.USER, null, a.getId());
+        a.setActive(false);
+        users.save(a);
+
+        message("919911111111", false, T);
+
+        WaWebChat c = chat("919911111111");
+        assertThat(c.getAssignedUserId()).isNull();
+        assertThat(c.getAssignedTeamId()).isNull();
+        assertThat(actions.findAll()).isEmpty();
+    }
+
+    @Test
+    void userModeWithABrandDisabledOrUnreachableUserLeavesTheChatUnassigned() {
+        User blocked = agent("blocked");
+        User away = agent("away");
+        configure(RoutingMode.USER, null, blocked.getId());
+        blocked.setBrandDisables(List.of(new me.nageshk.omnichannel.user.BrandDisable(brand.getId(),
+                new me.nageshk.omnichannel.enablement.Disabled("x",
+                        me.nageshk.omnichannel.enablement.EnableLevel.COMPANY, java.time.Instant.now()))));
+        users.save(blocked);
+        message("919911111111", false, T);
+
+        configure(RoutingMode.USER, null, away.getId());
+        away.setWorkspaceRoles(List.of(new WorkspaceRole(other.getId(), testUsers.roleId(BuiltInRoles.AGENT))));
+        users.save(away);
+        message("919922222222", false, T + 1);
+
+        assertThat(chat("919911111111").getAssignedUserId()).isNull();
+        assertThat(chat("919922222222").getAssignedUserId()).isNull();
+        assertThat(actions.findAll()).isEmpty();
+    }
+
+    @Test
+    void userModeWithAnIneligibleUserQueuesOnTheConfiguredTeamOnly() {
+        User a = agent("a");
+        Team support = team("Support", a);
+        a.setActive(false);
+        users.save(a);
+        InboxSetting setting = settings.get(brand.getId(), pn);
+        setting.setCustomerId(acme.getId());
+        setting.setWorkspaceId(brand.getId());
+        setting.setRouting(new InboxSetting.Routing(RoutingMode.USER, support.getId(), a.getId()));
+        settingRepo.save(setting);
+
+        message("919911111111", false, T);
+
+        WaWebChat c = chat("919911111111");
+        assertThat(c.getAssignedUserId()).isNull();
+        assertThat(c.getAssignedTeamId()).isEqualTo(support.getId());
+    }
+
+    @Test
+    void roundRobinCursorWriteLeavesTheRestOfTheSettingAlone() {
+        User a = agent("a");
+        Team support = team("Support", a);
+        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
+        // the routing read a copy of the setting, then an admin saved a different one before the cursor moved
+        InboxSetting stale = settingRepo.findByPhoneNumberId(pn).orElseThrow();
+        InboxSettingService staleSettings = org.mockito.Mockito.mock(InboxSettingService.class);
+        org.mockito.Mockito.when(staleSettings.get(brand.getId(), pn)).thenReturn(stale);
+        settings.put(brand.getId(), pn, new InboxSettingService.SettingsRequest(
+                new InboxSetting.Routing(RoutingMode.ROUND_ROBIN, support.getId(), null), false, true));
+        ChatRoutingService routing = new ChatRoutingService(staleSettings, mongo, teams, users, userAdmin, chats,
+                actions, publisher, clock);
+        WaWebChat fresh = new WaWebChat();
+        fresh.setCustomerId(acme.getId());
+        fresh.setWorkspaceId(brand.getId());
+        fresh.setPhoneNumberId(pn);
+        fresh.setRemoteId("919911111111@c.us");
+        fresh.setStatus(ChatStatus.OPEN);
+        fresh = chats.save(fresh);
+
+        routing.route(fresh);
+
+        InboxSetting now = settingRepo.findByPhoneNumberId(pn).orElseThrow();
+        assertThat(now.getRoundRobinCursor()).isEqualTo(a.getId());
+        assertThat(now.isClaimOnReply()).isFalse();
+        assertThat(now.isKeepAssignmentOnClose()).isTrue();
     }
 
     @Test

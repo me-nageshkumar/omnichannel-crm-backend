@@ -37,6 +37,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.socket.CloseStatus;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.dao.DataAccessResourceFailureException;
+import me.nageshk.omnichannel.inbox.WaWebChat;
+import me.nageshk.omnichannel.contact.ContactService;
+import me.nageshk.omnichannel.inbox.WaWebMessage;
+import me.nageshk.omnichannel.inbox.WaWebMessageRepository;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
 
 @AutoConfigureTestRestTemplate
 @SpringBootTest(
@@ -57,6 +68,9 @@ class BridgeWebSocketIT {
         }
     }
 
+    @MockitoSpyBean ContactService contactService;
+    @Autowired WaWebMessageRepository messageRepository;
+    @Autowired MongoTemplate mongo;
     @LocalServerPort int port;
     @Autowired TestUsers testUsers;
     @Autowired TestDevices testDevices;
@@ -312,6 +326,81 @@ class BridgeWebSocketIT {
             assertThat(device.next().seq()).isEqualTo(1L);
             assertThat(capture.events.poll(500, TimeUnit.MILLISECONDS)).isNull();
         }
+    }
+
+    private ObjectNode inbound(String id, long epochSeconds) {
+        ObjectNode p = mapper.createObjectNode();
+        p.putObject("id").put("fromMe", false).put("remote", "919911111111@c.us").put("id", id);
+        p.put("fromMe", false).put("timestamp", epochSeconds).put("body", "hello");
+        return p;
+    }
+
+    private void clearInbox() {
+        mongo.remove(new Query(), WaWebChat.class);
+        mongo.remove(new Query(), WaWebMessage.class);
+    }
+
+    @Test
+    void eventThatCouldNotBeStoredIsNotAckedAndIsStoredOnceWhenTheOutboxReplaysIt() throws Exception {
+        clearInbox();
+        doThrow(new DataAccessResourceFailureException("mongo blip")).doCallRealMethod().when(contactService)
+                .upsertFromChat(any(), any(), any(), any(), any(), any());
+        ObjectNode payload = inbound("ABC1", 1_700_000_000L);
+
+        try (FakeDevice device = confirmed()) {
+            device.send(Envelope.durableEvent("message_create", payload, 1, 1_700_000_000_000L));
+            // no ack: the extension keeps the event; the socket is closed so it reconnects and replays in order
+            assertThat(device.awaitClose().getCode()).isEqualTo(CloseStatus.SERVER_ERROR.getCode());
+        }
+        assertThat(messageRepository.count()).isZero();
+
+        try (FakeDevice device = confirmed()) {
+            device.send(Envelope.durableEvent("message_create", payload, 1, 1_700_000_000_000L));
+            Envelope ack = device.next();
+            assertThat(ack.type()).isEqualTo(Envelope.EVENT_ACK);
+            assertThat(ack.seq()).isEqualTo(1L);
+            device.send(Envelope.durableEvent("message_create", payload, 1, 1_700_000_000_000L));
+            assertThat(device.next().seq()).isEqualTo(1L);
+        }
+        assertThat(messageRepository.count()).isEqualTo(1);
+        clearInbox();
+    }
+
+    @Test
+    void eventsSentAfterAFailedOneAreNotAckedEitherBecauseAcksAreCumulative() throws Exception {
+        clearInbox();
+        doThrow(new DataAccessResourceFailureException("mongo blip")).doCallRealMethod().when(contactService)
+                .upsertFromChat(any(), any(), any(), any(), any(), any());
+
+        try (FakeDevice device = confirmed()) {
+            device.send(Envelope.durableEvent("message_create", inbound("ABC1", 1_700_000_000L), 1, 1L));
+            device.send(Envelope.durableEvent("message_create", inbound("ABC2", 1_700_000_001L), 2, 2L));
+            assertThat(device.awaitClose().getCode()).isEqualTo(1011);
+            assertThat(device.poll(java.time.Duration.ofMillis(200))).isEmpty();
+        }
+        assertThat(messageRepository.count()).isZero();
+    }
+
+    @Test
+    void eventThatKeepsFailingIsAckedAfterThreeAttemptsSoItCannotLoopForever() throws Exception {
+        clearInbox();
+        doThrow(new DataAccessResourceFailureException("mongo down")).when(contactService)
+                .upsertFromChat(any(), any(), any(), any(), any(), any());
+        ObjectNode payload = inbound("ABC2", 1_700_000_000L);
+
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try (FakeDevice device = confirmed()) {
+                device.send(Envelope.durableEvent("message_create", payload, 4, 1_700_000_000_000L));
+                assertThat(device.awaitClose().getCode()).as("attempt %d", attempt).isEqualTo(1011);
+            }
+        }
+        try (FakeDevice device = confirmed()) {
+            device.send(Envelope.durableEvent("message_create", payload, 4, 1_700_000_000_000L));
+            Envelope ack = device.next();
+            assertThat(ack.type()).isEqualTo(Envelope.EVENT_ACK);
+            assertThat(ack.seq()).isEqualTo(4L);
+        }
+        assertThat(messageRepository.count()).isZero();
     }
 
     @Test

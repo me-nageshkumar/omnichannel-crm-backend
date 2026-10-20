@@ -1,9 +1,12 @@
 package me.nageshk.omnichannel.inbox;
 
 /**
- * Spring events published by {@link InboxIngestService}. Routing subscribes to {@code ChatCreated} and
- * {@code ChatReopened}; the live streams subscribe to {@code MessageUpserted}, {@code ChatChanged} and
- * {@code ActionRecorded}. The assignment service publishes {@code ChatChanged} and {@code ActionRecorded} too.
+ * Spring events of the inbox. {@link InboxIngestService} publishes all five; routing publishes {@code ActionRecorded};
+ * assignment publishes {@code ChatChanged} and {@code ActionRecorded}; a console send publishes
+ * {@code MessageUpserted} then {@code ChatChanged}; the media cache publishes {@code MessageUpserted} alone; marking a
+ * chat read publishes {@code ChatChanged}. Routing subscribes to {@code ChatCreated} and {@code ChatReopened}; the
+ * live streams subscribe to {@code MessageUpserted} (the message only), {@code ChatChanged} (the chat row, once per
+ * change) and {@code ActionRecorded}.
  */
 public final class InboxEvents {
 
