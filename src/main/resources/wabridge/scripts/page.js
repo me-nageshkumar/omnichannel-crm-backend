@@ -1428,8 +1428,11 @@
   });
   var CloseCodes = Object.freeze({
     PING_TIMEOUT: 4e3,
+    DISABLED: 4403,
     UNAUTHORIZED: 4401,
-    REPLACED: 4409
+    REPLACED: 4409,
+    REVOKED: 4410,
+    WRONG_NUMBER: 4412
   });
   var DURABLE_EVENTS = /* @__PURE__ */ new Set([
     import_Constants.Events.MESSAGE_RECEIVED,
@@ -1659,7 +1662,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "617cc279ad17" : "dev";
+  var BUILD = true ? "e4f8d0d723de" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
@@ -1676,6 +1679,8 @@
     return {
       ...window.require("WAWebConnModel").Conn.serialize(),
       wid: me.getMaybeMePnUser() || me.getMaybeMeLidUser(),
+      // the phone-number id, so the server can confirm the number even when wid is a privacy id
+      pnWid: me.getMaybeMePnUser()?._serialized ?? null,
       waVersion: window.Debug.VERSION
     };
   }
