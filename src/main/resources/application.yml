@@ -26,6 +26,9 @@ omnichannel:
     mobile-number: ${OMNICHANNEL_SUPER_ADMIN_MOBILE:}
   two-factor:
     issuer: Omnichannel CRM
+  # Demo customer, brands, people and the number 919928088743. Off unless set to true.
+  seed:
+    demo: ${OMNICHANNEL_SEED_DEMO:false}
   ws:
     allowed-origins: "chrome-extension://*"
   rpc:

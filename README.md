@@ -23,21 +23,20 @@ This repo continues the history of `whatsapp-backend`, which it replaces.
 ## Run
 
 Needs MongoDB (default `mongodb://localhost:27017/omnichannel_crm`, override with
-`OMNICHANNEL_MONGODB_URI`). Users live in the `users` collection; two are seeded on first start
+`OMNICHANNEL_MONGODB_URI`). Users live in the `users` collection; the Super Admin is seeded on first start
 and never overwritten afterwards (roles are seeded first, see [Roles and access](#roles-and-access)):
 
 | User | Variables | Notes |
 |---|---|---|
 | Super admin (role `SUPER_ADMIN`) | `OMNICHANNEL_SUPER_ADMIN_PASSWORD` (bcrypt hash, required until one exists), optional `_USERNAME` (default `nageshk`), `_NAME`, `_EMAIL`, `_MOBILE` | Seeded with two-factor off; enable it later from the console Profile page or `/api/users/me/two-factor/*` |
-| Device user (role `WHATSAPP_DEVICE`) | `OMNICHANNEL_DEVICE_USER_USERNAME`, `OMNICHANNEL_DEVICE_USER_PASSWORD` (bcrypt hash) | For the Chrome extension; two-factor off; skipped when the username is blank |
+| Demo data | `OMNICHANNEL_SEED_DEMO=true` | Off by default. Adds customer "Demo Retail" (owner `demo-admin`), brands "Demo Fashion" and "Demo Electronics", `demo-manager` / `demo-lead` / `demo-agent` in Demo Fashion, and the number 919928088743 there. Temporary passwords are logged once at WARN and must be changed at first login. Skipped when the customer exists |
 
 ```bash
 # bcrypt hash for a password (no {bcrypt} prefix)
 htpasswd -bnBC 10 "" 'your-password' | tr -d ':\n'
 
 export OMNICHANNEL_SUPER_ADMIN_PASSWORD='$2a$10$...'
-export OMNICHANNEL_DEVICE_USER_USERNAME=wabridge
-export OMNICHANNEL_DEVICE_USER_PASSWORD='$2a$10$...'
+export OMNICHANNEL_SEED_DEMO=true   # optional
 ./mvnw spring-boot:run
 ```
 
@@ -105,13 +104,13 @@ curl -s -X POST localhost:8080/api/auth/logout -H "Authorization: Bearer $TOKEN"
 Every logged-in user can use the console; what they see follows their authorities. The model:
 
 - **Tenancy:** customer (company) -> workspaces (brands) -> teams. Platform users (Super Admin,
-  Account Managers, the device user) belong to no customer; everyone else belongs to exactly one.
+  Account Managers) belong to no customer; everyone else belongs to exactly one.
 - **Authorities** are code-defined permissions named `thing:action` (for example `user:manage`), each
   with a level: PLATFORM, COMPANY or BRAND. `GET /api/authorities` lists them.
 - **Roles** are named bundles of authorities stored in `roles`. A role may hold authorities of its own
   level or below (PLATFORM: platform only; COMPANY: company and brand; BRAND: brand only). Built-in:
   `SUPER_ADMIN` (every platform authority, cannot be edited or given away), `ACCOUNT_MANAGER`,
-  `WHATSAPP_DEVICE`, `CUSTOMER_ADMIN`, `WORKSPACE_MANAGER`, `TEAM_LEAD`, `AGENT`. Only the Super Admin
+  `CUSTOMER_ADMIN`, `WORKSPACE_MANAGER`, `TEAM_LEAD`, `AGENT`. Only the Super Admin
   edits roles or creates custom ones; every change is recorded in `role_changes`. Edits apply on the
   user's next request (authorities are not in the JWT).
 - **Per-workspace access:** a user has an optional company role (applies in every workspace of the
@@ -124,14 +123,31 @@ Every logged-in user can use the console; what they see follows their authoritie
 - **Isolation:** a customer, workspace, team or user the caller may not see answers 404 `NOT_FOUND`;
   one they see but may not change answers 403 `FORBIDDEN`. Super Admin and Account Managers have no
   access to brand pages. `IsolationIT` pins this for every brand endpoint.
-- **`whatsapp:bridge`:** the WhatsApp REST endpoints (`/api/status`, `/api/messages`, `/api/events`,
-  `/api/scripts`, `/api/rpc`) and the WebSocket `auth` frame require this authority, held by
-  `WHATSAPP_DEVICE` and the Super Admin. A Customer Admin token is refused.
+- **Extension:** connects with a device key, never a user token (see [Phone numbers](#phone-numbers)).
+  The test endpoints under `/api/phone-numbers/{id}/bridge/` are Super Admin only.
 - **Startup:** the built-in roles are seeded (a catalogue authority the system has never seen is added
   to the built-in roles that default to it; authorities already seen are never re-added, so removals
-  stick). Then users stored with the old `role` field are migrated, idempotently: `SUPER_ADMIN` and
-  `USER` map to the built-in `SUPER_ADMIN` and `WHATSAPP_DEVICE` roles, any other value stops startup
-  with a clear message, and the old field is removed.
+  stick). Then the old shared extension login is removed (`DeviceAccountCleanup`: users of the
+  `WHATSAPP_DEVICE` role or legacy `role: USER`, the role, and the `whatsapp:bridge` authority). Then
+  users stored with the old `role` field are migrated, idempotently: `SUPER_ADMIN` maps to the built-in
+  role, any other value stops startup with a clear message, and the old field is removed.
+
+### Enable / disable
+
+Numbers, brands, customers, logins and a person's access to one brand are enabled or disabled
+(`POST .../disable` and `.../enable`). Each disable records `{by, level, at}` as `disabled` on the
+thing (`null` when enabled); every change is kept in `enablement_changes`. The level is that of the
+role the actor holds the authority through: platform staff act at PLATFORM, a Customer Admin at
+COMPANY (even with brand authorities), a Workspace Manager at BRAND. **Anyone with the authority may
+disable; enabling needs a level at least that of the stored disable**, else 403
+`DISABLED_AT_HIGHER_LEVEL` with `level`. A lower disable never overwrites a higher one.
+
+- A disabled customer: its users' tokens are refused until it is enabled; its numbers disconnect.
+- A disabled brand: BRAND-role holders lose it (404); COMPANY-role holders still see it, with no
+  authorities there except enabling it; its numbers disconnect.
+- A disabled login is signed out everywhere (token version bump).
+- A disabled brand access (`user:enable`, by a Workspace Manager or Customer Admin) removes that one
+  brand for the person; it survives removing and re-adding them to the brand.
 - Usernames are stored lower-case and unique across the platform. Temporary and new passwords need at
   least 10 characters; a temporary password is shown only in the create or reset response.
 
@@ -158,46 +174,81 @@ Authorities live in Mongo and the Super Admin manages them on the Authorities pa
 
 | Endpoint | Needs |
 |---|---|
-| `GET/POST /api/platform-users`, `PUT .../{id}`, `POST .../{id}/deactivate\|reactivate\|reset-password`, `GET .../assignable-roles` | `platform-user:manage` |
+| `GET/POST /api/platform-users`, `PUT .../{id}`, `POST .../{id}/disable\|enable\|reset-password`, `GET .../assignable-roles` | `platform-user:manage` |
 | `GET/POST /api/roles`, `PUT/DELETE /api/roles/{id}`, `POST .../{id}/preview`, `GET .../{id}/changes`, `GET /api/authorities` | Super Admin |
-| `GET /api/customers`, `GET /api/customers/{id}` | `customer:view` |
+| `GET /api/customers`, `GET /api/customers/{id}`, `GET .../{id}/users` | `customer:view` |
 | `POST /api/customers`, `GET /api/customers/assignable-roles` | `customer:create` |
-| `PUT /api/customers/{id}`, `POST .../deactivate\|reactivate`, `POST .../admins`, `POST .../admins/{userId}/reset-password\|deactivate\|reactivate` | `customer:manage` |
+| `PUT /api/customers/{id}`, `POST .../disable\|enable`, `POST .../admins`, `POST .../admins/{userId}/reset-password`, `POST .../users/{userId}/disable\|enable`, `POST .../workspaces/{workspaceId}/disable\|enable` | `customer:manage` (PLATFORM level) |
+| `POST /api/workspaces/{workspaceId}/disable\|enable` | `workspace:enable` (own customer) |
+| `POST /api/workspaces/{workspaceId}/users/{userId}/disable\|enable` | `user:enable` + may change the user there |
+| `GET /api/workspaces/{workspaceId}/phone-numbers` | `phone-number:view` |
+| `POST /api/workspaces/{workspaceId}/phone-numbers`, `PUT\|DELETE .../{id}`, `POST .../{id}/disable\|enable\|connect-code\|revoke-device` | `phone-number:manage` |
+| `GET /api/phone-numbers?q=&status=&page=` | `phone-number:view-all` |
+| `POST /api/phone-numbers/{id}/disable\|enable`, `DELETE /api/phone-numbers/{id}` | `phone-number:manage-all` |
+| `POST /api/devices/connect` | none (rate-limited per IP) |
+| `GET /api/scripts`, `/api/scripts/{name}` | device key or Super Admin |
+| `/api/phone-numbers/{id}/bridge/status\|events\|messages\|rpc` | Super Admin |
 | `GET /api/workspaces` (mine), `POST /api/workspaces` | logged in / `workspace:create` |
 | `PUT /api/workspaces/{workspaceId}` | `workspace:settings` |
 | `GET /api/workspaces/{workspaceId}/users` | `user:view` |
 | `POST /api/workspaces/{workspaceId}/users`, `PUT\|DELETE .../users/{userId}`, `POST .../users/{userId}/reset-password`, `GET .../assignable-roles` | `user:manage` + strict-subset rule |
 | `GET /api/workspaces/{workspaceId}/teams` | `user:view` |
 | `POST /api/workspaces/{workspaceId}/teams`, `PUT .../teams/{teamId}` | `team:manage` |
-| `POST /api/users/{userId}/deactivate\|reactivate` | `company-user:manage` + strict-subset rule |
+| `POST /api/users/{userId}/disable\|enable` | `company-user:manage` + strict-subset rule (COMPANY level) |
 | `POST /api/auth/initial-password` | password-change token |
 | `GET /api/users/me` | logged in |
 
 ## API
 
+## Phone numbers
+
+A brand's WhatsApp numbers live in `phone_numbers` (digits only, country code first, 8–15 digits,
+unique across the platform; a brand may have several). The extension connects for exactly one number:
+
+1. A brand manager gets a connect code (`POST .../phone-numbers/{id}/connect-code` → `{code:
+   "ABCD-EFGH", expiresAt}`): 8 characters, valid 15 minutes, single use; a new code cancels the
+   unused one. Only its SHA-256 is stored.
+2. The extension sends it to `POST /api/devices/connect {code}` and gets `{deviceKey, deviceKeyId,
+   phoneNumberId, number, brandName}`. Wrong or expired: 400 `INVALID_CONNECT_CODE`; ten failures from
+   one IP in 15 minutes: 429 `TOO_MANY_ATTEMPTS`; disabled: 403 `DISABLED`. The key (`dk_…`, hashed at
+   rest) never expires on its own; a new code redeemed replaces it, "revoke device" deletes it.
+3. The WebSocket `auth` frame carries the key. The server forwards nothing until WhatsApp Web reports
+   the onboarded number (`info.pnWid`, else a `…@c.us` `wid`; a `…@lid` id never confirms). Events
+   before that are not acknowledged, so the extension replays them; an event whose `acct` is another
+   number is acknowledged and dropped.
+
+Close codes: 4401 bad key or no auth in 5 s, 4403 number/brand/company disabled, 4409 replaced by a
+newer connection or key, 4410 device removed (revoked or number deleted), 4412 logged in to a different
+number (recorded and shown in the console). Disabling, revoking or deleting closes the live socket in
+the same request. Status shown per number: `DISABLED` (with `disabledBecause` NUMBER/BRAND/CUSTOMER),
+`NOT_CONNECTED_YET`, `WAITING_FOR_LOGIN`, `CONNECTED`, `WRONG_NUMBER`, `DISCONNECTED`.
+
+## API
+
 ```bash
-# login as the device user (two-factor off, so one step)
+# login as the Super Admin; the bridge test endpoints take the phone number id
 TOKEN=$(curl -s -X POST localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"wabridge","password":"..."}' | jq -r .token)
+  -d '{"username":"nageshk","password":"..."}' | jq -r .token)
+N=localhost:8080/api/phone-numbers/<phoneNumberId>/bridge
 
-# status of this user's extension
-curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/status
+# status of that number's extension
+curl -s -H "Authorization: Bearer $TOKEN" $N/status
 
 # send a text message
-curl -s -X POST localhost:8080/api/messages \
+curl -s -X POST $N/messages \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"chatId":"919999999999@c.us","content":"hello from server"}'
 
 # recent events (oldest first); poll with after=<last seq>
-curl -s -H "Authorization: Bearer $TOKEN" 'localhost:8080/api/events?limit=20'
+curl -s -H "Authorization: Bearer $TOKEN" "$N/events?limit=20"
 
 # scripts delivered to the extension (manifest + code; ETag = sha256)
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/scripts
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/scripts/page -o page.js
 
 # call any page method directly (diagnostic / generic pass-through)
-curl -s -X POST localhost:8080/api/rpc -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+curl -s -X POST $N/rpc -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"method":"getState"}'
 ```
 
@@ -222,7 +273,8 @@ exposes `deviceSeq` and `capturedAt` for consumers that need to de-duplicate or 
 
 ## WebSocket protocol (`/ws`)
 
-First frame must be `{"type":"auth","token":"<jwt>"}` within 5 s, else close 4401. A newer
-connection for the same user replaces the older one (closed with 4409). Frames:
+First frame must be `{"type":"auth","token":"<device key>"}` within 5 s, else close 4401. A newer
+connection for the same number replaces the older one (closed with 4409); other close codes are listed
+under [Phone numbers](#phone-numbers). Frames:
 `request{id,method,params}`, `response{id,result|error{code,message}}`, `event{name,payload}`,
 `ping`/`pong`. Incoming events are logged by `LoggingEventListener`.
