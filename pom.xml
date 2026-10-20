@@ -7,7 +7,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.5.6</version>
+    <version>4.1.1</version>
     <relativePath/>
   </parent>
 
@@ -21,7 +21,7 @@
     <java.version>21</java.version>
     <jjwt.version>0.12.6</jjwt.version>
     <totp.version>1.7.1</totp.version>
-    <flapdoodle.version>4.20.0</flapdoodle.version>
+    <flapdoodle.version>4.33.0</flapdoodle.version>
     <!-- `npm run build` output of the console; packaged only with -Pwith-frontend -->
     <frontend.dist>${project.basedir}/../omnichannel-crm-frontend/dist</frontend.dist>
   </properties>
@@ -29,7 +29,7 @@
   <dependencies>
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
+      <artifactId>spring-boot-starter-webmvc</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -81,13 +81,28 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webmvc-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-resttestclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-restclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.security</groupId>
       <artifactId>spring-security-test</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>de.flapdoodle.embed</groupId>
-      <artifactId>de.flapdoodle.embed.mongo.spring3x</artifactId>
+      <artifactId>de.flapdoodle.embed.mongo.spring4x</artifactId>
       <version>${flapdoodle.version}</version>
       <scope>test</scope>
     </dependency>
