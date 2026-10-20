@@ -236,7 +236,8 @@ class RolesApiIT {
     void previewReportsTeamLeadLosingAgent() {
         call(HttpMethod.PUT, "/api/roles/" + idOf("TEAM_LEAD"),
                 Map.of("description", "lead", "authorities",
-                        List.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view")));
+                        List.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view",
+                                "inbox:view", "inbox:send")));
         ResponseEntity<JsonNode> res = call(HttpMethod.POST, "/api/roles/" + idOf("AGENT") + "/preview",
                 Map.of("authorities", List.of("contact:view", "contact:annotate", "team:manage")));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);

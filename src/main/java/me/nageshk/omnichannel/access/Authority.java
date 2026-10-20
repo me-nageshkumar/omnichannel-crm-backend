@@ -64,7 +64,20 @@ public enum Authority {
             CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD, AGENT),
     TEMPLATE_MANAGE("template:manage", RoleLevel.BRAND,
             "Create, edit, duplicate, archive and delete message templates, upload template media",
-            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD);
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD),
+    INBOX_VIEW("inbox:view", RoleLevel.BRAND, "Open the inbox, see own chats and their messages",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD, AGENT),
+    INBOX_VIEW_TEAM("inbox:view-team", RoleLevel.BRAND,
+            "Also see chats routed to own teams and the unassigned queue",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD),
+    INBOX_VIEW_ALL("inbox:view-all", RoleLevel.BRAND, "See every chat on the number",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    INBOX_SEND("inbox:send", RoleLevel.BRAND, "Reply from the console, close and reopen visible chats",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD, AGENT),
+    INBOX_ASSIGN("inbox:assign", RoleLevel.BRAND, "Assign, reassign, unassign visible chats",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD),
+    INBOX_SETTINGS("inbox:settings", RoleLevel.BRAND, "Edit a number's routing settings",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER);
 
     private final String code;
     private final RoleLevel level;

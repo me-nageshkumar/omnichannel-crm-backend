@@ -67,7 +67,8 @@ class AssignmentPolicyTest {
 
     @Test
     void teamLeadWithUserManageGivesAgentButNotTeamLead() {
-        teamLead.setAuthorities(Set.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view"));
+        teamLead.setAuthorities(Set.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view",
+                "inbox:view", "inbox:send"));
         Actor tl = brandUser(ACME, Map.of(A, teamLead));
         assertThat(policy.assignableBrandRoles(tl, A, all)).containsExactly(agent);
     }
