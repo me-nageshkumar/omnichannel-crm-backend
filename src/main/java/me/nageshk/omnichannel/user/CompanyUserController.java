@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.enablement.EnableLevel;
 import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.access.AssignmentPolicy;
 import me.nageshk.omnichannel.access.Authority;
@@ -12,9 +13,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Deactivate or reactivate any login of the caller's own customer. A user outside that customer
+ * Disable or enable any login of the caller's own customer. A user outside that customer
  * (platform staff callers included, who have none) answers 404; then {@code company-user:manage} and
- * the whole-login rule of {@link AssignmentPolicy#canDeactivateLogin} apply, else 403. Checked in
+ * the whole-login rule of {@link AssignmentPolicy#canDisableLogin} apply, else 403. Checked in
  * that order in code rather than with {@code @PreAuthorize}, so other tenants' ids are never confirmed.
  */
 @RestController
@@ -29,21 +30,22 @@ public class CompanyUserController {
         this.access = access;
     }
 
-    @PostMapping("/deactivate")
-    public UserSummary deactivate(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String userId) {
-        return setActive(me, userId, false);
+    @PostMapping("/disable")
+    public UserSummary disable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String userId) {
+        return setEnabled(me, userId, false);
     }
 
-    @PostMapping("/reactivate")
-    public UserSummary reactivate(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String userId) {
-        return setActive(me, userId, true);
+    @PostMapping("/enable")
+    public UserSummary enable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String userId) {
+        return setEnabled(me, userId, true);
     }
 
-    private UserSummary setActive(AuthenticatedUser me, String userId, boolean active) {
+    /** A Customer Admin acts at COMPANY level. */
+    private UserSummary setEnabled(AuthenticatedUser me, String userId, boolean enabled) {
         User target = admin.requireInCustomer(me.customerId(), userId);
         if (!me.hasAuthority(Authority.COMPANY_USER_MANAGE.code())) {
-            throw new ForbiddenException("you may not " + (active ? "reactivate" : "deactivate") + " users");
+            throw new ForbiddenException("you may not " + (enabled ? "enable" : "disable") + " users");
         }
-        return admin.summary(admin.setActive(access.actorOf(me), target, active));
+        return admin.summary(admin.setEnabled(access.actorOf(me), me, target, enabled, EnableLevel.COMPANY));
     }
 }

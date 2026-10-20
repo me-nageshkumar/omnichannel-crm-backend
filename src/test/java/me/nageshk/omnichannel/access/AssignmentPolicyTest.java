@@ -154,7 +154,7 @@ class AssignmentPolicyTest {
         for (Actor actor : List.of(ca, wm)) {
             assertThat(policy.canManageLogin(actor, foreignAgent)).isFalse();
             assertThat(policy.canChangeInWorkspace(actor, foreignAgent, A)).isFalse();
-            assertThat(policy.canDeactivateLogin(actor, foreignAgent)).isFalse();
+            assertThat(policy.canDisableLogin(actor, foreignAgent)).isFalse();
         }
         assertThat(policy.canManageLogin(ca, target(null, null, Map.of()))).isFalse();
     }
@@ -184,7 +184,7 @@ class AssignmentPolicyTest {
         assertThat(policy.canGiveBrandRole(sa, A, workspaceManager)).isTrue();
         Target ca = target(ACME, customerAdmin, Map.of());
         assertThat(policy.canManageLogin(sa, ca)).isTrue();
-        assertThat(policy.canDeactivateLogin(sa, target(ACME, null, Map.of(A, workspaceManager)))).isTrue();
+        assertThat(policy.canDisableLogin(sa, target(ACME, null, Map.of(A, workspaceManager)))).isTrue();
     }
 
     @Test
@@ -203,8 +203,8 @@ class AssignmentPolicyTest {
     @Test
     void customerAdminCannotDeactivateAnotherCustomerAdmin() {
         Actor ca = customerAdminOf(ACME, A);
-        assertThat(policy.canDeactivateLogin(ca, target(ACME, customerAdmin, Map.of()))).isFalse();
-        assertThat(policy.canDeactivateLogin(ca, target(ACME, null, Map.of(A, workspaceManager)))).isTrue();
+        assertThat(policy.canDisableLogin(ca, target(ACME, customerAdmin, Map.of()))).isFalse();
+        assertThat(policy.canDisableLogin(ca, target(ACME, null, Map.of(A, workspaceManager)))).isTrue();
     }
 
     @Test
@@ -212,14 +212,20 @@ class AssignmentPolicyTest {
         Actor wm = brandUser(ACME, Map.of(A, workspaceManager));
         Target agentInA = target(ACME, null, Map.of(A, agent));
         assertThat(policy.canManageLogin(wm, agentInA)).isTrue();
-        assertThat(policy.canDeactivateLogin(wm, agentInA)).isFalse();
+        assertThat(policy.canDisableLogin(wm, agentInA)).isFalse();
     }
 
     @Test
     void accountManagerCanDeactivateCustomerAdmin() {
         Actor am = platformUser(accountManager);
-        assertThat(policy.canDeactivateLogin(am, target(ACME, customerAdmin, Map.of()))).isTrue();
-        assertThat(policy.canDeactivateLogin(am, target(ACME, null, Map.of(A, agent)))).isFalse();
+        assertThat(policy.canDisableLogin(am, target(ACME, customerAdmin, Map.of()))).isTrue();
+    }
+
+    @Test
+    void platformStaffMayDisableAnyCustomerUser() {
+        Actor am = platformUser(accountManager);
+        assertThat(policy.canDisableLogin(am, target(ACME, null, Map.of(A, agent)))).isTrue();
+        assertThat(policy.canDisableLogin(am, target(ACME, null, Map.of()))).isTrue();
     }
 
     // --- roleless customer users ----------------------------------------------------------------
@@ -229,7 +235,7 @@ class AssignmentPolicyTest {
         Actor agentActor = brandUser(ACME, Map.of(A, agent));
         Target roleless = target(ACME, null, Map.of());
         assertThat(policy.canManageLogin(agentActor, roleless)).isFalse();
-        assertThat(policy.canDeactivateLogin(agentActor, roleless)).isFalse();
+        assertThat(policy.canDisableLogin(agentActor, roleless)).isFalse();
     }
 
     @Test
@@ -243,7 +249,7 @@ class AssignmentPolicyTest {
         Actor ca = customerAdminOf(ACME, A);
         Target roleless = target(ACME, null, Map.of());
         assertThat(policy.canManageLogin(ca, roleless)).isTrue();
-        assertThat(policy.canDeactivateLogin(ca, roleless)).isTrue();
+        assertThat(policy.canDisableLogin(ca, roleless)).isTrue();
         assertThat(policy.canManageLogin(customerAdminOf(OTHER, A), roleless)).isFalse();
     }
 
@@ -256,7 +262,7 @@ class AssignmentPolicyTest {
         Actor lead = platformUser(role("STAFF_LEAD", RoleLevel.PLATFORM, codes));
         Target am = platformTarget(accountManager);
         assertThat(policy.canManageLogin(lead, am)).isTrue();
-        assertThat(policy.canDeactivateLogin(lead, am)).isTrue();
+        assertThat(policy.canDisableLogin(lead, am)).isTrue();
         assertThat(policy.canManageLogin(lead, platformTarget(role("STAFF_LEAD", RoleLevel.PLATFORM, codes))))
                 .isFalse();
         assertThat(policy.canManageLogin(lead, platformTarget(device))).isFalse();
@@ -266,7 +272,7 @@ class AssignmentPolicyTest {
     void accountManagerCannotManageAnotherAccountManager() {
         Actor am = platformUser(accountManager);
         assertThat(policy.canManageLogin(am, platformTarget(accountManager))).isFalse();
-        assertThat(policy.canDeactivateLogin(am, platformTarget(accountManager))).isFalse();
+        assertThat(policy.canDisableLogin(am, platformTarget(accountManager))).isFalse();
         assertThat(policy.canManageLogin(am, platformTarget(role("EMPTY", RoleLevel.PLATFORM, Set.of()))))
                 .isFalse();
     }
@@ -278,10 +284,10 @@ class AssignmentPolicyTest {
         Actor lead = platformUser(role("STAFF_LEAD", RoleLevel.PLATFORM, everything));
         for (Actor actor : List.of(superAdminActor(), lead, platformUser(accountManager))) {
             assertThat(policy.canManageLogin(actor, sa)).isFalse();
-            assertThat(policy.canDeactivateLogin(actor, sa)).isFalse();
+            assertThat(policy.canDisableLogin(actor, sa)).isFalse();
         }
         assertThat(policy.canManageLogin(superAdminActor(), platformTarget(accountManager))).isTrue();
-        assertThat(policy.canDeactivateLogin(superAdminActor(), platformTarget(device))).isTrue();
+        assertThat(policy.canDisableLogin(superAdminActor(), platformTarget(device))).isTrue();
     }
 
     @Test
@@ -290,7 +296,7 @@ class AssignmentPolicyTest {
         Target empty = platformTarget(role("EMPTY", RoleLevel.PLATFORM, Set.of()));
         for (Target t : List.of(platformTarget(accountManager), platformTarget(device), empty)) {
             assertThat(policy.canManageLogin(ca, t)).isFalse();
-            assertThat(policy.canDeactivateLogin(ca, t)).isFalse();
+            assertThat(policy.canDisableLogin(ca, t)).isFalse();
         }
     }
 

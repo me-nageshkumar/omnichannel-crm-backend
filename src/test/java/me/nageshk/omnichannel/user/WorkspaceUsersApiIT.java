@@ -357,25 +357,25 @@ class WorkspaceUsersApiIT {
         String agentToken = testUsers.accessToken(agent);
         send(get("/api/users/me"), agentToken, null).andExpect(status().isOk());
 
-        send(post("/api/users/" + agent.getId() + "/deactivate"), bossToken, null)
+        send(post("/api/users/" + agent.getId() + "/disable"), bossToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
         assertThat(users.findById(agent.getId()).orElseThrow().isActive()).isFalse();
         send(get("/api/users/me"), agentToken, null).andExpect(status().isUnauthorized());
 
-        send(post("/api/users/" + agent.getId() + "/reactivate"), bossToken, null)
+        send(post("/api/users/" + agent.getId() + "/enable"), bossToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(true));
         assertThat(users.findById(agent.getId()).orElseThrow().isActive()).isTrue();
 
         // a Workspace Manager lacks company-user:manage
-        send(post("/api/users/" + agent.getId() + "/deactivate"), wmToken, null).andExpect(status().isForbidden());
+        send(post("/api/users/" + agent.getId() + "/disable"), wmToken, null).andExpect(status().isForbidden());
     }
 
     @Test
     void customerAdminCannotDeactivateAnotherCustomerAdmin() throws Exception {
         User boss2 = testUsers.createInCustomer(acme.getId(), "boss2", BuiltInRoles.CUSTOMER_ADMIN, List.of());
-        send(post("/api/users/" + boss2.getId() + "/deactivate"), bossToken, null)
+        send(post("/api/users/" + boss2.getId() + "/disable"), bossToken, null)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
         assertThat(users.findById(boss2.getId()).orElseThrow().isActive()).isTrue();
@@ -383,14 +383,35 @@ class WorkspaceUsersApiIT {
 
     @Test
     void deactivateUserOfOtherCustomerIs404() throws Exception {
-        send(post("/api/users/" + gboss.getId() + "/deactivate"), bossToken, null)
+        send(post("/api/users/" + gboss.getId() + "/disable"), bossToken, null)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
-        send(post("/api/users/nope/deactivate"), bossToken, null).andExpect(status().isNotFound());
+        send(post("/api/users/nope/disable"), bossToken, null).andExpect(status().isNotFound());
         // platform staff never reach customer users through the company endpoint
         String amToken = testUsers.accessToken(testUsers.create("am", "pw", BuiltInRoles.ACCOUNT_MANAGER, null));
-        send(post("/api/users/" + agent.getId() + "/deactivate"), amToken, null).andExpect(status().isNotFound());
+        send(post("/api/users/" + agent.getId() + "/disable"), amToken, null).andExpect(status().isNotFound());
         assertThat(users.findById(gboss.getId()).orElseThrow().isActive()).isTrue();
         assertThat(users.findById(agent.getId()).orElseThrow().isActive()).isTrue();
+    }
+
+    @Test
+    void customerAdminDisablesAtCompanyLevel() throws Exception {
+        send(post("/api/users/" + agent.getId() + "/disable"), bossToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disabled.by").value("boss"))
+                .andExpect(jsonPath("$.disabled.level").value("COMPANY"));
+    }
+
+    @Test
+    void customerAdminCannotEnableLoginPlatformDisabled() throws Exception {
+        String amToken = testUsers.accessToken(testUsers.create("am", "pw", BuiltInRoles.ACCOUNT_MANAGER, null));
+        send(post("/api/customers/" + acme.getId() + "/users/" + agent.getId() + "/disable"), amToken, null)
+                .andExpect(status().isOk());
+
+        send(post("/api/users/" + agent.getId() + "/enable"), bossToken, null)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("DISABLED_AT_HIGHER_LEVEL"))
+                .andExpect(jsonPath("$.level").value("PLATFORM"));
+        assertThat(users.findById(agent.getId()).orElseThrow().isActive()).isFalse();
     }
 }

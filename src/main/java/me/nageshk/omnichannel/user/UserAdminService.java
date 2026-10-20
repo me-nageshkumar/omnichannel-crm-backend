@@ -1,5 +1,8 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.enablement.EnableLevel;
+import me.nageshk.omnichannel.enablement.Enablement;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -34,7 +37,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Operations on other people's logins, shared by the platform-user, customer and workspace-user
- * APIs: create with a temporary password, edit details, reset the password, deactivate/reactivate.
+ * APIs: create with a temporary password, edit details, reset the password, disable/enable.
  * The operations on an existing login check the whole-login rule of {@link AssignmentPolicy}
  * themselves; which role a caller may give is checked by the caller, since it depends on the scope,
  * except for the workspace operations below, which check the BRAND-role rules themselves.
@@ -56,10 +59,12 @@ public class UserAdminService {
     private final PasswordEncoder encoder;
     private final RoleCache roles;
     private final TeamRepository teams;
+    private final Enablement enablement;
 
     public UserAdminService(UserRepository users, WorkspaceRepository workspaces, AccessService access,
             AssignmentPolicy policy, PasswordPolicy passwords, PasswordEncoder encoder, RoleCache roles,
-            TeamRepository teams) {
+            TeamRepository teams, Enablement enablement) {
+        this.enablement = enablement;
         this.users = users;
         this.workspaces = workspaces;
         this.teams = teams;
@@ -144,14 +149,23 @@ public class UserAdminService {
     }
 
     /** Deactivating revokes every issued token; reactivating does not bring them back. */
-    public User setActive(Actor actor, User target, boolean active) {
-        if (!policy.canDeactivateLogin(actor, access.targetOf(target))) {
-            throw new ForbiddenException("you may not " + (active ? "reactivate" : "deactivate") + " this user");
+    public User setEnabled(Actor actor, AuthenticatedUser me, User target, boolean enabled, EnableLevel level) {
+        if (!policy.canDisableLogin(actor, access.targetOf(target))) {
+            throw new ForbiddenException("you may not " + (enabled ? "enable" : "disable") + " this user");
         }
-        if (target.isActive() == active) return target;
-        target.setActive(active);
-        if (!active) target.setTokenVersion(target.getTokenVersion() + 1);
-        return users.save(target);
+        boolean before = target.isActive();
+        if (enabled) {
+            if (before) return target;
+            enablement.checkEnable(target.getDisabled(), level);
+            target.setDisabled(null);
+        } else {
+            target.setDisabled(enablement.disable(target.getDisabled(), me, level));
+            if (before) target.setTokenVersion(target.getTokenVersion() + 1);
+        }
+        target.setActive(enabled);
+        User saved = users.save(target);
+        if (before != enabled) enablement.record("USER", target.getId(), before, enabled, me, level);
+        return saved;
     }
 
     /** The customer's users with access to the workspace (a role there, or a COMPANY role), by name. */
@@ -260,7 +274,7 @@ public class UserAdminService {
                 .filter(wr -> !workspaceId.equals(wr.workspaceId()))
                 .toList();
         if (remaining.isEmpty()) {
-            throw new LastAccessException("this is the user's only access; deactivate the user instead");
+            throw new LastAccessException("this is the user's only access; disable the user instead");
         }
         target.setWorkspaceRoles(new ArrayList<>(remaining));
         users.save(target);
@@ -308,7 +322,7 @@ public class UserAdminService {
         Map<String, String> names = workspaces.findAllById(workspaceIds).stream()
                 .collect(Collectors.toMap(Workspace::getId, Workspace::getName));
         return list.stream().map(u -> new UserSummary(
-                u.getId(), u.getName(), u.getUsername(), u.getEmail(), u.getMobileNumber(), u.isActive(),
+                u.getId(), u.getName(), u.getUsername(), u.getEmail(), u.getMobileNumber(), u.isActive(), u.getDisabled(),
                 roleRef(u.getRoleId()),
                 u.getWorkspaceRoles().stream()
                         .map(wr -> new UserSummary.WorkspaceRoleView(

@@ -143,9 +143,9 @@ class IsolationIT {
     @Test
     void otherCustomersUserIdIs404() throws Exception {
         String bossToken = testUsers.accessToken(boss);
-        expectNotFound(mvc.perform(MockMvcRequestBuilders.post("/api/users/" + globexAgent.getId() + "/deactivate")
+        expectNotFound(mvc.perform(MockMvcRequestBuilders.post("/api/users/" + globexAgent.getId() + "/disable")
                 .header("Authorization", "Bearer " + bossToken)));
-        expectNotFound(mvc.perform(MockMvcRequestBuilders.post("/api/users/" + globexAgent.getId() + "/reactivate")
+        expectNotFound(mvc.perform(MockMvcRequestBuilders.post("/api/users/" + globexAgent.getId() + "/enable")
                 .header("Authorization", "Bearer " + bossToken)));
         // A foreign user id under the caller's own workspace is equally unknown.
         for (Arguments a : brandEndpoints().filter(a -> ((String) a.get()[1]).contains("{user}")).toList()) {

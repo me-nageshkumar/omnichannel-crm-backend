@@ -239,7 +239,7 @@ class CustomersApiIT {
         String bossToken = testUsers.accessToken(boss);
         send(get("/api/users/me"), bossToken, null).andExpect(status().isOk());
 
-        send(post("/api/customers/" + acme.getId() + "/deactivate"), amToken, null)
+        send(post("/api/customers/" + acme.getId() + "/disable"), amToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
 
@@ -253,10 +253,10 @@ class CustomersApiIT {
     void reactivateRestoresLogin() throws Exception {
         Customer acme = testUsers.customer("Acme");
         bossOf(acme);
-        send(post("/api/customers/" + acme.getId() + "/deactivate"), amToken, null).andExpect(status().isOk());
+        send(post("/api/customers/" + acme.getId() + "/disable"), amToken, null).andExpect(status().isOk());
         login("boss", "pw").andExpect(status().isUnauthorized());
 
-        send(post("/api/customers/" + acme.getId() + "/reactivate"), amToken, null)
+        send(post("/api/customers/" + acme.getId() + "/enable"), amToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(true));
         login("boss", "pw").andExpect(status().isOk()).andExpect(jsonPath("$.token").isNotEmpty());
@@ -332,13 +332,13 @@ class CustomersApiIT {
         User boss = bossOf(acme);
         String bossToken = testUsers.accessToken(boss);
 
-        send(post("/api/customers/" + acme.getId() + "/admins/" + boss.getId() + "/deactivate"), amToken, null)
+        send(post("/api/customers/" + acme.getId() + "/users/" + boss.getId() + "/disable"), amToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
         send(get("/api/users/me"), bossToken, null).andExpect(status().isUnauthorized());
         assertThat(users.findById(boss.getId()).orElseThrow().isActive()).isFalse();
 
-        send(post("/api/customers/" + acme.getId() + "/admins/" + boss.getId() + "/reactivate"), amToken, null)
+        send(post("/api/customers/" + acme.getId() + "/users/" + boss.getId() + "/enable"), amToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(true));
         login("boss", "pw").andExpect(status().isOk()).andExpect(jsonPath("$.token").isNotEmpty());
@@ -354,7 +354,7 @@ class CustomersApiIT {
         send(get("/api/customers/" + acme.getId()), bossToken, null).andExpect(status().isForbidden());
         send(post("/api/customers"), bossToken, newCustomer("Evil", null, "evil")).andExpect(status().isForbidden());
         send(post("/api/customers/" + acme.getId() + "/admins"), bossToken, admin("second")).andExpect(status().isForbidden());
-        send(post("/api/customers/" + acme.getId() + "/deactivate"), bossToken, null).andExpect(status().isForbidden());
+        send(post("/api/customers/" + acme.getId() + "/disable"), bossToken, null).andExpect(status().isForbidden());
         assertThat(customers.count()).isEqualTo(1);
         assertThat(users.findByUsername("second")).isEmpty();
     }
@@ -365,7 +365,7 @@ class CustomersApiIT {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
         send(put("/api/customers/nope"), amToken, Map.of("name", "X")).andExpect(status().isNotFound());
-        send(post("/api/customers/nope/deactivate"), amToken, null).andExpect(status().isNotFound());
+        send(post("/api/customers/nope/disable"), amToken, null).andExpect(status().isNotFound());
         send(post("/api/customers/nope/admins"), amToken, admin("second")).andExpect(status().isNotFound());
         assertThat(users.findByUsername("second")).isEmpty();
 
@@ -373,7 +373,7 @@ class CustomersApiIT {
         Customer acme = testUsers.customer("Acme");
         Customer globex = testUsers.customer("Globex");
         User globexBoss = testUsers.createInCustomer(globex.getId(), "gboss", BuiltInRoles.CUSTOMER_ADMIN, List.of());
-        send(post("/api/customers/" + acme.getId() + "/admins/" + globexBoss.getId() + "/deactivate"), amToken, null)
+        send(post("/api/customers/" + acme.getId() + "/users/" + globexBoss.getId() + "/disable"), amToken, null)
                 .andExpect(status().isNotFound());
         Workspace w = testUsers.workspace(acme.getId(), "Acme");
         User agent = testUsers.createInCustomer(acme.getId(), "agent", null,
@@ -381,5 +381,57 @@ class CustomersApiIT {
         send(post("/api/customers/" + acme.getId() + "/admins/" + agent.getId() + "/reset-password"), amToken,
                 Map.of("temporaryPassword", TEMP)).andExpect(status().isNotFound());
         assertThat(users.findById(globexBoss.getId()).orElseThrow().isActive()).isTrue();
+    }
+
+    @Test
+    void disableAndEnableCustomerRecordsPlatformLevel() throws Exception {
+        Customer acme = testUsers.customer("Acme");
+        send(post("/api/customers/" + acme.getId() + "/disable"), amToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false))
+                .andExpect(jsonPath("$.disabled.by").value("am"))
+                .andExpect(jsonPath("$.disabled.level").value("PLATFORM"))
+                .andExpect(jsonPath("$.disabled.at").isNotEmpty());
+        send(post("/api/customers/" + acme.getId() + "/enable"), amToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.disabled").isEmpty());
+    }
+
+    @Test
+    void oldDeactivatePathIsGone() throws Exception {
+        Customer acme = testUsers.customer("Acme");
+        send(post("/api/customers/" + acme.getId() + "/deactivate"), amToken, null)
+                .andExpect(status().isNotFound());
+        assertThat(customers.findById(acme.getId()).orElseThrow().isActive()).isTrue();
+    }
+
+    @Test
+    void listsAllCustomerUsers() throws Exception {
+        Customer acme = testUsers.customer("Acme");
+        Workspace w = testUsers.workspace(acme.getId(), "Brand A");
+        bossOf(acme);
+        testUsers.createInCustomer(acme.getId(), "agent", null,
+                List.of(new WorkspaceRole(w.getId(), testUsers.roleId(BuiltInRoles.AGENT))));
+        Customer globex = testUsers.customer("Globex");
+        testUsers.createInCustomer(globex.getId(), "gboss", BuiltInRoles.CUSTOMER_ADMIN, List.of());
+
+        send(get("/api/customers/" + acme.getId() + "/users"), amToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].username").value(org.hamcrest.Matchers.containsInAnyOrder("boss", "agent")));
+    }
+
+    @Test
+    void accountManagerDisablesAnAgent() throws Exception {
+        Customer acme = testUsers.customer("Acme");
+        Workspace w = testUsers.workspace(acme.getId(), "Brand A");
+        User agent = testUsers.createInCustomer(acme.getId(), "agent", null,
+                List.of(new WorkspaceRole(w.getId(), testUsers.roleId(BuiltInRoles.AGENT))));
+        String agentToken = testUsers.accessToken(agent);
+
+        send(post("/api/customers/" + acme.getId() + "/users/" + agent.getId() + "/disable"), amToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disabled.level").value("PLATFORM"));
+        send(get("/api/users/me"), agentToken, null).andExpect(status().isUnauthorized());
     }
 }

@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.enablement.EnableLevel;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.Comparator;
@@ -109,14 +110,14 @@ public class PlatformUserController {
         return TemporaryPasswordResponse.reset(req.temporaryPassword());
     }
 
-    @PostMapping("/{id}/deactivate")
-    public UserSummary deactivate(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
-        return admin.summary(admin.setActive(access.actorOf(me), platformUser(id), false));
+    @PostMapping("/{id}/disable")
+    public UserSummary disable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        return admin.summary(admin.setEnabled(access.actorOf(me), me, platformUser(id), false, EnableLevel.PLATFORM));
     }
 
-    @PostMapping("/{id}/reactivate")
-    public UserSummary reactivate(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
-        return admin.summary(admin.setActive(access.actorOf(me), platformUser(id), true));
+    @PostMapping("/{id}/enable")
+    public UserSummary enable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        return admin.summary(admin.setEnabled(access.actorOf(me), me, platformUser(id), true, EnableLevel.PLATFORM));
     }
 
     /** A platform user by id; customer users are not found here. */

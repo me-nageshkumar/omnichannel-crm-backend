@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.user;
 
+import me.nageshk.omnichannel.enablement.Disabled;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,7 @@ public class User {
     private List<WorkspaceRole> workspaceRoles = new ArrayList<>();
     private boolean mustChangePassword;
     private boolean active;
+    private Disabled disabled;
     private TwoFactor twoFactor;
 
     /** Bumping this invalidates every issued access token for the user. */
@@ -74,6 +76,8 @@ public class User {
     public boolean isMustChangePassword() { return mustChangePassword; }
     public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
     public boolean isActive() { return active; }
+    public Disabled getDisabled() { return disabled; }
+    public void setDisabled(Disabled disabled) { this.disabled = disabled; }
     public void setActive(boolean active) { this.active = active; }
     public TwoFactor getTwoFactor() { return twoFactor; }
     public void setTwoFactor(TwoFactor twoFactor) { this.twoFactor = twoFactor; }

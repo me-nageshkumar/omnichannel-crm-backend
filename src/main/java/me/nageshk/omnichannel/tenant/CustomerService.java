@@ -1,5 +1,8 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.enablement.EnableLevel;
+import me.nageshk.omnichannel.enablement.Enablement;
 import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.Deque;
@@ -26,7 +29,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Customers as platform staff manage them: create (with first workspace, its {@code General} team
- * and the owner), list, rename, deactivate, and the customer's admins (COMPANY-role holders).
+ * and the owner), list, rename, disable, and the customer's admins (COMPANY-role holders).
  * Authorities are checked by the controller; which COMPANY role may be given, and which admin login
  * may be managed, by {@link AssignmentPolicy}.
  */
@@ -46,10 +49,12 @@ public class CustomerService {
     private final AccessService access;
     private final AssignmentPolicy policy;
     private final RoleCache roles;
+    private final Enablement enablement;
 
     public CustomerService(CustomerRepository customers, WorkspaceRepository workspaces, TeamRepository teams,
             UserRepository users, UserAdminService userAdmin, AccessService access, AssignmentPolicy policy,
-            RoleCache roles) {
+            RoleCache roles, Enablement enablement) {
+        this.enablement = enablement;
         this.customers = customers;
         this.workspaces = workspaces;
         this.teams = teams;
@@ -142,13 +147,35 @@ public class CustomerService {
 
     /**
      * Flips the customer only: its users are refused at login and on their next request while it is
-     * inactive, and their tokens work again once it is reactivated.
+     * disabled, and their tokens work again once it is enabled. Platform staff act at PLATFORM.
      */
-    public Customer setActive(String id, boolean active) {
+    public Customer setEnabled(String id, boolean enabled, AuthenticatedUser me) {
         Customer c = require(id);
-        if (c.isActive() == active) return c;
-        c.setActive(active);
-        return customers.save(c);
+        if (c.isActive() == enabled) return c;
+        if (enabled) {
+            enablement.checkEnable(c.getDisabled(), EnableLevel.PLATFORM);
+            c.setDisabled(null);
+        } else {
+            c.setDisabled(enablement.disable(c.getDisabled(), me, EnableLevel.PLATFORM));
+        }
+        c.setActive(enabled);
+        Customer saved = customers.save(c);
+        enablement.record("CUSTOMER", id, !enabled, enabled, me, EnableLevel.PLATFORM);
+        return saved;
+    }
+
+    /** Every login of the customer, by name. */
+    public List<User> usersOf(Customer c) {
+        return users.findByCustomerId(c.getId()).stream()
+                .sorted(java.util.Comparator.comparing(User::getName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    /** A login of the customer; 404 for anyone else's. */
+    public User requireUser(String customerId, String userId) {
+        return users.findById(userId)
+                .filter(u -> customerId.equals(u.getCustomerId()))
+                .orElseThrow(() -> new NotFoundException("user not found"));
     }
 
     /** Another admin for an existing customer; {@code roleId} null means {@code CUSTOMER_ADMIN}. */

@@ -158,13 +158,13 @@ class PlatformUsersApiIT {
         User am = testUsers.create("manager", "pw", BuiltInRoles.ACCOUNT_MANAGER, null);
         String oldToken = testUsers.accessToken(am);
 
-        send(post("/api/platform-users/" + am.getId() + "/deactivate"), rootToken, null)
+        send(post("/api/platform-users/" + am.getId() + "/disable"), rootToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
         send(get("/api/users/me"), oldToken, null).andExpect(status().isUnauthorized());
         login("manager", "pw").andExpect(status().isUnauthorized()).andExpect(jsonPath("$.error").value("account_inactive"));
 
-        send(post("/api/platform-users/" + am.getId() + "/reactivate"), rootToken, null)
+        send(post("/api/platform-users/" + am.getId() + "/enable"), rootToken, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(true));
         // reactivation does not resurrect tokens issued before the deactivation
@@ -203,7 +203,7 @@ class PlatformUsersApiIT {
 
     @Test
     void superAdminLoginIsNotManageable() throws Exception {
-        send(post("/api/platform-users/" + root.getId() + "/deactivate"), rootToken, null)
+        send(post("/api/platform-users/" + root.getId() + "/disable"), rootToken, null)
                 .andExpect(status().isForbidden());
         send(post("/api/platform-users/" + root.getId() + "/reset-password"), rootToken, Map.of("temporaryPassword", TEMP))
                 .andExpect(status().isForbidden());
@@ -214,10 +214,10 @@ class PlatformUsersApiIT {
     void customerUserOrUnknownIdIs404() throws Exception {
         var acme = testUsers.customer("Acme");
         User boss = testUsers.createInCustomer(acme.getId(), "boss", BuiltInRoles.CUSTOMER_ADMIN, List.of());
-        send(post("/api/platform-users/" + boss.getId() + "/deactivate"), rootToken, null)
+        send(post("/api/platform-users/" + boss.getId() + "/disable"), rootToken, null)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
-        send(post("/api/platform-users/nope/deactivate"), rootToken, null).andExpect(status().isNotFound());
+        send(post("/api/platform-users/nope/disable"), rootToken, null).andExpect(status().isNotFound());
     }
 
     @Test
@@ -225,5 +225,16 @@ class PlatformUsersApiIT {
         JsonNode roles = json(send(get("/api/platform-users/assignable-roles"), rootToken, null).andExpect(status().isOk()));
         List<String> names = StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asText()).toList();
         assertThat(names).containsExactlyInAnyOrder(BuiltInRoles.ACCOUNT_MANAGER, BuiltInRoles.WHATSAPP_DEVICE);
+    }
+
+    @Test
+    void disableEnablePlatformUser() throws Exception {
+        User am = testUsers.create("manager", "pw", BuiltInRoles.ACCOUNT_MANAGER, null);
+        send(post("/api/platform-users/" + am.getId() + "/disable"), rootToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disabled.level").value("PLATFORM"));
+        send(post("/api/platform-users/" + am.getId() + "/enable"), rootToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disabled").isEmpty());
     }
 }

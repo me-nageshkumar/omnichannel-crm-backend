@@ -124,7 +124,7 @@ public class AssignmentPolicy {
     }
 
     /**
-     * Rule 3, whole-login form (reset password, edit details, deactivate).
+     * Rule 3, whole-login form (reset password, edit details, disable).
      *
      * <ul>
      *   <li>Platform user: the actor is platform staff with {@code platform-user:manage} and the
@@ -152,11 +152,13 @@ public class AssignmentPolicy {
     /**
      * {@link #canManageLogin} plus, for a customer user, {@code company-user:manage} (a customer
      * actor) or, for a target with a COMPANY role, {@code customer:manage} (platform staff). For a
-     * platform user, the same rule as {@link #canManageLogin}.
+     * platform user, the same rule as {@link #canManageLogin}. Platform staff with
+     * {@code customer:manage} may also disable any customer user, whatever its roles.
      */
-    public boolean canDeactivateLogin(Actor a, Target t) {
+    public boolean canDisableLogin(Actor a, Target t) {
         if (t.customerId() == null) return canManagePlatformLogin(a, t);
         if (a.superAdmin()) return true;
+        if (isPlatformStaff(a) && a.platformOrCompany().contains(CUSTOMER_MANAGE)) return true;
         if (!canManageLogin(a, t)) return false;
         boolean companyUserManage = !isPlatformStaff(a) && a.platformOrCompany().contains(COMPANY_USER_MANAGE);
         boolean customerManage = t.companyRole() != null

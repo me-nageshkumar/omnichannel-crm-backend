@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.enablement.Disabled;
+import me.nageshk.omnichannel.enablement.EnableLevel;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -36,7 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/customers")
 public class CustomerController {
 
-    public record CustomerView(String id, String name, boolean active, Instant creationTime) {}
+    public record CustomerView(String id, String name, boolean active, Disabled disabled, Instant creationTime) {}
 
     public record WorkspaceRef(String id, String name) {}
 
@@ -114,16 +116,22 @@ public class CustomerController {
         return view(service.rename(id, req.name()));
     }
 
-    @PostMapping("/{id}/deactivate")
+    @PostMapping("/{id}/disable")
     @PreAuthorize("hasAuthority('customer:manage')")
-    public CustomerView deactivate(@PathVariable String id) {
-        return view(service.setActive(id, false));
+    public CustomerView disable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        return view(service.setEnabled(id, false, me));
     }
 
-    @PostMapping("/{id}/reactivate")
+    @PostMapping("/{id}/enable")
     @PreAuthorize("hasAuthority('customer:manage')")
-    public CustomerView reactivate(@PathVariable String id) {
-        return view(service.setActive(id, true));
+    public CustomerView enable(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        return view(service.setEnabled(id, true, me));
+    }
+
+    @GetMapping("/{id}/users")
+    @PreAuthorize("hasAuthority('customer:view')")
+    public List<UserSummary> users(@PathVariable String id) {
+        return userAdmin.summaries(service.usersOf(service.require(id)));
     }
 
     @PostMapping("/{id}/admins")
@@ -145,21 +153,23 @@ public class CustomerController {
         return TemporaryPasswordResponse.reset(req.temporaryPassword());
     }
 
-    @PostMapping("/{id}/admins/{userId}/deactivate")
+    @PostMapping("/{id}/users/{userId}/disable")
     @PreAuthorize("hasAuthority('customer:manage')")
-    public UserSummary deactivateAdmin(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id,
+    public UserSummary disableUser(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id,
             @PathVariable String userId) {
-        return userAdmin.summary(userAdmin.setActive(access.actorOf(me), service.requireAdmin(id, userId), false));
+        return userAdmin.summary(userAdmin.setEnabled(access.actorOf(me), me, service.requireUser(id, userId), false,
+                EnableLevel.PLATFORM));
     }
 
-    @PostMapping("/{id}/admins/{userId}/reactivate")
+    @PostMapping("/{id}/users/{userId}/enable")
     @PreAuthorize("hasAuthority('customer:manage')")
-    public UserSummary reactivateAdmin(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id,
+    public UserSummary enableUser(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id,
             @PathVariable String userId) {
-        return userAdmin.summary(userAdmin.setActive(access.actorOf(me), service.requireAdmin(id, userId), true));
+        return userAdmin.summary(userAdmin.setEnabled(access.actorOf(me), me, service.requireUser(id, userId), true,
+                EnableLevel.PLATFORM));
     }
 
     private static CustomerView view(Customer c) {
-        return new CustomerView(c.getId(), c.getName(), c.isActive(), c.getCreationTime());
+        return new CustomerView(c.getId(), c.getName(), c.isActive(), c.getDisabled(), c.getCreationTime());
     }
 }

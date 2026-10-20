@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.user;
 
 import java.util.List;
+import me.nageshk.omnichannel.enablement.Disabled;
 import me.nageshk.omnichannel.user.UserService.RoleRef;
 
 /**
@@ -16,6 +17,7 @@ public record UserSummary(
         String email,
         String mobileNumber,
         boolean active,
+        Disabled disabled,
         RoleRef role,
         List<WorkspaceRoleView> workspaceRoles,
         boolean mustChangePassword) {

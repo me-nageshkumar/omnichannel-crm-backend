@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.enablement.Disabled;
 import java.time.Instant;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
@@ -15,6 +16,7 @@ public class Customer {
 
     private String name;
     private boolean active;
+    private Disabled disabled;
     private String createdBy;
 
     @CreatedDate
@@ -28,6 +30,8 @@ public class Customer {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public boolean isActive() { return active; }
+    public Disabled getDisabled() { return disabled; }
+    public void setDisabled(Disabled disabled) { this.disabled = disabled; }
     public void setActive(boolean active) { this.active = active; }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
