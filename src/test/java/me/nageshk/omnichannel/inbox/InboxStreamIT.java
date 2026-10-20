@@ -66,6 +66,23 @@ class InboxStreamIT extends InboxApiTestBase {
         assertThat(sent(stream)).doesNotContain("event:chat").doesNotContain("Asha");
     }
 
+    /**
+     * When a stream ends, the container re-dispatches the request (ASYNC) through the security chain. The
+     * bearer token may be dead by then (that is often why the stream ended), so that dispatch must be let
+     * through rather than refused and logged as "Access Denied" on a response that is already closed.
+     */
+    @Test
+    void endingAStreamWhoseTokenDiedDoesNotTripAuthorizationOnTheAsyncDispatch() throws Exception {
+        MvcResult stream = open(agentToken);
+        agent.setTokenVersion(agent.getTokenVersion() + 1);
+        users.save(agent);
+        broker.ping();
+        assertThat(broker.subscribers(number.getId())).isZero();
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(stream))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+    }
+
     @Test
     void userRemovedFromTheBrandIsDropped() throws Exception {
         MvcResult stream = open(agentToken);

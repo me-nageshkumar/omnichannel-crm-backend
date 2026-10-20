@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.config;
 
 import me.nageshk.omnichannel.phone.DeviceKeyAuthFilter;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import me.nageshk.omnichannel.auth.JwtAuthFilter;
@@ -67,6 +68,9 @@ public class SecurityConfig {
                 .httpBasic(b -> b.disable())
                 .formLogin(f -> f.disable())
                 .authorizeHttpRequests(auth -> auth
+                        // The container re-dispatches async requests (futures, SSE streams) once they end; the
+                        // original dispatch was authorized, and the bearer token may be dead by then.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.POST, LOGIN_PATH, VERIFY_OTP_PATH, INITIAL_PASSWORD_PATH, DEVICE_CONNECT_PATH)
                         .permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
