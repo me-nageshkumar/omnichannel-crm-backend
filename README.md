@@ -205,6 +205,11 @@ Authorities live in Mongo and the Super Admin manages them on the Authorities pa
 A brand's WhatsApp numbers live in `phone_numbers` (digits only, country code first, 8–15 digits,
 unique across the platform; a brand may have several). The extension connects for exactly one number:
 
+Each number has a `connectionType`: `WHATSAPP_WEB` (a browser running WhatsApp Web with the extension
+— the only kind today) or `WHATSAPP_CLOUD_API` (reserved for Cloud API numbers; adding one is refused
+with 400 until that is built). Numbers saved before the field existed are marked `WHATSAPP_WEB` at
+startup (`ConnectionTypeBackfill`).
+
 1. A brand manager gets a connect code (`POST .../phone-numbers/{id}/connect-code` → `{code:
    "ABCD-EFGH", expiresAt}`): 8 characters, valid 15 minutes, single use; a new code cancels the
    unused one. Only its SHA-256 is stored.

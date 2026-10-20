@@ -10,6 +10,7 @@ public record PhoneNumberView(
         String id,
         String number,
         String label,
+        ConnectionType connectionType,
         String customerId,
         String customerName,
         String workspaceId,

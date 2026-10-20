@@ -23,6 +23,7 @@ public class PhoneNumber {
     @Indexed
     private String workspaceId;
     private String label;
+    private ConnectionType connectionType;
     private Disabled disabled;
 
     @Indexed(sparse = true)
@@ -53,6 +54,9 @@ public class PhoneNumber {
     public void setWorkspaceId(String workspaceId) { this.workspaceId = workspaceId; }
     public String getLabel() { return label; }
     public void setLabel(String label) { this.label = label; }
+    /** WhatsApp Web for numbers saved before the field existed. */
+    public ConnectionType getConnectionType() { return connectionType == null ? ConnectionType.WHATSAPP_WEB : connectionType; }
+    public void setConnectionType(ConnectionType connectionType) { this.connectionType = connectionType; }
     public Disabled getDisabled() { return disabled; }
     public void setDisabled(Disabled disabled) { this.disabled = disabled; }
     public String getDeviceKeyHash() { return deviceKeyHash; }

@@ -70,9 +70,19 @@ public class PhoneNumberService {
     /** @throws DuplicateException (field {@code number}) if any brand already has the number */
     public PhoneNumber create(String customerId, String workspaceId, String number, String label,
             AuthenticatedUser me) {
+        return create(customerId, workspaceId, number, label, null, me);
+    }
+
+    /**
+     * @param connectionType null or {@code WHATSAPP_WEB}; {@code WHATSAPP_CLOUD_API} is reserved and
+     *     refused until Cloud API numbers can be onboarded
+     */
+    public PhoneNumber create(String customerId, String workspaceId, String number, String label,
+            String connectionType, AuthenticatedUser me) {
         PhoneNumber n = new PhoneNumber();
         n.setNumber(requireNumber(number));
         n.setLabel(cleanLabel(label));
+        n.setConnectionType(requireConnectionType(connectionType));
         n.setCustomerId(customerId);
         n.setWorkspaceId(workspaceId);
         n.setCreatedBy(me.getUsername());
@@ -188,7 +198,7 @@ public class PhoneNumberService {
 
     private PhoneNumberView view(PhoneNumber n, Workspace w, Customer c) {
         PhoneNumberStatus s = PhoneNumberStatus.of(n, w, c, live.stateOf(n.getId()));
-        return new PhoneNumberView(n.getId(), n.getNumber(), n.getLabel(), n.getCustomerId(),
+        return new PhoneNumberView(n.getId(), n.getNumber(), n.getLabel(), n.getConnectionType(), n.getCustomerId(),
                 c == null ? null : c.getName(), n.getWorkspaceId(), w == null ? null : w.getName(),
                 s.status(), n.getDisabled(), s.disabledBecause(), n.getLastConnectedAt(), n.getLastSeenAt(),
                 n.getLastWrongNumber(), n.getLastWrongNumberAt(), n.getDeviceKeyHash() != null, n.getCreationTime());
@@ -217,6 +227,16 @@ public class PhoneNumberService {
             throw new ValidationException("number", "digits only, country code first, 8 to 15 digits");
         }
         return n;
+    }
+
+    private static ConnectionType requireConnectionType(String value) {
+        if (value == null || value.isBlank() || ConnectionType.WHATSAPP_WEB.name().equals(value.trim())) {
+            return ConnectionType.WHATSAPP_WEB;
+        }
+        if (ConnectionType.WHATSAPP_CLOUD_API.name().equals(value.trim())) {
+            throw new ValidationException("connectionType", "WhatsApp Cloud API numbers are not supported yet");
+        }
+        throw new ValidationException("connectionType", "unknown connection type");
     }
 
     private static String cleanLabel(String label) {

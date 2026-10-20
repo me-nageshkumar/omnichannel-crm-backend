@@ -37,6 +37,8 @@ class PhoneNumbersApiIT {
     @Autowired ObjectMapper mapper;
     @Autowired TestUsers testUsers;
     @Autowired PhoneNumberRepository numbers;
+    @Autowired org.springframework.data.mongodb.core.MongoTemplate mongo;
+    @Autowired ConnectionTypeBackfill backfill;
 
     Customer acme;
     Workspace brandA;
@@ -111,6 +113,7 @@ class PhoneNumbersApiIT {
                 .andExpect(jsonPath("$.customerName").value("Acme"))
                 .andExpect(jsonPath("$.status").value("NOT_CONNECTED_YET"))
                 .andExpect(jsonPath("$.hasDevice").value(false))
+                .andExpect(jsonPath("$.connectionType").value("WHATSAPP_WEB"))
                 .andExpect(jsonPath("$.disabled").isEmpty());
 
         send(get(numbersOf(brandA)), wmToken, null)
@@ -264,5 +267,38 @@ class PhoneNumbersApiIT {
         String id = add(brandA, "919928088743", wmToken);
         send(post(numbersOf(brandA) + "/" + id + "/disable"), wmToken, null).andExpect(status().isOk());
         send(delete(numbersOf(brandA) + "/" + id), wmToken, null).andExpect(status().isNoContent());
+    }
+
+    @Test
+    void connectionTypeDefaultsToWebAndCloudApiIsNotSupportedYet() throws Exception {
+        Map<String, Object> web = number("919928088743", null);
+        web.put("connectionType", "WHATSAPP_WEB");
+        send(post(numbersOf(brandA)), wmToken, web)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.connectionType").value("WHATSAPP_WEB"));
+
+        Map<String, Object> cloud = number("919900000001", null);
+        cloud.put("connectionType", "WHATSAPP_CLOUD_API");
+        send(post(numbersOf(brandA)), wmToken, cloud)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.connectionType").value("WhatsApp Cloud API numbers are not supported yet"));
+        assertThat(numbers.count()).isEqualTo(1);
+    }
+
+    @Test
+    void numbersSavedBeforeTheFieldReadAsWeb() throws Exception {
+        PhoneNumber legacy = new PhoneNumber();
+        legacy.setNumber("919900000002");
+        legacy.setCustomerId(acme.getId());
+        legacy.setWorkspaceId(brandA.getId());
+        numbers.save(legacy);
+        mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(),
+                new org.springframework.data.mongodb.core.query.Update().unset("connectionType"), PhoneNumber.class);
+
+        send(get(numbersOf(brandA)), wmToken, null)
+                .andExpect(jsonPath("$[0].connectionType").value("WHATSAPP_WEB"));
+        backfill.run(null);
+        assertThat(mongo.getCollection("phone_numbers").find().first().getString("connectionType"))
+                .isEqualTo("WHATSAPP_WEB");
     }
 }

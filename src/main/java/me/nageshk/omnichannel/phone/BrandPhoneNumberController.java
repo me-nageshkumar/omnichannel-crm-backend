@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/workspaces/{workspaceId}/phone-numbers")
 public class BrandPhoneNumberController {
 
-    public record AddRequest(String number, String label) {}
+    public record AddRequest(String number, String label, String connectionType) {}
 
     public record LabelRequest(String label) {}
 
@@ -49,7 +49,7 @@ public class BrandPhoneNumberController {
     @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
     public PhoneNumberView add(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @RequestBody AddRequest req) {
-        return service.view(service.create(me.customerId(), workspaceId, req.number(), req.label(), me));
+        return service.view(service.create(me.customerId(), workspaceId, req.number(), req.label(), req.connectionType(), me));
     }
 
     @PutMapping("/{id}")

@@ -81,6 +81,7 @@ public class DemoSeeder implements ApplicationRunner {
         PhoneNumber n = new PhoneNumber();
         n.setNumber(NUMBER);
         n.setLabel("Main line");
+        n.setConnectionType(ConnectionType.WHATSAPP_WEB);
         n.setCustomerId(customer.getId());
         n.setWorkspaceId(fashion.getId());
         n.setCreatedBy("demo-seed");
