@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.inbox;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.inbox.InboxScope.ListScope;
@@ -25,7 +26,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * The inbox of a brand's WhatsApp Web numbers: {@code inbox:view} reads what the user's scope covers,
- * {@code inbox:send} closes and reopens, {@code inbox:assign} assigns, {@code inbox:settings} edits routing.
+ * {@code inbox:send} sends, closes and reopens, {@code inbox:assign} assigns, {@code inbox:settings} edits routing.
  * A chat outside the user's scope is 404.
  */
 @RestController
@@ -67,10 +68,12 @@ public class InboxController {
     private final PhoneNumberService phoneNumbers;
     private final UserAdminService userAdmin;
     private final TeamService teamService;
+    private final InboxSendService sender;
 
     public InboxController(InboxQueryService query, InboxScopeService scopeService, InboxStreamBroker broker,
             InboxViews views, InboxSettingService settings, ChatAssignmentService assignment,
-            PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService) {
+            PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService,
+            InboxSendService sender) {
         this.query = query;
         this.scopeService = scopeService;
         this.broker = broker;
@@ -80,6 +83,7 @@ public class InboxController {
         this.phoneNumbers = phoneNumbers;
         this.userAdmin = userAdmin;
         this.teamService = teamService;
+        this.sender = sender;
     }
 
     @GetMapping("/phone-numbers")
@@ -158,6 +162,15 @@ public class InboxController {
     public ChatView read(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String chatId) {
         return views.chat(query.markRead(query.requireVisible(me, workspaceId, chatId)));
+    }
+
+    /** Sends a text or a template to the chat through the number's device; see {@link InboxSendService}. */
+    @PostMapping("/chats/{chatId}/messages")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    public CompletableFuture<MessageView> send(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @PathVariable String chatId,
+            @RequestBody(required = false) SendRequest req) {
+        return sender.send(me, workspaceId, query.requireVisible(me, workspaceId, chatId), req);
     }
 
     @PostMapping("/chats/{chatId}/assign")

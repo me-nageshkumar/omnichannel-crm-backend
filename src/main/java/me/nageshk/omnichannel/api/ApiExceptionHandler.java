@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.api;
 
 import me.nageshk.omnichannel.auth.AccountLockedException;
+import me.nageshk.omnichannel.inbox.ChatClosedException;
 import me.nageshk.omnichannel.rpc.RpcException;
 import me.nageshk.omnichannel.user.InvalidOtpException;
 import me.nageshk.omnichannel.user.TwoFactorStateException;
@@ -49,6 +50,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(NoDeviceException.class)
     public ResponseEntity<Map<String, String>> noDevice(NoDeviceException e) {
         return body(HttpStatus.CONFLICT, e.code(), e.getMessage());
+    }
+
+    @ExceptionHandler(ChatClosedException.class)
+    public ResponseEntity<Map<String, String>> chatClosed(ChatClosedException e) {
+        return body(HttpStatus.CONFLICT, ChatClosedException.CODE, e.getMessage());
     }
 
     @ExceptionHandler(TwoFactorStateException.class)

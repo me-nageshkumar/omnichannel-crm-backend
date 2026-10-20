@@ -3,6 +3,8 @@ package me.nageshk.omnichannel.support;
 import tools.jackson.databind.ObjectMapper;
 import me.nageshk.omnichannel.rpc.Envelope;
 import java.net.URI;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -49,6 +51,11 @@ public class FakeDevice extends TextWebSocketHandler implements AutoCloseable {
         Envelope e = inbox.poll(5, TimeUnit.SECONDS);
         if (e == null) throw new AssertionError("no frame received within 5s");
         return e;
+    }
+
+    /** Next received frame, waiting at most {@code wait}; empty when none arrived. */
+    public Optional<Envelope> poll(Duration wait) throws InterruptedException {
+        return Optional.ofNullable(inbox.poll(wait.toMillis(), TimeUnit.MILLISECONDS));
     }
 
     public CloseStatus awaitClose() throws Exception {

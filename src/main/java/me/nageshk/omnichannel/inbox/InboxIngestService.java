@@ -144,13 +144,7 @@ public class InboxIngestService {
     private static boolean foldIntoChat(WaWebChat chat, Contact contact, WaWebMessage message, Instant at) {
         boolean reopened = false;
         if (chat.getContactId() == null) chat.setContactId(contact.getId());
-        if (chat.getLastMessageAt() == null || !at.isBefore(chat.getLastMessageAt())) {
-            chat.setLastMessageAt(at);
-            chat.setLastMessage(new WaWebChat.LastMessage(message.getDirection(), message.getType(),
-                    preview(message.getType(), message.getBody(),
-                            message.getMedia() == null ? null : message.getMedia().filename()),
-                    message.getStatus()));
-        }
+        foldPreview(chat, message, at);
         if (message.getDirection() == MessageDirection.IN) {
             chat.setUnreadCount(chat.getUnreadCount() + 1);
             chat.setLastInboundAt(later(chat.getLastInboundAt(), at));
@@ -162,6 +156,23 @@ public class InboxIngestService {
             chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         }
         return reopened;
+    }
+
+    /** Makes the message the chat's preview unless a newer one already is. */
+    private static void foldPreview(WaWebChat chat, WaWebMessage message, Instant at) {
+        if (chat.getLastMessageAt() == null || !at.isBefore(chat.getLastMessageAt())) {
+            chat.setLastMessageAt(at);
+            chat.setLastMessage(new WaWebChat.LastMessage(message.getDirection(), message.getType(),
+                    preview(message.getType(), message.getBody(),
+                            message.getMedia() == null ? null : message.getMedia().filename()),
+                    message.getStatus()));
+        }
+    }
+
+    /** Folds a message sent from the console into the chat summary: the preview and the last outbound time. */
+    static void foldOutbound(WaWebChat chat, WaWebMessage message, Instant at) {
+        foldPreview(chat, message, at);
+        chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
     }
 
     private Optional<Stored> storeAck(WhatsAppEvent event, JsonNode p, String waMessageId) {
@@ -208,7 +219,7 @@ public class InboxIngestService {
      * Moves the status up (never down; FAILED is reachable from any state and final) and stamps the time the
      * status was first reached. Returns whether anything changed.
      */
-    private static boolean applyAck(WaWebMessage message, int ack, Instant now) {
+    static boolean applyAck(WaWebMessage message, int ack, Instant now) {
         MessageStatus next = MessageStatus.ofAck(ack);
         MessageStatus current = message.getStatus();
         if (next == current || current == MessageStatus.FAILED) return false;
@@ -256,7 +267,7 @@ public class InboxIngestService {
         return Optional.of(new Ingested(chat, i.message(), i.chatCreated(), i.reopened(), i.messageInserted()));
     }
 
-    private static <T> T retrying(Supplier<T> action) {
+    static <T> T retrying(Supplier<T> action) {
         try {
             return action.get();
         } catch (DuplicateKeyException | OptimisticLockingFailureException e) {

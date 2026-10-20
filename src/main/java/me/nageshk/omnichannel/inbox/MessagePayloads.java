@@ -42,9 +42,13 @@ final class MessagePayloads {
 
     /** WhatsApp's time in seconds, else the capture time of the event, else now. */
     static Instant timestamp(JsonNode p, WhatsAppEvent event) {
+        return timestamp(p, event.ts() == null ? Instant.now() : Instant.ofEpochMilli(event.ts()));
+    }
+
+    /** WhatsApp's time in seconds, else {@code fallback}. */
+    static Instant timestamp(JsonNode p, Instant fallback) {
         long seconds = p.path("timestamp").asLong(0);
-        if (seconds > 0) return Instant.ofEpochSecond(seconds);
-        return event.ts() == null ? Instant.now() : Instant.ofEpochMilli(event.ts());
+        return seconds > 0 ? Instant.ofEpochSecond(seconds) : fallback;
     }
 
     static int ack(JsonNode p) {

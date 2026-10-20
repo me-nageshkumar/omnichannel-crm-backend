@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.template;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -26,6 +27,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 /** A brand's message templates: validation, uniqueness, placeholder settings and lifecycle. */
@@ -211,6 +213,16 @@ public class TemplateService {
         if (t.getLastUsedAt() != null) throw new TemplateInUseException();
         templates.delete(t);
         if (t.getMedia() != null) media.delete(t.getMedia().getMediaId());
+    }
+
+    /**
+     * Records that a send used the template. A targeted update by collection name, which Spring Data does not
+     * treat as a versioned write: the template's version and edit time stay as they are, so an author's pending
+     * save is not rejected.
+     */
+    public void markUsed(String templateId, Instant at) {
+        mongo.updateFirst(new Query(Criteria.where("_id").is(templateId)), new Update().set("lastUsedAt", at),
+                mongo.getCollectionName(MessageTemplate.class));
     }
 
     private TemplateView setStatus(AuthenticatedUser me, String workspaceId, String id, TemplateStatus status) {
