@@ -11,6 +11,8 @@ import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.TemplateInUseException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.contact.ContactAttribute;
+import me.nageshk.omnichannel.contact.ContactAttributeRepository;
 import me.nageshk.omnichannel.phone.ConnectionType;
 import me.nageshk.omnichannel.tenant.Workspace;
 import me.nageshk.omnichannel.tenant.WorkspaceRepository;
@@ -38,9 +40,11 @@ public class TemplateService {
     private final MongoTemplate mongo;
     private final UserRepository users;
     private final WorkspaceRepository workspaces;
+    private final ContactAttributeRepository attributes;
 
     public TemplateService(MessageTemplateRepository templates, TemplateValidator validator, MongoTemplate mongo,
-            UserRepository users, WorkspaceRepository workspaces) {
+            UserRepository users, WorkspaceRepository workspaces, ContactAttributeRepository attributes) {
+        this.attributes = attributes;
         this.templates = templates;
         this.validator = validator;
         this.mongo = mongo;
@@ -56,8 +60,7 @@ public class TemplateService {
         if (type != null) c.and("type").is(type);
         if (category != null && !category.isBlank()) c.and("category").is(category.trim());
         if (q != null && !q.isBlank()) c.and("name").regex(Pattern.quote(q.trim()), "i");
-        return mongo.find(new Query(c).with(Sort.by("nameKey")), MessageTemplate.class).stream()
-                .map(TemplateView::of).toList();
+        return views(workspaceId, mongo.find(new Query(c).with(Sort.by("nameKey")), MessageTemplate.class));
     }
 
     /** The brand's distinct categories, sorted ignoring case. */
@@ -70,7 +73,20 @@ public class TemplateService {
     }
 
     public TemplateView get(String workspaceId, String id) {
-        return TemplateView.of(require(workspaceId, id));
+        return view(require(workspaceId, id));
+    }
+
+    /** The view of one template with warnings computed against the brand's current attributes. */
+    public TemplateView view(MessageTemplate t) {
+        return views(t.getWorkspaceId(), List.of(t)).get(0);
+    }
+
+    /** Views of several templates of one brand; the brand's attributes are loaded once, and only if needed. */
+    private List<TemplateView> views(String workspaceId, List<MessageTemplate> found) {
+        boolean needed = found.stream().flatMap(t -> t.getPlaceholders().stream())
+                .anyMatch(p -> p.getKind() == PlaceholderKind.CONTACT_ATTRIBUTE);
+        List<ContactAttribute> current = needed ? attributes.findByWorkspaceIdOrderByNameKey(workspaceId) : List.of();
+        return found.stream().map(t -> TemplateView.of(t, current)).toList();
     }
 
     public MessageTemplate require(String workspaceId, String id) {
@@ -87,13 +103,13 @@ public class TemplateService {
         String[] who = who(me);
         t.setCreatedByUsername(who[0]);
         t.setCreatedByName(who[1]);
-        return TemplateView.of(save(t, who, r, r == null ? null : r.type(), false));
+        return view(save(t, who, r, r == null ? null : r.type(), false));
     }
 
     /** Replaces name, category, content and placeholders; {@code type} is ignored and {@code version} is required. */
     public TemplateView update(AuthenticatedUser me, String workspaceId, String id, TemplateRequest r) {
         MessageTemplate t = require(workspaceId, id);
-        return TemplateView.of(save(t, who(me), r, t.getType(), true));
+        return view(save(t, who(me), r, t.getType(), true));
     }
 
     public TemplateView archive(AuthenticatedUser me, String workspaceId, String id) {
@@ -117,7 +133,7 @@ public class TemplateService {
         String[] who = who(me);
         t.setUpdatedByUsername(who[0]);
         t.setUpdatedByName(who[1]);
-        return TemplateView.of(templates.save(t));
+        return view(templates.save(t));
     }
 
     private MessageTemplate save(MessageTemplate t, String[] who, TemplateRequest r, TemplateType type,
@@ -142,7 +158,8 @@ public class TemplateService {
             content = r.content();
             refs = validator.validate(type, content, errors);
         }
-        List<TemplatePlaceholder> placeholders = placeholders(refs, r.placeholders(), errors);
+        List<TemplatePlaceholder> placeholders = placeholders(t.getWorkspaceId(), refs, r.placeholders(),
+                update ? t.getPlaceholders() : List.of(), errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
         String nameKey = name.toLowerCase();
@@ -166,8 +183,8 @@ public class TemplateService {
     }
 
     /** One placeholder per detected ref, in order; settings for placeholders not in the content are dropped. */
-    private static List<TemplatePlaceholder> placeholders(List<PlaceholderRef> refs, List<PlaceholderSetting> given,
-            Map<String, String> errors) {
+    private List<TemplatePlaceholder> placeholders(String workspaceId, List<PlaceholderRef> refs,
+            List<PlaceholderSetting> given, List<TemplatePlaceholder> previous, Map<String, String> errors) {
         Map<String, PlaceholderSetting> byName = new LinkedHashMap<>();
         if (given != null) {
             for (PlaceholderSetting s : given) if (s != null && s.name() != null) byName.putIfAbsent(s.name().trim(), s);
@@ -175,10 +192,6 @@ public class TemplateService {
         List<TemplatePlaceholder> out = new ArrayList<>();
         for (PlaceholderRef ref : refs) {
             String field = "placeholders." + ref.name();
-            if (ref.kind() == PlaceholderKind.CONTACT_ATTRIBUTE) {
-                errors.put(field, "not supported yet");
-                continue;
-            }
             PlaceholderSetting s = byName.get(ref.name());
             if (s == null) {
                 errors.put(field, "settings are missing");
@@ -188,7 +201,14 @@ public class TemplateService {
             p.setName(ref.name());
             p.setKind(ref.kind());
             String fallback = s.fallback() == null ? null : s.fallback().strip();
-            if (ref.kind() == PlaceholderKind.CONTACT_FIELD) {
+            if (ref.kind() == PlaceholderKind.CONTACT_ATTRIBUTE) {
+                p.setAttributeKey(ref.attributeKey());
+                p.setAttributeId(bind(workspaceId, ref, previous));
+                if (p.getAttributeId() == null) {
+                    errors.put(field, "Unknown contact attribute \"" + ref.attributeKey() + "\"");
+                }
+            }
+            if (ref.kind() != PlaceholderKind.AGENT) {
                 if (fallback == null || fallback.isEmpty()) {
                     errors.put(field + ".fallback", "is required");
                 } else if (fallback.length() > MAX_SETTING_TEXT) {
@@ -219,6 +239,14 @@ public class TemplateService {
             out.add(p);
         }
         return out;
+    }
+
+    /** The id of the brand's attribute with the ref's key, else the id the previous version was bound to, else null. */
+    private String bind(String workspaceId, PlaceholderRef ref, List<TemplatePlaceholder> previous) {
+        return attributes.findByWorkspaceIdAndKey(workspaceId, ref.attributeKey()).map(ContactAttribute::getId)
+                .orElseGet(() -> previous.stream().filter(o -> o.getName().equals(ref.name()))
+                        .map(TemplatePlaceholder::getAttributeId).filter(java.util.Objects::nonNull).findFirst()
+                        .orElse(null));
     }
 
     private static DuplicateException clash(String name) {

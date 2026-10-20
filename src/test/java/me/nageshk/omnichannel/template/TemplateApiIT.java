@@ -137,9 +137,9 @@ class TemplateApiIT extends TemplateApiTestBase {
         noType.remove("type");
         send(post(url()), leadToken, noType).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fields.type").exists());
-        Map<String, Object> poll = text("A", "hi");
-        poll.put("type", "POLL");
-        send(post(url()), leadToken, poll).andExpect(status().isBadRequest())
+        Map<String, Object> image = text("A", "hi");
+        image.put("type", "IMAGE");
+        send(post(url()), leadToken, image).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fields.type").value("not supported yet"));
         Map<String, Object> media = text("A", "hi");
         media.put("mediaId", "abc");
@@ -207,14 +207,6 @@ class TemplateApiIT extends TemplateApiTestBase {
         send(post(url()), leadToken, text("B", "{{contact.phone}}", setting("contact.phone", "  ", null, null, null)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fields['placeholders.contact.phone.fallback']").exists());
-    }
-
-    @Test
-    void attributePlaceholderIsNotSupportedYet() throws Exception {
-        send(post(url()), leadToken,
-                text("A", "{{contact.attributes.city}}", setting("contact.attributes.city", "there", null, null, null)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fields['placeholders.contact.attributes.city']").value("not supported yet"));
     }
 
     @Test
