@@ -273,4 +273,78 @@ class TemplateRenderIT extends TemplateApiTestBase {
         assertThat(r.get("media").get("mimeType").asString()).isEqualTo("image/png");
         assertThat(r.get("media").get("size").asLong()).isEqualTo(40);
     }
+
+    private MessageTemplate legacy(String name, String body, TemplatePlaceholder... ps) {
+        MessageTemplate t = new MessageTemplate();
+        t.setWorkspaceId(brandA.getId());
+        t.setCustomerId(acme.getId());
+        t.setName(name);
+        t.setNameKey(name.toLowerCase());
+        t.setType(TemplateType.TEXT);
+        TemplateContent c = new TemplateContent();
+        c.setBody(body);
+        t.setContent(c);
+        t.setPlaceholders(new ArrayList<>(List.of(ps)));
+        t.setStatus(TemplateStatus.ACTIVE);
+        return templates.save(t);
+    }
+
+    private static TemplatePlaceholder agent(String name) {
+        TemplatePlaceholder p = new TemplatePlaceholder();
+        p.setName(name);
+        p.setKind(PlaceholderKind.AGENT);
+        p.setLabel("Name");
+        p.setFallback("x");
+        return p;
+    }
+
+    @Test
+    void storedThisPlaceholderNeverDumpsTheContext() throws Exception {
+        MessageTemplate t = legacy("LegacyA", "Hi {{this}}", agent("this"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> rawRender(leadToken, t.getId(), null, Map.of("this", "Ravi")))
+                .hasRootCauseInstanceOf(IllegalStateException.class)
+                .hasRootCauseMessage("template uses the reserved name \"this\"");
+
+        TemplatePlaceholder attr = new TemplatePlaceholder();
+        attr.setName("contact.attributes.this");
+        attr.setKind(PlaceholderKind.CONTACT_ATTRIBUTE);
+        attr.setAttributeKey("this");
+        attr.setFallback("x");
+        MessageTemplate saved = legacy("LegacyB", "Hi {{contact.attributes.this}}", attr);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> rawRender(leadToken, saved.getId(), null, Map.of()))
+                .hasRootCauseInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void blankBodyAfterRenderingIs400() throws Exception {
+        String id = create(text("Blank", "{{note}}", setting("note", null, "Note", null, false)));
+        send(post(url() + "/" + id + "/render"), leadToken, Map.of("values", Map.of("note", "  ")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION"))
+                .andExpect(jsonPath("$.fields['content.body']").value("is empty after filling placeholders"));
+        rawRender(leadToken, id, null, null).andExpect(status().isBadRequest());
+        JsonNode ok = render(leadToken, id, null, Map.of("note", "hello"));
+        assertThat(ok.get("content").get("body").asString()).isEqualTo("hello");
+    }
+
+    @Test
+    void blankCardNameQuestionAndOptionAfterRenderingAre400() throws Exception {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("fullName", "{{who}}");
+        card.put("phone", "919876543210");
+        String cardId = create(request("Card2", "CONTACT_CARD", card, setting("who", null, "Who", null, false)));
+        rawRender(leadToken, cardId, null, Map.of()).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields['content.fullName']").value("is empty after filling placeholders"));
+
+        Map<String, Object> poll = new LinkedHashMap<>();
+        poll.put("question", "{{q}}");
+        poll.put("options", List.of("{{a}}", "Blue"));
+        String pollId = create(request("Poll2", "POLL", poll,
+                setting("q", null, "Q", null, false), setting("a", null, "A", null, false)));
+        rawRender(leadToken, pollId, null, Map.of()).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields['content.question']").value("is empty after filling placeholders"))
+                .andExpect(jsonPath("$.fields['content.options']").value("is empty after filling placeholders"));
+        render(leadToken, pollId, null, Map.of("q", "Pick", "a", "Red"));
+    }
 }

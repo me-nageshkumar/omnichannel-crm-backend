@@ -104,6 +104,14 @@ class PlaceholderParserTest {
     }
 
     @Test
+    void rejectsReservedThis() {
+        rejects("{{this}}", "\"{{this}}\" is reserved");
+        rejects("{{ this }}", "\"{{this}}\" is reserved");
+        rejects("{{contact.attributes.this}}", "\"{{contact.attributes.this}}\" is reserved");
+        assertThat(PlaceholderParser.parse("{{this_2}} {{thistle}} {{contact.attributes.this_2}}")).hasSize(3);
+    }
+
+    @Test
     void rejectsLongName() {
         String ok = "a".repeat(40);
         assertThat(PlaceholderParser.parse("{{" + ok + "}}")).hasSize(1);

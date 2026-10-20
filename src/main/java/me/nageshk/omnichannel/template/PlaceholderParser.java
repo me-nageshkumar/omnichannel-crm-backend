@@ -11,6 +11,8 @@ public final class PlaceholderParser {
 
     private static final String SIGILS = "#^/>!{&=";
     private static final Pattern NAME = Pattern.compile("[a-z][a-z0-9_]{0,39}");
+    /** JMustache resolves this to the whole current context, so it can never be a placeholder name or key. */
+    static final String RESERVED = "this";
     private static final Pattern PATH_CHARS = Pattern.compile("[A-Za-z0-9_.]+");
 
     private PlaceholderParser() {}
@@ -62,12 +64,18 @@ public final class PlaceholderParser {
             if (inner.startsWith(prefix) && inner.length() > prefix.length()) {
                 String key = inner.substring(prefix.length());
                 if (!NAME.matcher(key).matches()) throw invalid(raw);
+                if (key.equals(RESERVED)) throw reserved(inner);
                 return new PlaceholderRef(inner, PlaceholderKind.CONTACT_ATTRIBUTE, key);
             }
             throw new PlaceholderSyntaxException("\"{{" + inner + "}}\" is not a contact field");
         }
         if (!NAME.matcher(inner).matches()) throw invalid(raw);
+        if (inner.equals(RESERVED)) throw reserved(inner);
         return new PlaceholderRef(inner, PlaceholderKind.AGENT, null);
+    }
+
+    private static PlaceholderSyntaxException reserved(String inner) {
+        return new PlaceholderSyntaxException("\"{{" + inner + "}}\" is reserved");
     }
 
     private static PlaceholderSyntaxException invalid(String raw) {

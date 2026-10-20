@@ -42,6 +42,12 @@ class AttributeKeysTest {
     }
 
     @Test
+    void thisIsReservedSoItIsTreatedAsTaken() {
+        assertThat(AttributeKeys.generate("This", Set.of())).isEqualTo("this_2");
+        assertThat(AttributeKeys.generate("this", Set.of("this_2"))).isEqualTo("this_3");
+    }
+
+    @Test
     void longNameIsCutTo40() {
         String key = AttributeKeys.generate("a".repeat(60), Set.of());
         assertThat(key).isEqualTo("a".repeat(40));

@@ -29,6 +29,7 @@ public class TemplateRenderer {
     /** Missing variables throw; text is not HTML-escaped; a variable is never looked up in another context. */
     static final Mustache.Compiler COMPILER = Mustache.compiler().escapeHTML(false).strictSections(true);
 
+    private static final String EMPTY = "is empty after filling placeholders";
     private static final String OVERFLOW = "is longer than %d characters after filling placeholders";
 
     private final TemplateService templates;
@@ -47,6 +48,7 @@ public class TemplateRenderer {
      */
     public RenderedTemplate render(AuthenticatedUser me, String workspaceId, String templateId, RenderRequest r) {
         MessageTemplate t = templates.require(workspaceId, templateId);
+        rejectReservedNames(t);
         String contactId = r == null || r.contactId() == null || r.contactId().isBlank() ? null : r.contactId().trim();
         Contact contact = null;
         if (contactId != null) {
@@ -63,7 +65,8 @@ public class TemplateRenderer {
         TemplateContent out = copy(in);
         Map<String, String> errors = new LinkedHashMap<>();
         switch (t.getType()) {
-            case TEXT -> out.setBody(fill(in.getBody(), context, "content.body", TemplateValidator.MAX_BODY, errors));
+            case TEXT -> out.setBody(fillRequired(in.getBody(), context, "content.body",
+                    TemplateValidator.MAX_BODY, errors));
             case IMAGE, VIDEO, DOCUMENT -> out.setCaption(
                     fill(in.getCaption(), context, "content.caption", TemplateValidator.MAX_CAPTION, errors));
             case LOCATION -> {
@@ -72,13 +75,13 @@ public class TemplateRenderer {
                         TemplateValidator.MAX_LOCATION_TEXT, errors));
             }
             case CONTACT_CARD -> {
-                out.setFullName(fill(in.getFullName(), context, "content.fullName",
+                out.setFullName(fillRequired(in.getFullName(), context, "content.fullName",
                         TemplateValidator.MAX_CARD_TEXT, errors));
                 out.setOrganization(fill(in.getOrganization(), context, "content.organization",
                         TemplateValidator.MAX_CARD_TEXT, errors));
             }
             case POLL -> {
-                out.setQuestion(fill(in.getQuestion(), context, "content.question",
+                out.setQuestion(fillRequired(in.getQuestion(), context, "content.question",
                         TemplateValidator.MAX_QUESTION, errors));
                 out.setOptions(options(in.getOptions(), context, errors));
             }
@@ -88,6 +91,18 @@ public class TemplateRenderer {
 
         String vcard = t.getType() == TemplateType.CONTACT_CARD ? vcard(out) : null;
         return new RenderedTemplate(t.getType(), out, view.media(), vcard, missing, view.warnings());
+    }
+
+    /**
+     * Defence in depth: JMustache resolves {@code this} to the whole context, so a stored template that uses it (the
+     * parser no longer lets one be saved) must never be compiled.
+     */
+    private static void rejectReservedNames(MessageTemplate t) {
+        for (TemplatePlaceholder p : t.getPlaceholders()) {
+            boolean reserved = p.getName() != null && List.of(p.getName().split("\\.", -1)).contains(PlaceholderParser.RESERVED)
+                    || PlaceholderParser.RESERVED.equals(p.getAttributeKey());
+            if (reserved) throw new IllegalStateException("template uses the reserved name \"this\"");
+        }
     }
 
     /** Nested maps so that {@code contact.attributes.city} resolves as a compound key; agent names sit at the top. */
@@ -150,6 +165,14 @@ public class TemplateRenderer {
         return out;
     }
 
+    /** Like {@link #fill} for a field whose minimum length is 1: a blank result is recorded under {@code field}. */
+    private static String fillRequired(String text, Map<String, Object> context, String field, int max,
+            Map<String, String> errors) {
+        String out = fill(text, context, field, max, errors);
+        if (out != null && out.isBlank()) errors.put(field, EMPTY);
+        return out;
+    }
+
     private static String execute(String text, Map<String, Object> context) {
         if (text == null) return null;
         try {
@@ -166,7 +189,9 @@ public class TemplateRenderer {
         Set<String> seen = new HashSet<>();
         for (String o : in) {
             String filled = execute(o, context);
-            if (filled.length() > TemplateValidator.MAX_OPTION) {
+            if (filled.isBlank()) {
+                errors.put("content.options", EMPTY);
+            } else if (filled.length() > TemplateValidator.MAX_OPTION) {
                 errors.put("content.options", OVERFLOW.formatted(TemplateValidator.MAX_OPTION));
             } else if (!seen.add(filled.toLowerCase())) {
                 errors.putIfAbsent("content.options", "options must be distinct, ignoring case, after filling placeholders");
