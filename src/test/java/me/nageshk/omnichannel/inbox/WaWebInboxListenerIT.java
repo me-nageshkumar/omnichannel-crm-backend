@@ -62,6 +62,11 @@ class WaWebInboxListenerIT {
             events.add(e);
         }
 
+        @EventListener
+        void on(InboxEvents.ActionRecorded e) {
+            events.add(e);
+        }
+
         <E> List<E> of(Class<E> type) {
             return events.stream().filter(type::isInstance).map(type::cast).toList();
         }
@@ -378,6 +383,11 @@ class WaWebInboxListenerIT {
             assertThat(a.getByUserId()).isNull();
             assertThat(a.getWorkspaceId()).isEqualTo(WS);
             assertThat(a.getAt()).isNotNull();
+        });
+        assertThat(recorder.of(InboxEvents.ActionRecorded.class)).singleElement().satisfies(e -> {
+            assertThat(e.action().getId()).isEqualTo(trail.getFirst().getId());
+            assertThat(e.action().getType()).isEqualTo(ActionType.REOPENED);
+            assertThat(e.chat().getId()).isEqualTo(chat.getId());
         });
     }
 

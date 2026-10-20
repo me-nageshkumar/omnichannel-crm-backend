@@ -32,7 +32,7 @@ public class InboxIngestService {
     }
 
     /** {@code changed} is false for a replay or a stale ack, which publishes nothing. */
-    private record Stored(Ingested result, boolean changed) {
+    private record Stored(Ingested result, boolean changed, WaWebChatAction reopenedAction) {
     }
 
     private final ContactService contacts;
@@ -79,6 +79,7 @@ public class InboxIngestService {
         boolean chatCreated;
         boolean reopened;
         boolean folded;
+        WaWebChatAction reopenedAction;
     }
 
     /**
@@ -120,7 +121,7 @@ public class InboxIngestService {
                 }
             }
             return Optional.of(new Stored(new Ingested(chat, message, progress.chatCreated, false, false),
-                    statusChanged || progress.chatCreated));
+                    statusChanged || progress.chatCreated, null));
         }
 
         if (message == null) {
@@ -131,11 +132,12 @@ public class InboxIngestService {
             if (foldIntoChat(chat, contact, message, at)) progress.reopened = true;
             chat = chats.save(chat);
             progress.folded = true;
-            if (progress.reopened) recordReopened(chat, now);
+            if (progress.reopened) progress.reopenedAction = recordReopened(chat, now);
         }
         if (message.getId() == null) message = messages.save(message);
         return Optional.of(new Stored(
-                new Ingested(chat, message, progress.chatCreated, progress.reopened, true), true));
+                new Ingested(chat, message, progress.chatCreated, progress.reopened, true), true,
+                progress.reopenedAction));
     }
 
     /** Updates the chat summary for a new message; returns whether a closed chat was reopened. */
@@ -178,7 +180,7 @@ public class InboxIngestService {
                 chat = chats.save(chat);
             }
         }
-        return Optional.of(new Stored(new Ingested(chat, message, false, false, false), changed));
+        return Optional.of(new Stored(new Ingested(chat, message, false, false, false), changed, null));
     }
 
     private WaWebMessage newMessage(WhatsAppEvent event, JsonNode p, WaWebChat chat, String waMessageId,
@@ -226,14 +228,14 @@ public class InboxIngestService {
         return true;
     }
 
-    private void recordReopened(WaWebChat chat, Instant now) {
+    private WaWebChatAction recordReopened(WaWebChat chat, Instant now) {
         WaWebChatAction a = new WaWebChatAction();
         a.setCustomerId(chat.getCustomerId());
         a.setWorkspaceId(chat.getWorkspaceId());
         a.setChatId(chat.getId());
         a.setType(ActionType.REOPENED);
         a.setAt(now);
-        actions.save(a);
+        return actions.save(a);
     }
 
     /** Routing may change the chat while handling the first events, so the streams get a fresh copy. */
@@ -243,7 +245,11 @@ public class InboxIngestService {
         if (!stored.get().changed()) return Optional.of(i);
         WaWebChat chat = i.chat();
         if (i.chatCreated()) publisher.publishEvent(new InboxEvents.ChatCreated(chat, i.message().getDirection()));
-        if (i.reopened()) publisher.publishEvent(new InboxEvents.ChatReopened(chat));
+        if (i.reopened()) {
+            if (stored.get().reopenedAction() != null)
+                publisher.publishEvent(new InboxEvents.ActionRecorded(chat, stored.get().reopenedAction()));
+            publisher.publishEvent(new InboxEvents.ChatReopened(chat));
+        }
         if (i.chatCreated() || i.reopened()) chat = chats.findById(chat.getId()).orElse(chat);
         publisher.publishEvent(new InboxEvents.MessageUpserted(chat, i.message(), i.messageInserted()));
         publisher.publishEvent(new InboxEvents.ChatChanged(chat));
