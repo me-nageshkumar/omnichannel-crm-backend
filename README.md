@@ -29,7 +29,7 @@ and never overwritten afterwards (roles are seeded first, see [Roles and access]
 | User | Variables | Notes |
 |---|---|---|
 | Super admin (role `SUPER_ADMIN`) | `OMNICHANNEL_SUPER_ADMIN_PASSWORD` (bcrypt hash, required until one exists), optional `_USERNAME` (default `nageshk`), `_NAME`, `_EMAIL`, `_MOBILE` | Seeded with two-factor off; enable it later from the console Profile page or `/api/users/me/two-factor/*` |
-| Demo data | `OMNICHANNEL_SEED_DEMO=true` | Off by default. Adds customer "Demo Retail" (owner `demo-admin`), brands "Demo Fashion" and "Demo Electronics", `demo-manager` / `demo-lead` / `demo-agent` in Demo Fashion, and the number 919928088743 there. Temporary passwords are logged once at WARN and must be changed at first login. Skipped when the customer exists |
+| Demo data | `OMNICHANNEL_SEED_DEMO=true` | Off by default. Adds customer "Demo Retail" (owner `demo-admin`), brands "Demo Fashion" and "Demo Electronics", `demo-manager` / `demo-lead` / `demo-agent` in Demo Fashion, the number 919928088743 and (see [Contacts](#contacts)) sample contacts there. Temporary passwords are logged once at WARN and must be changed at first login. Skipped when the customer exists |
 
 ```bash
 # bcrypt hash for a password (no {bcrypt} prefix)
@@ -226,6 +226,70 @@ newer connection or key, 4410 device removed (revoked or number deleted), 4412 l
 number (recorded and shown in the console). Disabling, revoking or deleting closes the live socket in
 the same request. Status shown per number: `DISABLED` (with `disabledBecause` NUMBER/BRAND/CUSTOMER),
 `NOT_CONNECTED_YET`, `WAITING_FOR_LOGIN`, `CONNECTED`, `WRONG_NUMBER`, `DISCONNECTED`.
+
+## Contacts
+
+A brand's people, in `contacts` (one per brand and WhatsApp person; everything is scoped by
+`workspaceId`, another brand's ids answer 404). Package `me.nageshk.omnichannel.contact`.
+
+- **Model:** `waId` (`…@c.us` or `…@lid`), `phone` (digits, country code first, or none for a hidden
+  number), `name` (the WhatsApp display name until a person edits it: `nameEdited`), `labels` (ids),
+  `attributes` (attribute id to text, at most 500 characters), `source` (`CHAT`, `IMPORT`, `MANUAL`),
+  `lastMessageAt`. Labels (name, colour, description) and attributes (name, description) are per-brand
+  lists in `contact_labels` / `contact_attributes`; names are unique per brand ignoring case; deleting
+  one removes it from every contact. Notes in `contact_notes`, saved filters in `contact_filters`.
+- **Identity:** within a brand no two contacts share a `phone` or a `waId` (partial unique indexes, so
+  any number of contacts may have neither). A `@c.us` chat finds the contact by phone (linking an
+  imported contact to its chat) else by `waId`, else creates it. A `@lid` chat finds by `waId`; if the
+  message carries the person's phone (`senderPn`, `_data.senderPn` or `author` ending `@c.us`) it is
+  filled in unless another contact of the brand has it. Contacts are never merged.
+- **From chats:** `ChatContactListener` handles `message` and `message_create`. Groups, broadcasts,
+  status and newsletters are ignored. Only incoming messages set the name (`notifyName`,
+  `_data.notifyName`, `pushname`); `lastMessageAt` only moves forward; replays change nothing; a failure
+  is logged at WARN and never reaches the event ack.
+- **Filters:** `POST .../contacts/search {filter?, filterId?, sort?, page?}` where a filter is
+  `q` (name contains or phone digits contain), `labelsAny/All/None`, `attributes: [{attributeId, op:
+  EQUALS|CONTAINS|EXISTS|NOT_EXISTS, value}]`, `source`, `numberHidden`, `createdFrom/To`,
+  `lastMessageFrom/To`, all ANDed. Label and attribute ids of another brand are dropped (they match
+  nothing). 50 per page (0-based), sort `LAST_MESSAGE` (default), `NAME`, `CREATED`; reply
+  `{items, total, page}`.
+- **Import:** `POST .../contacts/import` multipart `file` (UTF-8 CSV, at most 5 MB and 20 000 rows,
+  header row required). Columns by header name, case-insensitive: `phone` (required; `+`, spaces,
+  dashes and brackets are stripped; 8-15 digits, include the country code or it will not link to
+  chats), `name`, `labels` (names separated by `;` or `,`) and any existing attribute name. Unknown
+  columns and label names are reported, never created. An existing phone gets labels added, given
+  attributes overwritten and a non-empty name replaces its name; nothing is removed. Reply:
+  `{created, updated, unchanged, skipped, problems: [{row, reason}] (first 200), unknownColumns,
+  unknownLabels}`; row 1 is the header.
+- **Export:** `POST .../contacts/export {filter?, filterId?}` streams `text/csv` (UTF-8 with BOM, CRLF)
+  named `contacts-<brand>-<yyyyMMdd>.csv`: `phone, name, number_hidden, source, labels` (names joined by
+  `;`), one column per attribute, `created, last_message`. More than 100 000 rows (property
+  `omnichannel.contacts.export-limit`) answers 400 `TOO_MANY_ROWS`. Cells that start with `= + - @` get a
+  leading apostrophe so spreadsheets do not run them.
+- **Bulk:** `POST .../contacts/count {selection}` and `.../contacts/bulk {selection, action,
+  labelIds?, attributeId?, value?}` with `selection` exactly one of `ids` (at most 1000), `filter`,
+  `filterId`; actions `ADD_LABELS`, `REMOVE_LABELS`, `SET_ATTRIBUTE`, `CLEAR_ATTRIBUTE`, `DELETE` (also
+  needs `contact:delete`; removes the notes). Reply `{matched, changed}`; a filter matches at run time.
+- **Notes:** anyone with `contact:annotate` adds; only the author edits; the author or anyone with
+  `contact:delete` deletes. Deleting a contact deletes its notes.
+- **Demo data:** with `OMNICHANNEL_SEED_DEMO=true`, `ContactDemoSeeder` adds 4 labels, 3 attributes,
+  40 contacts (phones `91900000xxxx`, four hidden) and 6 notes to "Demo Fashion", unless that brand has
+  a label already.
+
+| Authority (BRAND) | Allows | Agent | Team Lead | Workspace Manager | Customer Admin |
+|---|---|---|---|---|---|
+| `contact:view` | list, search, count, view, notes, saved filters | yes | yes | yes | yes |
+| `contact:annotate` | labels on a contact, add and edit own notes | yes | yes | yes | yes |
+| `contact:edit` | add by hand, edit name and attributes | | yes | yes | yes |
+| `contact:import` | CSV import | | yes | yes | yes |
+| `contact:export` | CSV export | | yes | yes | yes |
+| `contact:bulk` | bulk label and attribute actions, edit saved filters | | yes | yes | yes |
+| `contact:delete` | delete contacts (one or bulk), others' notes | | | yes | yes |
+| `contact-field:manage` | create, rename, delete labels and attributes | | | yes | yes |
+
+Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, `GET|PUT|DELETE
+/{id}`, `POST|DELETE /{id}/labels/{labelId}`, `GET|POST /{id}/notes`, `PUT|DELETE /{id}/notes/{noteId}`),
+`contact-labels`, `contact-attributes` and `contact-filters` (`GET`, `POST`, `PUT|DELETE /{id}`).
 
 ## API
 
