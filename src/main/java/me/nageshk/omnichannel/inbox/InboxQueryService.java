@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import me.nageshk.omnichannel.api.ForbiddenException;
 import me.nageshk.omnichannel.api.NotFoundException;
@@ -45,7 +46,8 @@ public class InboxQueryService {
     }
 
     /**
-     * One page of a number's chats, newest message first.
+     * One page of a number's chats, newest message first; a page never splits a group of chats sharing one
+     * {@code lastMessageAt}, so the strict {@code before} cursor loses none.
      *
      * @param requested the list to show, or null for the widest the user may see
      * @param status OPEN or CLOSED, or null for both
@@ -65,35 +67,98 @@ public class InboxQueryService {
         all.add(scope.criteriaFor(list));
         if (status != null) all.add(where("status").is(status));
         if (unreadOnly) all.add(where("unreadCount").gt(0));
-        if (before != null) all.add(where("lastMessageAt").lt(before));
         if (q != null && !q.isBlank()) {
             List<String> contactIds = matchingContacts(workspaceId, q.strip());
             if (contactIds.isEmpty()) return new ChatsPage(List.of(), false);
             all.add(where("contactId").in(contactIds));
         }
-        Query query = new Query(new Criteria().andOperator(all)).with(Sort.by(Sort.Direction.DESC, "lastMessageAt"))
-                .limit(limit + 1);
-        List<WaWebChat> found = mongo.find(query, WaWebChat.class);
+        List<Criteria> older = new ArrayList<>(all);
+        if (before != null) older.add(where("lastMessageAt").lt(before));
+        List<WaWebChat> found = mongo.find(newestFirst(older, "lastMessageAt").limit(limit + 1), WaWebChat.class);
         boolean hasMore = found.size() > limit;
-        return new ChatsPage(views.chats(hasMore ? found.subList(0, limit) : found), hasMore);
+        List<WaWebChat> page = hasMore ? new ArrayList<>(found.subList(0, limit)) : found;
+        if (hasMore && sameInstant(found.get(limit).getLastMessageAt(), page.get(limit - 1).getLastMessageAt())) {
+            Instant tie = page.get(limit - 1).getLastMessageAt();
+            page.removeIf(c -> sameInstant(c.getLastMessageAt(), tie));
+            page.addAll(mongo.find(newestFirst(with(all, where("lastMessageAt").is(tie)), "lastMessageAt"),
+                    WaWebChat.class));
+            hasMore = mongo.exists(new Query(new Criteria().andOperator(with(all, where("lastMessageAt").lt(tie)))),
+                    WaWebChat.class);
+        }
+        return new ChatsPage(views.chats(page), hasMore);
     }
 
-    /** Messages and audit entries older than {@code before} merged by time, the newest {@code limit} oldest-first. */
+    /**
+     * Messages and audit entries older than {@code before} merged by time, the newest {@code limit} oldest-first;
+     * a page never splits a group of items sharing one instant, so the strict {@code before} cursor loses none.
+     */
     public ThreadPage thread(WaWebChat chat, Instant before, int limit) {
-        Query messageQuery = new Query(timeBefore(chat, "timestamp", before))
-                .with(Sort.by(Sort.Direction.DESC, "timestamp")).limit(limit + 1);
-        Query actionQuery = new Query(timeBefore(chat, "at", before))
-                .with(Sort.by(Sort.Direction.DESC, "at")).limit(limit + 1);
-        List<ThreadItem> merged = new ArrayList<>();
-        for (WaWebMessage m : mongo.find(messageQuery, WaWebMessage.class))
-            merged.add(new ThreadItem("message", views.message(m), null, m.getTimestamp()));
-        for (WaWebChatAction a : mongo.find(actionQuery, WaWebChatAction.class))
-            merged.add(new ThreadItem("action", null, views.action(a), a.getAt()));
-        merged.sort(Comparator.comparing(ThreadItem::at).reversed());
+        List<Criteria> base = List.of(where("chatId").is(chat.getId()));
+        List<Row> merged = new ArrayList<>(rows(base, before, limit + 1));
+        merged.sort(NEWEST_FIRST);
         boolean hasMore = merged.size() > limit;
-        List<ThreadItem> page = new ArrayList<>(hasMore ? merged.subList(0, limit) : merged);
-        Collections.reverse(page);
-        return new ThreadPage(page, hasMore);
+        List<Row> page = hasMore ? new ArrayList<>(merged.subList(0, limit)) : merged;
+        if (hasMore && sameInstant(merged.get(limit).at(), page.get(limit - 1).at())) {
+            Instant tie = page.get(limit - 1).at();
+            page.removeIf(r -> sameInstant(r.at(), tie));
+            page.addAll(tied(base, tie));
+            page.sort(NEWEST_FIRST);
+            hasMore = mongo.exists(new Query(new Criteria().andOperator(with(base, where("timestamp").lt(tie)))),
+                    WaWebMessage.class)
+                    || mongo.exists(new Query(new Criteria().andOperator(with(base, where("at").lt(tie)))),
+                            WaWebChatAction.class);
+        }
+        List<ThreadItem> items = new ArrayList<>(page.stream().map(Row::item).toList());
+        Collections.reverse(items);
+        return new ThreadPage(items, hasMore);
+    }
+
+    /** A thread entry with the id that orders entries of the same instant. */
+    private record Row(Instant at, String id, ThreadItem item) {
+    }
+
+    private static final Comparator<Row> NEWEST_FIRST =
+            Comparator.comparing(Row::at).thenComparing(Row::id).reversed();
+
+    private List<Row> rows(List<Criteria> base, Instant before, int max) {
+        List<Row> rows = new ArrayList<>();
+        for (WaWebMessage m : mongo.find(newestFirst(olderThan(base, "timestamp", before), "timestamp").limit(max),
+                WaWebMessage.class))
+            rows.add(new Row(m.getTimestamp(), m.getId(), new ThreadItem("message", views.message(m), null, m.getTimestamp())));
+        for (WaWebChatAction a : mongo.find(newestFirst(olderThan(base, "at", before), "at").limit(max),
+                WaWebChatAction.class))
+            rows.add(new Row(a.getAt(), a.getId(), new ThreadItem("action", null, views.action(a), a.getAt())));
+        return rows;
+    }
+
+    private List<Row> tied(List<Criteria> base, Instant at) {
+        List<Row> rows = new ArrayList<>();
+        for (WaWebMessage m : mongo.find(newestFirst(with(base, where("timestamp").is(at)), "timestamp"),
+                WaWebMessage.class))
+            rows.add(new Row(m.getTimestamp(), m.getId(), new ThreadItem("message", views.message(m), null, m.getTimestamp())));
+        for (WaWebChatAction a : mongo.find(newestFirst(with(base, where("at").is(at)), "at"), WaWebChatAction.class))
+            rows.add(new Row(a.getAt(), a.getId(), new ThreadItem("action", null, views.action(a), a.getAt())));
+        return rows;
+    }
+
+    private static List<Criteria> olderThan(List<Criteria> base, String key, Instant before) {
+        return before == null ? base : with(base, where(key).lt(before));
+    }
+
+    private static List<Criteria> with(List<Criteria> base, Criteria extra) {
+        List<Criteria> all = new ArrayList<>(base);
+        all.add(extra);
+        return all;
+    }
+
+    /** All the criteria, sorted by {@code key} then id, both newest first so the order is stable across ties. */
+    private static Query newestFirst(List<Criteria> all, String key) {
+        return new Query(new Criteria().andOperator(all))
+                .with(Sort.by(Sort.Order.desc(key), Sort.Order.desc("_id")));
+    }
+
+    private static boolean sameInstant(Instant a, Instant b) {
+        return Objects.equals(a, b);
     }
 
     /**
@@ -111,11 +176,6 @@ public class InboxQueryService {
         if (updated == null) throw new NotFoundException("chat not found");
         publisher.publishEvent(new InboxEvents.ChatChanged(updated));
         return updated;
-    }
-
-    private static Criteria timeBefore(WaWebChat chat, String field, Instant before) {
-        Criteria c = where("chatId").is(chat.getId());
-        return before == null ? c : c.and(field).lt(before);
     }
 
     private List<String> matchingContacts(String workspaceId, String q) {

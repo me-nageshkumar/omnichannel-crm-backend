@@ -348,6 +348,59 @@ class InboxApiIT extends InboxApiTestBase {
     }
 
     @Test
+    void chatPagesNeverSplitATieGroup() throws Exception {
+        chat("Old", "911", 1);
+        chat("TieA", "912", 5);
+        chat("TieB", "913", 5);
+        chat("TieC", "914", 5);
+        chat("New", "915", 9);
+
+        JsonNode first = json(send(get(chatsUrl()).param("limit", "3"), managerToken, null));
+        assertThat(names(first)).hasSize(4).contains("New", "TieA", "TieB", "TieC");
+        assertThat(first.get("hasMore").asBoolean()).isTrue();
+
+        String cursor = first.get("items").get(3).get("lastMessageAt").asString();
+        JsonNode second = json(send(get(chatsUrl()).param("limit", "3").param("before", cursor), managerToken, null));
+        assertThat(names(second)).containsExactly("Old");
+        assertThat(second.get("hasMore").asBoolean()).isFalse();
+
+        // the whole tie group is returned even when it overshoots the limit, and older chats remain
+        JsonNode exact = json(send(get(chatsUrl()).param("limit", "2").param("status", "OPEN")
+                .param("before", T0.plusSeconds(9 * 60).toString()), managerToken, null));
+        assertThat(names(exact)).hasSize(3).doesNotContain("Old");
+        assertThat(exact.get("hasMore").asBoolean()).isTrue();
+    }
+
+    @Test
+    void threadPagesNeverSplitATieGroup() throws Exception {
+        WaWebChat c = chat("Alice", "911", 1, agent, null);
+        message(c, 10, "old");
+        message(c, 20, "t1");
+        message(c, 20, "t2");
+        action(c, 20, ActionType.ASSIGNED);
+        message(c, 30, "new");
+        String url = inbox() + "/chats/" + c.getId() + "/thread";
+
+        JsonNode first = json(send(get(url).param("limit", "2"), agentToken, null));
+        assertThat(first.get("items")).hasSize(4);
+        assertThat(first.get("hasMore").asBoolean()).isTrue();
+        assertThat(first.get("items").get(0).get("at").asString()).isEqualTo(T0.plusSeconds(20).toString());
+        assertThat(first.get("items").get(3).get("message").get("body").asString()).isEqualTo("new");
+
+        JsonNode second = json(send(get(url).param("limit", "2")
+                .param("before", first.get("items").get(0).get("at").asString()), agentToken, null));
+        assertThat(second.get("items")).hasSize(1);
+        assertThat(second.get("items").get(0).get("message").get("body").asString()).isEqualTo("old");
+        assertThat(second.get("hasMore").asBoolean()).isFalse();
+
+        // a tie group that exactly fills the limit: no extension needed, the older message remains
+        JsonNode all = json(send(get(url).param("limit", "3").param("before", T0.plusSeconds(30).toString()),
+                agentToken, null));
+        assertThat(all.get("items")).hasSize(3);
+        assertThat(all.get("hasMore").asBoolean()).isTrue();
+    }
+
+    @Test
     void streamIsEventStream() throws Exception {
         MvcResult result = mvc.perform(get(inbox() + "/phone-numbers/" + number.getId() + "/stream")
                         .header("Authorization", "Bearer " + agentToken).accept(MediaType.TEXT_EVENT_STREAM))
