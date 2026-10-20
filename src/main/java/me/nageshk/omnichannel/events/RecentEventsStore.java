@@ -19,20 +19,20 @@ public class RecentEventsStore {
 
     public static final int CAPACITY = 200;
 
-    private final Map<String, Deque<StoredEvent>> byUser = new ConcurrentHashMap<>();
+    private final Map<String, Deque<StoredEvent>> byNumber = new ConcurrentHashMap<>();
     private long seq = 0;
 
     @EventListener
     public synchronized void on(WhatsAppEvent event) {
-        Deque<StoredEvent> q = byUser.computeIfAbsent(event.username(), u -> new ArrayDeque<>());
+        Deque<StoredEvent> q = byNumber.computeIfAbsent(event.phoneNumberId(), u -> new ArrayDeque<>());
         Instant capturedAt = event.ts() == null ? null : Instant.ofEpochMilli(event.ts());
         q.addLast(new StoredEvent(++seq, Instant.now(), event.name(), event.payload(), event.seq(), capturedAt));
         while (q.size() > CAPACITY) q.pollFirst();
     }
 
     /** Newest last. Events with seq greater than {@code afterSeq} only; at most {@code limit}. */
-    public synchronized List<StoredEvent> recent(String username, long afterSeq, int limit) {
-        Deque<StoredEvent> q = byUser.getOrDefault(username, new ArrayDeque<>());
+    public synchronized List<StoredEvent> recent(String phoneNumberId, long afterSeq, int limit) {
+        Deque<StoredEvent> q = byNumber.getOrDefault(phoneNumberId, new ArrayDeque<>());
         List<StoredEvent> out = new ArrayList<>();
         for (StoredEvent e : q) {
             if (e.seq() > afterSeq) out.add(e);

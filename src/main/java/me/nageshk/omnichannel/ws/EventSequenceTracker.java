@@ -13,17 +13,17 @@ public class EventSequenceTracker {
 
     private final ConcurrentHashMap<String, Long> last = new ConcurrentHashMap<>();
 
-    public boolean isDuplicate(String username, long seq) {
-        Long l = last.get(username);
+    public boolean isDuplicate(String phoneNumberId, long seq) {
+        Long l = last.get(phoneNumberId);
         return l != null && seq <= l;
     }
 
-    public void record(String username, long seq) {
-        last.merge(username, seq, Math::max);
+    public void record(String phoneNumberId, long seq) {
+        last.merge(phoneNumberId, seq, Math::max);
     }
 
-    public OptionalLong last(String username) {
-        Long l = last.get(username);
+    public OptionalLong last(String phoneNumberId) {
+        Long l = last.get(phoneNumberId);
         return l == null ? OptionalLong.empty() : OptionalLong.of(l);
     }
 }

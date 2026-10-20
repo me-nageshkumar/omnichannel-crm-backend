@@ -2,37 +2,54 @@ package me.nageshk.omnichannel.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.nageshk.omnichannel.rpc.Envelope;
 import java.io.IOException;
+import me.nageshk.omnichannel.phone.DevicePrincipal;
+import me.nageshk.omnichannel.rpc.Envelope;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
-/** One authenticated extension connection for one user, plus what we know about its WhatsApp state. */
+/**
+ * One authenticated extension connection for one onboarded number, plus what we know about its
+ * WhatsApp state. {@link #confirmed()} turns true once WhatsApp Web reports that very number.
+ */
 public final class DeviceSession {
 
     public static final String STATE_UNKNOWN = "UNKNOWN";
     public static final String STATE_CONNECTED = "CONNECTED";
 
-    private final String username;
+    private final DevicePrincipal principal;
     private final WebSocketSession session;
     private final ObjectMapper mapper;
     private volatile String waState = STATE_UNKNOWN;
     private volatile JsonNode info;
+    private volatile boolean confirmed;
 
-    public DeviceSession(String username, WebSocketSession session, ObjectMapper mapper) {
-        this.username = username;
+    public DeviceSession(DevicePrincipal principal, WebSocketSession session, ObjectMapper mapper) {
+        this.principal = principal;
         this.session = session;
         this.mapper = mapper;
         this.info = mapper.createObjectNode();
     }
 
-    public String username() {
-        return username;
+    public DevicePrincipal principal() {
+        return principal;
+    }
+
+    public String phoneNumberId() {
+        return principal.phoneNumberId();
     }
 
     public String sessionId() {
         return session.getId();
+    }
+
+    public boolean confirmed() {
+        return confirmed;
+    }
+
+    public void setConfirmed(boolean confirmed) {
+        this.confirmed = confirmed;
     }
 
     public String waState() {

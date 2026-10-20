@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.nageshk.omnichannel.auth.JwtService;
 import me.nageshk.omnichannel.support.TestUsers;
@@ -34,12 +35,22 @@ class MessagesApiIT {
     @Autowired TestRestTemplate rest;
     @Autowired JwtService jwt;
     @Autowired TestUsers testUsers;
+    @Autowired me.nageshk.omnichannel.support.TestDevices testDevices;
     String deviceToken;
+    String deviceKey;
+    String bridge;
 
     @BeforeEach
     void seedDeviceUser() {
         testUsers.deleteAll();
-        deviceToken = testUsers.tokenFor("demo");
+        deviceToken = testUsers.accessToken(testUsers.create("root", "pw", "SUPER_ADMIN", null));
+        var connected = testDevices.connected("919928088743");
+        deviceKey = connected.deviceKey();
+        bridge = "/api/phone-numbers/" + connected.phoneNumberId() + "/bridge";
+    }
+
+    private ObjectNode ready() {
+        return mapper.createObjectNode().put("pushname", "N").put("wid", "919928088743@c.us");
     }
     @Autowired ObjectMapper mapper;
 
@@ -51,7 +62,7 @@ class MessagesApiIT {
     }
 
     private ResponseEntity<JsonNode> postMessage(String token, String body) {
-        return rest.exchange("/api/messages", HttpMethod.POST, new HttpEntity<>(body, authHeaders(token)), JsonNode.class);
+        return rest.exchange(bridge + "/messages", HttpMethod.POST, new HttpEntity<>(body, authHeaders(token)), JsonNode.class);
     }
 
     @Test
@@ -65,7 +76,7 @@ class MessagesApiIT {
     @Test
     void sendWhenWhatsAppNotReadyReturns409() throws Exception {
         String token = deviceToken;
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
             ResponseEntity<JsonNode> res = postMessage(token, "{\"chatId\":\"1@c.us\",\"content\":\"hi\"}");
             assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
             assertThat(res.getBody().get("code").asText()).isEqualTo("WHATSAPP_NOT_READY");
@@ -75,8 +86,8 @@ class MessagesApiIT {
     @Test
     void sendRoundTripsThroughDevice() throws Exception {
         String token = deviceToken;
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
-            device.send(Envelope.event("ready", mapper.createObjectNode().put("pushname", "N")));
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
+            device.send(Envelope.event("ready", ready()));
             Thread.sleep(200);
 
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() ->
@@ -103,8 +114,8 @@ class MessagesApiIT {
     @Test
     void pageErrorMapsTo400() throws Exception {
         String token = deviceToken;
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
-            device.send(Envelope.event("ready", mapper.createObjectNode()));
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
+            device.send(Envelope.event("ready", ready()));
             Thread.sleep(200);
 
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() ->
@@ -122,8 +133,8 @@ class MessagesApiIT {
     @Test
     void noResponseMapsTo504() throws Exception {
         String token = deviceToken;
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
-            device.send(Envelope.event("ready", mapper.createObjectNode()));
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
+            device.send(Envelope.event("ready", ready()));
             Thread.sleep(200);
 
             ResponseEntity<JsonNode> res = postMessage(token, "{\"chatId\":\"1@c.us\",\"content\":\"x\"}");
@@ -142,14 +153,14 @@ class MessagesApiIT {
     @Test
     void statusReflectsDevice() throws Exception {
         String token = deviceToken;
-        ResponseEntity<JsonNode> before = rest.exchange("/api/status", HttpMethod.GET,
+        ResponseEntity<JsonNode> before = rest.exchange(bridge + "/status", HttpMethod.GET,
                 new HttpEntity<>(authHeaders(token)), JsonNode.class);
         assertThat(before.getBody().get("deviceConnected").asBoolean()).isFalse();
 
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
-            device.send(Envelope.event("ready", mapper.createObjectNode().put("pushname", "N")));
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
+            device.send(Envelope.event("ready", ready()));
             Thread.sleep(200);
-            ResponseEntity<JsonNode> after = rest.exchange("/api/status", HttpMethod.GET,
+            ResponseEntity<JsonNode> after = rest.exchange(bridge + "/status", HttpMethod.GET,
                     new HttpEntity<>(authHeaders(token)), JsonNode.class);
             assertThat(after.getBody().get("deviceConnected").asBoolean()).isTrue();
             assertThat(after.getBody().get("waState").asText()).isEqualTo("CONNECTED");
@@ -160,9 +171,9 @@ class MessagesApiIT {
     @Test
     void rpcPassesAnyMethodThroughWithoutReadinessGate() throws Exception {
         String token = deviceToken;
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() ->
-                    rest.exchange("/api/rpc", HttpMethod.POST,
+                    rest.exchange(bridge + "/rpc", HttpMethod.POST,
                             new HttpEntity<>("{\"method\":\"getState\"}", authHeaders(token)), JsonNode.class));
 
             Envelope req = device.next();
@@ -177,7 +188,7 @@ class MessagesApiIT {
 
     @Test
     void rpcWithoutDeviceReturns409() {
-        ResponseEntity<JsonNode> res = rest.exchange("/api/rpc", HttpMethod.POST,
+        ResponseEntity<JsonNode> res = rest.exchange(bridge + "/rpc", HttpMethod.POST,
                 new HttpEntity<>("{\"method\":\"getState\"}", authHeaders(deviceToken)), JsonNode.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(res.getBody().get("code").asText()).isEqualTo("NO_DEVICE");
@@ -186,13 +197,13 @@ class MessagesApiIT {
     @Test
     void eventsEndpointReturnsRecentEventsInOrderWithSeqCursor() throws Exception {
         String token = deviceToken;
-        try (FakeDevice device = FakeDevice.connectAndAuth(port, token)) {
-            device.send(Envelope.event("ready", mapper.createObjectNode().put("pushname", "N")));
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
+            device.send(Envelope.event("ready", ready()));
             device.send(Envelope.event("message", mapper.createObjectNode().put("body", "one")));
             device.send(Envelope.durableEvent("message", mapper.createObjectNode().put("body", "two"), 42, 1700000000000L));
             Thread.sleep(300);
 
-            ResponseEntity<JsonNode> res = rest.exchange("/api/events?limit=2", HttpMethod.GET,
+            ResponseEntity<JsonNode> res = rest.exchange(bridge + "/events?limit=2", HttpMethod.GET,
                     new HttpEntity<>(authHeaders(token)), JsonNode.class);
             assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
             JsonNode list = res.getBody();
@@ -205,7 +216,7 @@ class MessagesApiIT {
             assertThat(list.get(0).get("deviceSeq").isNull()).isTrue();
 
             long last = list.get(1).get("seq").asLong();
-            ResponseEntity<JsonNode> none = rest.exchange("/api/events?after=" + last, HttpMethod.GET,
+            ResponseEntity<JsonNode> none = rest.exchange(bridge + "/events?after=" + last, HttpMethod.GET,
                     new HttpEntity<>(authHeaders(token)), JsonNode.class);
             assertThat(none.getBody().size()).isEqualTo(0);
         }
@@ -213,26 +224,36 @@ class MessagesApiIT {
 
     @Test
     void statusWithoutTokenIs401() {
-        ResponseEntity<Map> res = rest.getForEntity("/api/status", Map.class);
+        ResponseEntity<Map> res = rest.getForEntity(bridge + "/status", Map.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void bridgeEndpointsAreForbiddenWithoutWhatsappBridge() {
+    void bridgeEndpointsAreSuperAdminOnly() {
         var acme = testUsers.customer("Acme");
-        String token = testUsers.accessToken(
+        String admin = testUsers.accessToken(
                 testUsers.createInCustomer(acme.getId(), "admin", "CUSTOMER_ADMIN", List.of()));
+        String am = testUsers.accessToken(testUsers.create("am", "pw", "ACCOUNT_MANAGER", null));
 
         var calls = Map.of(
-                "/api/messages", HttpMethod.POST,
-                "/api/rpc", HttpMethod.POST,
-                "/api/status", HttpMethod.GET,
-                "/api/events", HttpMethod.GET);
-        calls.forEach((path, method) -> {
-            String body = method == HttpMethod.POST ? "{\"method\":\"getState\",\"chatId\":\"1@c.us\",\"content\":\"hi\"}" : null;
-            ResponseEntity<JsonNode> res = rest.exchange(path, method, new HttpEntity<>(body, authHeaders(token)), JsonNode.class);
-            assertThat(res.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);
-            assertThat(res.getBody().get("code").asText()).as(path).isEqualTo("FORBIDDEN");
-        });
+                bridge + "/messages", HttpMethod.POST,
+                bridge + "/rpc", HttpMethod.POST,
+                bridge + "/status", HttpMethod.GET,
+                bridge + "/events", HttpMethod.GET);
+        for (String token : List.of(admin, am)) {
+            calls.forEach((path, method) -> {
+                String body = method == HttpMethod.POST ? "{\"method\":\"getState\",\"chatId\":\"1@c.us\",\"content\":\"hi\"}" : null;
+                ResponseEntity<JsonNode> res = rest.exchange(path, method, new HttpEntity<>(body, authHeaders(token)), JsonNode.class);
+                assertThat(res.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);
+                assertThat(res.getBody().get("code").asText()).as(path).isEqualTo("FORBIDDEN");
+            });
+        }
+    }
+
+    @Test
+    void oldPathsAreGone() {
+        ResponseEntity<JsonNode> res = rest.exchange("/api/status", HttpMethod.GET,
+                new HttpEntity<>(authHeaders(deviceToken)), JsonNode.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 }

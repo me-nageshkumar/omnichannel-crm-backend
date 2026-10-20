@@ -1,11 +1,11 @@
 package me.nageshk.omnichannel.ws;
 
+import me.nageshk.omnichannel.phone.DeviceKeys;
+import me.nageshk.omnichannel.phone.DevicePrincipal;
+import me.nageshk.omnichannel.phone.PhoneConnections;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import me.nageshk.omnichannel.access.Authority;
-import me.nageshk.omnichannel.auth.AccessTokenAuthenticator;
-import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.config.OmnichannelProperties;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
@@ -32,11 +32,13 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
 
     public static final int CLOSE_UNAUTHORIZED = 4401;
     public static final int CLOSE_REPLACED = 4409;
+    public static final int CLOSE_WRONG_NUMBER = 4412;
 
     private static final Logger log = LoggerFactory.getLogger(BridgeWebSocketHandler.class);
 
     private final ObjectMapper mapper;
-    private final AccessTokenAuthenticator authenticator;
+    private final DeviceKeys keys;
+    private final PhoneConnections connections;
     private final DeviceRegistry registry;
     private final RpcDispatcher dispatcher;
     private final ApplicationEventPublisher publisher;
@@ -48,7 +50,8 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
 
     public BridgeWebSocketHandler(
             ObjectMapper mapper,
-            AccessTokenAuthenticator authenticator,
+            DeviceKeys keys,
+            PhoneConnections connections,
             DeviceRegistry registry,
             RpcDispatcher dispatcher,
             ApplicationEventPublisher publisher,
@@ -57,7 +60,8 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             ScriptCatalog scripts,
             EventSequenceTracker sequences) {
         this.mapper = mapper;
-        this.authenticator = authenticator;
+        this.keys = keys;
+        this.connections = connections;
         this.registry = registry;
         this.dispatcher = dispatcher;
         this.publisher = publisher;
@@ -99,13 +103,13 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             case Envelope.REQUEST -> handleRequest(device, frame);
             case Envelope.RESPONSE -> {
                 if (!dispatcher.complete(frame)) {
-                    log.debug("[{}] response for unknown id {}", device.username(), frame.id());
+                    log.debug("[{}] response for unknown id {}", device.phoneNumberId(), frame.id());
                 }
             }
             case Envelope.EVENT -> handleEvent(device, frame);
             case Envelope.PING -> device.send(Envelope.pong());
             case Envelope.PONG -> { /* keepalive reply, nothing to do */ }
-            default -> log.warn("[{}] unknown frame type {}", device.username(), frame.type());
+            default -> log.warn("[{}] unknown frame type {}", device.phoneNumberId(), frame.type());
         }
     }
 
@@ -114,22 +118,23 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             closeQuietly(session, CLOSE_UNAUTHORIZED, "auth required");
             return;
         }
-        Optional<String> username = authenticator.authenticate(frame.token())
-                .filter(user -> user.hasAuthority(Authority.WHATSAPP_BRIDGE.code()))
-                .map(AuthenticatedUser::getUsername);
-        if (username.isEmpty()) {
-            closeQuietly(session, CLOSE_UNAUTHORIZED, "invalid token");
+        Optional<DevicePrincipal> principal = keys.authenticate(frame.token());
+        if (principal.isEmpty()) {
+            closeQuietly(session, CLOSE_UNAUTHORIZED, "invalid device key");
             return;
         }
         cancelAuthTimer(session.getId());
-        DeviceSession device = new DeviceSession(username.get(), session, mapper);
+        DeviceSession device = new DeviceSession(principal.get(), session, mapper);
         registry.register(device).ifPresent(old -> {
-            log.info("[{}] replacing device {} with {}", old.username(), old.sessionId(), device.sessionId());
+            log.info("[{}] replacing device {} with {}", old.phoneNumberId(), old.sessionId(), device.sessionId());
             old.close(CLOSE_REPLACED, "replaced by newer connection");
         });
-        ObjectNode ok = mapper.createObjectNode().put("ok", true).put("username", username.get());
+        ObjectNode ok = mapper.createObjectNode().put("ok", true)
+                .put("phoneNumberId", principal.get().phoneNumberId())
+                .put("number", principal.get().number())
+                .put("brandName", principal.get().brandName());
         device.send(Envelope.response("auth", ok));
-        log.info("[{}] device connected ({})", username.get(), session.getId());
+        log.info("[{}] device connected for +{} ({})", device.phoneNumberId(), principal.get().number(), session.getId());
     }
 
     private void handleRequest(DeviceSession device, Envelope frame) throws IOException {
@@ -139,8 +144,9 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
                 if (params.hasNonNull("waState")) device.setWaState(params.get("waState").asText());
                 if (params.hasNonNull("info")) device.setInfo(params.get("info"));
                 JsonNode outbox = params.path("outbox");
-                log.info("[{}] hello waState={} outbox pending={} dropped={}", device.username(),
+                log.info("[{}] hello waState={} outbox pending={} dropped={}", device.phoneNumberId(),
                         device.waState(), outbox.path("pending").asInt(0), outbox.path("dropped").asInt(0));
+                if (!checkNumber(device, params.get("info"))) return;
             }
             ObjectNode result = mapper.createObjectNode().put("ok", true);
             result.set("scripts", scripts.manifest());
@@ -151,12 +157,54 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
                 "unknown server method: " + frame.method()));
     }
 
+    /**
+     * Confirms or refuses the number from what WhatsApp Web reports. A mismatch is recorded and
+     * closes the socket; an unreadable account (not logged in yet, or a privacy id) changes nothing.
+     *
+     * @return false if the socket was closed
+     */
+    private boolean checkNumber(DeviceSession device, JsonNode info) {
+        String number = device.principal().number();
+        NumberCheck check = NumberCheck.check(number, info);
+        switch (check.result()) {
+            case MATCH -> {
+                if (!device.confirmed()) {
+                    device.setConfirmed(true);
+                    connections.connected(device.phoneNumberId());
+                    log.info("[{}] number +{} confirmed", device.phoneNumberId(), number);
+                }
+            }
+            case MISMATCH -> {
+                device.setConfirmed(false);
+                connections.wrongNumber(device.phoneNumberId(), check.reported());
+                log.warn("[{}] WhatsApp Web is logged in to +{}, expected +{}", device.phoneNumberId(),
+                        check.reported(), number);
+                device.close(CLOSE_WRONG_NUMBER, "WhatsApp Web is logged in to +" + check.reported()
+                        + ", this device is for +" + number + ".");
+                return false;
+            }
+            case UNKNOWN -> { /* wait for a readable account */ }
+        }
+        return true;
+    }
+
     private void handleEvent(DeviceSession device, Envelope frame) {
         JsonNode payload = frame.payload() == null ? mapper.nullNode() : frame.payload();
         Long seq = frame.seq();
-        if (seq != null && sequences.isDuplicate(device.username(), seq)) {
-            log.debug("[{}] duplicate event seq={} ({}), re-acking", device.username(), seq, frame.name());
+        if ("ready".equals(frame.name()) && !checkNumber(device, payload)) return;
+        if (!device.confirmed()) {
+            // not acked: the extension keeps it and replays it once the number is confirmed
+            log.debug("[{}] dropping {} before the number is confirmed", device.phoneNumberId(), frame.name());
+            return;
+        }
+        if (seq != null && sequences.isDuplicate(device.phoneNumberId(), seq)) {
+            log.debug("[{}] duplicate event seq={} ({}), re-acking", device.phoneNumberId(), seq, frame.name());
             sendAck(device, seq);
+            return;
+        }
+        if (frame.acct() != null && !frame.acct().equals(device.principal().number())) {
+            log.info("[{}] dropping {} captured under +{}", device.phoneNumberId(), frame.name(), frame.acct());
+            if (seq != null) sendAck(device, seq);
             return;
         }
         switch (frame.name() == null ? "" : frame.name()) {
@@ -168,9 +216,11 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
             case "disconnected" -> device.setWaState("DISCONNECTED");
             default -> { /* no state change */ }
         }
-        publisher.publishEvent(new WhatsAppEvent(this, device.username(), frame.name(), payload, seq, frame.ts()));
+        DevicePrincipal p = device.principal();
+        publisher.publishEvent(new WhatsAppEvent(this, p.phoneNumberId(), p.workspaceId(), p.customerId(),
+                frame.name(), payload, seq, frame.ts()));
         if (seq != null) {
-            sequences.record(device.username(), seq);
+            sequences.record(device.phoneNumberId(), seq);
             sendAck(device, seq);
         }
     }
@@ -179,7 +229,7 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         try {
             device.send(Envelope.eventAck(seq));
         } catch (IOException e) {
-            log.warn("[{}] could not ack event seq={}: {}", device.username(), seq, e.getMessage());
+            log.warn("[{}] could not ack event seq={}: {}", device.phoneNumberId(), seq, e.getMessage());
         }
     }
 
@@ -187,9 +237,10 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         cancelAuthTimer(session.getId());
         registry.unregister(session.getId()).ifPresent(device -> {
-            int failed = dispatcher.failAll(device.username(), RpcException.DEVICE_DISCONNECTED);
+            if (device.confirmed()) connections.seen(device.phoneNumberId());
+            int failed = dispatcher.failAll(device.phoneNumberId(), RpcException.DEVICE_DISCONNECTED);
             log.info("[{}] device disconnected ({}), status={}, failedCalls={}",
-                    device.username(), session.getId(), status.getCode(), failed);
+                    device.phoneNumberId(), session.getId(), status.getCode(), failed);
         });
     }
 

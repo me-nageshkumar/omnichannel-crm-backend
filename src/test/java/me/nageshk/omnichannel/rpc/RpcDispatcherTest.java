@@ -37,7 +37,7 @@ class RpcDispatcherTest {
         wsSession = mock(WebSocketSession.class);
         when(wsSession.getId()).thenReturn("s1");
         when(wsSession.isOpen()).thenReturn(true);
-        device = new DeviceSession("demo", wsSession, mapper);
+        device = new DeviceSession(new me.nageshk.omnichannel.phone.DevicePrincipal("demo", "c1", "w1", "919928088743", "k1", "Brand"), wsSession, mapper);
         Iterator<String> ids = List.of("id-1", "id-2", "id-3").iterator();
         dispatcher = new RpcDispatcher(Duration.ofSeconds(5), ids::next);
     }

@@ -13,7 +13,7 @@ public class LoggingEventListener {
     private static final Logger log = LoggerFactory.getLogger(LoggingEventListener.class);
 
     /** WhatsApp ids arrive either flattened to a string or as a Wid object {server,user,_serialized}. */
-    static String wid(JsonNode node) {
+    public static String wid(JsonNode node) {
         if (node == null || node.isMissingNode() || node.isNull()) return "";
         if (node.isTextual()) return node.asText();
         if (node.isObject()) {
@@ -49,7 +49,7 @@ public class LoggingEventListener {
         switch (event.name()) {
             case "message", "message_create" -> log.info(
                     "[{}] {} id={} chat={} from={} to={} type={} body={}{}",
-                    event.username(), event.name(),
+                    event.phoneNumberId(), event.name(),
                     messageId(p.path("id")),
                     wid(p.path("id").path("remote")),
                     wid(p.path("from")),
@@ -59,17 +59,17 @@ public class LoggingEventListener {
                     origin(event));
             case "message_ack" -> log.info(
                     "[{}] message_ack id={} ack={}{}",
-                    event.username(),
+                    event.phoneNumberId(),
                     messageId(p.path("message").path("id")),
                     p.path("ack").asInt(),
                     origin(event));
             case "ready" -> log.info(
                     "[{}] ready wid={} pushname={} waVersion={}",
-                    event.username(),
+                    event.phoneNumberId(),
                     wid(p.path("wid")),
                     p.path("pushname").asText(),
                     p.path("waVersion").asText());
-            default -> log.info("[{}] {} {}", event.username(), event.name(), p);
+            default -> log.info("[{}] {} {}", event.phoneNumberId(), event.name(), p);
         }
     }
 }

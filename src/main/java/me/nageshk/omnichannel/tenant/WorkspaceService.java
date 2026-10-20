@@ -1,5 +1,8 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.phone.DeviceAccessChanged;
+import me.nageshk.omnichannel.phone.DeviceAccessChanged.Reason;
+import org.springframework.context.ApplicationEventPublisher;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.enablement.EnableLevel;
 import me.nageshk.omnichannel.enablement.Enablement;
@@ -20,8 +23,11 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaces;
     private final TeamRepository teams;
     private final Enablement enablement;
+    private final ApplicationEventPublisher events;
 
-    public WorkspaceService(WorkspaceRepository workspaces, TeamRepository teams, Enablement enablement) {
+    public WorkspaceService(WorkspaceRepository workspaces, TeamRepository teams, Enablement enablement,
+            ApplicationEventPublisher events) {
+        this.events = events;
         this.enablement = enablement;
         this.workspaces = workspaces;
         this.teams = teams;
@@ -86,6 +92,7 @@ public class WorkspaceService {
         }
         Workspace saved = workspaces.save(w);
         if (before != enabled) enablement.record("WORKSPACE", workspaceId, before, enabled, me, level);
+        if (!enabled) events.publishEvent(new DeviceAccessChanged(null, customerId, workspaceId, Reason.DISABLED));
         return saved;
     }
 

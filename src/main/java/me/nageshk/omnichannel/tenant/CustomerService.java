@@ -1,5 +1,8 @@
 package me.nageshk.omnichannel.tenant;
 
+import me.nageshk.omnichannel.phone.DeviceAccessChanged;
+import me.nageshk.omnichannel.phone.DeviceAccessChanged.Reason;
+import org.springframework.context.ApplicationEventPublisher;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.enablement.EnableLevel;
 import me.nageshk.omnichannel.enablement.Enablement;
@@ -50,10 +53,12 @@ public class CustomerService {
     private final AssignmentPolicy policy;
     private final RoleCache roles;
     private final Enablement enablement;
+    private final ApplicationEventPublisher events;
 
     public CustomerService(CustomerRepository customers, WorkspaceRepository workspaces, TeamRepository teams,
             UserRepository users, UserAdminService userAdmin, AccessService access, AssignmentPolicy policy,
-            RoleCache roles, Enablement enablement) {
+            RoleCache roles, Enablement enablement, ApplicationEventPublisher events) {
+        this.events = events;
         this.enablement = enablement;
         this.customers = customers;
         this.workspaces = workspaces;
@@ -161,6 +166,7 @@ public class CustomerService {
         c.setActive(enabled);
         Customer saved = customers.save(c);
         enablement.record("CUSTOMER", id, !enabled, enabled, me, EnableLevel.PLATFORM);
+        if (!enabled) events.publishEvent(new DeviceAccessChanged(null, id, null, Reason.DISABLED));
         return saved;
     }
 

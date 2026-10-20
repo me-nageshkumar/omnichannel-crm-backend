@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RpcDispatcher {
 
-    private record Pending(String username, CompletableFuture<JsonNode> future) {}
+    private record Pending(String phoneNumberId, CompletableFuture<JsonNode> future) {}
 
     private final ConcurrentHashMap<String, Pending> pending = new ConcurrentHashMap<>();
     private final Duration timeout;
@@ -36,7 +36,7 @@ public class RpcDispatcher {
     public CompletableFuture<JsonNode> call(DeviceSession device, String method, JsonNode params) {
         String id = idSupplier.get();
         CompletableFuture<JsonNode> future = new CompletableFuture<>();
-        pending.put(id, new Pending(device.username(), future));
+        pending.put(id, new Pending(device.phoneNumberId(), future));
         future.orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS)
                 .whenComplete((result, error) -> pending.remove(id));
         try {
@@ -65,11 +65,11 @@ public class RpcDispatcher {
     }
 
     /** Fails every pending call for a user, e.g. when its device disconnects. @return number failed. */
-    public int failAll(String username, String code) {
+    public int failAll(String phoneNumberId, String code) {
         int count = 0;
         for (var entry : pending.entrySet()) {
-            if (entry.getValue().username().equals(username) && pending.remove(entry.getKey()) != null) {
-                entry.getValue().future().completeExceptionally(new RpcException(code, "device " + username + ": " + code));
+            if (entry.getValue().phoneNumberId().equals(phoneNumberId) && pending.remove(entry.getKey()) != null) {
+                entry.getValue().future().completeExceptionally(new RpcException(code, "device " + phoneNumberId + ": " + code));
                 count++;
             }
         }
