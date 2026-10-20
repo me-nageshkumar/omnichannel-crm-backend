@@ -99,6 +99,12 @@ public class ApiExceptionHandler {
         return body(HttpStatus.CONFLICT, RoleInUseException.CODE, e.getMessage());
     }
 
+    @ExceptionHandler(AuthorityInUseException.class)
+    public ResponseEntity<Map<String, Object>> authorityInUse(AuthorityInUseException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", AuthorityInUseException.CODE, "message", String.valueOf(e.getMessage()), "roles", e.roles()));
+    }
+
     @ExceptionHandler(AlreadyAllBrandsException.class)
     public ResponseEntity<Map<String, String>> alreadyAllBrands(AlreadyAllBrandsException e) {
         return body(HttpStatus.BAD_REQUEST, AlreadyAllBrandsException.CODE, e.getMessage());

@@ -14,8 +14,16 @@ public class AuthorityDefinition {
             Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*:[a-z0-9]+(-[a-z0-9]+)*$");
     public static final int MAX_CODE_LENGTH = 64;
 
+    public static final Pattern GROUP_PATTERN = Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*$");
+    public static final int MAX_GROUP_LENGTH = 40;
+    public static final int MAX_DESCRIPTION_LENGTH = 200;
+
     public static boolean isValidCode(String code) {
         return code != null && code.length() <= MAX_CODE_LENGTH && CODE_PATTERN.matcher(code).matches();
+    }
+
+    public static boolean isValidGroup(String group) {
+        return group != null && group.length() <= MAX_GROUP_LENGTH && GROUP_PATTERN.matcher(group).matches();
     }
 
     @Id

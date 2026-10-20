@@ -4,7 +4,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.access.RoleService.PreviewChange;
@@ -21,13 +20,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Super Admin console: the authority catalogue and role management. */
+/** Super Admin console: role management. */
 @RestController
 @PreAuthorize("hasAuthority('SUPER_ADMIN')")
 @RequestMapping("/api")
 public class RoleController {
-
-    public record AuthorityView(String code, RoleLevel level, String description) {}
 
     public record RoleView(String id, String name, String description, RoleLevel level, List<String> authorities,
             boolean builtIn, long userCount) {}
@@ -49,12 +46,6 @@ public class RoleController {
 
     public RoleController(RoleService service) {
         this.service = service;
-    }
-
-    @GetMapping("/authorities")
-    public List<AuthorityView> authorities() {
-        return Arrays.stream(Authority.values())
-                .map(a -> new AuthorityView(a.code(), a.level(), a.description())).toList();
     }
 
     @GetMapping("/roles")
