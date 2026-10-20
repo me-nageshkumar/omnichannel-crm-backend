@@ -24,6 +24,7 @@ class ScriptsApiIT {
     @Autowired TestRestTemplate rest;
     @Autowired JwtService jwt;
     @Autowired TestUsers testUsers;
+    @Autowired me.nageshk.omnichannel.support.TestDevices testDevices;
     String deviceToken;
 
     @BeforeEach
@@ -67,6 +68,29 @@ class ScriptsApiIT {
         assertThat(missing.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         ResponseEntity<String> anon = rest.getForEntity("/api/scripts/page", String.class);
         assertThat(anon.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void deviceKeyCanFetchScripts() {
+        HttpHeaders h = new HttpHeaders();
+        h.set("Authorization", "Device " + testDevices.connected("919928088743").deviceKey());
+        ResponseEntity<JsonNode> res = rest.exchange("/api/scripts", HttpMethod.GET, new HttpEntity<>(h), JsonNode.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        ResponseEntity<byte[]> page = rest.exchange("/api/scripts/page", HttpMethod.GET, new HttpEntity<>(h), byte[].class);
+        assertThat(page.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void wrongDeviceKeyIs401() {
+        HttpHeaders h = new HttpHeaders();
+        h.set("Authorization", "Device dk_nope");
+        ResponseEntity<String> res = rest.exchange("/api/scripts", HttpMethod.GET, new HttpEntity<>(h), String.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void customerUserCannotFetchScripts() {
+        scriptsAreForbiddenWithoutWhatsappBridge();
     }
 
     @Test

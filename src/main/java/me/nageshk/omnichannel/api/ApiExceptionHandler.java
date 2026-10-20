@@ -105,6 +105,16 @@ public class ApiExceptionHandler {
                 "code", AuthorityInUseException.CODE, "message", String.valueOf(e.getMessage()), "roles", e.roles()));
     }
 
+    @ExceptionHandler(InvalidConnectCodeException.class)
+    public ResponseEntity<Map<String, String>> invalidConnectCode(InvalidConnectCodeException e) {
+        return body(HttpStatus.BAD_REQUEST, InvalidConnectCodeException.CODE, e.getMessage());
+    }
+
+    @ExceptionHandler(DeviceDisabledException.class)
+    public ResponseEntity<Map<String, String>> deviceDisabled(DeviceDisabledException e) {
+        return body(HttpStatus.FORBIDDEN, DeviceDisabledException.CODE, e.getMessage());
+    }
+
     @ExceptionHandler(DisabledAtHigherLevelException.class)
     public ResponseEntity<Map<String, Object>> disabledAtHigherLevel(DisabledAtHigherLevelException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(

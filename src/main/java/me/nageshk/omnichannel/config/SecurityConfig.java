@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.config;
 
+import me.nageshk.omnichannel.phone.DeviceKeyAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import me.nageshk.omnichannel.auth.JwtAuthFilter;
@@ -36,6 +37,7 @@ public class SecurityConfig {
     public static final String LOGIN_PATH = "/api/auth/login";
     public static final String VERIFY_OTP_PATH = "/api/auth/verify-otp";
     public static final String INITIAL_PASSWORD_PATH = "/api/auth/initial-password";
+    public static final String DEVICE_CONNECT_PATH = "/api/devices/connect";
 
     /**
      * {@code POST} to the login and verify-otp paths is handled by an {@link AuthenticationFilter}:
@@ -47,6 +49,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(
             HttpSecurity http,
             JwtAuthFilter jwtFilter,
+            DeviceKeyAuthFilter deviceFilter,
             AuthenticationManager loginManager,
             DelegatingAuthConverter converter,
             LoginSuccessHandler success,
@@ -64,7 +67,8 @@ public class SecurityConfig {
                 .httpBasic(b -> b.disable())
                 .formLogin(f -> f.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, LOGIN_PATH, VERIFY_OTP_PATH, INITIAL_PASSWORD_PATH).permitAll()
+                        .requestMatchers(HttpMethod.POST, LOGIN_PATH, VERIFY_OTP_PATH, INITIAL_PASSWORD_PATH, DEVICE_CONNECT_PATH)
+                        .permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         // the console's static files and its client-side routes
@@ -73,7 +77,8 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(
                         (req, res, ex) -> res.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
                 .addFilterAt(loginFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(deviceFilter, JwtAuthFilter.class);
         return http.build();
     }
 

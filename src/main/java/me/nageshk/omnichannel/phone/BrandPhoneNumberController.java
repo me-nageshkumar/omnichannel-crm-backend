@@ -80,6 +80,12 @@ public class BrandPhoneNumberController {
         return setEnabled(me, workspaceId, id, true);
     }
 
+    @PostMapping("/{id}/connect-code")
+    @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
+    public PhoneNumberService.ConnectCodeView connectCode(@PathVariable String workspaceId, @PathVariable String id) {
+        return service.issueConnectCode(service.requireInWorkspace(workspaceId, id));
+    }
+
     @PostMapping("/{id}/revoke-device")
     @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
     public PhoneNumberView revokeDevice(@PathVariable String workspaceId, @PathVariable String id) {

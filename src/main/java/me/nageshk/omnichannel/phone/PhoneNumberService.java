@@ -1,5 +1,10 @@
 package me.nageshk.omnichannel.phone;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import me.nageshk.omnichannel.access.AccessService;
+import me.nageshk.omnichannel.api.DeviceDisabledException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -36,6 +41,7 @@ public class PhoneNumberService {
     public static final Pattern NUMBER = Pattern.compile("^[1-9][0-9]{7,14}$");
     public static final int MAX_LABEL = 60;
     public static final int PAGE_SIZE = 50;
+    public static final Duration CODE_TTL = Duration.ofMinutes(15);
 
     private final PhoneNumberRepository numbers;
     private final WorkspaceRepository workspaces;
@@ -43,9 +49,16 @@ public class PhoneNumberService {
     private final Enablement enablement;
     private final LiveDevices live;
     private final ApplicationEventPublisher events;
+    private final ConnectCodeRepository codes;
+    private final AccessService access;
+    private final Clock clock;
 
     public PhoneNumberService(PhoneNumberRepository numbers, WorkspaceRepository workspaces,
-            CustomerRepository customers, Enablement enablement, LiveDevices live, ApplicationEventPublisher events) {
+            CustomerRepository customers, Enablement enablement, LiveDevices live, ApplicationEventPublisher events,
+            ConnectCodeRepository codes, AccessService access, Clock clock) {
+        this.codes = codes;
+        this.access = access;
+        this.clock = clock;
         this.numbers = numbers;
         this.workspaces = workspaces;
         this.customers = customers;
@@ -90,6 +103,7 @@ public class PhoneNumberService {
     }
 
     public void delete(PhoneNumber n) {
+        codes.deleteByPhoneNumberId(n.getId());
         numbers.delete(n);
         publish(n, Reason.DELETED);
     }
@@ -107,6 +121,27 @@ public class PhoneNumberService {
         if (before != enabled) enablement.record("PHONE_NUMBER", n.getId(), before, enabled, me, level);
         if (!enabled) publish(n, Reason.DISABLED);
         return saved;
+    }
+
+    public record ConnectCodeView(String code, Instant expiresAt) {}
+
+    /**
+     * A fresh one-time code for the number, valid {@link #CODE_TTL}; any unused one stops working.
+     *
+     * @throws DeviceDisabledException when the number, its brand or its customer is disabled
+     */
+    public ConnectCodeView issueConnectCode(PhoneNumber n) {
+        if (n.getDisabled() != null || !access.isWorkspaceUsable(n.getWorkspaceId())) {
+            throw new DeviceDisabledException();
+        }
+        codes.deleteByPhoneNumberId(n.getId());
+        String code = Secrets.newCode();
+        ConnectCode c = new ConnectCode();
+        c.setCodeHash(Secrets.sha256(Secrets.normalizeCode(code)));
+        c.setPhoneNumberId(n.getId());
+        c.setExpiresAt(Instant.now(clock).plus(CODE_TTL));
+        codes.insert(c);
+        return new ConnectCodeView(code, c.getExpiresAt());
     }
 
     public PhoneNumber revokeDevice(PhoneNumber n) {

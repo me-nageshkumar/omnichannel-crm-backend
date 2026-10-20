@@ -112,6 +112,8 @@ public class TestUsers {
         roles.deleteAll();
         mongo.remove(new Query(), "system_state");
         mongo.remove(new Query(), "authorities");
+        mongo.remove(new Query(), "phone_numbers");
+        mongo.remove(new Query(), "connect_codes");
         roleSeeder.seed();
         roleCache.evictAll();
     }
