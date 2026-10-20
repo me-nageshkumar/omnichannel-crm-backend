@@ -15,4 +15,16 @@ class ApiExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).containsEntry("code", "CONFLICT").containsKey("message");
     }
+
+    @Test
+    void disabledAtHigherLevelIs403WithLevel() {
+        var response = new ApiExceptionHandler().disabledAtHigherLevel(
+                new DisabledAtHigherLevelException(me.nageshk.omnichannel.enablement.EnableLevel.PLATFORM));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody())
+                .containsEntry("code", "DISABLED_AT_HIGHER_LEVEL")
+                .containsEntry("level", "PLATFORM")
+                .containsEntry("message", "Disabled by platform staff. Only platform staff can enable it.");
+    }
 }

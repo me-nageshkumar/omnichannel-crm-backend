@@ -87,6 +87,12 @@ public class AccessService {
         return inWorkspace(user, workspaceId).contains(authority);
     }
 
+    /** The user's COMPANY role's COMPANY and BRAND codes; empty without a COMPANY role. */
+    public Set<String> companyCodes(AuthenticatedUser user) {
+        if (user.customerId() == null) return Set.of();
+        return companyRole(user.roleId()).map(r -> codes(r, Set.of(RoleLevel.COMPANY, RoleLevel.BRAND))).orElse(Set.of());
+    }
+
     /** The workspaces the user can act in, by name: all of its customer's with a COMPANY role, else its workspace roles'. */
     public List<Workspace> workspacesOf(AuthenticatedUser user) {
         if (user.customerId() == null) return List.of();

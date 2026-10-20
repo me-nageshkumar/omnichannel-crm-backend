@@ -105,6 +105,13 @@ public class ApiExceptionHandler {
                 "code", AuthorityInUseException.CODE, "message", String.valueOf(e.getMessage()), "roles", e.roles()));
     }
 
+    @ExceptionHandler(DisabledAtHigherLevelException.class)
+    public ResponseEntity<Map<String, Object>> disabledAtHigherLevel(DisabledAtHigherLevelException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                "code", DisabledAtHigherLevelException.CODE, "message", String.valueOf(e.getMessage()),
+                "level", e.level().name()));
+    }
+
     @ExceptionHandler(AlreadyAllBrandsException.class)
     public ResponseEntity<Map<String, String>> alreadyAllBrands(AlreadyAllBrandsException e) {
         return body(HttpStatus.BAD_REQUEST, AlreadyAllBrandsException.CODE, e.getMessage());
