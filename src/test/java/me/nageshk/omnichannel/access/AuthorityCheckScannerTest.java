@@ -45,4 +45,23 @@ class AuthorityCheckScannerTest {
         assertThat(AuthorityCheckScanner.parse("@access.has(#w, 'x:y') or hasAuthority('x:y')"))
                 .isEqualTo(Map.of("x:y", Set.of(CheckKind.GLOBAL, CheckKind.BRAND)));
     }
+
+    @Test
+    void codeStartingWithDigitIsFound() {
+        assertThat(AuthorityCheckScanner.parse("hasAuthority('2fa:manage')"))
+                .isEqualTo(Map.of("2fa:manage", Set.of(CheckKind.GLOBAL)));
+    }
+
+    @Test
+    void malformedCodeIsIgnored() {
+        assertThat(AuthorityCheckScanner.parse("hasAuthority('a--b:c')")).isEmpty();
+        assertThat(AuthorityCheckScanner.parse("hasAuthority('a-:b')")).isEmpty();
+    }
+
+    @Test
+    void overlongCodeIsIgnored() {
+        String code = "a".repeat(32) + ":" + "b".repeat(32);
+        assertThat(code).hasSize(65);
+        assertThat(AuthorityCheckScanner.parse("hasAuthority('" + code + "')")).isEmpty();
+    }
 }

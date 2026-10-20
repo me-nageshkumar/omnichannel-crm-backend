@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.access;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,9 +27,9 @@ public class AuthorityCheckScanner {
     public record FoundCheck(String code, Set<CheckKind> kinds, List<String> locations) {}
 
     private static final String BASE_PACKAGE = "me.nageshk.omnichannel";
-    private static final Pattern CODE = Pattern.compile("^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$");
     private static final Pattern HAS_AUTHORITY = Pattern.compile("hasAuthority\\(([^)]*)\\)");
     private static final Pattern HAS_ANY_AUTHORITY = Pattern.compile("hasAnyAuthority\\(([^)]*)\\)");
+    // Takes the last quoted argument; nested parentheses in the first argument are not supported.
     private static final Pattern ACCESS_HAS = Pattern.compile("@access\\.has\\([^)]*?'([^']*)'\\s*\\)");
     private static final Pattern QUOTED = Pattern.compile("'([^']*)'");
 
@@ -73,7 +74,7 @@ public class AuthorityCheckScanner {
     }
 
     private static void add(Map<String, Set<CheckKind>> codes, String code, CheckKind kind) {
-        if (CODE.matcher(code).matches()) {
+        if (AuthorityDefinition.isValidCode(code)) {
             codes.computeIfAbsent(code, k -> EnumSet.noneOf(CheckKind.class)).add(kind);
         }
     }
@@ -99,7 +100,7 @@ public class AuthorityCheckScanner {
         }
         Map<String, FoundCheck> result = new TreeMap<>();
         kinds.forEach((code, k) -> result.put(code, new FoundCheck(code, k, List.copyOf(locations.get(code)))));
-        return java.util.Collections.unmodifiableMap(result);
+        return Collections.unmodifiableMap(result);
     }
 
     private static void record(String location, PreAuthorize annotation, Map<String, Set<CheckKind>> kinds,

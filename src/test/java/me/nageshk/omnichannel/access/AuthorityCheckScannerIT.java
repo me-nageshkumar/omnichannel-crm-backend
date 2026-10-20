@@ -33,6 +33,6 @@ class AuthorityCheckScannerIT {
         Map<String, FoundCheck> found = scanner.found();
 
         assertThat(found).doesNotContainKey("SUPER_ADMIN");
-        assertThat(found.keySet()).allMatch(k -> k.matches("^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$"));
+        assertThat(found.keySet()).allMatch(AuthorityDefinition::isValidCode);
     }
 }

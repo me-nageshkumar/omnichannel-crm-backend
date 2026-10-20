@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.access;
 
 import java.time.Instant;
+import java.util.regex.Pattern;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -8,6 +9,14 @@ import org.springframework.data.mongodb.core.mapping.Document;
 /** One authority a role may hold, stored so a Super Admin can manage the catalogue. */
 @Document("authorities")
 public class AuthorityDefinition {
+
+    public static final Pattern CODE_PATTERN =
+            Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*:[a-z0-9]+(-[a-z0-9]+)*$");
+    public static final int MAX_CODE_LENGTH = 64;
+
+    public static boolean isValidCode(String code) {
+        return code != null && code.length() <= MAX_CODE_LENGTH && CODE_PATTERN.matcher(code).matches();
+    }
 
     @Id
     private String code;
