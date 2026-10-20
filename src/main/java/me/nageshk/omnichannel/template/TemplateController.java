@@ -22,9 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class TemplateController {
 
     private final TemplateService service;
+    private final TemplateRenderer renderer;
 
-    public TemplateController(TemplateService service) {
+    public TemplateController(TemplateService service, TemplateRenderer renderer) {
         this.service = service;
+        this.renderer = renderer;
     }
 
     @GetMapping
@@ -91,5 +93,13 @@ public class TemplateController {
             @PathVariable String id, @RequestBody(required = false) DuplicateRequest req) {
         return service.duplicate(me, workspaceId, id, req == null ? null : req.targetWorkspaceId(),
                 req == null ? null : req.name());
+    }
+
+    /** Fills the template's placeholders; with a {@code contactId} the caller also needs {@code contact:view}. */
+    @PostMapping("/{id}/render")
+    @PreAuthorize("@access.has(#workspaceId, 'template:view')")
+    public RenderedTemplate render(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id, @RequestBody(required = false) RenderRequest req) {
+        return renderer.render(me, workspaceId, id, req);
     }
 }
