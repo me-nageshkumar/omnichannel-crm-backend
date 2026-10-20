@@ -146,13 +146,13 @@ class LoginIT {
 
     @Test
     void protectedEndpointWithoutTokenReturns401() throws Exception {
-        mvc.perform(get("/api/status")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/users/me")).andExpect(status().isUnauthorized());
     }
 
     @Test
     void protectedEndpointWithTokenIsOk() throws Exception {
         String token = testUsers.tokenFor("dev");
-        mvc.perform(get("/api/status").header("Authorization", "Bearer " + token))
+        mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
     }
 }

@@ -53,7 +53,7 @@ class LogoutIT {
     }
 
     private ResultActions getStatus(String token) throws Exception {
-        return mvc.perform(get("/api/status").header("Authorization", "Bearer " + token));
+        return mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + token));
     }
 
     @Test

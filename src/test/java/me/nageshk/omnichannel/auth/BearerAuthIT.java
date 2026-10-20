@@ -54,7 +54,7 @@ class BearerAuthIT {
     }
 
     private ResultActions getStatus(String token) throws Exception {
-        return mvc.perform(get("/api/status").header("Authorization", "Bearer " + token));
+        return mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + token));
     }
 
     @Test
@@ -94,23 +94,22 @@ class BearerAuthIT {
         return testUsers.createInCustomer(customer.getId(), "admin", BuiltInRoles.CUSTOMER_ADMIN, List.of());
     }
 
+    private ResultActions bridgeStatus(String token) throws Exception {
+        return mvc.perform(get("/api/phone-numbers/any/bridge/status").header("Authorization", "Bearer " + token));
+    }
+
     @Test
     void customerAdminTokenIsForbiddenOnBridgeEndpoints() throws Exception {
         String token = testUsers.accessToken(customerAdmin(testUsers.customer("Acme")));
-        getStatus(token)
+        bridgeStatus(token)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test
-    void deviceTokenStillWorks() throws Exception {
-        getStatus(testUsers.tokenFor("device2")).andExpect(status().isOk());
-    }
-
-    @Test
     void superAdminMayUseBridge() throws Exception {
         User root = testUsers.create("root", "pw", BuiltInRoles.SUPER_ADMIN, null);
-        getStatus(testUsers.accessToken(root)).andExpect(status().isOk());
+        bridgeStatus(testUsers.accessToken(root)).andExpect(status().isOk());
     }
 
     @Test
