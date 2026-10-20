@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
+import me.nageshk.omnichannel.auth.AccessTokenAuthenticator;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.inbox.InboxScope.ListScope;
 import me.nageshk.omnichannel.phone.PhoneNumberService;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,6 +42,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequestMapping("/api/workspaces/{workspaceId}/inbox")
 public class InboxController {
 
+    private static final String BEARER = "Bearer ";
     static final int DEFAULT_LIMIT = 50;
     static final int MAX_LIMIT = 100;
 
@@ -69,6 +72,7 @@ public class InboxController {
     private final InboxQueryService query;
     private final InboxScopeService scopeService;
     private final InboxStreamBroker broker;
+    private final AccessTokenAuthenticator authenticator;
     private final InboxViews views;
     private final InboxSettingService settings;
     private final ChatAssignmentService assignment;
@@ -80,12 +84,13 @@ public class InboxController {
     private final ChatMediaService chatMedia;
 
     public InboxController(InboxQueryService query, InboxScopeService scopeService, InboxStreamBroker broker,
-            InboxViews views, InboxSettingService settings, ChatAssignmentService assignment,
+            AccessTokenAuthenticator authenticator, InboxViews views, InboxSettingService settings, ChatAssignmentService assignment,
             PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService,
             InboxSendService sender, WaWebMessageRepository messageRepository, ChatMediaService chatMedia) {
         this.query = query;
         this.scopeService = scopeService;
         this.broker = broker;
+        this.authenticator = authenticator;
         this.views = views;
         this.settings = settings;
         this.assignment = assignment;
@@ -117,10 +122,15 @@ public class InboxController {
 
     @GetMapping(value = "/phone-numbers/{phoneNumberId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
-    public SseEmitter stream(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
-            @PathVariable String phoneNumberId) {
+    public SseEmitter stream(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+            @PathVariable String workspaceId, @PathVariable String phoneNumberId) {
         phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
-        return broker.subscribe(phoneNumberId, () -> scopeService.scopeOf(me, workspaceId));
+        // the stream outlives the request, so the viewer is re-authenticated from the token on every push and ping:
+        // a user who is disabled, logged out, demoted or removed from the brand stops receiving at once
+        String token = authorization.startsWith(BEARER) ? authorization.substring(BEARER.length()) : authorization;
+        return broker.subscribe(phoneNumberId, () -> authenticator.authenticate(token)
+                .map(user -> scopeService.scopeOf(user, workspaceId))
+                .orElseThrow(() -> new NotFoundException("session ended")));
     }
 
     @GetMapping("/phone-numbers/{phoneNumberId}/settings")

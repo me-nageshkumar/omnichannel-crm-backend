@@ -44,6 +44,18 @@ import tools.jackson.databind.node.ObjectNode;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "omnichannel.rpc.timeout=2s")
 class InboxMediaIT extends InboxApiTestBase {
 
+    /** Collects the chats the media cache announces. */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class Upserts {
+        final List<InboxEvents.MessageUpserted> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @org.springframework.context.event.EventListener
+        void on(InboxEvents.MessageUpserted e) {
+            events.add(e);
+        }
+    }
+
+    @Autowired Upserts upserts;
     @LocalServerPort int port;
     @Autowired TestRestTemplate rest;
     @Autowired AccessService access;
@@ -140,6 +152,29 @@ class InboxMediaIT extends InboxApiTestBase {
         assertThat(stored.getMedia().mediaId()).isNotNull();
         assertThat(stored.getMedia().downloadedAt()).isNotNull();
         assertThat(stored.getMedia().mimetype()).isEqualTo("image/png");
+    }
+
+    @Test
+    void cacheAnnouncesTheChatAsItIsWhenTheDownloadFinishes() throws Exception {
+        WaWebChat chat = chat("Aarav", "919812345678", 5, agent, null);
+        WaWebMessage m = imageMessage(chat);
+        upserts.events.clear();
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+            device.send(Envelope.event("ready", ready()));
+            Thread.sleep(200);
+            CompletableFuture<ResponseEntity<byte[]>> http = CompletableFuture.supplyAsync(
+                    () -> bytes(managerToken, chat, m));
+            Envelope req = device.next();
+            // the chat is handed to someone else while the phone is still producing the file
+            WaWebChat moved = chats.findById(chat.getId()).orElseThrow();
+            moved.setAssignedUserId(agent2.getId());
+            chats.save(moved);
+            device.send(Envelope.response(req.id(), reply(png(), "image/png", "a.png")));
+            assertThat(http.get(5, TimeUnit.SECONDS).getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+
+        assertThat(upserts.events).hasSize(1);
+        assertThat(upserts.events.get(0).chat().getAssignedUserId()).isEqualTo(agent2.getId());
     }
 
     @Test
@@ -273,6 +308,26 @@ class InboxMediaIT extends InboxApiTestBase {
 
         assertThat(ex.getValue().getStatusCode()).isEqualTo(HttpStatus.GONE);
         assertThat(messages.findById(m.getId()).orElseThrow().getMedia().mediaId()).isNull();
+    }
+
+    @Test
+    void mediaKnownToBeOver16MbIs410WithoutAskingThePhone() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        WaWebMessage m = message(chat, 10, "huge");
+        m.setType("video");
+        m.setMedia(new WaWebMessage.Media("video/mp4", "big.mp4", 20L * 1024 * 1024, null, null));
+        WaWebMessage big = messages.save(m);
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+            device.send(Envelope.event("ready", ready()));
+            Thread.sleep(200);
+
+            ResponseEntity<JsonNode> res = json(managerToken, chat, big);
+
+            assertThat(res.getStatusCode()).isEqualTo(HttpStatus.GONE);
+            assertThat(res.getBody().get("code").asString()).isEqualTo("MEDIA_UNAVAILABLE");
+            assertThat(res.getBody().get("message").asString()).isEqualTo("Media is too large to fetch from the phone");
+            assertThat(device.poll(Duration.ofMillis(300))).isEmpty();
+        }
     }
 
     @Test

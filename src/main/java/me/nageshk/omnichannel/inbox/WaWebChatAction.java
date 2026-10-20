@@ -9,7 +9,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One entry in a chat's audit trail, shown in the thread as a system line. */
 @Document("wa_web_chat_actions")
-@CompoundIndex(name = "chat_at", def = "{'chatId': 1, 'at': 1}")
+@CompoundIndex(name = "chat_at", def = "{'chatId': 1, 'at': -1, '_id': -1}")
 @Getter
 @Setter
 public class WaWebChatAction {

@@ -225,6 +225,19 @@ class WaWebInboxListenerIT {
     }
 
     @Test
+    void chatFollowsTheContactRecreatedAfterADelete() {
+        create(message("919911111111@c.us", false, T));
+        String oldContactId = onlyChat().getContactId();
+        contacts.deleteById(oldContactId);
+
+        create(message("919911111111@c.us", false, T + 60));
+
+        Contact fresh = contacts.findByWorkspaceIdAndPhone(WS, "919911111111").orElseThrow();
+        assertThat(fresh.getId()).isNotEqualTo(oldContactId);
+        assertThat(onlyChat().getContactId()).isEqualTo(fresh.getId());
+    }
+
+    @Test
     void secondMessageUpdatesTheSameChat() {
         create(message("919911111111@c.us", false, T));
         create(message("919911111111@c.us", true, T + 60));

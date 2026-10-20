@@ -85,6 +85,26 @@ class InboxIndexesIT {
         assertThat(names(InboxSetting.class)).contains("phone_unique");
     }
 
+    /** The lists sort by the time then {@code _id}, both newest first, so each index must end with both. */
+    @Test
+    void sortedIndexesCarryTheIdTieBreaker() {
+        assertThat(keys(WaWebChat.class, "phone_last_message"))
+                .containsExactly("phoneNumberId:ASC", "lastMessageAt:DESC", "_id:DESC");
+        assertThat(keys(WaWebChat.class, "phone_user_last_message"))
+                .containsExactly("phoneNumberId:ASC", "assignedUserId:ASC", "lastMessageAt:DESC", "_id:DESC");
+        assertThat(keys(WaWebChat.class, "phone_team_last_message"))
+                .containsExactly("phoneNumberId:ASC", "assignedTeamId:ASC", "lastMessageAt:DESC", "_id:DESC");
+        assertThat(keys(WaWebMessage.class, "chat_timestamp"))
+                .containsExactly("chatId:ASC", "timestamp:DESC", "_id:DESC");
+        assertThat(keys(WaWebChatAction.class, "chat_at")).containsExactly("chatId:ASC", "at:DESC", "_id:DESC");
+    }
+
+    private List<String> keys(Class<?> type, String indexName) {
+        return mongo.indexOps(type).getIndexInfo().stream().filter(i -> i.getName().equals(indexName)).findFirst()
+                .orElseThrow().getIndexFields().stream()
+                .map(f -> f.getKey() + ":" + (f.getDirection() == null ? "?" : f.getDirection().name())).toList();
+    }
+
     private List<String> names(Class<?> type) {
         return mongo.indexOps(type).getIndexInfo().stream().map(IndexInfo::getName).toList();
     }

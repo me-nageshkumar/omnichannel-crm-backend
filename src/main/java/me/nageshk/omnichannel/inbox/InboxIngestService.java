@@ -143,7 +143,7 @@ public class InboxIngestService {
     /** Updates the chat summary for a new message; returns whether a closed chat was reopened. */
     private static boolean foldIntoChat(WaWebChat chat, Contact contact, WaWebMessage message, Instant at) {
         boolean reopened = false;
-        if (chat.getContactId() == null) chat.setContactId(contact.getId());
+        chat.setContactId(contact.getId());
         foldPreview(chat, message, at);
         if (message.getDirection() == MessageDirection.IN) {
             chat.setUnreadCount(chat.getUnreadCount() + 1);

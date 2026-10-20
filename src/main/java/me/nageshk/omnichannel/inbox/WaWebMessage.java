@@ -13,7 +13,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document("wa_web_messages")
 @CompoundIndexes({
         @CompoundIndex(name = "phone_wamessage_unique", def = "{'phoneNumberId': 1, 'waMessageId': 1}", unique = true),
-        @CompoundIndex(name = "chat_timestamp", def = "{'chatId': 1, 'timestamp': -1}")
+        @CompoundIndex(name = "chat_timestamp", def = "{'chatId': 1, 'timestamp': -1, '_id': -1}")
 })
 @Getter
 @Setter

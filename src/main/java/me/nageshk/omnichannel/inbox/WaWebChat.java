@@ -15,11 +15,11 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document("wa_web_chats")
 @CompoundIndexes({
         @CompoundIndex(name = "phone_remote_unique", def = "{'phoneNumberId': 1, 'remoteId': 1}", unique = true),
-        @CompoundIndex(name = "phone_last_message", def = "{'phoneNumberId': 1, 'lastMessageAt': -1}"),
+        @CompoundIndex(name = "phone_last_message", def = "{'phoneNumberId': 1, 'lastMessageAt': -1, '_id': -1}"),
         @CompoundIndex(name = "phone_user_last_message",
-                def = "{'phoneNumberId': 1, 'assignedUserId': 1, 'lastMessageAt': -1}"),
+                def = "{'phoneNumberId': 1, 'assignedUserId': 1, 'lastMessageAt': -1, '_id': -1}"),
         @CompoundIndex(name = "phone_team_last_message",
-                def = "{'phoneNumberId': 1, 'assignedTeamId': 1, 'lastMessageAt': -1}"),
+                def = "{'phoneNumberId': 1, 'assignedTeamId': 1, 'lastMessageAt': -1, '_id': -1}"),
         @CompoundIndex(name = "workspace_contact", def = "{'workspaceId': 1, 'contactId': 1}")
 })
 @Getter

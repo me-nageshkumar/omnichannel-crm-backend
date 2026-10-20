@@ -171,6 +171,21 @@ class InboxStreamBrokerTest {
     }
 
     @Test
+    void pingDropsASubscriberWhoLostAccessWithoutSendingToIt() {
+        broker.subscribe(PN, () -> {
+            throw new NotFoundException("gone");
+        });
+        broker.subscribe(PN, () -> mine("u1"));
+
+        broker.ping();
+
+        assertThat(created.get(0).completed).isTrue();
+        assertThat(created.get(0).events).isEmpty();
+        assertThat(created.get(1).events).hasSize(1);
+        assertThat(broker.subscribers(PN)).isEqualTo(1);
+    }
+
+    @Test
     void subscribeRacingWithLastRemovalNeverOrphansTheNewSubscriber() throws Exception {
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
         try {

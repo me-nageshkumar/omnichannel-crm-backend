@@ -16,8 +16,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * The live streams of the inbox: one {@link SseEmitter} per open console, grouped by phone number. Visibility is
- * evaluated per subscriber at push time from its {@code scope} supplier, which re-reads the user's current access;
- * a supplier that throws (access lost) ends that stream.
+ * evaluated per subscriber from its {@code scope} supplier on every push and on every keep-alive ping; the supplier
+ * re-authenticates the viewer and re-reads their current access, and one that throws (access lost) ends that stream.
  */
 @Slf4j
 @Component
@@ -84,6 +84,13 @@ public class InboxStreamBroker {
     @Scheduled(fixedRate = 25_000)
     public void ping() {
         subscribers.forEach((phoneNumberId, set) -> set.forEach(s -> {
+            try {
+                s.scope().get();
+            } catch (RuntimeException e) {
+                log.debug("Inbox stream for {} lost access, closing: {}", phoneNumberId, e.getMessage());
+                drop(phoneNumberId, s);
+                return;
+            }
             try {
                 s.emitter().send(SseEmitter.event().comment("ping"));
             } catch (IOException | RuntimeException e) {

@@ -45,17 +45,19 @@ public class ChatMediaService {
     private final InboxDevices devices;
     private final RpcDispatcher dispatcher;
     private final WaWebMessageRepository messages;
+    private final WaWebChatRepository chats;
     private final ApplicationEventPublisher publisher;
     private final ObjectMapper mapper;
     private final Clock clock;
 
     public ChatMediaService(@Qualifier("chatMediaGridFs") GridFsTemplate gridFs, InboxDevices devices,
-            RpcDispatcher dispatcher, WaWebMessageRepository messages, ApplicationEventPublisher publisher,
-            ObjectMapper mapper, Clock clock) {
+            RpcDispatcher dispatcher, WaWebMessageRepository messages, WaWebChatRepository chats,
+            ApplicationEventPublisher publisher, ObjectMapper mapper, Clock clock) {
         this.gridFs = gridFs;
         this.devices = devices;
         this.dispatcher = dispatcher;
         this.messages = messages;
+        this.chats = chats;
         this.publisher = publisher;
         this.mapper = mapper;
         this.clock = clock;
@@ -93,12 +95,15 @@ public class ChatMediaService {
      *
      * @throws NotFoundException if the message has no media or its file is missing
      * @throws me.nageshk.omnichannel.api.NoDeviceException if the file must be fetched and the device is not ready
-     * @throws MediaUnavailableException (in the future) if the phone no longer has the media or it is over 16 MB
+     * @throws MediaUnavailableException at once if the message's known size is over 16 MB (no request is sent), and
+     *     through the returned future if the phone no longer has the media or answers with more than 16 MB
      */
     public CompletableFuture<MediaFile> fetchIfNeeded(WaWebChat chat, WaWebMessage message) {
         WaWebMessage.Media media = message.getMedia();
         if (media == null) throw new NotFoundException("message has no media");
         if (media.mediaId() != null) return CompletableFuture.completedFuture(open(chat.getWorkspaceId(), media.mediaId()));
+
+        if (media.size() != null && media.size() > MAX_SIZE) throw MediaUnavailableException.tooLarge();
 
         DeviceSession device = devices.requireReady(chat.getWorkspaceId(), chat);
         return dispatcher.call(device, "downloadMedia", mapper.createObjectNode().put("messageId", message.getWaMessageId()))
@@ -126,7 +131,9 @@ public class ChatMediaService {
         current.setMedia(new WaWebMessage.Media(mimetype == null ? null : mimeOrFallback(mimetype), filename,
                 was.size() != null ? was.size() : Long.valueOf(data.length), mediaId, now));
         current = messages.save(current);
-        publisher.publishEvent(new InboxEvents.MessageUpserted(chat, current, false));
+        // the chat may have been reassigned or closed while the phone was producing the file
+        WaWebChat fresh = chats.findById(chat.getId()).orElse(chat);
+        publisher.publishEvent(new InboxEvents.MessageUpserted(fresh, current, false));
         return open(chat.getWorkspaceId(), mediaId);
     }
 
