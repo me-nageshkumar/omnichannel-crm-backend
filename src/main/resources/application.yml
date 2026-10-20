@@ -2,6 +2,10 @@ server:
   port: 8080
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   data:
     mongodb:
       uri: ${OMNICHANNEL_MONGODB_URI:mongodb://localhost:27017/omnichannel_crm}

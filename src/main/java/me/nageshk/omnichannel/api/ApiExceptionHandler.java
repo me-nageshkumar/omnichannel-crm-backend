@@ -16,6 +16,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -86,6 +87,17 @@ public class ApiExceptionHandler {
     private static ResponseEntity<Map<String, Object>> validationBody(String message, Map<String, String> fields) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
                 "code", ValidationException.CODE, "message", message, "fields", fields));
+    }
+
+    @ExceptionHandler(TooManyRowsException.class)
+    public ResponseEntity<Map<String, String>> tooManyRows(TooManyRowsException e) {
+        return body(HttpStatus.BAD_REQUEST, TooManyRowsException.CODE, e.getMessage());
+    }
+
+    /** An upload over the container's size limit reads as a bad {@code file} field. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> uploadTooLarge(MaxUploadSizeExceededException e) {
+        return validationBody("file too large", Map.of("file", "is larger than the allowed size"));
     }
 
     @ExceptionHandler(DuplicateException.class)
