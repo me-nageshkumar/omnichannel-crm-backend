@@ -1,6 +1,10 @@
 package me.nageshk.omnichannel.access;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 
 import java.util.Arrays;
 import java.util.List;
@@ -12,18 +16,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
 @SpringBootTest
 class RoleSeederIT {
 
     @Autowired RoleSeeder seeder;
-    @Autowired RoleRepository roles;
-    @Autowired AuthorityDefinitionRepository authorities;
+    @MockitoSpyBean RoleRepository roles;
+    @MockitoSpyBean AuthorityDefinitionRepository authorities;
     @Autowired MongoTemplate mongo;
 
     @BeforeEach
     void clean() {
+        reset(authorities, roles);
         mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "roles");
         mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "authorities");
         mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "system_state");
@@ -154,5 +160,26 @@ class RoleSeederIT {
         assertThat(after.getAuthorities()).containsExactly("user:view");
         assertThat(after.isBuiltIn()).isFalse();
         assertThat(after.getLevel()).isEqualTo(RoleLevel.BRAND);
+    }
+
+    @Test
+    void crashWhileGrantingLeavesAuthorityUnseenSoRetryGrantsIt() {
+        Role am = role(BuiltInRoles.ACCOUNT_MANAGER);
+        am.getAuthorities().remove("customer:view");
+        roles.save(am);
+        authorities.deleteById("customer:view");
+        doThrow(new IllegalStateException("simulated crash")).when(roles)
+                .save(argThat(r -> r != null && r.getAuthorities().contains("customer:view")));
+
+        assertThatThrownBy(() -> seeder.seed()).isInstanceOf(IllegalStateException.class);
+        reset(roles);
+        // the grant failed, so the authority must not count as seen
+        assertThat(authorities.findById("customer:view")).isEmpty();
+
+        seeder.seed();
+
+        assertThat(authorities.findById("customer:view")).isPresent();
+        assertThat(role(BuiltInRoles.ACCOUNT_MANAGER).getAuthorities().stream()
+                .filter("customer:view"::equals).count()).isEqualTo(1);
     }
 }

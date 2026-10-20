@@ -145,13 +145,16 @@ Authorities live in Mongo and the Super Admin manages them on the Authorities pa
   the code on the Authorities page (group, level, description) and add it to roles. Until it is created
   nobody holds it, so the method stays closed.
 - **Statuses:** `ACTIVE` (created and checked in code at the right level), `NOT_CHECKED` (created, but no
-  check for it was found in code, so a typo is possible), `WRONG_LEVEL` (the code's checks sit at a
-  different level than the authority), and `NEEDS_CREATING` (checked in code but not yet created).
+  check for it was found in code, so a typo is possible), `WRONG_LEVEL` (a BRAND authority checked only
+  with `hasAuthority`, or a PLATFORM authority checked only with `@access.has`; a COMPANY authority fits
+  both kinds of check and is never WRONG_LEVEL), and `NEEDS_CREATING` (checked in code but not yet created).
 - **Built-ins:** the authorities the system ships with can change group and description but not level,
-  and cannot be deleted. Deleting or re-levelling any authority a role still holds answers 409
-  `AUTHORITY_IN_USE` with the role names.
+  and cannot be deleted (deleting or re-levelling one answers 403 `FORBIDDEN`). Deleting or re-levelling
+  a console-created authority that a role still holds answers 409 `AUTHORITY_IN_USE` with the role names.
 - **Limit:** the scanner only finds literal codes inside `@PreAuthorize`. Codes built at runtime, and
-  checks made outside `@PreAuthorize`, are not found and show as `NOT_CHECKED`.
+  checks made outside `@PreAuthorize`, are not found, so a console-created code checked only that way
+  shows as `NOT_CHECKED` (built-ins always show `ACTIVE`). `@PreAuthorize` on inherited superclass methods
+  or interface methods is not read, only the bean class's own declared methods and the class itself.
 
 | Endpoint | Needs |
 |---|---|

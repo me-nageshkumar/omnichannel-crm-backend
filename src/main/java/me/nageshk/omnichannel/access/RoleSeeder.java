@@ -82,7 +82,8 @@ public class RoleSeeder implements ApplicationRunner {
             for (Authority a : Authority.values()) {
                 AuthorityDefinition existing = authorities.findById(a.code()).orElse(null);
                 if (existing == null) {
-                    authorities.save(definitionOf(a));
+                    // grant first, document last: the document is what marks the code "seen", so a crash
+                    // in between is retried on the next start (adding to a Set is idempotent)
                     if (!seen.contains(a.code())) {
                         for (String roleName : a.defaultRoles()) {
                             roles.findByName(roleName).ifPresent(r -> {
@@ -92,6 +93,7 @@ public class RoleSeeder implements ApplicationRunner {
                         }
                         log.info("added new authority {} to {}", a.code(), a.defaultRoles());
                     }
+                    authorities.save(definitionOf(a));
                 } else if (!existing.isBuiltIn() || existing.getLevel() != a.level()) {
                     existing.setBuiltIn(true);
                     existing.setLevel(a.level());

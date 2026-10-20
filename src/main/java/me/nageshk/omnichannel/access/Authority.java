@@ -6,7 +6,7 @@ import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
 
-/** Every code-defined authority. New features add entries; they are never created from the console. */
+/** The built-in authorities: the seed list, and constants for the codes server logic refers to by name. Console-created authorities live only in the {@code authorities} collection. */
 public enum Authority {
     PLATFORM_USER_MANAGE("platform-user:manage", RoleLevel.PLATFORM,
             "Create, edit, deactivate platform users and give platform roles"),
