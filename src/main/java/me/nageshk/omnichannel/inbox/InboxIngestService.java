@@ -61,7 +61,8 @@ public class InboxIngestService {
         if (!lid && !remote.endsWith("@c.us")) return Optional.empty();
         String waMessageId = MessagePayloads.waMessageId(p);
         if (waMessageId.isEmpty()) return Optional.empty();
-        return publish(retrying(() -> storeMessage(event, p, remote, lid, waMessageId)));
+        Progress progress = new Progress();
+        return publish(retrying(() -> storeMessage(event, p, remote, lid, waMessageId, progress)));
     }
 
     /** A {@code message_ack} event; an ack for a message we never stored is dropped. */
@@ -73,8 +74,19 @@ public class InboxIngestService {
         return publish(retrying(() -> storeAck(event, p, waMessageId)));
     }
 
+    /** What earlier attempts of one ingestion already persisted, so a retry still reports it. */
+    private static final class Progress {
+        boolean chatCreated;
+        boolean reopened;
+        boolean folded;
+    }
+
+    /**
+     * The chat summary is saved before the message row, so a failed chat save retries cleanly and a duplicate
+     * key on the message insert means the chat already counts it ({@code progress.folded}).
+     */
     private Optional<Stored> storeMessage(WhatsAppEvent event, JsonNode p, String remote, boolean lid,
-            String waMessageId) {
+            String waMessageId, Progress progress) {
         boolean fromMe = MessagePayloads.fromMe(p);
         Instant at = MessagePayloads.timestamp(p, event);
         Contact contact = contacts.upsertFromChat(event.workspaceId(), event.customerId(), remote,
@@ -82,8 +94,7 @@ public class InboxIngestService {
         if (contact == null) return Optional.empty();
 
         WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(event.phoneNumberId(), remote).orElse(null);
-        boolean chatCreated = chat == null;
-        if (chatCreated) {
+        if (chat == null) {
             chat = new WaWebChat();
             chat.setCustomerId(event.customerId());
             chat.setWorkspaceId(event.workspaceId());
@@ -92,57 +103,63 @@ public class InboxIngestService {
             chat.setContactId(contact.getId());
             chat.setStatus(ChatStatus.OPEN);
             chat = chats.save(chat);
+            progress.chatCreated = true;
         }
 
         Instant now = clock.instant();
         WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(event.phoneNumberId(), waMessageId)
                 .orElse(null);
-        boolean inserted = message == null;
-        boolean statusChanged = false;
-        if (inserted) {
+        if (message != null && !progress.folded) {
+            // a message we already stored: only its status can move
+            boolean statusChanged = applyAck(message, MessagePayloads.ack(p), now);
+            if (statusChanged) {
+                message = messages.save(message);
+                if (isLast(chat, message)) {
+                    chat.setLastMessage(withStatus(chat.getLastMessage(), message.getStatus()));
+                    chat = chats.save(chat);
+                }
+            }
+            return Optional.of(new Stored(new Ingested(chat, message, progress.chatCreated, false, false),
+                    statusChanged || progress.chatCreated));
+        }
+
+        if (message == null) {
             message = newMessage(event, p, chat, waMessageId, fromMe, at);
             applyAck(message, MessagePayloads.ack(p), now);
-            message = messages.save(message);
-        } else {
-            statusChanged = applyAck(message, MessagePayloads.ack(p), now);
-            if (statusChanged) message = messages.save(message);
         }
+        if (!progress.folded) {
+            if (foldIntoChat(chat, contact, message, at)) progress.reopened = true;
+            chat = chats.save(chat);
+            progress.folded = true;
+            if (progress.reopened) recordReopened(chat, now);
+        }
+        if (message.getId() == null) message = messages.save(message);
+        return Optional.of(new Stored(
+                new Ingested(chat, message, progress.chatCreated, progress.reopened, true), true));
+    }
 
-        boolean chatDirty = false;
+    /** Updates the chat summary for a new message; returns whether a closed chat was reopened. */
+    private static boolean foldIntoChat(WaWebChat chat, Contact contact, WaWebMessage message, Instant at) {
         boolean reopened = false;
-        if (chat.getContactId() == null) {
-            chat.setContactId(contact.getId());
-            chatDirty = true;
+        if (chat.getContactId() == null) chat.setContactId(contact.getId());
+        if (chat.getLastMessageAt() == null || !at.isBefore(chat.getLastMessageAt())) {
+            chat.setLastMessageAt(at);
+            chat.setLastMessage(new WaWebChat.LastMessage(message.getDirection(), message.getType(),
+                    preview(message.getType(), message.getBody(),
+                            message.getMedia() == null ? null : message.getMedia().filename()),
+                    message.getStatus()));
         }
-        if (inserted) {
-            boolean newest = chat.getLastMessageAt() == null || !at.isBefore(chat.getLastMessageAt());
-            if (newest) {
-                chat.setLastMessageAt(at);
-                chat.setLastMessage(new WaWebChat.LastMessage(message.getDirection(), message.getType(),
-                        preview(message.getType(), message.getBody(),
-                                message.getMedia() == null ? null : message.getMedia().filename()),
-                        message.getStatus()));
+        if (message.getDirection() == MessageDirection.IN) {
+            chat.setUnreadCount(chat.getUnreadCount() + 1);
+            chat.setLastInboundAt(later(chat.getLastInboundAt(), at));
+            if (chat.getStatus() == ChatStatus.CLOSED) {
+                chat.setStatus(ChatStatus.OPEN);
+                reopened = true;
             }
-            if (message.getDirection() == MessageDirection.IN) {
-                chat.setUnreadCount(chat.getUnreadCount() + 1);
-                chat.setLastInboundAt(later(chat.getLastInboundAt(), at));
-                if (chat.getStatus() == ChatStatus.CLOSED) {
-                    chat.setStatus(ChatStatus.OPEN);
-                    reopened = true;
-                }
-            } else {
-                chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
-            }
-            chatDirty = true;
-        } else if (statusChanged && isLast(chat, message)) {
-            chat.setLastMessage(withStatus(chat.getLastMessage(), message.getStatus()));
-            chatDirty = true;
+        } else {
+            chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         }
-        if (chatDirty) chat = chats.save(chat);
-        if (reopened) recordReopened(chat, now);
-
-        return Optional.of(new Stored(new Ingested(chat, message, chatCreated, reopened, inserted),
-                inserted || statusChanged));
+        return reopened;
     }
 
     private Optional<Stored> storeAck(WhatsAppEvent event, JsonNode p, String waMessageId) {
@@ -241,9 +258,9 @@ public class InboxIngestService {
         }
     }
 
-    /** First 120 characters of the body, or a label for the type when the body is empty. */
+    /** A label for body-less or non-text types, else the first 120 characters of the body (the caption). */
     static String preview(String type, String body, String filename) {
-        if (body != null && !body.isBlank()) {
+        if (!labelFirst(type) && body != null && !body.isBlank()) {
             if (body.codePointCount(0, body.length()) <= PREVIEW_LENGTH) return body;
             return body.substring(0, body.offsetByCodePoints(0, PREVIEW_LENGTH));
         }
@@ -254,10 +271,18 @@ public class InboxIngestService {
             case "document" -> "📄 " + (filename == null || filename.isBlank() ? "Document" : filename);
             case "sticker" -> "Sticker";
             case "location" -> "📍 Location";
-            case "vcard" -> "👤 Contact card";
+            case "vcard", "multi_vcard" -> "👤 Contact card";
             case "poll_creation" -> "📊 Poll";
             case "revoked" -> "This message was deleted";
             default -> "Unsupported message";
+        };
+    }
+
+    /** For these types the body is a thumbnail or raw card text, never a caption. */
+    private static boolean labelFirst(String type) {
+        return switch (type == null ? "" : type) {
+            case "location", "vcard", "multi_vcard", "sticker", "poll_creation", "revoked" -> true;
+            default -> false;
         };
     }
 

@@ -520,7 +520,133 @@ class WaWebInboxListenerIT {
         assertThat(InboxIngestService.preview("poll_creation", null, null)).isEqualTo("📊 Poll");
         assertThat(InboxIngestService.preview("revoked", null, null)).isEqualTo("This message was deleted");
         assertThat(InboxIngestService.preview("whatever", null, null)).isEqualTo("Unsupported message");
+        assertThat(InboxIngestService.preview("multi_vcard", null, null)).isEqualTo("👤 Contact card");
         assertThat(InboxIngestService.preview("image", "caption", null)).isEqualTo("caption");
+        assertThat(InboxIngestService.preview("document", "report", "a.pdf")).isEqualTo("report");
+        assertThat(InboxIngestService.preview("chat", "hello", null)).isEqualTo("hello");
+    }
+
+    @Test
+    void locationPreviewIgnoresTheThumbnailBody() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "location");
+        p.put("body", "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof");
+        p.putObject("location").put("latitude", 12.5).put("longitude", 77.25);
+        create(p);
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📍 Location");
+        assertThat(onlyMessage().getBody()).startsWith("/9j/");
+    }
+
+    @Test
+    void vcardPreviewIgnoresTheCardText() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "vcard");
+        p.put("body", "BEGIN:VCARD\nVERSION:3.0\nFN:Asha\nEND:VCARD");
+        create(p);
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("👤 Contact card");
+    }
+
+    // ---- a failure midway through is retried without losing the summary or the events ----
+
+    /** A repository that delegates to {@code real} but fails the {@code nth} call of {@code save} once. */
+    @SuppressWarnings("unchecked")
+    private <R> R failingSave(Class<R> type, R real, int nth, java.util.function.Consumer<Object> before,
+            RuntimeException failure) {
+        java.util.concurrent.atomic.AtomicInteger saves = new java.util.concurrent.atomic.AtomicInteger();
+        org.mockito.stubbing.Answer<Object> delegate = org.mockito.AdditionalAnswers.delegatesTo(real);
+        return mock(type, inv -> {
+            if (inv.getMethod().getName().equals("save") && saves.incrementAndGet() == nth) {
+                if (before != null) before.accept(inv.getArgument(0));
+                throw failure;
+            }
+            return delegate.answer(inv);
+        });
+    }
+
+    private List<Object> captureEvents(ApplicationEventPublisher capturing) {
+        List<Object> seen = new CopyOnWriteArrayList<>();
+        org.mockito.Mockito.doAnswer(inv -> seen.add(inv.getArgument(0))).when(capturing).publishEvent(any(Object.class));
+        return seen;
+    }
+
+    @Test
+    void chatSaveConflictIsRetriedWithoutLosingTheSummaryOrEvents() {
+        ApplicationEventPublisher capturing = mock(ApplicationEventPublisher.class);
+        List<Object> seen = captureEvents(capturing);
+        // save #1 creates the chat, save #2 is the summary update that conflicts once
+        WaWebChatRepository flaky = failingSave(WaWebChatRepository.class, chats, 2, null,
+                new org.springframework.dao.OptimisticLockingFailureException("stale"));
+        InboxIngestService svc = new InboxIngestService(service, flaky, messages, actions, capturing, clock);
+
+        svc.ingestMessage(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
+                message("919911111111@c.us", false, T), null, null));
+
+        WaWebChat chat = onlyChat();
+        assertThat(chat.getUnreadCount()).isEqualTo(1);
+        assertThat(chat.getLastMessage().text()).isEqualTo("hi");
+        assertThat(chat.getLastInboundAt()).isEqualTo(Instant.ofEpochSecond(T));
+        assertThat(messages.count()).isEqualTo(1);
+        assertThat(seen.stream().filter(InboxEvents.ChatCreated.class::isInstance)).hasSize(1);
+        assertThat(seen.stream().filter(InboxEvents.MessageUpserted.class::isInstance)).hasSize(1);
+        assertThat(seen.stream().filter(InboxEvents.ChatChanged.class::isInstance)).hasSize(1);
+    }
+
+    @Test
+    void closedChatReopenSurvivesAChatSaveConflict() {
+        create(message("919911111111@c.us", false, T));
+        WaWebChat closed = onlyChat();
+        closed.setStatus(ChatStatus.CLOSED);
+        chats.save(closed);
+        ApplicationEventPublisher capturing = mock(ApplicationEventPublisher.class);
+        List<Object> seen = captureEvents(capturing);
+        WaWebChatRepository flaky = failingSave(WaWebChatRepository.class, chats, 1, null,
+                new org.springframework.dao.OptimisticLockingFailureException("stale"));
+        InboxIngestService svc = new InboxIngestService(service, flaky, messages, actions, capturing, clock);
+
+        svc.ingestMessage(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
+                message("919911111111@c.us", false, T + 60), null, null));
+
+        assertThat(onlyChat().getStatus()).isEqualTo(ChatStatus.OPEN);
+        assertThat(onlyChat().getUnreadCount()).isEqualTo(2);
+        assertThat(seen.stream().filter(InboxEvents.ChatReopened.class::isInstance)).hasSize(1);
+        assertThat(actions.count()).isEqualTo(1);
+    }
+
+    @Test
+    void duplicateKeyOnMessageInsertStillPublishesChatCreatedOnce() {
+        ApplicationEventPublisher capturing = mock(ApplicationEventPublisher.class);
+        List<Object> seen = captureEvents(capturing);
+        ObjectNode payload = message("919911111111@c.us", false, T);
+        // another writer stores the same message just before our insert, which then hits the unique index
+        WaWebMessageRepository racing = failingSave(WaWebMessageRepository.class, messages, 1,
+                m -> messages.save(copyOf((WaWebMessage) m)),
+                new org.springframework.dao.DuplicateKeyException("dup"));
+        InboxIngestService svc = new InboxIngestService(service, chats, racing, actions, capturing, clock);
+
+        svc.ingestMessage(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create", payload, null, null));
+
+        assertThat(messages.count()).isEqualTo(1);
+        assertThat(onlyChat().getUnreadCount()).isEqualTo(1);
+        assertThat(seen.stream().filter(InboxEvents.ChatCreated.class::isInstance)).hasSize(1);
+        assertThat(seen.stream().filter(InboxEvents.MessageUpserted.class::isInstance)).hasSize(1);
+        assertThat(seen.stream().filter(InboxEvents.ChatChanged.class::isInstance)).hasSize(1);
+    }
+
+    private static WaWebMessage copyOf(WaWebMessage m) {
+        WaWebMessage c = new WaWebMessage();
+        c.setCustomerId(m.getCustomerId());
+        c.setWorkspaceId(m.getWorkspaceId());
+        c.setPhoneNumberId(m.getPhoneNumberId());
+        c.setChatId(m.getChatId());
+        c.setWaMessageId(m.getWaMessageId());
+        c.setDirection(m.getDirection());
+        c.setSource(m.getSource());
+        c.setType(m.getType());
+        c.setBody(m.getBody());
+        c.setTimestamp(m.getTimestamp());
+        c.setStatus(m.getStatus());
+        c.setAck(m.getAck());
+        return c;
     }
 
     // ---- contacts (moved from ChatContactListenerIT) ----
