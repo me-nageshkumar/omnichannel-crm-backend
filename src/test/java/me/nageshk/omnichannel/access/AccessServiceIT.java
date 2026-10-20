@@ -25,6 +25,8 @@ class AccessServiceIT {
     @Autowired TestUsers testUsers;
     @Autowired RoleRepository roles;
     @Autowired RoleCache roleCache;
+    @Autowired AuthorityDefinitionRepository authorities;
+    @Autowired AuthorityCatalog catalog;
 
     Customer acme;
     Workspace w1;
@@ -40,6 +42,9 @@ class AccessServiceIT {
 
     @AfterEach
     void clearContext() {
+        authorities.findAll().stream().filter(a -> !a.isBuiltIn()).forEach(authorities::delete);
+        catalog.evictAll();
+        testUsers.deleteAll();
         SecurityContextHolder.clearContext();
     }
 
@@ -177,5 +182,37 @@ class AccessServiceIT {
         assertThat(agent.companyRole()).isNull();
         assertThat(agent.workspaceRoles()).containsOnlyKeys(w1.getId());
         assertThat(agent.workspaceRoles().get(w1.getId()).getName()).isEqualTo(BuiltInRoles.AGENT);
+    }
+
+    private void createAuthority(String code, RoleLevel level) {
+        AuthorityDefinition d = new AuthorityDefinition();
+        d.setCode(code);
+        d.setGroup("test");
+        d.setLevel(level);
+        d.setDescription("test authority");
+        authorities.save(d);
+        catalog.evictAll();
+    }
+
+    @Test
+    void superAdminHoldsConsoleCreatedPlatformAuthority() {
+        createAuthority("report:export", RoleLevel.PLATFORM);
+        AuthenticatedUser root = access.load(testUsers.create("root", "pw", BuiltInRoles.SUPER_ADMIN, null));
+
+        assertThat(root.hasAuthority("report:export")).isTrue();
+    }
+
+    @Test
+    void brandRoleWithConsoleCreatedCodePassesHas() {
+        createAuthority("order:refund", RoleLevel.BRAND);
+        Role wm = roles.findByName(BuiltInRoles.WORKSPACE_MANAGER).orElseThrow();
+        wm.getAuthorities().add("order:refund");
+        roles.save(wm);
+        catalog.evictAll();
+
+        AuthenticatedUser user = workspaceManagerInW1();
+        signIn(user);
+
+        assertThat(access.has(w1.getId(), "order:refund")).isTrue();
     }
 }

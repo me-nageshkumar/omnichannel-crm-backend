@@ -22,7 +22,7 @@ class AssignmentPolicyTest {
     private static final String A = "ws-a";
     private static final String B = "ws-b";
 
-    private final AssignmentPolicy policy = new AssignmentPolicy();
+    private final AssignmentPolicy policy = new AssignmentPolicy(AuthorityLevels.BUILT_IN);
 
     private Role superAdmin, accountManager, device, customerAdmin, workspaceManager, teamLead, agent;
     private List<Role> all;
@@ -324,6 +324,15 @@ class AssignmentPolicyTest {
         r.setAuthorities(new HashSet<>(authorities));
         r.setBuiltIn(true);
         return r;
+    }
+
+    @Test
+    void effectiveUsesTheGivenLevels() {
+        AssignmentPolicy custom = new AssignmentPolicy(
+                code -> "x:y".equals(code) ? java.util.Optional.of(RoleLevel.BRAND) : java.util.Optional.empty());
+        Role brand = role("CUSTOM", RoleLevel.BRAND, Set.of("x:y", "nope:z"));
+
+        assertThat(custom.effective(brand)).containsExactly("x:y");
     }
 
     /** Codes of the role's authorities at the given levels, as AccessService computes effective sets. */

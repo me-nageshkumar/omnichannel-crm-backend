@@ -35,12 +35,17 @@ public class RoleService {
     private final RoleChangeRepository changes;
     private final UserRepository users;
     private final RoleCache cache;
+    private final AuthorityCatalog catalog;
+    private final AssignmentPolicy policy;
 
-    public RoleService(RoleRepository roles, RoleChangeRepository changes, UserRepository users, RoleCache cache) {
+    public RoleService(RoleRepository roles, RoleChangeRepository changes, UserRepository users, RoleCache cache,
+            AuthorityCatalog catalog, AssignmentPolicy policy) {
         this.roles = roles;
         this.changes = changes;
         this.users = users;
         this.cache = cache;
+        this.catalog = catalog;
+        this.policy = policy;
     }
 
     public List<Role> list() {
@@ -133,9 +138,9 @@ public class RoleService {
         return assigner == assigned || (assigned == RoleLevel.BRAND && assigner == RoleLevel.COMPANY);
     }
 
-    private static boolean gives(Role assigner, Role assigned, String manage) {
-        Set<String> outer = AssignmentPolicy.effective(assigner);
-        return outer.contains(manage) && AssignmentPolicy.strictSubset(AssignmentPolicy.effective(assigned), outer);
+    private boolean gives(Role assigner, Role assigned, String manage) {
+        Set<String> outer = policy.effective(assigner);
+        return outer.contains(manage) && AssignmentPolicy.strictSubset(policy.effective(assigned), outer);
     }
 
     private static Role withAuthorities(Role r, Set<String> authorities) {
@@ -168,13 +173,13 @@ public class RoleService {
         }
     }
 
-    private static void validateAuthorities(RoleLevel level, Collection<String> authorities) {
+    private void validateAuthorities(RoleLevel level, Collection<String> authorities) {
         List<String> unknown = new ArrayList<>();
         List<String> misplaced = new ArrayList<>();
         for (String code : authorities) {
-            var authority = Authority.fromCode(code);
-            if (authority.isEmpty()) unknown.add(code);
-            else if (!level.mayHold(authority.get().level())) misplaced.add(code);
+            var authorityLevel = catalog.levelOf(code);
+            if (authorityLevel.isEmpty()) unknown.add(code);
+            else if (!level.mayHold(authorityLevel.get())) misplaced.add(code);
         }
         Map<String, String> problems = new LinkedHashMap<>();
         if (!unknown.isEmpty()) problems.put("authorities", "unknown: " + String.join(", ", unknown));

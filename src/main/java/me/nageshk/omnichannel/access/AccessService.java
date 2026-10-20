@@ -1,6 +1,5 @@
 package me.nageshk.omnichannel.access;
 
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -35,11 +34,13 @@ import org.springframework.stereotype.Service;
 public class AccessService {
 
     private final RoleCache roles;
+    private final AuthorityCatalog catalog;
     private final CustomerRepository customers;
     private final WorkspaceRepository workspaces;
 
-    public AccessService(RoleCache roles, CustomerRepository customers, WorkspaceRepository workspaces) {
+    public AccessService(RoleCache roles, AuthorityCatalog catalog, CustomerRepository customers, WorkspaceRepository workspaces) {
         this.roles = roles;
+        this.catalog = catalog;
         this.customers = customers;
         this.workspaces = workspaces;
     }
@@ -141,9 +142,9 @@ public class AccessService {
         if (user.getCustomerId() == null) {
             Optional<Role> role = roleAt(user.getRoleId(), RoleLevel.PLATFORM);
             if (role.isPresent() && BuiltInRoles.SUPER_ADMIN.equals(role.get().getName())) {
-                Set<String> all = Arrays.stream(Authority.values())
-                        .filter(a -> a.level() == RoleLevel.PLATFORM)
-                        .map(Authority::code)
+                Set<String> all = catalog.all().stream()
+                        .filter(a -> a.getLevel() == RoleLevel.PLATFORM)
+                        .map(AuthorityDefinition::getCode)
                         .collect(Collectors.toCollection(HashSet::new));
                 all.add(BuiltInRoles.SUPER_ADMIN);
                 return all;
@@ -162,9 +163,9 @@ public class AccessService {
     }
 
     /** The role's codes that are in the catalogue at one of the given levels; removed codes are ignored. */
-    private static Set<String> codes(Role role, Set<RoleLevel> levels) {
+    private Set<String> codes(Role role, Set<RoleLevel> levels) {
         return role.getAuthorities().stream()
-                .filter(code -> Authority.fromCode(code).filter(a -> levels.contains(a.level())).isPresent())
+                .filter(code -> catalog.levelOf(code).filter(levels::contains).isPresent())
                 .collect(Collectors.toSet());
     }
 }

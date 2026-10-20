@@ -303,4 +303,13 @@ class RolesApiIT {
                 JsonNode.class);
         assertThat(post.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
+
+    @Test
+    void roleSaveWithUncreatedCodeIsRejected() {
+        ResponseEntity<JsonNode> res = create("GHOSTLY", "BRAND", List.of("ghost:code"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody().get("code").asText()).isEqualTo("VALIDATION");
+        assertThat(res.getBody().get("fields").get("authorities").asText()).contains("ghost:code");
+    }
 }

@@ -32,6 +32,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class AssignmentPolicy {
 
+    private final AuthorityLevels levels;
+
+    public AssignmentPolicy(AuthorityLevels levels) {
+        this.levels = levels;
+    }
+
     private static final String USER_MANAGE = Authority.USER_MANAGE.code();
     private static final String PLATFORM_USER_MANAGE = Authority.PLATFORM_USER_MANAGE.code();
     private static final String CUSTOMER_MANAGE = Authority.CUSTOMER_MANAGE.code();
@@ -158,7 +164,7 @@ public class AssignmentPolicy {
         return companyUserManage || customerManage;
     }
 
-    private static boolean canManagePlatformLogin(Actor a, Target t) {
+    private boolean canManagePlatformLogin(Actor a, Target t) {
         Role role = t.platformRole();
         if (role != null && BuiltInRoles.SUPER_ADMIN.equals(role.getName())) return false;
         if (a.superAdmin()) return true;
@@ -199,10 +205,10 @@ public class AssignmentPolicy {
     }
 
     /** The role's catalogue codes at levels it may hold; removed or misplaced codes grant nothing. */
-    public static Set<String> effective(Role role) {
+    public Set<String> effective(Role role) {
         if (role.getLevel() == null || role.getAuthorities() == null) return Set.of();
         return role.getAuthorities().stream()
-                .filter(code -> Authority.fromCode(code).filter(x -> role.getLevel().mayHold(x.level())).isPresent())
+                .filter(code -> levels.levelOf(code).filter(level -> role.getLevel().mayHold(level)).isPresent())
                 .collect(Collectors.toSet());
     }
 }

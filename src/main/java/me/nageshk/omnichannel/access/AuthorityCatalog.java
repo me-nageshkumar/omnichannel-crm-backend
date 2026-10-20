@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * catalogue. A load that overlaps an eviction is used once but not cached. Single-instance only.
  */
 @Component
-public class AuthorityCatalog {
+public class AuthorityCatalog implements AuthorityLevels {
 
     private final AuthorityDefinitionRepository authorities;
     private final RoleCache roleCache;
@@ -31,6 +31,7 @@ public class AuthorityCatalog {
         return code == null ? Optional.empty() : Optional.ofNullable(snapshot().get(code));
     }
 
+    @Override
     public Optional<RoleLevel> levelOf(String code) {
         return byCode(code).map(AuthorityDefinition::getLevel);
     }
