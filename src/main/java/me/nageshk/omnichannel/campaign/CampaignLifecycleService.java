@@ -70,6 +70,41 @@ public class CampaignLifecycleService {
         }
     }
 
+    /** RUNNING to PAUSED by a user. */
+    public Campaign pause(String workspaceId, String id) {
+        return transition(workspaceId, id, "paused", List.of(CampaignStatus.RUNNING),
+                new Update().set("status", CampaignStatus.PAUSED).set("pausedBy", PausedBy.USER)
+                        .set("pauseReason", null));
+    }
+
+    /** PAUSED, by a user or the system, to RUNNING. */
+    public Campaign resume(String workspaceId, String id) {
+        return transition(workspaceId, id, "resumed", List.of(CampaignStatus.PAUSED),
+                new Update().set("status", CampaignStatus.RUNNING).unset("pausedBy").unset("pauseReason"));
+    }
+
+    /** Ends a RUNNING or PAUSED campaign and cancels its PENDING recipients; SENDING ones finish. */
+    public Campaign terminate(String workspaceId, String id) {
+        Instant now = clock.instant();
+        Campaign c = transition(workspaceId, id, "terminated", List.of(CampaignStatus.RUNNING, CampaignStatus.PAUSED),
+                new Update().set("status", CampaignStatus.TERMINATED).set("finishedAt", now));
+        mongo.updateMulti(new Query(Criteria.where("campaignId").is(id).and("status").is(RecipientStatus.PENDING)),
+                new Update().set("status", RecipientStatus.SKIPPED).set("skipReason", SkipReason.CANCELLED),
+                CampaignRecipient.class);
+        counter.refresh(id);
+        return campaigns.require(workspaceId, id);
+    }
+
+    private Campaign transition(String workspaceId, String id, String verb, List<CampaignStatus> from, Update change) {
+        campaigns.require(workspaceId, id);
+        Query q = new Query(Criteria.where("_id").is(id).and("workspaceId").is(workspaceId).and("status").in(from));
+        if (mongo.updateFirst(q, change.set("lastUpdateTime", clock.instant()).inc("version", 1), Campaign.class)
+                .getMatchedCount() == 0) {
+            throw CampaignErrors.state(verb);
+        }
+        return campaigns.require(workspaceId, id);
+    }
+
     private static CampaignRequest requestOf(Campaign c) {
         Campaign.Audience a = c.getAudience();
         return new CampaignRequest(c.getName(),

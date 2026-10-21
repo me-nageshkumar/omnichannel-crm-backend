@@ -107,6 +107,24 @@ class CampaignController {
         return views.detail(lifecycle.start(workspaceId, id));
     }
 
+    @PostMapping("/{id}/pause")
+    @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
+    CampaignView pause(@PathVariable String workspaceId, @PathVariable String id) {
+        return views.detail(lifecycle.pause(workspaceId, id));
+    }
+
+    @PostMapping("/{id}/resume")
+    @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
+    CampaignView resume(@PathVariable String workspaceId, @PathVariable String id) {
+        return views.detail(lifecycle.resume(workspaceId, id));
+    }
+
+    @PostMapping("/{id}/terminate")
+    @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
+    CampaignView terminate(@PathVariable String workspaceId, @PathVariable String id) {
+        return views.detail(lifecycle.terminate(workspaceId, id));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("@access.has(#workspaceId, 'campaign:view')")
     CampaignView get(@PathVariable String workspaceId, @PathVariable String id) {
