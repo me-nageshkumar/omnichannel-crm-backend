@@ -22,8 +22,8 @@ public final class InboxEvents {
     }
 
     /**
-     * The contact answered a chat a campaign started, for the first time: an open chat with no user, which routing
-     * now gives to the number's team or agent. Published once per chat.
+     * The contact answered a campaign's chat for the first time since our last message: an open chat with neither a
+     * user nor a team, which routing now gives to the number's team or agent.
      */
     public record CampaignChatFirstReply(WaWebChat chat) {
     }

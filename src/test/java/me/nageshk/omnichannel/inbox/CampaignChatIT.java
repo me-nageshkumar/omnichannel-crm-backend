@@ -207,6 +207,27 @@ class CampaignChatIT extends InboxApiTestBase {
     }
 
     @Test
+    void closedChatReopenedByTheCampaignIsRoutedOnReply() throws Exception {
+        routeToAgent();
+        WaWebChat closed = chatOf("Nia", null);
+        closed.setStatus(ChatStatus.CLOSED);
+        closed.setLastInboundAt(Instant.now().minusSeconds(86_400));
+        closed = chats.save(closed);
+
+        campaignSend(PHONE, REMOTE, templateId("Hi {{contact.name}}"), Map.of("contact.name", "Nia"));
+
+        WaWebChat reopened = chats.findById(closed.getId()).orElseThrow();
+        assertThat(reopened.getStatus()).isEqualTo(ChatStatus.OPEN);
+        assertThat(reopened.getCampaignId()).isEqualTo("c-1");
+        assertThat(reopened.getAssignedUserId()).isNull();
+
+        inbound("1");
+
+        assertThat(chats.findById(closed.getId()).orElseThrow().getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(routedActions()).isEqualTo(1);
+    }
+
+    @Test
     void firstReplyOnAPlainChatIsNotRouted() {
         routeToAgent();
         WaWebChat c = chatOf("Nia", null);

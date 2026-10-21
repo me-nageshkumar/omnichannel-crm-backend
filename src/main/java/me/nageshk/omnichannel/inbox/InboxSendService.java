@@ -336,6 +336,10 @@ public class InboxSendService {
             chat.setAssignedUserId(sent.getAssignedUserId());
             chat.setAssignedAt(sent.getAssignedAt());
             chat.setCampaignId(sent.getCampaignId());
+        } else if (sent.getId() != null && actor.campaignId() != null
+                && actor.campaignId().equals(sent.getCampaignId())) {
+            // a saved chat the campaign marked for routing on reply; the row was re-read above, so mark it again
+            chat.setCampaignId(sent.getCampaignId());
         }
 
         WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(sent.getPhoneNumberId(), waMessageId)

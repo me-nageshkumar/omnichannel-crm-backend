@@ -83,8 +83,9 @@ public class NewChatService {
     /**
      * Sends a campaign's message to {@code phone}, which the campaign's runner already checked and looked up as
      * {@code remoteId}: no scope check and no lookup here. An existing chat (the contact's, else that of
-     * {@code phone@c.us}, else that of {@code remoteId}) is reopened if closed and keeps its assignment. Otherwise a
-     * new chat is started unassigned and marked with the campaign, to be routed when the contact first replies.
+     * {@code phone@c.us}, else that of {@code remoteId}) is reopened if closed and keeps its assignment; one with
+     * neither a user nor a team is marked with the campaign. Otherwise a new chat is started unassigned and marked
+     * with the campaign. A marked chat is routed when the contact first replies to the campaign.
      *
      * @throws NotFoundException if the number is not in the workspace
      * @throws ValidationException if the message is invalid
@@ -95,6 +96,10 @@ public class NewChatService {
         if (chat == null) chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
         if (chat != null) {
             if (chat.getStatus() == ChatStatus.CLOSED) chat = assignment.reopen(actor, chat);
+            // nobody would see the reply to a chat nobody has; stored with the message once the device accepted it
+            if (chat.getAssignedUserId() == null && chat.getAssignedTeamId() == null) {
+                chat.setCampaignId(actor.campaignId());
+            }
             return sender.send(actor, workspaceId, chat, message, null);
         }
         PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)

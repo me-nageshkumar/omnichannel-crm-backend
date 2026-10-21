@@ -36,7 +36,7 @@ public class InboxIngestService {
 
     /**
      * {@code changed} is false for a replay or a stale ack, which publishes nothing; {@code campaignFirstReply} is
-     * whether the message is the contact's first answer to an unassigned campaign chat.
+     * whether the message is the contact's first answer since our last message to an unassigned campaign chat.
      */
     private record Stored(Ingested result, boolean changed, WaWebChatAction reopenedAction,
             boolean campaignFirstReply) {
@@ -145,9 +145,12 @@ public class InboxIngestService {
             applyAck(message, MessagePayloads.ack(p), now);
         }
         if (!progress.folded) {
-            // a campaign chat waits unassigned for the contact's first reply; a reopen is routed as such instead
+            // a campaign chat waits unassigned for the contact's first reply since our last message; a reopen is
+            // routed as such instead
             boolean awaitingReply = chat.getCampaignId() != null && chat.getAssignedUserId() == null
-                    && chat.getLastInboundAt() == null;
+                    && chat.getAssignedTeamId() == null && (chat.getLastInboundAt() == null
+                            || chat.getLastOutboundAt() != null
+                                    && chat.getLastInboundAt().isBefore(chat.getLastOutboundAt()));
             if (foldIntoChat(chat, contact, message, at)) progress.reopened = true;
             progress.campaignFirstReply = awaitingReply && message.getDirection() == MessageDirection.IN
                     && !progress.reopened;
