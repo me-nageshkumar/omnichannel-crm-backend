@@ -60,7 +60,7 @@ public class SenderEventsListener {
         senders.ensure(ws, e.phoneNumberId());
         Instant now = clock.instant();
         boolean suspended = mongo.updateFirst(
-                new Query(Criteria.where("phoneNumberId").is(e.phoneNumberId()).and("state").ne(SenderState.SUSPENDED)),
+                new Query(Criteria.where("phoneNumberId").is(e.phoneNumberId()).and("state").nin(SenderState.SUSPENDED, SenderState.RETIRED)),
                 new Update().set("state", SenderState.SUSPENDED).set("logoutAt", now), CampaignSender.class)
                 .getModifiedCount() > 0;
         if (!suspended) return;

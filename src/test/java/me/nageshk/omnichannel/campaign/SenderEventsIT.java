@@ -134,4 +134,19 @@ class SenderEventsIT extends CampaignTestBase {
         assertThat(s.getRestUntil()).isNull();
         assertThat(sender(n2).getHalfPaceUntil()).isNull();
     }
+
+    @Test
+    void retiredSenderIgnoresLogout() {
+        Campaign running = campaign(brand, "run", CampaignStatus.RUNNING, null);
+        sender(n2);
+        sender(n1, s -> s.setState(SenderState.RETIRED));
+        logout(n1);
+        publish(n1, "ready", mapper.createObjectNode());
+        CampaignSender s1 = sender(n1);
+        assertThat(s1.getState()).isEqualTo(SenderState.RETIRED);
+        assertThat(s1.getLogoutAt()).isNull();
+        assertThat(s1.getRestUntil()).isNull();
+        assertThat(sender(n2).getHalfPaceUntil()).isNull();
+        assertThat(campaign(running.getId()).getStatus()).isEqualTo(CampaignStatus.RUNNING);
+    }
 }
