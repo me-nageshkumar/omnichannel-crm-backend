@@ -29,10 +29,12 @@ import org.springframework.web.multipart.MultipartFile;
 class CampaignController {
 
     private final CampaignService service;
+    private final CampaignLifecycleService lifecycle;
     private final CampaignViews views;
 
-    CampaignController(CampaignService service, CampaignViews views) {
+    CampaignController(CampaignService service, CampaignLifecycleService lifecycle, CampaignViews views) {
         this.service = service;
+        this.lifecycle = lifecycle;
         this.views = views;
     }
 
@@ -92,6 +94,12 @@ class CampaignController {
     @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
     void delete(@PathVariable String workspaceId, @PathVariable String id) {
         service.delete(workspaceId, id);
+    }
+
+    @PostMapping("/{id}/start")
+    @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
+    CampaignView start(@PathVariable String workspaceId, @PathVariable String id) {
+        return views.detail(lifecycle.start(workspaceId, id));
     }
 
     @GetMapping("/{id}")

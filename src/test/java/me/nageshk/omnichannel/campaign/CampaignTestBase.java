@@ -13,6 +13,12 @@ import me.nageshk.omnichannel.access.BuiltInRoles;
 import me.nageshk.omnichannel.contact.Contact;
 import me.nageshk.omnichannel.contact.ContactAttribute;
 import me.nageshk.omnichannel.contact.ContactFilter;
+import me.nageshk.omnichannel.inbox.InboxSetting;
+import me.nageshk.omnichannel.inbox.WaNumberLookup;
+import me.nageshk.omnichannel.inbox.WaWebChat;
+import me.nageshk.omnichannel.inbox.WaWebChatAction;
+import me.nageshk.omnichannel.inbox.WaWebMessage;
+import org.springframework.data.mongodb.core.query.Criteria;
 import me.nageshk.omnichannel.template.MessageTemplate;
 import me.nageshk.omnichannel.phone.PhoneNumber;
 import me.nageshk.omnichannel.support.MutableClock;
@@ -98,7 +104,8 @@ abstract class CampaignTestBase {
     /** The collections each test starts without; later tasks add their documents here. */
     List<Class<?>> collections() {
         return List.of(CampaignSettings.class, CampaignSender.class, CampaignRecipient.class, Campaign.class,
-                Contact.class, ContactFilter.class, ContactAttribute.class, MessageTemplate.class);
+                Contact.class, ContactFilter.class, ContactAttribute.class, MessageTemplate.class, WaWebChat.class,
+                WaWebMessage.class, WaWebChatAction.class, WaNumberLookup.class, InboxSetting.class);
     }
 
     @BeforeEach
@@ -176,6 +183,58 @@ abstract class CampaignTestBase {
         c.setName(name);
         c.setPhone(phone);
         return mongo.save(c);
+    }
+
+
+    CampaignRecipient recipient(String campaignId, String phone) {
+        CampaignRecipient r = new CampaignRecipient();
+        r.setCampaignId(campaignId);
+        r.setWorkspaceId(brand.getId());
+        r.setPhone(phone);
+        r.setStatus(RecipientStatus.PENDING);
+        return r;
+    }
+
+    /** The brand's template of this name, created when absent; returns its id. */
+    String templateNamed(String name, String body) {
+        MessageTemplate t = mongo.findOne(new Query(Criteria.where("workspaceId").is(brand.getId()).and("name").is(name)),
+                MessageTemplate.class);
+        return t != null ? t.getId() : template(name, body);
+    }
+
+    /** The brand's contact with this phone, created (as {@code name}) when absent. */
+    Contact contactWithPhone(String name, String phone) {
+        Contact c = mongo.findOne(new Query(Criteria.where("workspaceId").is(brand.getId()).and("phone").is(phone)),
+                Contact.class);
+        return c != null ? c : contact(name, phone);
+    }
+
+    /** Creates and starts a campaign over the whole brand's contacts, after making sure one exists per phone. */
+    String startedFilterCampaign(String name, List<String> phones, PhoneNumber... senders) {
+        for (int i = 0; i < phones.size(); i++) contactWithPhone("Lead " + i, phones.get(i));
+        String filterId = filter("All " + name, Map.of());
+        String t = templateNamed("Start Hi", "Hi {{contact.name}}");
+        String id = api(HttpMethod.POST, "/campaigns", manager, filterCampaign(name, filterId, List.of(t), List.of(),
+                java.util.Arrays.stream(senders).map(PhoneNumber::getId).toList())).getBody().get("id").asString();
+        api(HttpMethod.POST, "/campaigns/" + id + "/start", manager, null);
+        return id;
+    }
+
+    /** Creates and starts a CSV campaign whose phone column is {@code phone}. */
+    String startedCsvCampaign(String name, String csv, String nameColumn, PhoneNumber... senders) {
+        String t = templateNamed("Start Hi", "Hi {{contact.name}}");
+        Map<String, Object> source = nameColumn == null ? Map.of("kind", "FIXED", "text", "there")
+                : Map.of("kind", "CSV_COLUMN", "column", nameColumn);
+        Map<String, Object> audience = new java.util.LinkedHashMap<>();
+        audience.put("kind", "CSV");
+        audience.put("phoneColumn", "phone");
+        if (nameColumn != null) audience.put("nameColumn", nameColumn);
+        Map<String, Object> body = Map.of("name", name, "audience", audience, "templateIds", List.of(t),
+                "placeholders", List.of(Map.of("name", "contact.name", "source", source, "fallback", "")),
+                "senderIds", java.util.Arrays.stream(senders).map(PhoneNumber::getId).toList());
+        String id = multipart(HttpMethod.POST, "/campaigns", manager, body, csv).getBody().get("id").asString();
+        api(HttpMethod.POST, "/campaigns/" + id + "/start", manager, null);
+        return id;
     }
 
     /** The body of a campaign request aimed at a saved filter. */
