@@ -115,12 +115,14 @@ ready) and the existing-chat path, and looks the number up only when no chat is 
    exists is proof enough that the number is on WhatsApp, costs no device query, and is never
    refused by a stale "not registered" answer (the person may have installed WhatsApp and written
    first since the cache entry was made).
-2. Not found → `lookups.lookup(ws, pn, phone, false).thenCompose(lookup -> …)`. The rest runs
-   inside the future; `ApiExceptionHandler.wrapped` is extended to re-dispatch `ChatTakenException`,
-   `NotOnWhatsAppException`, `LookupFailedException` and `ChatClosedException` causes (today it
-   unwraps only RPC, media and timeout causes, so anything else thrown inside a future becomes a
-   500). The dispatcher completes futures on the device's socket thread, so `start` must not block
-   with `join()` there; composing keeps that thread free.
+2. Not found → `lookups.lookup(ws, pn, phone, false)` is awaited on the request thread (`join`,
+   unwrapping the `CompletionException` so the cause reaches `ApiExceptionHandler` as a plain
+   exception). `start` runs on the HTTP thread, never on the device's socket thread that completes
+   RPC futures, so the wait is safe and bounded by `omnichannel.rpc.timeout`. Composing futures
+   instead would push every later check (`CHAT_TAKEN`, closed chat, body validation, device
+   readiness) inside the future, where the handler unwraps only RPC, media and timeout causes and
+   everything else becomes a 500. `wrapped` still learns `NotOnWhatsAppException` and
+   `LookupFailedException`, so a caller that does compose later is not surprised.
 3. Not registered → 409 `NOT_ON_WHATSAPP` "This number is not on WhatsApp"
    (`NotOnWhatsAppException`, handled like `CHAT_TAKEN`). Nothing sent, nothing stored.
 4. Registered → `remoteId = lookup.remoteId()`. If a chat exists under it (a lid-only chat whose
