@@ -46,6 +46,8 @@ public class WaWebChat {
     private LastMessage lastMessage;
     private Instant lastInboundAt;
     private Instant lastOutboundAt;
+    /** The campaign whose first message started the chat, else null; such a chat is routed on the first reply. */
+    private String campaignId;
     @CreatedDate
     private Instant creationTime;
     @LastModifiedDate

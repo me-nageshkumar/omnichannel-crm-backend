@@ -10,5 +10,8 @@ public interface WaWebMessageRepository extends MongoRepository<WaWebMessage, St
 
     Optional<WaWebMessage> findByIdAndChatId(String id, String chatId);
 
+    Optional<WaWebMessage> findFirstByChatIdAndDirectionOrderByTimestampDesc(String chatId,
+            MessageDirection direction);
+
     void deleteByPhoneNumberId(String phoneNumberId);
 }

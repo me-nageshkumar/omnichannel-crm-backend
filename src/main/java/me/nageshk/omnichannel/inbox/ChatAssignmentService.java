@@ -102,6 +102,13 @@ public class ChatAssignmentService {
         return commit(chat, action(me, chat, ActionType.REOPENED), false);
     }
 
+    /** Like {@link #reopen(AuthenticatedUser, WaWebChat)} for a send that reopens the chat, a campaign's included. */
+    public WaWebChat reopen(SendActor actor, WaWebChat chat) {
+        if (chat.getStatus() == ChatStatus.OPEN) return chat;
+        chat.setStatus(ChatStatus.OPEN);
+        return commit(chat, action(actor.userId(), actor.displayName(), chat, ActionType.REOPENED), false);
+    }
+
     /**
      * After a successful console send: gives an unassigned chat to the sender when the number's settings say
      * so. A chat that already has a user is left alone, whoever replies. Returns the chat as it now stands.
@@ -127,13 +134,18 @@ public class ChatAssignmentService {
     }
 
     private WaWebChatAction action(AuthenticatedUser me, WaWebChat chat, ActionType type) {
+        return action(me.userId(), users.findById(me.userId()).map(User::getName).orElse(me.getUsername()), chat,
+                type);
+    }
+
+    private WaWebChatAction action(String byUserId, String byName, WaWebChat chat, ActionType type) {
         WaWebChatAction a = new WaWebChatAction();
         a.setCustomerId(chat.getCustomerId());
         a.setWorkspaceId(chat.getWorkspaceId());
         a.setChatId(chat.getId());
         a.setType(type);
-        a.setByUserId(me.userId());
-        a.setByName(users.findById(me.userId()).map(User::getName).orElse(me.getUsername()));
+        a.setByUserId(byUserId);
+        a.setByName(byName);
         a.setAt(clock.instant());
         return a;
     }

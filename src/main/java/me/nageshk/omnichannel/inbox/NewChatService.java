@@ -15,9 +15,9 @@ import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import org.springframework.stereotype.Service;
 
 /**
- * Starts a conversation from the console with a phone number the number has not chatted with yet, or lands in the
- * chat that already exists for it. The first message goes through {@link InboxSendService}; a new chat is handed to
- * it unsaved, so a message the device refuses leaves no chat behind.
+ * Starts a conversation from the console or a campaign with a phone number the number has not chatted with yet, or
+ * lands in the chat that already exists for it. The first message goes through {@link InboxSendService}; a new chat
+ * is handed to it unsaved, so a message the device refuses leaves no chat behind.
  */
 @Service
 @RequiredArgsConstructor
@@ -78,6 +78,37 @@ public class NewChatService {
         fresh.setAssignedUserId(me.userId());
         fresh.setAssignedAt(clock.instant());
         return sender.send(me, workspaceId, fresh, message, phone);
+    }
+
+    /**
+     * Sends a campaign's message to {@code phone}, which the campaign's runner already checked and looked up as
+     * {@code remoteId}: no scope check and no lookup here. An existing chat (the contact's, else that of
+     * {@code phone@c.us}, else that of {@code remoteId}) is reopened if closed and keeps its assignment. Otherwise a
+     * new chat is started unassigned and marked with the campaign, to be routed when the contact first replies.
+     *
+     * @throws NotFoundException if the number is not in the workspace
+     * @throws ValidationException if the message is invalid
+     */
+    public CompletableFuture<MessageView> startForCampaign(CampaignActor actor, String workspaceId,
+            String phoneNumberId, String phone, String remoteId, SendRequest message) {
+        WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, phone + "@c.us");
+        if (chat == null) chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
+        if (chat != null) {
+            if (chat.getStatus() == ChatStatus.CLOSED) chat = assignment.reopen(actor, chat);
+            return sender.send(actor, workspaceId, chat, message, null);
+        }
+        PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
+                .orElseThrow(() -> new NotFoundException("phone number not found"));
+        WaWebChat fresh = new WaWebChat();
+        fresh.setCustomerId(number.getCustomerId());
+        fresh.setWorkspaceId(workspaceId);
+        fresh.setPhoneNumberId(phoneNumberId);
+        fresh.setRemoteId(remoteId);
+        fresh.setContactId(contactRepository.findByWorkspaceIdAndPhone(workspaceId, phone).map(Contact::getId)
+                .orElse(null));
+        fresh.setStatus(ChatStatus.OPEN);
+        fresh.setCampaignId(actor.campaignId());
+        return sender.send(actor, workspaceId, fresh, message, phone);
     }
 
     /** Writes to a chat that exists: refused if taken, reopened if closed, claimed if nobody has it. */

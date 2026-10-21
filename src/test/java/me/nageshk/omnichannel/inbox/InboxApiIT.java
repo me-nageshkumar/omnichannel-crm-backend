@@ -206,7 +206,9 @@ class InboxApiIT extends InboxApiTestBase {
         assertThat(kinds).containsExactly("message:m1", "action:ASSIGNED", "message:m2", "message:m3",
                 "action:CLOSED");
         assertThat(all.get("items").get(0).get("at").asString()).isEqualTo(T0.plusSeconds(10).toString());
-        assertThat(all.get("items").get(1).get("action").get("by").isNull()).isTrue();
+        // an action with a name and no user (the fixture's "System", a campaign's reopen) shows the name alone
+        assertThat(all.get("items").get(1).get("action").get("by").get("id").isNull()).isTrue();
+        assertThat(all.get("items").get(1).get("action").get("by").get("name").asString()).isEqualTo("System");
 
         JsonNode page = json(send(get(inbox() + "/chats/" + c.getId() + "/thread").param("limit", "2"), agentToken,
                 null));

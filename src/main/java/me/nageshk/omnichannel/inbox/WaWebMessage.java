@@ -45,6 +45,8 @@ public class WaWebMessage {
     private String sentByUserId;
     private String sentByName;
     private String templateId;
+    /** The campaign that sent the message, else null. */
+    private String campaignId;
     @CreatedDate
     private Instant creationTime;
 

@@ -18,6 +18,7 @@ import me.nageshk.omnichannel.contact.ContactAttribute;
 import me.nageshk.omnichannel.user.WorkspaceRole;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
 import tools.jackson.databind.JsonNode;
 
 class TemplateRenderIT extends TemplateApiTestBase {
@@ -26,6 +27,7 @@ class TemplateRenderIT extends TemplateApiTestBase {
 
     @Autowired RoleRepository roles;
     @Autowired me.nageshk.omnichannel.access.RoleCache roleCache;
+    @Autowired TemplateRenderer renderer;
 
     private ContactAttribute attribute(String name, String key) {
         ContactAttribute a = new ContactAttribute();
@@ -346,5 +348,39 @@ class TemplateRenderIT extends TemplateApiTestBase {
                 .andExpect(jsonPath("$.fields['content.question']").value("is empty after filling placeholders"))
                 .andExpect(jsonPath("$.fields['content.options']").value("is empty after filling placeholders"));
         render(leadToken, pollId, null, Map.of("q", "Pick", "a", "Red"));
+    }
+
+    @Test
+    void campaignRenderTakesEveryPlaceholderFromValues() throws Exception {
+        attribute("City", "city");
+        String id = create(text("Offer", "Hi {{contact.name}} from {{contact.attributes.city}}, {{offer}}",
+                setting("contact.name", "there", null, null, null),
+                setting(CITY, "your city", null, null, null),
+                setting("offer", null, "Offer", null, true)));
+        SecurityContextHolder.clearContext();
+
+        RenderedTemplate r = renderer.renderForCampaign(brandA.getId(), id,
+                Map.of("contact.name", "Asha", CITY, "Pune", "offer", "10% off"));
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(r.content().getBody()).isEqualTo("Hi Asha from Pune, 10% off");
+        assertThat(r.missing()).isEmpty();
+    }
+
+    @Test
+    void campaignRenderUsesFallbacksAndNeverReportsMissing() throws Exception {
+        String id = create(text("Ref", "Hi {{contact.name}}, ref [{{ref}}]",
+                setting("contact.name", "friend", null, null, null),
+                setting("ref", null, "Ref", "A-1", true)));
+        SecurityContextHolder.clearContext();
+
+        RenderedTemplate blank = renderer.renderForCampaign(brandA.getId(), id, Map.of("ref", "   "));
+        assertThat(blank.content().getBody()).isEqualTo("Hi friend, ref []");
+        assertThat(blank.missing()).isEmpty();
+
+        RenderedTemplate cut = renderer.renderForCampaign(brandA.getId(), id,
+                Map.of("contact.name", "x".repeat(1200), "ref", " R "));
+        assertThat(cut.content().getBody()).isEqualTo("Hi " + "x".repeat(1000) + ", ref [R]");
+        assertThat(cut.missing()).isEmpty();
     }
 }

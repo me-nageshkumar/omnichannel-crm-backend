@@ -50,11 +50,11 @@ public class InboxViews {
                                 media.mediaId() != null),
                 loc == null ? null : new MessageView.Location(loc.latitude(), loc.longitude(), loc.description()),
                 m.getTimestamp(), m.getStatus(), m.getStatusTimes(),
-                ref(m.getSentByUserId(), m.getSentByName()), m.getTemplateId());
+                sentBy(m), m.getTemplateId());
     }
 
     public ActionView action(WaWebChatAction a) {
-        return new ActionView(a.getId(), a.getType(), ref(a.getByUserId(), a.getByName()),
+        return new ActionView(a.getId(), a.getType(), named(a.getByUserId(), a.getByName()),
                 ref(a.getToUserId(), a.getToUserName()), ref(a.getToTeamId(), a.getToTeamName()), a.getAt());
     }
 
@@ -72,6 +72,19 @@ public class InboxViews {
 
     private static ChatView.Ref ref(String id, String name) {
         return id == null ? null : new ChatView.Ref(id, name);
+    }
+
+    /** A ref when either part is known: a campaign's reopen has a name and no user. */
+    private static ChatView.Ref named(String id, String name) {
+        return id == null && name == null ? null : new ChatView.Ref(id, name);
+    }
+
+    /** A campaign's message is sent by the campaign; any other by its user, if it has one. */
+    private static ChatView.Ref sentBy(WaWebMessage m) {
+        if (m.getCampaignId() != null && m.getSentByUserId() == null) {
+            return new ChatView.Ref(m.getCampaignId(), m.getSentByName());
+        }
+        return named(m.getSentByUserId(), m.getSentByName());
     }
 
     private static List<String> ids(List<WaWebChat> chats, Function<WaWebChat, String> idOf) {

@@ -1,12 +1,12 @@
 package me.nageshk.omnichannel.inbox;
 
 /**
- * Spring events of the inbox. {@link InboxIngestService} publishes all five; routing publishes {@code ActionRecorded};
- * assignment publishes {@code ChatChanged} and {@code ActionRecorded}; a console send publishes
+ * Spring events of the inbox. {@link InboxIngestService} publishes all six; routing publishes {@code ActionRecorded};
+ * assignment publishes {@code ChatChanged} and {@code ActionRecorded}; a console or campaign send publishes
  * {@code MessageUpserted} then {@code ChatChanged}; the media cache publishes {@code MessageUpserted} alone; marking a
- * chat read publishes {@code ChatChanged}. Routing subscribes to {@code ChatCreated} and {@code ChatReopened}; the
- * live streams subscribe to {@code MessageUpserted} (the message only), {@code ChatChanged} (the chat row, once per
- * change) and {@code ActionRecorded}.
+ * chat read publishes {@code ChatChanged}. Routing subscribes to {@code ChatCreated}, {@code ChatReopened} and
+ * {@code CampaignChatFirstReply}; the live streams subscribe to {@code MessageUpserted} (the message only),
+ * {@code ChatChanged} (the chat row, once per change) and {@code ActionRecorded}.
  */
 public final class InboxEvents {
 
@@ -19,6 +19,13 @@ public final class InboxEvents {
 
     /** An inbound message moved a closed chat back to OPEN. */
     public record ChatReopened(WaWebChat chat) {
+    }
+
+    /**
+     * The contact answered a chat a campaign started, for the first time: an open chat with no user, which routing
+     * now gives to the number's team or agent. Published once per chat.
+     */
+    public record CampaignChatFirstReply(WaWebChat chat) {
     }
 
     /** A message was stored ({@code inserted}) or its status moved. */

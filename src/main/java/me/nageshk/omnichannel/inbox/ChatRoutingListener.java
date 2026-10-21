@@ -20,7 +20,7 @@ public class ChatRoutingListener {
         this.routing = routing;
     }
 
-    /** Only a chat the contact wrote first is routed; whoever wrote first from our side owns it. */
+    /** Only a chat the contact wrote first is routed; whoever wrote first from our side owns it (a campaign waits). */
     @EventListener
     void on(InboxEvents.ChatCreated e) {
         if (e.firstDirection() == MessageDirection.IN) route(e.chat());
@@ -28,7 +28,16 @@ public class ChatRoutingListener {
 
     @EventListener
     void on(InboxEvents.ChatReopened e) {
-        WaWebChat chat = e.chat();
+        routeUnassigned(e.chat());
+    }
+
+    /** A campaign chat waits unassigned for the contact's first reply. */
+    @EventListener
+    void on(InboxEvents.CampaignChatFirstReply e) {
+        routeUnassigned(e.chat());
+    }
+
+    private void routeUnassigned(WaWebChat chat) {
         if (chat.getAssignedUserId() == null && chat.getAssignedTeamId() == null) route(chat);
     }
 

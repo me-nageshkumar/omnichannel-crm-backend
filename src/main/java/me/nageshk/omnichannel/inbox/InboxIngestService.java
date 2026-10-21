@@ -34,8 +34,12 @@ public class InboxIngestService {
             boolean messageInserted) {
     }
 
-    /** {@code changed} is false for a replay or a stale ack, which publishes nothing. */
-    private record Stored(Ingested result, boolean changed, WaWebChatAction reopenedAction) {
+    /**
+     * {@code changed} is false for a replay or a stale ack, which publishes nothing; {@code campaignFirstReply} is
+     * whether the message is the contact's first answer to an unassigned campaign chat.
+     */
+    private record Stored(Ingested result, boolean changed, WaWebChatAction reopenedAction,
+            boolean campaignFirstReply) {
     }
 
     private final ContactService contacts;
@@ -90,6 +94,7 @@ public class InboxIngestService {
         boolean chatCreated;
         boolean reopened;
         boolean folded;
+        boolean campaignFirstReply;
         WaWebChatAction reopenedAction;
     }
 
@@ -132,7 +137,7 @@ public class InboxIngestService {
                 }
             }
             return Optional.of(new Stored(new Ingested(chat, message, progress.chatCreated, false, false),
-                    statusChanged || progress.chatCreated, null));
+                    statusChanged || progress.chatCreated, null, false));
         }
 
         if (message == null) {
@@ -140,7 +145,12 @@ public class InboxIngestService {
             applyAck(message, MessagePayloads.ack(p), now);
         }
         if (!progress.folded) {
+            // a campaign chat waits unassigned for the contact's first reply; a reopen is routed as such instead
+            boolean awaitingReply = chat.getCampaignId() != null && chat.getAssignedUserId() == null
+                    && chat.getLastInboundAt() == null;
             if (foldIntoChat(chat, contact, message, at)) progress.reopened = true;
+            progress.campaignFirstReply = awaitingReply && message.getDirection() == MessageDirection.IN
+                    && !progress.reopened;
             chat = chats.save(chat);
             progress.folded = true;
             if (progress.reopened) progress.reopenedAction = recordReopened(chat, now);
@@ -148,7 +158,7 @@ public class InboxIngestService {
         if (message.getId() == null) message = messages.save(message);
         return Optional.of(new Stored(
                 new Ingested(chat, message, progress.chatCreated, progress.reopened, true), true,
-                progress.reopenedAction));
+                progress.reopenedAction, progress.campaignFirstReply));
     }
 
     /** Updates the chat summary for a new message; returns whether a closed chat was reopened. */
@@ -180,7 +190,7 @@ public class InboxIngestService {
         }
     }
 
-    /** Folds a message sent from the console into the chat summary: the preview and the last outbound time. */
+    /** Folds a message sent through the inbox into the chat summary: the preview and the last outbound time. */
     static void foldOutbound(WaWebChat chat, WaWebMessage message, Instant at) {
         foldPreview(chat, message, at);
         chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
@@ -202,7 +212,7 @@ public class InboxIngestService {
                 chat = chats.save(chat);
             }
         }
-        return Optional.of(new Stored(new Ingested(chat, message, false, false, false), changed, null));
+        return Optional.of(new Stored(new Ingested(chat, message, false, false, false), changed, null, false));
     }
 
     private WaWebMessage newMessage(WhatsAppEvent event, JsonNode p, WaWebChat chat, String waMessageId,
@@ -272,7 +282,10 @@ public class InboxIngestService {
                 publisher.publishEvent(new InboxEvents.ActionRecorded(chat, stored.get().reopenedAction()));
             publisher.publishEvent(new InboxEvents.ChatReopened(chat));
         }
-        if (i.chatCreated() || i.reopened()) chat = chats.findById(chat.getId()).orElse(chat);
+        if (stored.get().campaignFirstReply()) publisher.publishEvent(new InboxEvents.CampaignChatFirstReply(chat));
+        if (i.chatCreated() || i.reopened() || stored.get().campaignFirstReply()) {
+            chat = chats.findById(chat.getId()).orElse(chat);
+        }
         publisher.publishEvent(new InboxEvents.MessageUpserted(chat, i.message(), i.messageInserted()));
         publisher.publishEvent(new InboxEvents.ChatChanged(chat));
         return Optional.of(new Ingested(chat, i.message(), i.chatCreated(), i.reopened(), i.messageInserted()));

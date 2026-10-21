@@ -59,8 +59,26 @@ public class TemplateRenderer {
         Map<String, String> given = r == null || r.values() == null ? Map.of() : r.values();
 
         List<String> missing = new ArrayList<>();
-        Map<String, Object> context = context(t, view, contact, given, missing);
+        return filled(t, view, context(t, view, contact, given, missing), missing);
+    }
 
+    /**
+     * Renders the template for a campaign, which has no user and no contact: every placeholder, whatever its kind,
+     * takes its value from {@code values} under its name, stripped and cut to {@link #MAX_AGENT_VALUE}, and a blank
+     * one its fallback. Nothing is ever missing. Checks no authority, so it runs without a signed-in user.
+     *
+     * @throws ValidationException if a filled field is empty or too long
+     */
+    public RenderedTemplate renderForCampaign(String workspaceId, String templateId, Map<String, String> values) {
+        MessageTemplate t = templates.require(workspaceId, templateId);
+        rejectReservedNames(t);
+        Map<String, String> given = values == null ? Map.of() : values;
+        return filled(t, templates.view(t), campaignContext(t, given), List.of());
+    }
+
+    /** Fills the template's text fields from the context; errors are collected and thrown together. */
+    private static RenderedTemplate filled(MessageTemplate t, TemplateView view, Map<String, Object> context,
+            List<String> missing) {
         TemplateContent in = t.getContent();
         TemplateContent out = copy(in);
         Map<String, String> errors = new LinkedHashMap<>();
@@ -133,9 +151,7 @@ public class TemplateRenderer {
                     attributeMap.put(p.getAttributeKey(), orFallback(value, fallback));
                 }
                 case AGENT -> {
-                    String value = given.get(p.getName());
-                    value = value == null ? "" : value.strip();
-                    if (value.length() > MAX_AGENT_VALUE) value = value.substring(0, MAX_AGENT_VALUE);
+                    String value = givenValue(given, p);
                     if (value.isEmpty() && p.isRequired()) {
                         missing.add(p.getName());
                         value = "[" + p.getLabel() + "]";
@@ -147,6 +163,32 @@ public class TemplateRenderer {
             }
         }
         return top;
+    }
+
+    /** Like {@link #context} with every value taken from {@code given}, falling back when blank. */
+    private static Map<String, Object> campaignContext(MessageTemplate t, Map<String, String> given) {
+        Map<String, Object> top = new LinkedHashMap<>();
+        Map<String, Object> contactMap = new LinkedHashMap<>();
+        Map<String, Object> attributeMap = new LinkedHashMap<>();
+        top.put("contact", contactMap);
+        contactMap.put("attributes", attributeMap);
+        for (TemplatePlaceholder p : t.getPlaceholders()) {
+            String value = givenValue(given, p);
+            if (value.isEmpty()) value = p.getFallback() == null ? "" : p.getFallback();
+            switch (p.getKind()) {
+                case CONTACT_FIELD -> contactMap.put(p.getName().substring("contact.".length()), value);
+                case CONTACT_ATTRIBUTE -> attributeMap.put(p.getAttributeKey(), value);
+                case AGENT -> top.put(p.getName(), value);
+            }
+        }
+        return top;
+    }
+
+    /** The value given for the placeholder, stripped and cut to {@link #MAX_AGENT_VALUE}; never null. */
+    private static String givenValue(Map<String, String> given, TemplatePlaceholder p) {
+        String value = given.get(p.getName());
+        value = value == null ? "" : value.strip();
+        return value.length() > MAX_AGENT_VALUE ? value.substring(0, MAX_AGENT_VALUE) : value;
     }
 
     private static boolean blank(String s) {

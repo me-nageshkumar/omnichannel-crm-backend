@@ -38,9 +38,9 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Sends a reply typed in the console through the number's device (spec section 6) and stores it as a
- * {@link MessageSource#CONSOLE} message. Checks run in this order, and nothing reaches the device unless all pass:
- * chat open, number usable and device ready, request and template valid.
+ * Sends a reply typed in the console, or a campaign's message, through the number's device (spec section 6) and
+ * stores it with the {@link SendActor}'s source, sender and campaign. Checks run in this order, and nothing reaches
+ * the device unless all pass: chat open, number usable and device ready, request and template valid.
  */
 @Service
 @RequiredArgsConstructor
@@ -81,23 +81,32 @@ public class InboxSendService {
         return send(me, workspaceId, chat, req, null);
     }
 
+    /** Sends as the console user {@code me}; see {@link #send(SendActor, String, WaWebChat, SendRequest, String)}. */
+    public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
+            SendRequest req, String typedPhone) {
+        UserActor actor = new UserActor(me, users.findById(me.userId()).map(User::getName).orElse(me.getUsername()));
+        return send(actor, workspaceId, chat, req, typedPhone);
+    }
+
     /**
-     * Callers check {@code inbox:send} and that the chat is visible to {@code me}. The chat may be unsaved (no id):
+     * Callers check {@code inbox:send} and that the chat is visible to the user; a campaign's runner did its own
+     * checks. A {@link UserActor} may claim the chat afterwards (the number's {@code claimOnReply}), a
+     * {@link CampaignActor} never does. The chat may be unsaved (no id):
      * it is stored with the first message once the device accepted it, or merged into the row that exists for the
      * same remote id by then. The future fails with the {@code RpcException} of a device error or timeout, in which
      * case nothing is stored. {@code typedPhone} is the phone the console addressed an unsaved chat by (null for
      * saved chats): it is what the contact of a chat stored under a {@code @lid} is linked to.
      *
-     * @param typedPhone normalised digits the console typed for an unsaved chat, else null
+     * @param typedPhone normalised digits typed (or imported) for an unsaved chat, else null
      * @throws ChatClosedException if the chat is closed
      * @throws NoDeviceException if the number is disabled or its device is missing or not CONNECTED
      * @throws ValidationException for a bad request, a missing template value or a contact card template
      */
-    public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
+    public CompletableFuture<MessageView> send(SendActor actor, String workspaceId, WaWebChat chat,
             SendRequest req, String typedPhone) {
         if (chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
         DeviceSession device = devices.requireReady(workspaceId, chat);
-        Outgoing out = outgoing(me, workspaceId, chat, req);
+        Outgoing out = outgoing(actor, workspaceId, chat, req);
 
         ObjectNode params = mapper.createObjectNode();
         params.put("chatId", chat.getRemoteId());
@@ -105,13 +114,13 @@ public class InboxSendService {
         params.set("options", out.options());
         params.put("sendSeen", true);
         return dispatcher.call(device, "sendMessage", params)
-                .thenApply(result -> afterSend(me, chat, out, result, typedPhone));
+                .thenApply(result -> afterSend(actor, chat, out, result, typedPhone));
     }
 
     // ---- request to outgoing message ----
 
     /** Exactly one of text and template; anything else is {@code fields.text = "required"}. */
-    private Outgoing outgoing(AuthenticatedUser me, String workspaceId, WaWebChat chat, SendRequest req) {
+    private Outgoing outgoing(SendActor actor, String workspaceId, WaWebChat chat, SendRequest req) {
         String text = req == null || req.text() == null ? "" : req.text().strip();
         boolean hasText = !text.isEmpty();
         boolean hasTemplate = req != null && !isBlank(req.templateId());
@@ -126,8 +135,11 @@ public class InboxSendService {
         if (templates.require(workspaceId, templateId).getStatus() == TemplateStatus.ARCHIVED) {
             throw new ValidationException("templateId", "archived");
         }
-        RenderedTemplate rendered = renderer.render(me, workspaceId, templateId,
-                new RenderRequest(chat.getContactId(), req.values()));
+        RenderedTemplate rendered = switch (actor) {
+            case UserActor u -> renderer.render(u.me(), workspaceId, templateId,
+                    new RenderRequest(chat.getContactId(), req.values()));
+            case CampaignActor c -> renderer.renderForCampaign(workspaceId, templateId, req.values());
+        };
         if (rendered.type() == TemplateType.CONTACT_CARD) {
             throw new ValidationException("templateId", "contact cards cannot be sent from the inbox yet");
         }
@@ -215,7 +227,7 @@ public class InboxSendService {
 
     // ---- after the device answered ----
 
-    private MessageView afterSend(AuthenticatedUser me, WaWebChat sent, Outgoing out, JsonNode result,
+    private MessageView afterSend(SendActor actor, WaWebChat sent, Outgoing out, JsonNode result,
             String typedPhone) {
         Instant now = clock.instant();
         boolean model = result != null && result.isObject();
@@ -230,7 +242,6 @@ public class InboxSendService {
         Instant at = model ? MessagePayloads.timestamp(result, now) : now;
         int ack = model ? MessagePayloads.ack(result) : 0;
         String type = model && out.type() == null ? MessagePayloads.type(result) : out.type();
-        String sender = users.findById(me.userId()).map(User::getName).orElse(me.getUsername());
         // a chat started from the console was addressed to phone@c.us; WhatsApp mostly answers under the person's
         // @lid, and that is the chat the message (and its message_create event) belong to
         String lidPhone = typedPhone;
@@ -242,12 +253,15 @@ public class InboxSendService {
         String phone = lidPhone;
 
         Recorded recorded = InboxIngestService.retrying(
-                () -> record(me, sender, sent, out, type == null ? "chat" : type, id, at, ack, now, phone));
+                () -> record(actor, sent, out, type == null ? "chat" : type, id, at, ack, now, phone));
         WaWebChat chat = recorded.chat();
-        try {
-            chat = assignment.claimOnReply(me, chat);
-        } catch (RuntimeException e) {
-            log.warn("could not claim chat {} for {} after a send: {}", chat.getId(), me.userId(), e.toString());
+        if (actor instanceof UserActor user) {
+            try {
+                chat = assignment.claimOnReply(user.me(), chat);
+            } catch (RuntimeException e) {
+                log.warn("could not claim chat {} for {} after a send: {}", chat.getId(), user.userId(),
+                        e.toString());
+            }
         }
         if (out.templateId() != null) {
             try {
@@ -295,11 +309,11 @@ public class InboxSendService {
 
     /**
      * Upserts the message by {@code (phoneNumberId, waMessageId)} and folds it into the chat. A row the ingest
-     * listener stored first (its {@code message_create} can beat the RPC result) is taken over: the console is its
+     * listener stored first (its {@code message_create} can beat the RPC result) is taken over: the actor is its
      * source and sender, its status only moves up.
      */
-    private Recorded record(AuthenticatedUser me, String senderName, WaWebChat sent, Outgoing out, String type,
-            String waMessageId, Instant at, int ack, Instant now, String lidPhone) {
+    private Recorded record(SendActor actor, WaWebChat sent, Outgoing out, String type, String waMessageId,
+            Instant at, int ack, Instant now, String lidPhone) {
         // a chat without an id is stored now, the device having accepted its first message; a row another writer
         // created for the same remote id wins, and a lost race is retried by the caller
         WaWebChat chat = sent.getId() == null
@@ -318,9 +332,10 @@ public class InboxSendService {
             chat = chats.save(chat);
         } else if (sent.getId() == null && isOurOwnOutbound(chat)) {
             // the device's message_create beat this result and created the row from our own first message, so the
-            // creator the console meant it for was lost with the unsaved chat
+            // creator the console meant it for (or the campaign that started it) was lost with the unsaved chat
             chat.setAssignedUserId(sent.getAssignedUserId());
             chat.setAssignedAt(sent.getAssignedAt());
+            chat.setCampaignId(sent.getCampaignId());
         }
 
         WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(sent.getPhoneNumberId(), waMessageId)
@@ -342,9 +357,10 @@ public class InboxSendService {
         }
         if (message.getMedia() == null) message.setMedia(out.media());
         if (message.getLocation() == null) message.setLocation(out.location());
-        message.setSource(MessageSource.CONSOLE);
-        message.setSentByUserId(me.userId());
-        message.setSentByName(senderName);
+        message.setSource(actor.source());
+        message.setSentByUserId(actor.userId());
+        message.setSentByName(actor.displayName());
+        message.setCampaignId(actor.campaignId());
         message.setTemplateId(out.templateId());
         InboxIngestService.applyAck(message, ack, now);
         message = messages.save(message);
