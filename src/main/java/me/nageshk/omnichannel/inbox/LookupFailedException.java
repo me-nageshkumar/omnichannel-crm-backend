@@ -5,11 +5,18 @@ public class LookupFailedException extends RuntimeException {
 
     public static final String CODE = "LOOKUP_FAILED";
 
+    static final String DEFAULT_MESSAGE = "Could not check this number on WhatsApp, try again";
+
     public LookupFailedException() {
-        this("Could not check this number on WhatsApp, try again");
+        this(DEFAULT_MESSAGE);
     }
 
     public LookupFailedException(String message) {
         super(message);
+    }
+
+    /** {@code cause} is what the device reported, kept for the logs; the message is what the person reads. */
+    public LookupFailedException(String message, Throwable cause) {
+        super(message, cause);
     }
 }

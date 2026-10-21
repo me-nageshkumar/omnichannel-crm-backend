@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.inbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URI;
 import java.time.Duration;
@@ -14,6 +15,7 @@ import me.nageshk.omnichannel.access.Role;
 import me.nageshk.omnichannel.access.RoleLevel;
 import me.nageshk.omnichannel.access.RoleRepository;
 import me.nageshk.omnichannel.rpc.Envelope;
+import me.nageshk.omnichannel.rpc.RpcException;
 import me.nageshk.omnichannel.support.FakeDevice;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.WorkspaceRole;
@@ -41,6 +43,7 @@ class NumberLookupIT extends InboxApiTestBase {
     @Autowired TestRestTemplate rest;
     @Autowired RoleRepository roles;
     @Autowired WaNumberLookupRepository lookups;
+    @Autowired NumberLookupService service;
 
     /** What the device saw and what the console got back. */
     record Exchange(ResponseEntity<JsonNode> response, Envelope request) {
@@ -201,6 +204,20 @@ class NumberLookupIT extends InboxApiTestBase {
         assertThat(ex.response().getBody().get("message").asString())
                 .isEqualTo("Could not check this number on WhatsApp, try again");
         assertThat(lookups.count()).isZero();
+    }
+
+    @Test
+    void theDeviceErrorIsKeptAsTheCause() throws Exception {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+            device.send(Envelope.event("ready", ready()));
+            Thread.sleep(200);
+            CompletableFuture<NumberLookup> call = service.lookup(brand.getId(), number.getId(), "919811111111", false);
+            Envelope req = device.next();
+            device.send(Envelope.errorResponse(req.id(), "PAGE_ERROR", "boom"));
+            assertThatThrownBy(() -> call.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(LookupFailedException.class)
+                    .cause().hasCauseInstanceOf(RpcException.class)
+                    .cause().hasFieldOrPropertyWithValue("code", "PAGE_ERROR");
+        }
     }
 
     @Test

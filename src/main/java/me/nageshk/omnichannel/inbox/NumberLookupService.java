@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.contact.Phones;
@@ -23,6 +24,7 @@ import tools.jackson.databind.node.ObjectNode;
  * Asks a number's device whether a phone is on WhatsApp ({@code getNumberId}) and remembers the answer per workspace
  * and phone: a registered answer for 30 days, an unregistered one for 7.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NumberLookupService {
@@ -62,18 +64,19 @@ public class NumberLookupService {
         DeviceSession device = devices.requireReady(workspaceId, phoneNumberId);
         ObjectNode params = mapper.createObjectNode().put("phone", phone);
         return dispatcher.call(device, "getNumberId", params).handle((result, error) -> {
-            if (error != null) throw failure(error);
+            if (error != null) throw failure(phoneNumberId, error);
             return view(InboxIngestService.retrying(() -> store(workspaceId, phoneNumberId, phone, result)), false);
         });
     }
 
-    /** An RpcException or a TimeoutException, possibly wrapped in a CompletionException. */
-    private static LookupFailedException failure(Throwable error) {
+    /** An RpcException or a TimeoutException, possibly wrapped in a CompletionException; the cause is kept and logged. */
+    private static LookupFailedException failure(String phoneNumberId, Throwable error) {
         Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+        log.warn("getNumberId on {} failed: {}", phoneNumberId, cause.toString());
         if (cause instanceof RpcException rpc && RpcException.METHOD_NOT_FOUND.equals(rpc.code())) {
-            return new LookupFailedException(OUTDATED_EXTENSION);
+            return new LookupFailedException(OUTDATED_EXTENSION, cause);
         }
-        return new LookupFailedException();
+        return new LookupFailedException(LookupFailedException.DEFAULT_MESSAGE, cause);
     }
 
     private WaNumberLookup store(String workspaceId, String phoneNumberId, String phone, JsonNode result) {

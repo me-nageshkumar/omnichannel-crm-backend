@@ -103,6 +103,7 @@ class NewChatIT extends InboxApiTestBase {
     /**
      * Posts with a connected device; the {@code getNumberId} request the lookup may send first is answered by
      * {@code lookupAnswer}, then the {@code sendMessage} request by {@code answer}. The returned request is the send.
+     * A null {@code lookupAnswer} makes it strict: the first frame must be the {@code sendMessage}.
      */
     private Exchange viaDevice(String token, Object body, Function<Envelope, JsonNode> lookupAnswer,
             Function<Envelope, Envelope> answer) throws Exception {
@@ -117,7 +118,7 @@ class NewChatIT extends InboxApiTestBase {
                 }
             });
             Envelope req = device.next();
-            if ("getNumberId".equals(req.method())) {
+            if (lookupAnswer != null && "getNumberId".equals(req.method())) {
                 device.send(Envelope.response(req.id(), lookupAnswer.apply(req)));
                 req = device.next();
             }
@@ -138,6 +139,12 @@ class NewChatIT extends InboxApiTestBase {
         if (lid == null) answer.putNull("lid");
         else answer.put("lid", lid);
         return answer;
+    }
+
+    /** Like {@link #sendOk} but fails if the device is asked for a lookup first. */
+    private Exchange sendOkWithoutLookup(String token, Object body, String remoteId, String serialized, String text)
+            throws Exception {
+        return viaDevice(token, body, null, req -> Envelope.response(req.id(), model(remoteId, serialized, text)));
     }
 
     private Exchange sendOk(String token, Object body, String remoteId, String serialized, String text)
@@ -620,8 +627,8 @@ class NewChatIT extends InboxApiTestBase {
         seedLookup("919811111111", false, null);
         WaWebChat existing = chatOf("919811111111@c.us", "Nia", agent, null);
 
-        // the first device request must be sendMessage: an existing chat needs no lookup
-        Exchange ex = sendOk(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+        // an existing chat needs no lookup: the first device request must be sendMessage
+        Exchange ex = sendOkWithoutLookup(agentToken, Map.of("phone", "919811111111", "text", "hello"),
                 "919811111111@c.us", "true_919811111111@c.us_1", "hello");
 
         assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -632,8 +639,8 @@ class NewChatIT extends InboxApiTestBase {
     void cachedLookupSkipsTheDevice() throws Exception {
         seedLookup("919811111111", true, LID);
 
-        // sendOk fails if the first device request is not sendMessage, so no getNumberId frame was needed
-        Exchange ex = sendOk(agentToken, Map.of("phone", "919811111111", "text", "hello"), LID,
+        // the fresh cached row answers: the first device request must be sendMessage
+        Exchange ex = sendOkWithoutLookup(agentToken, Map.of("phone", "919811111111", "text", "hello"), LID,
                 "true_" + LID + "_1", "hello");
 
         assertThat(ex.request().params().get("chatId").asString()).isEqualTo(LID);
