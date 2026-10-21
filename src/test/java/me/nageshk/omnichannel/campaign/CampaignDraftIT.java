@@ -181,10 +181,18 @@ class CampaignDraftIT extends CampaignTestBase {
         Campaign c = campaign(id);
         c.setStatus(CampaignStatus.RUNNING);
         mongo.save(c);
-        assertCoded(api(PUT, "/campaigns/" + id, manager, body), HttpStatus.CONFLICT, "CAMPAIGN_NOT_EDITABLE", null,
+        Map<String, Object> changed = filterCampaign("Changed", f, List.of(t), List.of(), List.of(n1.getId(), n2.getId()));
+        assertCoded(api(PUT, "/campaigns/" + id, manager, changed), HttpStatus.CONFLICT, "CAMPAIGN_NOT_EDITABLE", null,
                 "Only a draft campaign can be edited.");
         assertCoded(api(DELETE, "/campaigns/" + id, manager, null), HttpStatus.CONFLICT, "CAMPAIGN_NOT_EDITABLE",
                 null, "Only a draft campaign can be edited.");
+        Campaign after = campaign(id);
+        assertThat(after).isNotNull();
+        assertThat(after.getName()).isEqualTo("Diwali");
+        assertThat(after.getNameKey()).isEqualTo("diwali");
+        assertThat(after.getSenderIds()).containsExactly(n1.getId());
+        assertThat(after.getStatus()).isEqualTo(CampaignStatus.RUNNING);
+        assertThat(after.getVersion()).isEqualTo(c.getVersion());
     }
 
     @Test
