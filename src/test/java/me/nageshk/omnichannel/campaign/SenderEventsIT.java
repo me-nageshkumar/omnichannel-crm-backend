@@ -136,6 +136,18 @@ class SenderEventsIT extends CampaignTestBase {
     }
 
     @Test
+    void aWhatsAppBanCountsAsALogout() {
+        sender(n2);
+        state(n1, "TOS_BLOCK");
+        CampaignSender s1 = sender(n1);
+        assertThat(s1.getState()).isEqualTo(SenderState.SUSPENDED);
+        assertThat(s1.getLogoutAt()).isEqualTo(WED_11_IST);
+        assertThat(sender(n2).getHalfPaceUntil()).isEqualTo(Instant.parse("2026-10-21T18:30:00Z"));
+        state(n2, "SMB_TOS_BLOCK");
+        assertThat(sender(n2).getState()).isEqualTo(SenderState.SUSPENDED);
+    }
+
+    @Test
     void retiredSenderIgnoresLogout() {
         Campaign running = campaign(brand, "run", CampaignStatus.RUNNING, null);
         sender(n2);

@@ -18,6 +18,10 @@ class CampaignSchedulerConfig {
         scheduler.setPoolSize(2);
         scheduler.setThreadNamePrefix("campaign-");
         scheduler.setDaemon(true);
+        // a send in flight finishes (or times out) and is recorded before the application stops: up to a lookup and
+        // a send of one rpc timeout each
+        scheduler.setWaitForTasksToCompleteOnShutdown(true);
+        scheduler.setAwaitTerminationSeconds(75);
         return scheduler;
     }
 }

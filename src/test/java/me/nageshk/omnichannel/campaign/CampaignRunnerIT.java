@@ -32,6 +32,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.JsonNode;
 
 /** The runner's tick against a device that answers on its own; Wednesday 11:00 IST, gaps at their minima. */
@@ -572,6 +573,20 @@ class CampaignRunnerIT extends CampaignTestBase {
     }
 
     @Test
+    void stuckSendingOfAStoppedCampaignIsInterruptedToo() throws Exception {
+        String id = startedFilterCampaign("Stopped", List.of(P1), n1);
+        mongo.updateFirst(new Query(Criteria.where("_id").is(id)),
+                new Update().set("status", CampaignStatus.TERMINATED), Campaign.class);
+        mongo.updateFirst(new Query(Criteria.where("campaignId").is(id).and("phone").is(P1)),
+                new Update().set("status", RecipientStatus.SENDING).set("senderId", n1.getId())
+                        .set("attemptedAt", clock.instant().minus(Duration.ofMinutes(3))), CampaignRecipient.class);
+        tickNow();
+        CampaignRecipient r = recipient(id, P1);
+        assertThat(r.getStatus()).isEqualTo(RecipientStatus.FAILED);
+        assertThat(r.getError()).isEqualTo("INTERRUPTED");
+    }
+
+    @Test
     void campaignCompletesWhenNothingIsLeft() throws Exception {
         try (AutoDevice d = device(n1)) {
             String id = startedFilterCampaign("Done", List.of(P1), n1);
@@ -753,6 +768,8 @@ class CampaignRunnerIT extends CampaignTestBase {
         assertThat(campaignScheduler.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(2);
         assertThat(campaignScheduler.getThreadNamePrefix()).isEqualTo("campaign-");
         assertThat(campaignScheduler.isDaemon()).isTrue();
+        assertThat(ReflectionTestUtils.getField(campaignScheduler, "waitForTasksToCompleteOnShutdown")).isEqualTo(true);
+        assertThat(ReflectionTestUtils.getField(campaignScheduler, "awaitTerminationMillis")).isEqualTo(75_000L);
         assertThat(taskScheduler.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(1);
         assertThat(context.getBeansOfType(CampaignTicker.class)).isEmpty();
 

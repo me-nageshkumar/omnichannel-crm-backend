@@ -23,7 +23,8 @@ import org.springframework.stereotype.Component;
 public class SenderEventsListener {
 
     private static final Logger log = LoggerFactory.getLogger(SenderEventsListener.class);
-    private static final Set<String> LOGGED_OUT = Set.of("UNPAIRED", "UNPAIRED_IDLE");
+    /** Logged out, or the number was banned by WhatsApp: either way it cannot send until it is linked again. */
+    private static final Set<String> LOGGED_OUT = Set.of("UNPAIRED", "UNPAIRED_IDLE", "TOS_BLOCK", "SMB_TOS_BLOCK");
     private static final Duration LOGOUT_WINDOW = Duration.ofDays(7);
 
     private final CampaignSenderService senders;
@@ -51,7 +52,7 @@ public class SenderEventsListener {
                 default -> { }
             }
         } catch (RuntimeException ex) {
-            log.warn("could not apply {} event of {} to its sender: {}", e.name(), e.phoneNumberId(), ex.toString());
+            log.warn("could not apply {} event of {} to its sender", e.name(), e.phoneNumberId(), ex);
         }
     }
 

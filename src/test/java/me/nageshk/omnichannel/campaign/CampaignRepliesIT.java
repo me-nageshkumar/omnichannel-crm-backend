@@ -207,6 +207,23 @@ class CampaignRepliesIT extends CampaignTestBase {
         assertThat(contactOf().getDoNotContact()).isNotNull();
     }
 
+    @Test
+    void stopWordsIgnoreCaseAndSurroundingPunctuationAndSymbols() {
+        for (String body : List.of("Stop.", "STOP!", "no 🙏", "  ¿unsubscribe? ")) {
+            mongo.updateFirst(new Query(Criteria.where("workspaceId").is(brand.getId()).and("phone").is(PHONE)),
+                    new org.springframework.data.mongodb.core.query.Update().unset("doNotContact"), Contact.class);
+            inbound(REMOTE, body);
+            assertThat(contactOf().getDoNotContact()).as(body).isNotNull();
+        }
+    }
+
+    @Test
+    void aStopWordInsideASentenceIsNoStop() {
+        inbound(REMOTE, "stop sending me offers");
+        inbound(REMOTE, "no thanks");
+        assertThat(contactOf().getDoNotContact()).isNull();
+    }
+
     private Contact contactOf() {
         return mongo.findOne(new Query(Criteria.where("workspaceId").is(brand.getId()).and("phone").is(PHONE)),
                 Contact.class);

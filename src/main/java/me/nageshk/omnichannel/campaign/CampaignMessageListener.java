@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 import me.nageshk.omnichannel.contact.Contact;
 import me.nageshk.omnichannel.contact.ContactService;
 import me.nageshk.omnichannel.contact.DoNotContact;
@@ -35,6 +36,9 @@ import org.springframework.stereotype.Component;
 public class CampaignMessageListener {
 
     private static final Logger log = LoggerFactory.getLogger(CampaignMessageListener.class);
+    /** Punctuation, symbols (emoji included), format characters and spaces around a stop word. */
+    private static final Pattern EDGES =
+            Pattern.compile("^[\\p{P}\\p{S}\\p{Cf}\\p{Z}\\s\\x{FE0E}\\x{FE0F}]+|[\\p{P}\\p{S}\\p{Cf}\\p{Z}\\s\\x{FE0E}\\x{FE0F}]+$");
 
     private final MongoTemplate mongo;
     private final WaWebMessageRepository messages;
@@ -63,7 +67,7 @@ public class CampaignMessageListener {
                 replied(e.chat(), m);
             }
         } catch (RuntimeException ex) {
-            log.warn("could not apply message {} to its campaign: {}", e.message().getWaMessageId(), ex.toString());
+            log.warn("could not apply message {} to its campaign", e.message().getWaMessageId(), ex);
         }
     }
 
@@ -107,11 +111,17 @@ public class CampaignMessageListener {
         }
     }
 
+    /** Whether the whole message is a stop word, ignoring case and the punctuation and symbols around it. */
     private boolean isStopWord(String workspaceId, String body) {
         if (body == null) return false;
-        String text = body.strip().toLowerCase(Locale.ROOT);
+        String text = bare(body);
+        if (text.isEmpty()) return false;
         List<String> stopWords = settingsService.get(workspaceId).getStopWords();
-        return !text.isEmpty() && stopWords != null && stopWords.contains(text);
+        return stopWords != null && stopWords.stream().anyMatch(w -> w != null && text.equals(bare(w)));
+    }
+
+    static String bare(String text) {
+        return EDGES.matcher(text.toLowerCase(Locale.ROOT)).replaceAll("");
     }
 
     private void stop(WaWebChat chat, CampaignRecipient latest, String campaignId) {

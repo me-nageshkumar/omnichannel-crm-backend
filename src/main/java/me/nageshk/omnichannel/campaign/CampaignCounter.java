@@ -6,6 +6,7 @@ import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.schema.JsonSchemaObject;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
@@ -27,8 +28,7 @@ public class CampaignCounter {
         for (Document d : mongo.aggregate(agg, CampaignRecipient.class, Document.class)) {
             n.put(d.getString("_id"), d.getInteger("n"));
         }
-        int replied = (int) mongo.count(new Query(Criteria.where("campaignId").is(campaignId).and("repliedAt").ne(null)),
-                CampaignRecipient.class);
+        int replied = (int) mongo.count(replied(campaignId), CampaignRecipient.class);
         int sending = n.getOrDefault("SENDING", 0);
         int sent = n.getOrDefault("SENT", 0);
         int delivered = n.getOrDefault("DELIVERED", 0);
@@ -40,5 +40,10 @@ public class CampaignCounter {
         mongo.updateFirst(new Query(Criteria.where("_id").is(campaignId)), new Update().set("counts", counts),
                 Campaign.class);
         return counts;
+    }
+
+    /** The recipients that replied; it matches the partial filter of the {@code campaign_replied} index. */
+    static Query replied(String campaignId) {
+        return new Query(Criteria.where("campaignId").is(campaignId).and("repliedAt").type(JsonSchemaObject.Type.DATE));
     }
 }

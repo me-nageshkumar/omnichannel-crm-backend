@@ -997,7 +997,7 @@ PUT /campaigns/settings  CampaignSettings  → CampaignSettings   (VALIDATION `f
 SenderView = { phoneNumberId, number, label: string|null,
                phoneStatus: "DISABLED"|"NOT_CONNECTED_YET"|"WAITING_FOR_LOGIN"|"CONNECTED"|"WRONG_NUMBER"|"DISCONNECTED",
                state: "WARMING"|"ACTIVE"|"RESTING"|"SUSPENDED"|"RETIRED", ageDay: number, capToday: number (already halved when lowReplyRate),
-               usedToday: number, hourlyUsed: number, restUntil: string|null, pausedUntil: string|null, pauseReason: "UNDELIVERED_RUN"|null,
+               usedToday: number, hourlyUsed: number, restUntil: string|null, pausedUntil: string|null, pauseReason: "UNDELIVERED_RUN"|"LOOKUP_FAILED"|null,
                lowReplyRate: boolean, halfPaceUntil: string|null, runsOn: string|null,
                ready: boolean, logoutAt, lastSendAt, nextSendAt, warmupStartedAt: string|null   (extra) }
 GET /campaigns/senders                                                       → SenderView[]   (campaign:view)
@@ -1015,7 +1015,7 @@ CampaignRequest = { name: string, audience: { kind: "FILTER", filterId: string }
 CampaignCounts = { total, pending, sent, delivered, read, replied, skipped, failed: number }
                  pending = PENDING+SENDING; sent = SENT+DELIVERED+READ; delivered = DELIVERED+READ; read = READ; replied = recipients with repliedAt
 CampaignView = { id, name, status: "DRAFT"|"RUNNING"|"PAUSED"|"COMPLETED"|"TERMINATED", pausedBy: "USER"|"SYSTEM"|null,
-                 pauseReason: "TWO_LOGOUTS"|null,
+                 pauseReason: "TWO_LOGOUTS"|"SEND_REFUSED"|null,
                  audience: { kind: "FILTER"|"CSV", filterId: string|null, filterName: string|null, csvFileName: string|null,
                              csvHeaders: string[]|null, csvRows: number|null, phoneColumn: string|null, nameColumn: string|null,
                              filterSpec: ContactFilterSpec|null (extra) },
@@ -1028,7 +1028,8 @@ RecipientView = { id, phone: string, contactId: string|null, contactName: string
                   status: "PENDING"|"SENDING"|"SENT"|"DELIVERED"|"READ"|"FAILED"|"SKIPPED",
                   skipReason: "NOT_ON_WHATSAPP"|"DO_NOT_CONTACT"|"RECENTLY_MESSAGED"|"NO_PHONE"|"INVALID_PHONE"|"DUPLICATE"|"CHAT_ON_OTHER_NUMBER"|"CANCELLED"|null,
                   senderId: string|null, senderNumber: string|null, sentAt: string|null, repliedAt: string|null, error: string|null,
-                  templateId, attemptedAt, deliveredAt, readAt: string|null, attempts: number (extra) }
+                  templateId, attemptedAt, deliveredAt, readAt: string|null, attempts: number, dispatchedAt: string|null (extra) }
+                  dispatchedAt: when the message was handed to the device (set on FAILED rows too, as it may have gone out)
 
 GET    /campaigns?status=&page=0          → { items: CampaignView[], total: number, page: number, systemPaused: boolean }   (campaign:view)
        systemPaused: any campaign of the workspace (not only this page) is PAUSED with pausedBy SYSTEM

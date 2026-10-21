@@ -24,6 +24,7 @@ import me.nageshk.omnichannel.contact.ContactRepository;
 import me.nageshk.omnichannel.contact.ContactService;
 import me.nageshk.omnichannel.inbox.CampaignActor;
 import me.nageshk.omnichannel.inbox.InboxDevices;
+import me.nageshk.omnichannel.inbox.LookupFailedException;
 import me.nageshk.omnichannel.inbox.MessageStatus;
 import me.nageshk.omnichannel.inbox.MessageView;
 import me.nageshk.omnichannel.inbox.NewChatService;
@@ -138,7 +139,7 @@ public class CampaignRunner {
             Instant now = clock.instant();
             List<Campaign> running = mongo.find(new Query(Criteria.where("status").is(CampaignStatus.RUNNING))
                     .with(Sort.by("startedAt", "_id")), Campaign.class);
-            if (!running.isEmpty()) failStuck(now);
+            failStuck(now);
             Map<String, List<Campaign>> byWorkspace = new LinkedHashMap<>();
             for (Campaign c : running) byWorkspace.computeIfAbsent(c.getWorkspaceId(), k -> new ArrayList<>()).add(c);
             List<CompletableFuture<Void>> started = new ArrayList<>();
@@ -355,7 +356,7 @@ public class CampaignRunner {
                 return;
             }
         } catch (RuntimeException e) {
-            log.warn("could not render template {} for recipient {}: {}", r.getTemplateId(), r.getId(), e.toString());
+            log.warn("could not render template {} for recipient {}", r.getTemplateId(), r.getId(), e);
             failed(claim, "RENDER_FAILED");
             return;
         }
@@ -398,8 +399,12 @@ public class CampaignRunner {
      * sender waits a gap; {@link SenderHealth#lookupFailed} pauses it on the third failure in a row.
      */
     private void lookupFailed(Claim claim, Throwable cause) {
-        log.warn("lookup for recipient {} on {} failed: {}", claim.recipient().getId(), claim.senderId(),
-                cause.toString());
+        if (cause instanceof LookupFailedException) {
+            log.warn("lookup for recipient {} on {} failed: {}", claim.recipient().getId(), claim.senderId(),
+                    cause.toString());
+        } else {
+            log.warn("lookup for recipient {} on {} failed", claim.recipient().getId(), claim.senderId(), cause);
+        }
         release(claim);
         Instant now = clock.instant();
         paced(claim, false, now);
@@ -438,8 +443,12 @@ public class CampaignRunner {
         Throwable t = cause instanceof CompletionException && cause.getCause() != null ? cause.getCause() : cause;
         String error = t instanceof RpcException rpc ? rpc.code()
                 : t instanceof TimeoutException ? "TIMEOUT" : t.getClass().getSimpleName();
-        log.warn("campaign send to recipient {} on {} failed: {}", claim.recipient().getId(), claim.senderId(),
-                t.toString());
+        if (t instanceof RpcException || t instanceof TimeoutException) {
+            log.warn("campaign send to recipient {} on {} failed: {}", claim.recipient().getId(), claim.senderId(),
+                    t.toString());
+        } else {
+            log.warn("campaign send to recipient {} on {} failed", claim.recipient().getId(), claim.senderId(), t);
+        }
         attempted(claim);
         failed(claim, error);
     }
@@ -483,11 +492,11 @@ public class CampaignRunner {
 
     // ---- helpers ----
 
-    /** Counts the attempt for the sender's day and paces it; returns the time it was handled. */
+    /** Paces the sender and counts the attempt for its day (pacing first, so it is never left out); returns the time. */
     private Instant attempted(Claim claim) {
         Instant now = clock.instant();
-        senders.sendAttempted(claim.senderId(), SenderPolicy.today(claim.settings(), now), now);
         paced(claim, false, now);
+        senders.sendAttempted(claim.senderId(), SenderPolicy.today(claim.settings(), now), now);
         return now;
     }
 
