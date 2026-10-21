@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.api;
 import me.nageshk.omnichannel.auth.AccountLockedException;
 import me.nageshk.omnichannel.inbox.ChatClosedException;
 import me.nageshk.omnichannel.inbox.ChatTakenException;
+import me.nageshk.omnichannel.inbox.LookupFailedException;
 import me.nageshk.omnichannel.inbox.MediaUnavailableException;
 import me.nageshk.omnichannel.rpc.RpcException;
 import me.nageshk.omnichannel.user.InvalidOtpException;
@@ -67,6 +68,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MediaUnavailableException.class)
     public ResponseEntity<Map<String, String>> mediaUnavailable(MediaUnavailableException e) {
         return body(HttpStatus.GONE, MediaUnavailableException.CODE, e.getMessage());
+    }
+
+    @ExceptionHandler(LookupFailedException.class)
+    public ResponseEntity<Map<String, String>> lookupFailed(LookupFailedException e) {
+        return body(HttpStatus.BAD_GATEWAY, LookupFailedException.CODE, e.getMessage());
     }
 
     @ExceptionHandler(TwoFactorStateException.class)
@@ -204,6 +210,7 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, String>> wrapped(Exception e) {
         Throwable cause = e.getCause();
         if (cause instanceof RpcException rpc) return rpc(rpc);
+        if (cause instanceof LookupFailedException lookup) return lookupFailed(lookup);
         if (cause instanceof MediaUnavailableException media) return mediaUnavailable(media);
         if (cause instanceof TimeoutException t) return timeout(t);
         return body(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL", String.valueOf(cause));

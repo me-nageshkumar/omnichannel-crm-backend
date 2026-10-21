@@ -83,12 +83,13 @@ public class InboxController {
     private final WaWebMessageRepository messageRepository;
     private final ChatMediaService chatMedia;
     private final NewChatService newChats;
+    private final NumberLookupService numberLookups;
 
     public InboxController(InboxQueryService query, InboxScopeService scopeService, InboxStreamBroker broker,
             AccessTokenAuthenticator authenticator, InboxViews views, InboxSettingService settings, ChatAssignmentService assignment,
             PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService,
             InboxSendService sender, WaWebMessageRepository messageRepository, ChatMediaService chatMedia,
-            NewChatService newChats) {
+            NewChatService newChats, NumberLookupService numberLookups) {
         this.query = query;
         this.scopeService = scopeService;
         this.broker = broker;
@@ -103,6 +104,7 @@ public class InboxController {
         this.messageRepository = messageRepository;
         this.chatMedia = chatMedia;
         this.newChats = newChats;
+        this.numberLookups = numberLookups;
     }
 
     @GetMapping("/phone-numbers")
@@ -186,6 +188,15 @@ public class InboxController {
     public ChatView read(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String chatId) {
         return views.chat(query.markRead(query.requireVisible(me, workspaceId, chatId)));
+    }
+
+    /** Whether a phone is on WhatsApp, from the cache or the number's device; see {@link NumberLookupService}. */
+    @GetMapping("/phone-numbers/{phoneNumberId}/number-lookup")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    public CompletableFuture<NumberLookup> numberLookup(@PathVariable String workspaceId,
+            @PathVariable String phoneNumberId, @RequestParam String phone,
+            @RequestParam(defaultValue = "false") boolean force) {
+        return numberLookups.lookup(workspaceId, phoneNumberId, phone, force);
     }
 
     /** Starts (or lands in) the chat of a phone number and sends its first message; see {@link NewChatService}. */

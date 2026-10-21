@@ -21,7 +21,8 @@ class InboxIndexesIT {
 
     @BeforeEach
     void clean() {
-        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class, InboxSetting.class))
+        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class, InboxSetting.class,
+                WaNumberLookup.class))
             mongo.remove(new Query(), c);
     }
 
@@ -33,6 +34,16 @@ class InboxIndexesIT {
         c.setRemoteId(remoteId);
         c.setStatus(ChatStatus.OPEN);
         return c;
+    }
+
+    private WaNumberLookup lookup(String workspaceId, String phone) {
+        WaNumberLookup l = new WaNumberLookup();
+        l.setWorkspaceId(workspaceId);
+        l.setPhoneNumberId("p1");
+        l.setPhone(phone);
+        l.setRegistered(true);
+        l.setCheckedAt(Instant.now());
+        return l;
     }
 
     private WaWebMessage message(String phoneNumberId, String waMessageId) {
@@ -77,12 +88,24 @@ class InboxIndexesIT {
     }
 
     @Test
+    void numberLookupIsUniquePerWorkspaceAndPhone() {
+        mongo.save(lookup("w1", "919811111111"));
+        mongo.save(lookup("w2", "919811111111"));
+        assertThatThrownBy(() -> mongo.save(lookup("w1", "919811111111"))).isInstanceOf(DuplicateKeyException.class);
+        IndexInfo index = mongo.indexOps(WaNumberLookup.class).getIndexInfo().stream()
+                .filter(i -> i.getName().equals("ws_phone")).findFirst().orElseThrow();
+        assertThat(index.isUnique()).isTrue();
+        assertThat(keys(WaNumberLookup.class, "ws_phone")).containsExactly("workspaceId:ASC", "phone:ASC");
+    }
+
+    @Test
     void indexesAreNamedAsDesigned() {
         assertThat(names(WaWebChat.class)).contains("phone_remote_unique", "phone_last_message",
                 "phone_user_last_message", "phone_team_last_message", "phone_contact", "workspace_contact");
         assertThat(names(WaWebMessage.class)).contains("phone_wamessage_unique", "chat_timestamp");
         assertThat(names(WaWebChatAction.class)).contains("chat_at");
         assertThat(names(InboxSetting.class)).contains("phone_unique");
+        assertThat(names(WaNumberLookup.class)).contains("ws_phone");
     }
 
     /** The lists sort by the time then {@code _id}, both newest first, so each index must end with both. */
