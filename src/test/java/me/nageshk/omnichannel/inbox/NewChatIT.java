@@ -561,6 +561,8 @@ class NewChatIT extends InboxApiTestBase {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
         assertThat(res.getBody().get("code").asString()).isEqualTo("LOOKUP_FAILED");
+        assertThat(res.getBody().get("message").asString())
+                .isEqualTo("Could not check this number on WhatsApp, try again");
         assertThat(chats.count()).isZero();
         assertThat(contacts.count()).isZero();
         assertThat(lookupRows.count()).isZero();
@@ -660,11 +662,13 @@ class NewChatIT extends InboxApiTestBase {
                 req -> Envelope.response(req.id(), model(LID, "true_" + LID + "_1", "hello")));
 
         assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ex.request().params().get("chatId").asString()).isEqualTo(LID); // addressed by the looked-up id
         assertThat(ex.response().getBody().get("chatId").asString()).isEqualTo(lid.getId());
         assertThat(chats.count()).isEqualTo(1);
         // the chat is saved (has an id), and record only touches contacts for unsaved chats: the phone-less
-        // hidden contact stays as it is
+        // hidden contact stays as it is (without the lookup the send would go to @c.us and link the phone)
         assertThat(contacts.count()).isEqualTo(1);
+        assertThat(contacts.findById(lid.getContactId()).orElseThrow().getPhone()).isNull();
     }
 
     @Test
