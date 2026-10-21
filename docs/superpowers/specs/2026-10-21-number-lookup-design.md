@@ -52,8 +52,13 @@ New page method `getNumberId` in `src/page/methods.js`, next to `sendMessage`:
   them) and `lid` is `getCurrentLid(wid)?._serialized ?? null`.
 - Errors: `WHATSAPP_NOT_READY` when the WA modules are not loaded (same check as `sendMessage`);
   `PAGE_ERROR` with the query's message otherwise. Missing or non-string `phone` is `PAGE_ERROR`.
-- No throttling in the extension: the bridge already handles one frame at a time per device, so
-  lookups queue behind sends and each other.
+- No throttling in the extension, and none in the bridge either: `bridge.js` dispatches each
+  request frame without waiting for the previous one, so lookups that arrive together run together
+  in the page. At console scale (one agent, one click) that is fine; campaigns pace their own
+  lookups in the backend (§5).
+- An extension older than this method answers `METHOD_NOT_FOUND`; the backend turns that into
+  `LOOKUP_FAILED` with the message "The WhatsApp extension needs an update to check numbers" so the
+  person knows what to do (§3.2).
 
 Tests (`tests/router.test.js` or a new `tests/methods.test.js`, following the existing method tests
 with a stubbed `window.require`): registered number returns `{phone, lid}`, registered without a
@@ -93,7 +98,8 @@ else null:
 4. The answer is upserted into the cache (retrying once on a duplicate key, like ingest) and
    returned with `cached = false`.
 5. Any `RpcException` or timeout from the device is wrapped as `LookupFailedException`
-   (`CODE = "LOOKUP_FAILED"`, "Could not check this number on WhatsApp, try again"), mapped to 502
+   (`CODE = "LOOKUP_FAILED"`, "Could not check this number on WhatsApp, try again"; for
+   `METHOD_NOT_FOUND`, "The WhatsApp extension needs an update to check numbers"), mapped to 502
    in `ApiExceptionHandler`. Without the wrap a page-side failure would surface as the generic 400
    that `PAGE_ERROR` maps to today and look like a client mistake. Nothing is cached and nothing is
    retried.
