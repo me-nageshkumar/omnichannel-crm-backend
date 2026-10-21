@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-class InboxDevices {
+public class InboxDevices {
 
     private final PhoneNumberRepository numbers;
     private final AccessService access;
@@ -43,5 +43,15 @@ class InboxDevices {
             throw new NoDeviceException(NoDeviceException.WHATSAPP_NOT_READY, "WhatsApp state is " + device.waState());
         }
         return device;
+    }
+
+    /** Whether {@link #requireReady(String, String)} would succeed. */
+    public boolean isReady(String workspaceId, String phoneNumberId) {
+        try {
+            requireReady(workspaceId, phoneNumberId);
+            return true;
+        } catch (NoDeviceException | NotFoundException e) {
+            return false;
+        }
     }
 }

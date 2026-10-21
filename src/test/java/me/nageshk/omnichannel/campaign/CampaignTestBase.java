@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.campaign;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Consumer;
 import me.nageshk.omnichannel.access.BuiltInRoles;
 import me.nageshk.omnichannel.phone.PhoneNumber;
 import me.nageshk.omnichannel.support.MutableClock;
@@ -50,6 +51,12 @@ abstract class CampaignTestBase {
         MutableClock testClock() {
             return new MutableClock(WED_11_IST);
         }
+
+        @Bean
+        @Primary
+        FixedRandom fixedRandom() {
+            return new FixedRandom();
+        }
     }
 
     @LocalServerPort int port;
@@ -58,6 +65,9 @@ abstract class CampaignTestBase {
     @Autowired TestUsers testUsers;
     @Autowired TestDevices testDevices;
     @Autowired MongoTemplate mongo;
+    @Autowired FixedRandom random;
+    @Autowired CampaignSenderService senders;
+    @Autowired CampaignSenderRepository senderRepository;
 
     Customer acme;
     Workspace brand;
@@ -71,7 +81,7 @@ abstract class CampaignTestBase {
 
     /** The collections each test starts without; later tasks add their documents here. */
     List<Class<?>> collections() {
-        return List.of(CampaignSettings.class);
+        return List.of(CampaignSettings.class, CampaignSender.class, CampaignRecipient.class);
     }
 
     @BeforeEach
@@ -97,6 +107,21 @@ abstract class CampaignTestBase {
         testUsers.deleteAll();
         for (Class<?> c : collections()) mongo.remove(new Query(), c);
         clock.set(WED_11_IST);
+        random.offset = 0;
+        random.max = false;
+    }
+
+    /** The number's sender document, created when absent. */
+    CampaignSender sender(PhoneNumber n) {
+        senders.ensure(n.getWorkspaceId(), n.getId());
+        return senderRepository.findByPhoneNumberId(n.getId()).orElseThrow();
+    }
+
+    /** Loads the number's sender, applies {@code change} and saves it. */
+    void sender(PhoneNumber n, Consumer<CampaignSender> change) {
+        CampaignSender s = sender(n);
+        change.accept(s);
+        senderRepository.save(s);
     }
 
     User brandUser(Workspace w, String username, String roleName) {
