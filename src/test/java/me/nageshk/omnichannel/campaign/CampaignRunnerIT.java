@@ -491,6 +491,48 @@ class CampaignRunnerIT extends CampaignTestBase {
     }
 
     @Test
+    void recipientWaitingForARetiredSenderIsSkippedAndTheCampaignCompletes() throws Exception {
+        String id = startedFilterCampaign("Retired preferred", List.of(P1), n1, n2);
+        mongo.updateFirst(new Query(Criteria.where("campaignId").is(id).and("phone").is(P1)),
+                new Update().set("preferredSenderId", n2.getId()), CampaignRecipient.class);
+        sender(n2, s -> s.setState(SenderState.RETIRED));
+        tickNow();
+        CampaignRecipient r = recipient(id, P1);
+        assertThat(r.getStatus()).isEqualTo(RecipientStatus.SKIPPED);
+        assertThat(r.getSkipReason()).isEqualTo(SkipReason.CHAT_ON_OTHER_NUMBER);
+        assertThat(campaign(id).getCounts().skipped()).isEqualTo(1);
+        assertThat(campaign(id).getStatus()).isEqualTo(CampaignStatus.COMPLETED);
+    }
+
+    @Test
+    void recipientWaitingForADisabledNumberIsSkipped() throws Exception {
+        String id = startedFilterCampaign("Disabled preferred", List.of(P1, P2), n1, n2);
+        mongo.updateFirst(new Query(Criteria.where("campaignId").is(id).and("phone").is(P1)),
+                new Update().set("preferredSenderId", n2.getId()), CampaignRecipient.class);
+        PhoneNumber n = numbers.findById(n2.getId()).orElseThrow();
+        n.setDisabled(new Disabled("manager", EnableLevel.BRAND, WED_11_IST));
+        numbers.save(n);
+        tickNow();
+        assertThat(recipient(id, P1).getSkipReason()).isEqualTo(SkipReason.CHAT_ON_OTHER_NUMBER);
+        assertThat(recipient(id, P2).getStatus()).isEqualTo(RecipientStatus.PENDING);
+        assertThat(campaign(id).getStatus()).isEqualTo(CampaignStatus.RUNNING);
+    }
+
+    @Test
+    void recipientWaitingForARestingSenderKeepsWaiting() throws Exception {
+        String id = startedFilterCampaign("Resting preferred", List.of(P1), n1, n2);
+        mongo.updateFirst(new Query(Criteria.where("campaignId").is(id).and("phone").is(P1)),
+                new Update().set("preferredSenderId", n2.getId()), CampaignRecipient.class);
+        sender(n2, s -> {
+            s.setState(SenderState.RESTING);
+            s.setRestUntil(WED_11_IST.plus(Duration.ofDays(7)));
+        });
+        tickNow();
+        assertThat(recipient(id, P1).getStatus()).isEqualTo(RecipientStatus.PENDING);
+        assertThat(campaign(id).getStatus()).isEqualTo(CampaignStatus.RUNNING);
+    }
+
+    @Test
     void notReadySenderIsSkippedWithoutStateChange() throws Exception {
         String id = startedFilterCampaign("NotReady", List.of(P1), n1);
         tickNow();
@@ -640,6 +682,38 @@ class CampaignRunnerIT extends CampaignTestBase {
             assertThat(r.getAttemptedAt()).isNull();
             assertThat(d.requests()).isEmpty();
             assertThat(sender(n1).getNextSendAt()).isNull();
+        }
+    }
+
+    @Test
+    void senderRetiredBetweenTickAndSendSendsNothing() throws Exception {
+        try (AutoDevice d = device(n1)) {
+            String id = startedFilterCampaign("Retired late", List.of(P1), n1);
+            CountDownLatch gate = holdCampaignScheduler();
+            CompletableFuture<Void> tick = runner.tick();
+            api(HttpMethod.PUT, "/campaigns/senders/" + n1.getId(), manager, Map.of("action", "RETIRE"));
+            gate.countDown();
+            tick.get(10, TimeUnit.SECONDS);
+            CampaignRecipient r = recipient(id, P1);
+            assertThat(r.getStatus()).isEqualTo(RecipientStatus.PENDING);
+            assertThat(r.getSenderId()).isNull();
+            assertThat(r.getAttemptedAt()).isNull();
+            assertThat(d.requests()).isEmpty();
+            assertThat(sender(n1).getNextSendAt()).isNull();
+        }
+    }
+
+    @Test
+    void senderPausedBetweenTickAndSendSendsNothing() throws Exception {
+        try (AutoDevice d = device(n1)) {
+            String id = startedFilterCampaign("Paused sender", List.of(P1), n1);
+            CountDownLatch gate = holdCampaignScheduler();
+            CompletableFuture<Void> tick = runner.tick();
+            sender(n1, s -> s.setNextSendAt(WED_11_IST.plusSeconds(30)));
+            gate.countDown();
+            tick.get(10, TimeUnit.SECONDS);
+            assertThat(recipient(id, P1).getStatus()).isEqualTo(RecipientStatus.PENDING);
+            assertThat(d.requests()).isEmpty();
         }
     }
 

@@ -73,6 +73,24 @@ public class CampaignSenderService {
         });
     }
 
+    /** The number's sender as stored now, or null. */
+    CampaignSender find(String phoneNumberId) {
+        return repository.findByPhoneNumberId(phoneNumberId).orElse(null);
+    }
+
+    /**
+     * Whether recipients may keep waiting for this number: an enabled WhatsApp Web number of the workspace whose
+     * sender is not RETIRED.
+     */
+    boolean mayBeWaitedFor(String workspaceId, String phoneNumberId) {
+        PhoneNumber n = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId).orElse(null);
+        if (n == null || n.getDisabled() != null || n.getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API) {
+            return false;
+        }
+        return repository.findByPhoneNumberId(phoneNumberId).map(s -> s.getState() != SenderState.RETIRED)
+                .orElse(true);
+    }
+
     /** Applies what time alone changes: a finished rest, the end of the warm-up, a new day's start offset. */
     CampaignSender refresh(CampaignSender s, CampaignSettings settings, Instant now) {
         LocalDate today = SenderPolicy.today(settings, now);

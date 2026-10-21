@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -148,6 +149,11 @@ public class CampaignRunner {
                     log.warn("campaign tick of workspace {} failed", ws, e);
                 }
             });
+            try {
+                skipUnusablePreferred(running);
+            } catch (RuntimeException e) {
+                log.warn("could not skip the recipients waiting for senders that cannot send", e);
+            }
             completeFinished(running);
             return CompletableFuture.allOf(started.toArray(CompletableFuture[]::new));
         } finally {
@@ -183,7 +189,7 @@ public class CampaignRunner {
             try {
                 started.add(CompletableFuture.runAsync(() -> {
                     try {
-                        process(sender, mine, settings);
+                        process(ws, sender, mine, settings);
                     } finally {
                         busy.remove(senderId);
                     }
@@ -207,6 +213,31 @@ public class CampaignRunner {
                 && (s.getNextSendAt() == null || !s.getNextSendAt().isAfter(now));
     }
 
+    /**
+     * PENDING recipients waiting for a preferred sender that will not send again (RETIRED, or its number disabled,
+     * not WhatsApp Web or gone from the workspace) are skipped as chats on another number, so the campaign can finish.
+     * A RESTING or SUSPENDED sender comes back, so its recipients keep waiting.
+     */
+    private void skipUnusablePreferred(List<Campaign> running) {
+        Map<String, Boolean> usable = new HashMap<>();
+        for (Campaign c : running) {
+            List<String> preferred = mongo.findDistinct(new Query(Criteria.where("campaignId").is(c.getId())
+                    .and("status").is(RecipientStatus.PENDING).and("preferredSenderId").ne(null)),
+                    "preferredSenderId", CampaignRecipient.class, String.class);
+            boolean skipped = false;
+            for (String senderId : preferred) {
+                if (usable.computeIfAbsent(c.getWorkspaceId() + "/" + senderId,
+                        k -> senders.mayBeWaitedFor(c.getWorkspaceId(), senderId))) continue;
+                skipped |= mongo.updateMulti(new Query(Criteria.where("campaignId").is(c.getId())
+                                .and("status").is(RecipientStatus.PENDING).and("preferredSenderId").is(senderId)),
+                        new Update().set("status", RecipientStatus.SKIPPED)
+                                .set("skipReason", SkipReason.CHAT_ON_OTHER_NUMBER), CampaignRecipient.class)
+                        .getModifiedCount() > 0;
+            }
+            if (skipped) counter.refresh(c.getId());
+        }
+    }
+
     /** RUNNING campaigns without a PENDING or SENDING recipient are COMPLETED. */
     private void completeFinished(List<Campaign> running) {
         for (Campaign c : running) {
@@ -223,12 +254,15 @@ public class CampaignRunner {
 
     /**
      * Claims and handles recipients until one is not a free skip, at most {@link #FREE_SKIPS} free skips more. What
-     * the tick saw may have changed while this sender waited for a thread: a claim is released when the window has
+     * the tick saw may have changed while this sender waited for a thread: the sender is read again and does nothing
+     * when it is no longer eligible (retired, paused, at a cap, in a gap); a claim is released when the window has
      * closed (and the sender stops), when its campaign is no longer RUNNING (and that campaign is passed over), or
      * when another sender is working on the same phone of the workspace (and this sender stops for the tick).
      */
-    private void process(CampaignSender sender, List<Campaign> campaigns, CampaignSettings settings) {
+    private void process(String ws, CampaignSender seen, List<Campaign> campaigns, CampaignSettings settings) {
         try {
+            CampaignSender sender = senders.find(seen.getPhoneNumberId());
+            if (sender == null || !eligible(ws, sender, settings, clock.instant())) return;
             List<Campaign> open = new ArrayList<>(campaigns);
             int freeSkips = FREE_SKIPS;
             while (true) {
@@ -258,7 +292,7 @@ public class CampaignRunner {
                 if (!free || freeSkips-- <= 0) return;
             }
         } catch (RuntimeException e) {
-            log.warn("campaign work of sender {} failed", sender.getPhoneNumberId(), e);
+            log.warn("campaign work of sender {} failed", seen.getPhoneNumberId(), e);
         }
     }
 
