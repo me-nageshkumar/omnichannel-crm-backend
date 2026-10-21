@@ -120,17 +120,39 @@ class SenderHealthIT extends CampaignTestBase {
     }
 
     @Test
-    void resumeClearsAnActivePause() throws Exception {
+    void resumeClearsAnActivePauseAndTheRunThatCausedIt() throws Exception {
         try (AutoDevice d = device(n1)) {
             fiveUndelivered(n1);
-            String id = startedFilterCampaign("Run", List.of("919811100001", "919811100002"), n1);
+            String id = startedFilterCampaign("Run", List.of("919811100001", "919811100002", "919811100003"), n1);
             tickNow();
             assertThat(sender(n1).getPausedUntil()).isNotNull();
+            clock.advance(Duration.ofMinutes(5));
             api(PUT, "/campaigns/senders/" + n1.getId(), manager, Map.of("action", "RESUME"));
             assertThat(sender(n1).getPausedUntil()).isNull();
-            clock.advance(Duration.ofMinutes(5));
+            assertThat(sender(n1).getHealthFrom()).isEqualTo(WED_11_IST.plus(Duration.ofMinutes(5)));
             tickNow();
             assertThat(sent(id)).isEqualTo(2);
+            assertThat(sender(n1).getPausedUntil()).isNull();
+            clock.advance(Duration.ofSeconds(45));
+            tickNow();
+            assertThat(sent(id)).isEqualTo(3);
+            assertThat(sender(n1).getPausedUntil()).isNull();
         }
+    }
+
+    @Test
+    void reactivateStartsTheHealthOver() {
+        sender(n1, s -> s.setState(SenderState.RETIRED));
+        api(PUT, "/campaigns/senders/" + n1.getId(), manager, Map.of("action", "REACTIVATE"));
+        assertThat(sender(n1).getHealthFrom()).isEqualTo(WED_11_IST);
+    }
+
+    @Test
+    void lowReplyRateOnlyCountsSendsSinceTheHealthStart() {
+        for (int i = 0; i < 30; i++)
+            seed(n1, RecipientStatus.SENT, WED_11_IST.minus(Duration.ofHours(25 + i)), i < 2);
+        sender(n1, s -> s.setHealthFrom(WED_11_IST.minus(Duration.ofHours(40))));
+        dayRollsOnThursday();
+        assertThat(view(n1).get("lowReplyRate").asBoolean()).isFalse();
     }
 }

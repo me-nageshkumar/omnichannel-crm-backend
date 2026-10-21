@@ -32,6 +32,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import tools.jackson.databind.JsonNode;
 
 /** The runner's tick against a device that answers on its own; Wednesday 11:00 IST, gaps at their minima. */
 class CampaignRunnerIT extends CampaignTestBase {
@@ -244,7 +245,7 @@ class CampaignRunnerIT extends CampaignTestBase {
     }
 
     @Test
-    void lookupFailureRetriesThenFails() throws Exception {
+    void lookupFailuresPauseTheSender() throws Exception {
         try (AutoDevice d = device(n1)) {
             d.lookupAnswer = p -> {
                 throw new IllegalStateException("no answer");
@@ -252,24 +253,70 @@ class CampaignRunnerIT extends CampaignTestBase {
             String id = startedFilterCampaign("Retry", List.of(P1), n1);
             tickNow();
             CampaignRecipient r = recipient(id, P1);
-            assertThat(r.getAttempts()).isEqualTo(1);
             assertThat(r.getStatus()).isEqualTo(RecipientStatus.PENDING);
+            assertThat(r.getAttempts()).isZero();
+            assertThat(r.getError()).isNull();
             assertThat(r.getAttemptedAt()).isNull();
             assertThat(r.getSenderId()).isNull();
+            assertThat(sender(n1).getLookupFailures()).isEqualTo(1);
             assertThat(sender(n1).getNextSendAt()).isEqualTo(WED_11_IST.plusSeconds(45));
+            assertThat(usedToday(n1)).isZero();
             clock.advance(Duration.ofSeconds(45));
             tickNow();
-            assertThat(recipient(id, P1).getAttempts()).isEqualTo(2);
-            assertThat(recipient(id, P1).getStatus()).isEqualTo(RecipientStatus.PENDING);
+            assertThat(sender(n1).getLookupFailures()).isEqualTo(2);
+            assertThat(sender(n1).getPausedUntil()).isNull();
             clock.advance(Duration.ofSeconds(45));
             tickNow();
             r = recipient(id, P1);
-            assertThat(r.getAttempts()).isEqualTo(3);
-            assertThat(r.getStatus()).isEqualTo(RecipientStatus.FAILED);
-            assertThat(r.getError()).isEqualTo("LOOKUP_FAILED");
-            assertThat(r.getAttemptedAt()).isNull();
+            assertThat(r.getStatus()).isEqualTo(RecipientStatus.PENDING);
+            assertThat(r.getAttempts()).isZero();
+            CampaignSender s = sender(n1);
+            assertThat(s.getPausedUntil()).isEqualTo(Instant.parse("2026-10-21T18:30:00Z"));
+            assertThat(s.getPauseReason()).isEqualTo("LOOKUP_FAILED");
+            assertThat(s.getLookupFailures()).isZero();
+            JsonNode view = null;
+            for (JsonNode v : api(HttpMethod.GET, "/campaigns/senders", manager, null).getBody())
+                if (v.get("phoneNumberId").asString().equals(n1.getId())) view = v;
+            assertThat(view.get("pauseReason").asString()).isEqualTo("LOOKUP_FAILED");
+            clock.advance(Duration.ofSeconds(45));
+            tickNow();
             assertThat(d.requests("getNumberId")).hasSize(3);
             assertThat(d.requests("sendMessage")).isEmpty();
+            assertThat(campaign(id).getStatus()).isEqualTo(CampaignStatus.RUNNING);
+        }
+    }
+
+    @Test
+    void aLookupThatWorksClearsTheFailures() throws Exception {
+        try (AutoDevice d = device(n1)) {
+            startedFilterCampaign("Clear", List.of(P1), n1);
+            sender(n1, s -> s.setLookupFailures(2));
+            tickNow();
+            assertThat(d.requests("sendMessage")).hasSize(1);
+            assertThat(sender(n1).getLookupFailures()).isZero();
+        }
+    }
+
+    @Test
+    void refusedSendPausesTheCampaignAndReleasesTheClaim() throws Exception {
+        try (AutoDevice d = device(n1)) {
+            String id = startedFilterCampaign("Refused", List.of(P1), n1);
+            String templateId = campaign(id).getTemplateIds().get(0);
+            api(HttpMethod.POST, "/templates/" + templateId + "/archive", manager, null);
+            tickNow();
+            CampaignRecipient r = recipient(id, P1);
+            assertThat(r.getStatus()).isEqualTo(RecipientStatus.PENDING);
+            assertThat(r.getSenderId()).isNull();
+            assertThat(r.getAttemptedAt()).isNull();
+            assertThat(r.getDispatchedAt()).isNull();
+            assertThat(r.getError()).isNull();
+            Campaign c = campaign(id);
+            assertThat(c.getStatus()).isEqualTo(CampaignStatus.PAUSED);
+            assertThat(c.getPausedBy()).isEqualTo(PausedBy.SYSTEM);
+            assertThat(c.getPauseReason()).isEqualTo("SEND_REFUSED");
+            assertThat(d.requests("sendMessage")).isEmpty();
+            assertThat(usedToday(n1)).isZero();
+            assertThat(sender(n1).getNextSendAt()).isNull();
         }
     }
 

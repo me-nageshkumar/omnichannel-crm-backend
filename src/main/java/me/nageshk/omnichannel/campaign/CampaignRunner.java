@@ -58,7 +58,7 @@ import org.springframework.stereotype.Service;
 public class CampaignRunner {
 
     static final int FREE_SKIPS = 20;
-    static final int LOOKUP_ATTEMPTS = 3;
+    static final String SEND_REFUSED = "SEND_REFUSED";
 
     private static final Logger log = LoggerFactory.getLogger(CampaignRunner.class);
     private static final Duration STUCK_MARGIN = Duration.ofMinutes(2);
@@ -300,6 +300,7 @@ public class CampaignRunner {
             lookupFailed(claim, e instanceof ExecutionException ? e.getCause() : e);
             return false;
         }
+        if (!lookup.cached()) health.lookupSucceeded(claim.senderId());
         if (!lookup.registered()) {
             if (lookup.cached()) return freeSkip(claim, SkipReason.NOT_ON_WHATSAPP);
             notOnWhatsApp(claim);
@@ -334,9 +335,7 @@ public class CampaignRunner {
             release(claim);
             return;
         } catch (RuntimeException e) {
-            // refused before anything reached the device
-            log.warn("could not send to recipient {}: {}", r.getId(), e.toString());
-            failed(claim, e.getClass().getSimpleName());
+            sendRefused(claim, e);
             return;
         }
         try {
@@ -360,14 +359,33 @@ public class CampaignRunner {
                 .unset("attemptedAt").unset("dispatchedAt"));
     }
 
+    /**
+     * The sender could not look the number up: a fault of the sender, not of the lead. The claim is released and the
+     * sender waits a gap; {@link SenderHealth#lookupFailed} pauses it on the third failure in a row.
+     */
     private void lookupFailed(Claim claim, Throwable cause) {
         log.warn("lookup for recipient {} on {} failed: {}", claim.recipient().getId(), claim.senderId(),
                 cause.toString());
-        boolean last = claim.recipient().getAttempts() + 1 >= LOOKUP_ATTEMPTS;
-        whileSending(claim, new Update().inc("attempts", 1).set("error", "LOOKUP_FAILED")
-                .set("status", last ? RecipientStatus.FAILED : RecipientStatus.PENDING)
-                .unset("attemptedAt").unset("senderId"));
-        paced(claim, false, clock.instant());
+        release(claim);
+        Instant now = clock.instant();
+        paced(claim, false, now);
+        health.lookupFailed(claim.senderId(), claim.settings(), now);
+    }
+
+    /**
+     * The send was refused before anything reached the device (a template archived since the start, say): the claim
+     * is released at no cost and the campaign is paused for someone to look at it.
+     */
+    private void sendRefused(Claim claim, RuntimeException e) {
+        log.warn("send to recipient {} of campaign {} was refused; pausing the campaign", claim.recipient().getId(),
+                claim.campaign().getId(), e);
+        release(claim);
+        Instant now = clock.instant();
+        mongo.updateFirst(new Query(Criteria.where("_id").is(claim.campaign().getId())
+                        .and("status").is(CampaignStatus.RUNNING)),
+                new Update().set("status", CampaignStatus.PAUSED).set("pausedBy", PausedBy.SYSTEM)
+                        .set("pauseReason", SEND_REFUSED).set("lastUpdateTime", now).inc("version", 1),
+                Campaign.class);
     }
 
     private void notOnWhatsApp(Claim claim) {

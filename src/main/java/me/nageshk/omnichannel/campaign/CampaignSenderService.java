@@ -160,9 +160,10 @@ public class CampaignSenderService {
                     new Update().set("state", SenderState.RETIRED));
             case REACTIVATE -> transition(s, EnumSet.of(SenderState.RESTING, SenderState.SUSPENDED, SenderState.RETIRED),
                     new Update().set("state", SenderState.WARMING).set("warmupStartedAt", null)
-                            .set("restUntil", null).set("lastSendingDay", null).set("sendingDays", 0));
+                            .set("restUntil", null).set("lastSendingDay", null).set("sendingDays", 0)
+                            .set("healthFrom", now));
             case RESUME -> mongo.updateFirst(byId(s).addCriteria(Criteria.where("pausedUntil").gt(now)),
-                    new Update().set("pausedUntil", null).set("pauseReason", null),
+                    new Update().set("pausedUntil", null).set("pauseReason", null).set("healthFrom", now),
                     CampaignSender.class).getModifiedCount() > 0;
         };
         if (!done) throw CampaignErrors.senderState(switch (action) {

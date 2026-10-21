@@ -40,6 +40,10 @@ public class CampaignSender {
     private LocalDate dayStartFor;
     private Instant logoutAt;
     private Instant lastSendAt;
+    /** Health counts only the sends after this (null: all); a resume or a reactivation starts it over. */
+    private Instant healthFrom;
+    /** Number lookups that failed in a row; three pause the sender for the day. */
+    private int lookupFailures;
     @CreatedDate
     private Instant creationTime;
     @Version
