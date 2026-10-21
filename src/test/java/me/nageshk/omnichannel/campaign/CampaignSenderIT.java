@@ -73,6 +73,24 @@ class CampaignSenderIT extends CampaignTestBase {
         assertThat(mongo.findAll(CampaignSender.class)).hasSize(2);
     }
 
+    /** A sender that has been sending: five sending days, the last one yesterday, warm-up started. */
+    private void seedHistory(PhoneNumber n) {
+        sender(n, s -> {
+            s.setSendingDays(5);
+            s.setLastSendingDay(LocalDate.of(2026, 10, 20));
+            s.setWarmupStartedAt(WED_11_IST.minus(Duration.ofDays(6)));
+        });
+    }
+
+    private void assertReset(PhoneNumber n) {
+        CampaignSender s = sender(n);
+        assertThat(s.getState()).isEqualTo(SenderState.WARMING);
+        assertThat(s.getSendingDays()).isZero();
+        assertThat(s.getLastSendingDay()).isNull();
+        assertThat(s.getWarmupStartedAt()).isNull();
+        assertThat(s.getRestUntil()).isNull();
+    }
+
     @Test
     void usageCountsAttemptsOfTodayOnly() {
         attempt(n1, RecipientStatus.SENT, Instant.parse("2026-10-21T05:00:00Z"), 1);
@@ -88,6 +106,7 @@ class CampaignSenderIT extends CampaignTestBase {
 
     @Test
     void restRetireReactivateResume() {
+        seedHistory(n1);
         ResponseEntity<JsonNode> rested = put(n1, Map.of("action", "REST"));
         assertThat(rested.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(rested.getBody().get("state").asString()).isEqualTo("RESTING");
@@ -103,6 +122,7 @@ class CampaignSenderIT extends CampaignTestBase {
         assertThat(reactivated.get("state").asString()).isEqualTo("WARMING");
         assertThat(reactivated.get("warmupStartedAt").isNull()).isTrue();
         assertThat(reactivated.get("ageDay").asInt()).isEqualTo(1);
+        assertReset(n1);
 
         assertThat(put(n1, Map.of("action", "RETIRE")).getBody().get("state").asString()).isEqualTo("RETIRED");
 
@@ -123,14 +143,57 @@ class CampaignSenderIT extends CampaignTestBase {
 
     @Test
     void restingReturnsToWarmingAtRestUntil() {
+        seedHistory(n1);
         put(n1, Map.of("action", "REST"));
         clock.advance(Duration.ofDays(7));
 
         JsonNode v = view(n1.getId());
 
         assertThat(v.get("state").asString()).isEqualTo("WARMING");
-        assertThat(sender(n1).getSendingDays()).isZero();
-        assertThat(sender(n1).getRestUntil()).isNull();
+        assertReset(n1);
+    }
+
+    @Test
+    void reactivateFromSuspendedResetsTheWarmup() {
+        seedHistory(n1);
+        sender(n1, s -> s.setState(SenderState.SUSPENDED));
+
+        assertThat(put(n1, Map.of("action", "REACTIVATE")).getBody().get("state").asString()).isEqualTo("WARMING");
+        assertReset(n1);
+    }
+
+    @Test
+    void retireWorksFromRestingAndSuspended() {
+        put(n1, Map.of("action", "REST"));
+        assertThat(put(n1, Map.of("action", "RETIRE")).getBody().get("state").asString()).isEqualTo("RETIRED");
+
+        sender(n2, s -> s.setState(SenderState.SUSPENDED));
+        assertThat(put(n2, Map.of("action", "RETIRE")).getBody().get("state").asString()).isEqualTo("RETIRED");
+    }
+
+    @Test
+    void sendAttemptedCountsTheDayOnceAndPacedSetsTheNextSend() {
+        LocalDate today = LocalDate.of(2026, 10, 21);
+        sender(n1);
+        senders.sendAttempted(n1.getId(), today, WED_11_IST);
+        senders.sendAttempted(n1.getId(), today, WED_11_IST.plusSeconds(90));
+
+        CampaignSender s = sender(n1);
+        assertThat(s.getSendingDays()).isEqualTo(1);
+        assertThat(s.getLastSendingDay()).isEqualTo(today);
+        assertThat(s.getWarmupStartedAt()).isEqualTo(WED_11_IST);
+        assertThat(s.getLastSendAt()).isEqualTo(WED_11_IST.plusSeconds(90));
+
+        Instant tomorrow = WED_11_IST.plus(Duration.ofDays(1));
+        senders.sendAttempted(n1.getId(), today.plusDays(1), tomorrow);
+        s = sender(n1);
+        assertThat(s.getSendingDays()).isEqualTo(2);
+        assertThat(s.getLastSendingDay()).isEqualTo(today.plusDays(1));
+        assertThat(s.getWarmupStartedAt()).isEqualTo(WED_11_IST);
+
+        Instant next = tomorrow.plusSeconds(120);
+        senders.paced(n1.getId(), next);
+        assertThat(sender(n1).getNextSendAt()).isEqualTo(next);
     }
 
     @Test

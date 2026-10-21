@@ -85,9 +85,9 @@ public class CampaignSenderService {
             changed |= transition(s, SenderState.WARMING, new Update().set("state", SenderState.ACTIVE));
         }
         if (!today.equals(s.getDayStartFor())) {
-            mongo.updateFirst(byId(s), new Update().set("dayStartOffsetMinutes", random.dayStartOffsetMinutes())
-                    .set("dayStartFor", today), CampaignSender.class);
-            changed = true;
+            changed |= mongo.updateFirst(byId(s).addCriteria(Criteria.where("dayStartFor").ne(today)),
+                    new Update().set("dayStartOffsetMinutes", random.dayStartOffsetMinutes())
+                            .set("dayStartFor", today), CampaignSender.class).getModifiedCount() > 0;
         }
         return changed ? repository.findById(s.getId()).orElse(s) : s;
     }
