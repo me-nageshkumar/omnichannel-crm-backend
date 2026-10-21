@@ -217,7 +217,7 @@ New Brand pages: **Campaigns** (`/campaigns`, `campaign:view`), with `/campaigns
 
 ### 7.3 Pages
 - **Campaigns list**: name, status label, progress "sent / total" with a bar, replied, skipped, started, actions (Start for DRAFT, Pause/Resume, Terminate with ConfirmModal, Delete for DRAFT). Banner at the top when any campaign is PAUSED by SYSTEM: "Campaigns were paused after two numbers were logged out this week. Review the senders before resuming."
-- **Campaign detail**: counts tiles (total, pending, sent, delivered, read, replied, skipped, failed), estimate, per-sender today table, recipients table with status filter and paging, actions. Polls every 5 s while RUNNING.
+- **Campaign detail**: counts tiles (total, pending, sent, delivered, read, replied, skipped, failed), estimate, per-sender today table, recipients table with status filter and paging, actions. Polls every 5 s while RUNNING. Next to the counts a small countdown shows the refresh: a PatternFly `Progress` bar (size `sm`, no percentage text) that drains from full to empty over the 5 s with the label "Refreshing in 5 s", "4 s" … "1 s", then resets to full when the fetch starts; while a fetch is in flight the label reads "Refreshing…". The countdown stops on PAUSED, COMPLETED and TERMINATED (the page then shows "Refreshed <time>" and a Refresh button). A fetch error keeps the last numbers, shows an inline danger alert, and the countdown continues.
 - **Senders**: table of all workspace WhatsApp Web numbers: number, label, phone status, campaign state, age day, cap today, used today, pause reason, "runs on" (inline edit), actions Rest / Retire / Reactivate / Resume pause.
 - **Campaign settings**: timezone (IANA select), default country code (digits, default `91`), working days, start and end time, then pacing values (gaps, hourly cap, warm-up table, mature and healthy caps, rest days, recontact days, stop words). Each pacing field shows a warning "Looser than the recommended value" when looser than the default. `campaign_settings` is one document per workspace, created with defaults on first read; `timezone` defaults to `Asia/Kolkata` (my call: the user's numbers are Indian).
 
@@ -262,7 +262,7 @@ Campaign messages show "Campaign: <name>" as the sender. No other change.
 - Campaign messages into an existing assigned chat keep that assignment.
 - Stop-word list and the default `no` in it (§5.7); `no` is in because a one-word "no" to a cold message is a refusal.
 - Timezone default `Asia/Kolkata`; working hours 10:00–18:00 Mon–Sat.
-- Progress by polling, not SSE.
+- Progress by polling every 5 s with a visible 5-4-3-2-1 countdown bar, not SSE.
 - No sender may be set ACTIVE by hand; every number earns it through 30 sending days of warm-up.
 - Age counts sending days, not calendar days (§5.2); only campaign sends count toward caps, agents' inbox sends do not.
 - 10-digit numbers get the default country code `91` on import and in campaign CSVs (§4.2).
