@@ -40,11 +40,12 @@ public class CampaignSenderService {
     private final InboxDevices devices;
     private final MongoTemplate mongo;
     private final PacingRandom random;
+    private final SenderHealth health;
     private final Clock clock;
 
     CampaignSenderService(CampaignSenderRepository repository, CampaignSettingsService settingsService,
             PhoneNumberRepository numbers, PhoneNumberService phoneNumbers, InboxDevices devices,
-            MongoTemplate mongo, PacingRandom random, Clock clock) {
+            MongoTemplate mongo, PacingRandom random, SenderHealth health, Clock clock) {
         this.repository = repository;
         this.settingsService = settingsService;
         this.numbers = numbers;
@@ -52,6 +53,7 @@ public class CampaignSenderService {
         this.devices = devices;
         this.mongo = mongo;
         this.random = random;
+        this.health = health;
         this.clock = clock;
     }
 
@@ -85,9 +87,14 @@ public class CampaignSenderService {
             changed |= transition(s, SenderState.WARMING, new Update().set("state", SenderState.ACTIVE));
         }
         if (!today.equals(s.getDayStartFor())) {
-            changed |= mongo.updateFirst(byId(s).addCriteria(Criteria.where("dayStartFor").ne(today)),
+            boolean rolled = mongo.updateFirst(byId(s).addCriteria(Criteria.where("dayStartFor").ne(today)),
                     new Update().set("dayStartOffsetMinutes", random.dayStartOffsetMinutes())
                             .set("dayStartFor", today), CampaignSender.class).getModifiedCount() > 0;
+            changed |= rolled;
+            Boolean low = rolled ? health.lowReplyRate(s.getPhoneNumberId(), now) : null;
+            if (low != null && low != s.isLowReplyRate()) {
+                mongo.updateFirst(byId(s), new Update().set("lowReplyRate", low), CampaignSender.class);
+            }
         }
         return changed ? repository.findById(s.getId()).orElse(s) : s;
     }

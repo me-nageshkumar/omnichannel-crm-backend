@@ -88,6 +88,7 @@ public class CampaignRunner {
     private final WaWebChatRepository chats;
     private final WaWebMessageRepository messages;
     private final PacingRandom random;
+    private final SenderHealth health;
     private final Clock clock;
     private final Executor executor;
     private final Duration stuckAfter;
@@ -101,7 +102,7 @@ public class CampaignRunner {
             CampaignCounter counter, RecipientSkips skips, PlaceholderValues placeholderValues,
             NumberLookupService lookups, NewChatService newChats, TemplateRenderer renderer, InboxDevices devices,
             ContactService contactService, ContactRepository contacts, WaWebChatRepository chats,
-            WaWebMessageRepository messages, PacingRandom random, Clock clock,
+            WaWebMessageRepository messages, PacingRandom random, SenderHealth health, Clock clock,
             @Qualifier("campaignScheduler") Executor executor, OmnichannelProperties props) {
         this.mongo = mongo;
         this.senders = senders;
@@ -118,6 +119,7 @@ public class CampaignRunner {
         this.chats = chats;
         this.messages = messages;
         this.random = random;
+        this.health = health;
         this.clock = clock;
         this.executor = executor;
         this.stuckAfter = props.rpc().timeout().plus(STUCK_MARGIN);
@@ -402,7 +404,7 @@ public class CampaignRunner {
             contactService.nameIfBlank(claim.campaign().getWorkspaceId(), chat.getContactId(),
                     PlaceholderValues.cell(a, r, a.nameColumn()));
         }
-        // Task 10 hooks its pause check here.
+        health.afterSend(claim.senderId(), claim.settings(), now);
     }
 
     /** An ack that the device reported before the recipient was SENT is carried over now. */
