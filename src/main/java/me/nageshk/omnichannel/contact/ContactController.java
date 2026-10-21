@@ -69,6 +69,18 @@ public class ContactController {
         service.delete(workspaceId, id);
     }
 
+    @PutMapping("/{id}/do-not-contact")
+    @PreAuthorize("@access.has(#workspaceId, 'contact:edit')")
+    public ContactView markDoNotContact(@PathVariable String workspaceId, @PathVariable String id) {
+        return ContactView.of(service.markDoNotContact(workspaceId, id, DoNotContact.Reason.MANUAL, null));
+    }
+
+    @DeleteMapping("/{id}/do-not-contact")
+    @PreAuthorize("@access.has(#workspaceId, 'contact:edit')")
+    public ContactView clearDoNotContact(@PathVariable String workspaceId, @PathVariable String id) {
+        return ContactView.of(service.clearDoNotContact(workspaceId, id));
+    }
+
     @PostMapping("/{id}/labels/{labelId}")
     @PreAuthorize("@access.has(#workspaceId, 'contact:annotate')")
     public ContactView addLabel(@PathVariable String workspaceId, @PathVariable String id, @PathVariable String labelId) {

@@ -95,7 +95,7 @@ class ContactBulkIT extends ContactApiTestBase {
         ContactFilter f = new ContactFilter();
         f.setWorkspaceId(brandA.getId());
         f.setName("VIPs");
-        f.setFilter(new ContactFilterSpec(null, List.of(vip.getId()), null, null, null, null, null, null, null, null, null));
+        f.setFilter(new ContactFilterSpec(null, List.of(vip.getId()), null, null, null, null, null, null, null, null, null, null));
         f = filters.save(f);
         send(post(bulk()), wmToken, request(Map.of("filterId", f.getId()), "ADD_LABELS", "labelIds", List.of(lead.getId())))
                 .andExpect(jsonPath("$.matched").value(1)).andExpect(jsonPath("$.changed").value(1));

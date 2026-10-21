@@ -15,7 +15,8 @@ public record ContactFilterSpec(
         Instant createdFrom,
         Instant createdTo,
         Instant lastMessageFrom,
-        Instant lastMessageTo) {
+        Instant lastMessageTo,
+        Boolean doNotContact) {
 
     public enum Op { EQUALS, CONTAINS, EXISTS, NOT_EXISTS }
 

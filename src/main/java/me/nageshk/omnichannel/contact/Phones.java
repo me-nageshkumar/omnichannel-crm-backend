@@ -17,6 +17,12 @@ public final class Phones {
         return raw == null ? null : raw.replaceAll("[+\\s\\-()]", "");
     }
 
+    /** Prefixes {@code countryCode} to a 10-digit number; anything else, or a blank code, is returned unchanged. */
+    public static String withDefaultCountryCode(String digits, String countryCode) {
+        if (digits == null || countryCode == null || countryCode.isBlank()) return digits;
+        return digits.matches("[0-9]{10}") ? countryCode + digits : digits;
+    }
+
     public static boolean isValid(String normalised) {
         return normalised != null && VALID.matcher(normalised).matches();
     }

@@ -63,6 +63,9 @@ public class ContactQuery {
         if (f.numberHidden() != null) {
             parts.add(f.numberHidden() ? Criteria.where("phone").is(null) : Criteria.where("phone").ne(null));
         }
+        if (f.doNotContact() != null) {
+            parts.add(f.doNotContact() ? Criteria.where("doNotContact").ne(null) : Criteria.where("doNotContact").is(null));
+        }
         range("creationTime", f.createdFrom(), f.createdTo(), parts);
         range("lastMessageAt", f.lastMessageFrom(), f.lastMessageTo(), parts);
         return parts;

@@ -12,6 +12,7 @@ import tools.jackson.databind.JsonNode;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import me.nageshk.omnichannel.tenant.Workspace;
 import org.junit.jupiter.api.Test;
 
 class ContactsApiIT extends ContactApiTestBase {
@@ -252,5 +253,55 @@ class ContactsApiIT extends ContactApiTestBase {
         send(get(base(brandB) + "/contacts/" + c.getId()), wmBToken, null).andExpect(status().isNotFound());
         assertThat(contacts.findById(theirs.getId())).isPresent();
         assertThat(contacts.findById(c.getId()).orElseThrow().getLabels()).isEmpty();
+    }
+
+    private Contact plain(Workspace brand, String phone) {
+        Contact c = new Contact();
+        c.setWorkspaceId(brand.getId());
+        c.setCustomerId(acme.getId());
+        c.setPhone(phone);
+        c.setSource(ContactSource.MANUAL);
+        return contacts.save(c);
+    }
+
+    @Test
+    void markAndClearDoNotContact() throws Exception {
+        Contact c = plain(brandA, "919800000001");
+        String dnc = url() + "/" + c.getId() + "/do-not-contact";
+        send(put(dnc), wmToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.doNotContact.reason").value("MANUAL"))
+                .andExpect(jsonPath("$.doNotContact.campaignId").doesNotExist())
+                .andExpect(jsonPath("$.doNotContact.at").isNotEmpty());
+        send(get(url() + "/" + c.getId()), wmToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.doNotContact.reason").value("MANUAL"));
+        send(delete(dnc), wmToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.doNotContact").doesNotExist());
+        assertThat(contacts.findById(c.getId()).orElseThrow().getDoNotContact()).isNull();
+    }
+
+    @Test
+    void markingTwiceKeepsTheFirstMark() throws Exception {
+        Contact c = plain(brandA, "919800000002");
+        String dnc = url() + "/" + c.getId() + "/do-not-contact";
+        String first = json(send(put(dnc), wmToken, null).andExpect(status().isOk())).get("doNotContact").get("at").asString();
+        Thread.sleep(5);
+        send(put(dnc), wmToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.doNotContact.at").value(first));
+    }
+
+    @Test
+    void doNotContactNeedsContactEdit() throws Exception {
+        Contact c = plain(brandA, "919800000003");
+        String dnc = url() + "/" + c.getId() + "/do-not-contact";
+        send(put(dnc), agentToken, null).andExpect(status().isForbidden());
+        send(delete(dnc), agentToken, null).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void doNotContactOfAnotherBrandIs404() throws Exception {
+        Contact theirs = plain(brandB, "919800000004");
+        String dnc = url() + "/" + theirs.getId() + "/do-not-contact";
+        send(put(dnc), wmToken, null).andExpect(status().isNotFound());
+        send(delete(dnc), wmToken, null).andExpect(status().isNotFound());
     }
 }

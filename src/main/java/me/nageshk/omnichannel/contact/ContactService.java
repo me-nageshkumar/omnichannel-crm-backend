@@ -100,6 +100,21 @@ public class ContactService {
         notes.deleteByWorkspaceIdAndContactId(workspaceId, id);
     }
 
+    /** Marks the contact do-not-contact; an existing mark is kept as it is. */
+    public Contact markDoNotContact(String workspaceId, String id, DoNotContact.Reason reason, String campaignId) {
+        Contact c = require(workspaceId, id);
+        if (c.getDoNotContact() != null) return c;
+        mongo.updateFirst(byId(workspaceId, id).addCriteria(Criteria.where("doNotContact").is(null)),
+                new Update().set("doNotContact", new DoNotContact(clock.instant(), reason, campaignId)), Contact.class);
+        return require(workspaceId, id);
+    }
+
+    public Contact clearDoNotContact(String workspaceId, String id) {
+        require(workspaceId, id);
+        mongo.updateFirst(byId(workspaceId, id), new Update().unset("doNotContact"), Contact.class);
+        return require(workspaceId, id);
+    }
+
     public Contact addLabel(String workspaceId, String id, String labelId) {
         require(workspaceId, id);
         requireLabel(workspaceId, labelId);

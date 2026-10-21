@@ -25,6 +25,7 @@ import org.springframework.data.mongodb.core.query.Update;
 class ContactSearchIT extends ContactApiTestBase {
 
     @Autowired MongoTemplate mongo;
+    @Autowired ContactService contactService;
 
     ContactLabel vip;
     ContactLabel lead;
@@ -292,7 +293,7 @@ class ContactSearchIT extends ContactApiTestBase {
         ContactFilter theirs = new ContactFilter();
         theirs.setWorkspaceId(brandB.getId());
         theirs.setName("Theirs");
-        theirs.setFilter(new ContactFilterSpec(null, null, null, null, null, null, null, null, null, null, null));
+        theirs.setFilter(new ContactFilterSpec(null, null, null, null, null, null, null, null, null, null, null, null));
         theirs = filters.save(theirs);
         make("Asha", "919800000001");
         send(post(searchUrl()), agentToken, Map.of("filterId", theirs.getId())).andExpect(status().isNotFound());
@@ -319,5 +320,16 @@ class ContactSearchIT extends ContactApiTestBase {
 
         ContactAttribute foreignAttr = attribute(brandB, "Foreign");
         assertThat(filtered(Map.of("attributes", List.of(attr(foreignAttr, "EXISTS", null))))).isEmpty();
+    }
+
+    @Test
+    void filterByDoNotContact() throws Exception {
+        Contact marked = make("Asha", "919800000001");
+        make("Ben", "919800000002");
+        make("Chitra", "919800000003");
+        contactService.markDoNotContact(brandA.getId(), marked.getId(), DoNotContact.Reason.MANUAL, null);
+        assertThat(names(Map.of("filter", Map.of("doNotContact", true)))).containsExactly("Asha");
+        assertThat(names(Map.of("filter", Map.of("doNotContact", false)))).containsExactlyInAnyOrder("Ben", "Chitra");
+        assertThat(names(Map.of("filter", Map.of()))).containsExactlyInAnyOrder("Asha", "Ben", "Chitra");
     }
 }

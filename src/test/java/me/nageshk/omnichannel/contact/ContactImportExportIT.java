@@ -274,7 +274,7 @@ class ContactImportExportIT extends ContactApiTestBase {
         ContactFilter saved = new ContactFilter();
         saved.setWorkspaceId(brandA.getId());
         saved.setName("Plain");
-        saved.setFilter(new ContactFilterSpec("plain", null, null, null, null, null, null, null, null, null, null));
+        saved.setFilter(new ContactFilterSpec("plain", null, null, null, null, null, null, null, null, null, null, null));
         saved = filters.save(saved);
         String viaSaved = download(Map.of("filterId", saved.getId()), wmToken);
         assertThat(viaSaved).contains("Plain Two").doesNotContain("Vip One");

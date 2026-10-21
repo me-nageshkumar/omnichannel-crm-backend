@@ -41,6 +41,8 @@ public class Contact {
     private Map<String, String> attributes = new HashMap<>();
     private ContactSource source;
     private Instant lastMessageAt;
+    /** Null means the contact may be contacted. */
+    private DoNotContact doNotContact;
     @CreatedDate
     private Instant creationTime;
     @LastModifiedDate

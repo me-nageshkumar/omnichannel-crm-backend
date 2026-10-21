@@ -6,6 +6,19 @@ import org.junit.jupiter.api.Test;
 
 class PhonesTest {
 
+    @Test void tenDigitNumberGetsTheCountryCode() { assertThat(Phones.withDefaultCountryCode("9812345678", "91")).isEqualTo("919812345678"); }
+
+    @Test void otherLengthsAreKept() {
+        assertThat(Phones.withDefaultCountryCode("919812345678", "91")).isEqualTo("919812345678");
+        assertThat(Phones.withDefaultCountryCode("14155550100", "91")).isEqualTo("14155550100");
+        assertThat(Phones.withDefaultCountryCode("981234567", "91")).isEqualTo("981234567");
+    }
+
+    @Test void blankCountryCodeOrNullDigitsChangeNothing() {
+        assertThat(Phones.withDefaultCountryCode("9812345678", "")).isEqualTo("9812345678");
+        assertThat(Phones.withDefaultCountryCode(null, "91")).isNull();
+    }
+
     @Test
     void normaliseStripsPlusSpacesDashesAndBrackets() {
         assertThat(Phones.normalise("+91 98123-45678")).isEqualTo("919812345678");
