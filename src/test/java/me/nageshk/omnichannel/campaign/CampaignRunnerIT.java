@@ -348,6 +348,66 @@ class CampaignRunnerIT extends CampaignTestBase {
         }
     }
 
+    /** A device that never answers a send to {@code phone} (the call times out) and answers every other one. */
+    static void neverAnswerSendsTo(AutoDevice d, String phone) {
+        d.sendAnswer = req -> req.params().get("chatId").asString().equals(phone + "@c.us") ? null
+                : Envelope.response(req.id(), AutoDevice.model(req, 1));
+    }
+
+    @Test
+    void timedOutSendCountsAsRecentAtMaterialisation() throws Exception {
+        try (AutoDevice d = device(n1)) {
+            neverAnswerSendsTo(d, P1);
+            String a = startedFilterCampaign("A", List.of(P1), n1);
+            tickNow();
+            CampaignRecipient failed = recipient(a, P1);
+            assertThat(failed.getStatus()).isEqualTo(RecipientStatus.FAILED);
+            assertThat(failed.getError()).isEqualTo("TIMEOUT");
+            assertThat(failed.getDispatchedAt()).isEqualTo(WED_11_IST);
+            assertThat(api(HttpMethod.GET, "/campaigns/" + a + "/recipients", manager, null).getBody()
+                    .get("items").get(0).get("dispatchedAt").asString()).isEqualTo("2026-10-21T05:30:00Z");
+
+            String b = startedFilterCampaign("B", List.of(P1), n1);
+            CampaignRecipient skipped = recipient(b, P1);
+            assertThat(skipped.getStatus()).isEqualTo(RecipientStatus.SKIPPED);
+            assertThat(skipped.getSkipReason()).isEqualTo(SkipReason.RECENTLY_MESSAGED);
+        }
+    }
+
+    @Test
+    void timedOutSendCountsAsRecentAtClaim() throws Exception {
+        try (AutoDevice d = device(n1)) {
+            neverAnswerSendsTo(d, P1);
+            String a = startedFilterCampaign("A", List.of(P1), n1);
+            String b = startedFilterCampaign("B", List.of(P1, P2), n1);
+            assertThat(recipient(b, P1).getStatus()).isEqualTo(RecipientStatus.PENDING);
+            tickNow();
+            assertThat(recipient(a, P1).getError()).isEqualTo("TIMEOUT");
+
+            clock.advance(Duration.ofSeconds(45));
+            tickNow();
+            CampaignRecipient skipped = recipient(b, P1);
+            assertThat(skipped.getStatus()).isEqualTo(RecipientStatus.SKIPPED);
+            assertThat(skipped.getSkipReason()).isEqualTo(SkipReason.RECENTLY_MESSAGED);
+            assertThat(recipient(b, P2).getStatus()).isEqualTo(RecipientStatus.SENT);
+            assertThat(sendsTo(P1, d)).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void interruptedSendCountsAsRecent() throws Exception {
+        String a = startedFilterCampaign("A", List.of(P1), n1);
+        Instant now = clock.instant();
+        mongo.updateFirst(new Query(Criteria.where("campaignId").is(a).and("phone").is(P1)),
+                new Update().set("status", RecipientStatus.SENDING).set("senderId", n1.getId())
+                        .set("attemptedAt", now.minus(Duration.ofMinutes(3)))
+                        .set("dispatchedAt", now.minus(Duration.ofMinutes(3))), CampaignRecipient.class);
+        tickNow();
+        assertThat(recipient(a, P1).getError()).isEqualTo("INTERRUPTED");
+        String b = startedFilterCampaign("B", List.of(P1), n1);
+        assertThat(recipient(b, P1).getSkipReason()).isEqualTo(SkipReason.RECENTLY_MESSAGED);
+    }
+
     @Test
     void doNotContactMarkedAfterStartIsSkipped() throws Exception {
         try (AutoDevice d = device(n1)) {

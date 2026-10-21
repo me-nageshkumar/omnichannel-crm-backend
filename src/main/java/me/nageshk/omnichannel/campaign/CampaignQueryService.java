@@ -70,7 +70,7 @@ public class CampaignQueryService {
                 r.getPhone() != null ? r.getPhone() : r.getRawPhone(), r.getContactId(), names.get(r.getContactId()),
                 r.getStatus(), r.getSkipReason(), r.getSenderId(), numbers.get(r.getSenderId()), r.getTemplateId(),
                 r.getAttemptedAt(), r.getSentAt(), r.getDeliveredAt(), r.getReadAt(), r.getRepliedAt(), r.getError(),
-                r.getAttempts())).toList();
+                r.getAttempts(), r.getDispatchedAt())).toList();
         return new RecipientPage(items, total, page);
     }
 

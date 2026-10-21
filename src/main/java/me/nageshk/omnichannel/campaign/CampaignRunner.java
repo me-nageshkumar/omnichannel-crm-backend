@@ -325,6 +325,8 @@ public class CampaignRunner {
             return;
         }
         CompletableFuture<MessageView> sent;
+        // from here the message may reach the phone: it counts as recently messaged whatever becomes of the send
+        if (!whileSending(claim, new Update().set("dispatchedAt", clock.instant()))) return;
         try {
             sent = newChats.startForCampaign(new CampaignActor(c.getId(), c.getName()), c.getWorkspaceId(),
                     claim.senderId(), r.getPhone(), lookup.remoteId(), new SendRequest(null, r.getTemplateId(), values));
@@ -352,10 +354,10 @@ public class CampaignRunner {
         return true;
     }
 
-    /** The device went away: the claim is undone as if it never happened. */
+    /** Nothing reached the device: the claim is undone as if it never happened. */
     private void release(Claim claim) {
         whileSending(claim, new Update().set("status", RecipientStatus.PENDING).unset("senderId")
-                .unset("attemptedAt"));
+                .unset("attemptedAt").unset("dispatchedAt"));
     }
 
     private void lookupFailed(Claim claim, Throwable cause) {

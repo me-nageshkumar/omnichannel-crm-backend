@@ -16,6 +16,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
                 partialFilter = "{'phone': {$type: 'string'}}"),
         @CompoundIndex(name = "campaign_status", def = "{'campaignId': 1, 'status': 1, '_id': 1}"),
         @CompoundIndex(name = "ws_phone_sent", def = "{'workspaceId': 1, 'phone': 1, 'sentAt': 1}"),
+        @CompoundIndex(name = "ws_phone_dispatched", def = "{'workspaceId': 1, 'phone': 1, 'dispatchedAt': 1}"),
         @CompoundIndex(name = "sender_sent", def = "{'senderId': 1, 'sentAt': 1}"),
         @CompoundIndex(name = "sender_attempted", def = "{'senderId': 1, 'attemptedAt': 1}"),
         @CompoundIndex(name = "message", def = "{'messageId': 1}"),
@@ -44,6 +45,8 @@ public class CampaignRecipient {
     private String chatId;
     private String messageId;
     private Instant attemptedAt;
+    /** When the message was handed to the device; set even if the send then failed, as it may have gone out. */
+    private Instant dispatchedAt;
     private Instant sentAt;
     private Instant deliveredAt;
     private Instant readAt;

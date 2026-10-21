@@ -28,7 +28,7 @@ class AutoDevice implements AutoCloseable {
 
     /** The {@code getNumberId} result for a phone; null answers JSON null (not on WhatsApp), a throw answers an error. */
     volatile Function<String, JsonNode> lookupAnswer = AutoDevice::registered;
-    /** The whole response to a {@code sendMessage} request. */
+    /** The whole response to a {@code sendMessage} request; null never answers it (the call times out). */
     volatile Function<Envelope, Envelope> sendAnswer = req -> Envelope.response(req.id(), model(req, 1));
 
     private final FakeDevice device;
@@ -88,7 +88,8 @@ class AutoDevice implements AutoCloseable {
                 if (frame.isEmpty() || !Envelope.REQUEST.equals(frame.get().type())) continue;
                 Envelope req = frame.get();
                 requests.add(req);
-                device.send(answer(req));
+                Envelope reply = answer(req);
+                if (reply != null) device.send(reply);
             } catch (InterruptedException e) {
                 return;
             } catch (Exception e) {

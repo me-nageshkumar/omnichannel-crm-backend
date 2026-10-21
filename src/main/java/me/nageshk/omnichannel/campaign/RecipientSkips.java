@@ -25,6 +25,8 @@ public class RecipientSkips {
 
     private static final List<RecipientStatus> SENT = List.of(RecipientStatus.SENT, RecipientStatus.DELIVERED,
             RecipientStatus.READ);
+    /** Handed to the device without a known outcome: in flight, or failed after the device may have sent it. */
+    private static final List<RecipientStatus> DISPATCHED = List.of(RecipientStatus.SENDING, RecipientStatus.FAILED);
 
     /** What one page of rows needs to be judged: the contacts by phone, the recently messaged phones and the chats. */
     public record Page(Map<String, Contact> contactsByPhone, Set<String> recentPhones,
@@ -95,13 +97,21 @@ public class RecipientSkips {
                 .and("doNotContact").ne(null)), Contact.class);
     }
 
-    /** Whether the brand sent this phone a message in the last {@code recontactDays} days, in any campaign. */
+    /**
+     * Whether the brand sent this phone a message in the last {@code recontactDays} days, in any campaign; a send
+     * handed to the device that then failed or never finished counts, as the message may have gone out.
+     */
     public boolean isRecentlyMessaged(String workspaceId, String phone, Instant now, int recontactDays) {
         return mongo.exists(recentQuery(workspaceId, List.of(phone), now, recontactDays), CampaignRecipient.class);
     }
 
+    /** Each branch is served by its own index: {@code ws_phone_sent} and {@code ws_phone_dispatched}. */
     private static Query recentQuery(String workspaceId, Collection<String> phones, Instant now, int recontactDays) {
-        return new Query(Criteria.where("workspaceId").is(workspaceId).and("phone").in(phones).and("status").in(SENT)
-                .and("sentAt").gte(now.minus(Duration.ofDays(recontactDays))));
+        Instant since = now.minus(Duration.ofDays(recontactDays));
+        return new Query(new Criteria().orOperator(
+                Criteria.where("workspaceId").is(workspaceId).and("phone").in(phones).and("status").in(SENT)
+                        .and("sentAt").gte(since),
+                Criteria.where("workspaceId").is(workspaceId).and("phone").in(phones).and("status").in(DISPATCHED)
+                        .and("dispatchedAt").gte(since)));
     }
 }

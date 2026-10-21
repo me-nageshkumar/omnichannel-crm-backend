@@ -47,6 +47,7 @@ class CampaignIndexesIT {
     @Test
     void indexesAreNamedAsDesigned() {
         assertThat(names(CampaignRecipient.class)).contains("campaign_phone", "campaign_status", "ws_phone_sent",
+                "ws_phone_dispatched",
                 "sender_sent", "sender_attempted", "message", "chat_sent", "status_attempted");
         IndexInfo stuck = mongo.indexOps(CampaignRecipient.class).getIndexInfo().stream()
                 .filter(i -> i.getName().equals("status_attempted")).findFirst().orElseThrow();
