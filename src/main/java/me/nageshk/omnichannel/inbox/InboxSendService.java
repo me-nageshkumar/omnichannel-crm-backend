@@ -261,6 +261,11 @@ public class InboxSendService {
         }
     }
 
+    /** A row that nobody has written to, assigned or routed: only an outbound message of ours can have created it. */
+    private static boolean isOurOwnOutbound(WaWebChat chat) {
+        return chat.getAssignedUserId() == null && chat.getAssignedTeamId() == null && chat.getLastInboundAt() == null;
+    }
+
     /**
      * Upserts the message by {@code (phoneNumberId, waMessageId)} and folds it into the chat. A row the ingest
      * listener stored first (its {@code message_create} can beat the RPC result) is taken over: the console is its
@@ -273,7 +278,14 @@ public class InboxSendService {
         WaWebChat chat = sent.getId() == null
                 ? chats.findByPhoneNumberIdAndRemoteId(sent.getPhoneNumberId(), sent.getRemoteId()).orElse(sent)
                 : chats.findById(sent.getId()).orElse(sent);
-        if (chat.getId() == null) chat = chats.save(chat);
+        if (chat.getId() == null) {
+            chat = chats.save(chat);
+        } else if (sent.getId() == null && isOurOwnOutbound(chat)) {
+            // the device's message_create beat this result and created the row from our own first message, so the
+            // creator the console meant it for was lost with the unsaved chat
+            chat.setAssignedUserId(sent.getAssignedUserId());
+            chat.setAssignedAt(sent.getAssignedAt());
+        }
 
         WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(sent.getPhoneNumberId(), waMessageId)
                 .orElse(null);

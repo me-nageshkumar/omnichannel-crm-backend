@@ -79,7 +79,7 @@ class InboxIndexesIT {
     @Test
     void indexesAreNamedAsDesigned() {
         assertThat(names(WaWebChat.class)).contains("phone_remote_unique", "phone_last_message",
-                "phone_user_last_message", "phone_team_last_message", "workspace_contact");
+                "phone_user_last_message", "phone_team_last_message", "phone_contact", "workspace_contact");
         assertThat(names(WaWebMessage.class)).contains("phone_wamessage_unique", "chat_timestamp");
         assertThat(names(WaWebChatAction.class)).contains("chat_at");
         assertThat(names(InboxSetting.class)).contains("phone_unique");

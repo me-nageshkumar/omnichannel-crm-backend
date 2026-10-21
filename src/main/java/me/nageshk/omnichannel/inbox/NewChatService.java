@@ -7,6 +7,7 @@ import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.contact.Contact;
+import me.nageshk.omnichannel.contact.ContactRepository;
 import me.nageshk.omnichannel.contact.ContactService;
 import me.nageshk.omnichannel.contact.Phones;
 import me.nageshk.omnichannel.phone.PhoneNumber;
@@ -29,6 +30,7 @@ public class NewChatService {
     private final InboxScopeService scopes;
     private final WaWebChatRepository chats;
     private final ContactService contacts;
+    private final ContactRepository contactRepository;
     private final ChatAssignmentService assignment;
     private final InboxSendService sender;
     private final Clock clock;
@@ -40,7 +42,8 @@ public class NewChatService {
      *
      * @throws ValidationException if the phone is not 8 to 15 digits, or the message is invalid
      * @throws NotFoundException if the number is not in the workspace
-     * @throws ChatTakenException if the chat is assigned to a user and not visible to the caller
+     * @throws ChatTakenException if the chat is assigned to a user or a team and not visible to the caller; a chat
+     *     with neither is free to claim
      */
     public CompletableFuture<MessageView> start(AuthenticatedUser me, String workspaceId, String phoneNumberId,
             NewChatRequest req) {
@@ -52,11 +55,10 @@ public class NewChatService {
         String remoteId = phone + "@c.us";
         SendRequest message = new SendRequest(req.text(), req.templateId(), req.values());
 
-        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
+        WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, remoteId);
         if (chat != null) {
-            if (chat.getAssignedUserId() != null && !scopes.scopeOf(me, workspaceId).covers(chat)) {
-                throw new ChatTakenException();
-            }
+            boolean assigned = chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null;
+            if (assigned && !scopes.scopeOf(me, workspaceId).covers(chat)) throw new ChatTakenException();
             if (chat.getStatus() == ChatStatus.CLOSED) chat = assignment.reopen(me, chat);
             if (chat.getAssignedUserId() == null) chat = assignment.assign(me, chat, me.userId(), null);
             return sender.send(me, workspaceId, chat, message);
@@ -73,5 +75,15 @@ public class NewChatService {
         fresh.setAssignedUserId(me.userId());
         fresh.setAssignedAt(clock.instant());
         return sender.send(me, workspaceId, fresh, message);
+    }
+
+    /**
+     * The number's chat with this phone: the contact's chat under whatever remote id it lives (a contact first seen
+     * as {@code @lid} must not get a second {@code @c.us} chat), else the chat of the {@code @c.us} id.
+     */
+    private WaWebChat existingChat(String workspaceId, String phoneNumberId, String phone, String remoteId) {
+        WaWebChat ofContact = contactRepository.findByWorkspaceIdAndPhone(workspaceId, phone)
+                .flatMap(c -> chats.findFirstByPhoneNumberIdAndContactId(phoneNumberId, c.getId())).orElse(null);
+        return ofContact != null ? ofContact : chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
     }
 }

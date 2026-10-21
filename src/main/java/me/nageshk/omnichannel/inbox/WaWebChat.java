@@ -20,6 +20,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
                 def = "{'phoneNumberId': 1, 'assignedUserId': 1, 'lastMessageAt': -1, '_id': -1}"),
         @CompoundIndex(name = "phone_team_last_message",
                 def = "{'phoneNumberId': 1, 'assignedTeamId': 1, 'lastMessageAt': -1, '_id': -1}"),
+        @CompoundIndex(name = "phone_contact", def = "{'phoneNumberId': 1, 'contactId': 1}"),
         @CompoundIndex(name = "workspace_contact", def = "{'workspaceId': 1, 'contactId': 1}")
 })
 @Getter

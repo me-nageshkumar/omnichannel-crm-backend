@@ -16,6 +16,7 @@ import me.nageshk.omnichannel.access.RoleLevel;
 import me.nageshk.omnichannel.access.RoleRepository;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.contact.Contact;
+import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.rpc.Envelope;
 import me.nageshk.omnichannel.support.FakeDevice;
 import me.nageshk.omnichannel.template.TemplateContent;
@@ -32,6 +33,7 @@ import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -51,6 +53,8 @@ class NewChatIT extends InboxApiTestBase {
     @Autowired AccessService access;
     @Autowired TemplateService templateService;
     @Autowired RoleRepository roles;
+    @Autowired InboxSettingService settingService;
+    @Autowired ApplicationEventPublisher publisher;
 
     /** What the device saw and what the console got back. */
     record Exchange(ResponseEntity<JsonNode> response, Envelope request) {
@@ -288,5 +292,116 @@ class NewChatIT extends InboxApiTestBase {
                 "http://localhost:" + port + inbox() + "/phone-numbers/" + otherNumber.getId() + "/chats");
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    private void claimOnReply(boolean on) {
+        settingService.put(brand.getId(), number.getId(),
+                new InboxSettingService.SettingsRequest(new InboxSetting.Routing(RoutingMode.NONE, null, null), on,
+                        null));
+    }
+
+    /** The device's own message_create reaches the server before the sendMessage result, which creates the chat row. */
+    private void eventBeatsTheReply(boolean claimOnReply) throws Exception {
+        claimOnReply(claimOnReply);
+        String remote = "919811111111@c.us";
+        String serialized = "true_" + remote + "_7";
+        Exchange ex = viaDevice(agentToken, Map.of("phone", "919811111111", "text", "hello"), req -> {
+            publisher.publishEvent(new WhatsAppEvent(this, number.getId(), brand.getId(), acme.getId(),
+                    "message_create", model(remote, serialized, "hello"), null, System.currentTimeMillis()));
+            return Envelope.response(req.id(), model(remote, serialized, "hello"));
+        });
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(number.getId(), remote).orElseThrow();
+        assertThat(chats.count()).isEqualTo(1);
+        assertThat(chat.getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(chat.getAssignedAt()).isNotNull();
+        assertThat(actions.count()).isZero();
+        HttpHeaders h = new HttpHeaders();
+        h.setBearerAuth(agentToken);
+        ResponseEntity<JsonNode> got = rest.exchange("http://localhost:" + port + inbox() + "/chats/" + chat.getId(),
+                HttpMethod.GET, new HttpEntity<>(h), JsonNode.class);
+        assertThat(got.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void creatorKeepsTheChatWhenTheEventBeatsTheReplyAndClaimOnReplyIsOff() throws Exception {
+        eventBeatsTheReply(false);
+    }
+
+    @Test
+    void creatorKeepsTheChatWhenTheEventBeatsTheReplyAndClaimOnReplyIsOn() throws Exception {
+        eventBeatsTheReply(true);
+    }
+
+    @Test
+    void unseenChatQueuedToATeamIsRefused() throws Exception {
+        WaWebChat queue = chatOf("919811111111@c.us", "Nia", null, support);
+
+        ResponseEntity<JsonNode> res = postUntouched(agentToken, Map.of("phone", "919811111111", "text", "hello"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(res.getBody().get("code").asString()).isEqualTo("CHAT_TAKEN");
+        WaWebChat after = chats.findById(queue.getId()).orElseThrow();
+        assertThat(after.getAssignedUserId()).isNull();
+        assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(actions.count()).isZero();
+    }
+
+    @Test
+    void teamMemberClaimsAQueuedChatExplicitlyWhenClaimOnReplyIsOff() throws Exception {
+        claimOnReply(false);
+        WaWebChat queue = chatOf("919811111111@c.us", "Nia", null, support);
+
+        sendOk(leadToken, Map.of("phone", "919811111111", "text", "hello"),
+                "919811111111@c.us", "true_919811111111@c.us_1", "hello");
+
+        WaWebChat after = chats.findById(queue.getId()).orElseThrow();
+        assertThat(after.getAssignedUserId()).isEqualTo(lead.getId());
+        assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(actions.findAll()).extracting(WaWebChatAction::getType).containsExactly(ActionType.ASSIGNED);
+    }
+
+    @Test
+    void chatWithNoUserAndNoTeamIsClaimedByAnyone() throws Exception {
+        WaWebChat queue = chatOf("919811111111@c.us", "Nia", null, null);
+
+        sendOk(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+                "919811111111@c.us", "true_919811111111@c.us_1", "hello");
+
+        assertThat(chats.findById(queue.getId()).orElseThrow().getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(actions.findAll()).extracting(WaWebChatAction::getType).containsExactly(ActionType.ASSIGNED);
+    }
+
+    private WaWebChat lidChat(User assignedTo) {
+        Contact contact = contact(brand, "Nia", "919811111111");
+        WaWebChat c = chat(number, brand, contact, 1);
+        c.setRemoteId("99887766@lid");
+        c.setAssignedUserId(assignedTo.getId());
+        return chats.save(c);
+    }
+
+    @Test
+    void contactWhoseChatLivesUnderALidIsReused() throws Exception {
+        WaWebChat lid = lidChat(agent);
+
+        Exchange ex = sendOk(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+                "99887766@lid", "true_99887766@lid_1", "hello");
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ex.request().params().get("chatId").asString()).isEqualTo("99887766@lid");
+        assertThat(chats.count()).isEqualTo(1);
+        assertThat(ex.response().getBody().get("chatId").asString()).isEqualTo(lid.getId());
+    }
+
+    @Test
+    void lidChatOfSomeoneElseIsRefused() throws Exception {
+        lidChat(agent2);
+
+        ResponseEntity<JsonNode> res = postUntouched(agentToken, Map.of("phone", "919811111111", "text", "hello"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(res.getBody().get("code").asString()).isEqualTo("CHAT_TAKEN");
+        assertThat(chats.count()).isEqualTo(1);
     }
 }

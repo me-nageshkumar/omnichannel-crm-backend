@@ -576,6 +576,7 @@ class InboxSendIT extends InboxApiTestBase {
         // the same remote id gets a chat before the send's record step runs: the existing row wins
         WaWebChat existing = chat("Nia", "919811111111", 1);
         existing.setRemoteId("919811111111@c.us");
+        existing.setLastInboundAt(T0); // what an inbound message leaves; a row made by our own outbound has none
         existing = chats.save(existing);
         WaWebChat fresh = new WaWebChat();
         fresh.setCustomerId(acme.getId());
