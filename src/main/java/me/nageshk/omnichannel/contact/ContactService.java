@@ -174,6 +174,29 @@ public class ContactService {
         }
     }
 
+    /**
+     * The console wrote to {@code phone} and WhatsApp answered under {@code lid}: both ids are one person. The
+     * contact of that phone takes the lid; a nameless hidden contact that ingest just created for the lid (its
+     * {@code message_create} can beat the reply) is folded away, as the lid is unique. A lid contact with a name or
+     * a phone of its own is someone we already know and is kept as the chat's contact instead. Without a contact for
+     * the phone this is {@link #upsertFromChat} with the phone filled in.
+     */
+    public Contact linkLidToPhone(String workspaceId, String customerId, String lid, String phone, Instant at) {
+        Contact byPhone = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
+        if (byPhone == null) return upsertFromChat(workspaceId, customerId, lid, null, phone, at);
+        Contact byLid = contacts.findByWorkspaceIdAndWaId(workspaceId, lid).orElse(null);
+        if (byLid != null && !byLid.getId().equals(byPhone.getId())) {
+            if (byLid.getPhone() != null || byLid.getName() != null) return byLid;
+            contacts.delete(byLid);
+        }
+        byPhone.setWaId(lid);
+        Instant when = at != null ? at : clock.instant();
+        if (byPhone.getLastMessageAt() == null || when.isAfter(byPhone.getLastMessageAt())) {
+            byPhone.setLastMessageAt(when);
+        }
+        return contacts.save(byPhone);
+    }
+
     private Contact upsert(String workspaceId, String customerId, String remote, String senderName,
             String lidPhone, Instant at) {
         boolean lid = remote.endsWith("@lid");

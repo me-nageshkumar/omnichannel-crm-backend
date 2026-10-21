@@ -13,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import me.nageshk.omnichannel.api.NoDeviceException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.contact.Contact;
+import me.nageshk.omnichannel.contact.ContactService;
 import me.nageshk.omnichannel.rpc.RpcDispatcher;
 import me.nageshk.omnichannel.template.RenderRequest;
 import me.nageshk.omnichannel.template.RenderedTemplate;
@@ -65,6 +67,7 @@ public class InboxSendService {
     private final TemplateMediaService templateMedia;
     private final TemplateService templates;
     private final ChatAssignmentService assignment;
+    private final ContactService contacts;
     private final WaWebChatRepository chats;
     private final WaWebMessageRepository messages;
     private final UserRepository users;
@@ -218,9 +221,18 @@ public class InboxSendService {
         int ack = model ? MessagePayloads.ack(result) : 0;
         String type = model && out.type() == null ? MessagePayloads.type(result) : out.type();
         String sender = users.findById(me.userId()).map(User::getName).orElse(me.getUsername());
+        // a chat started from the console was addressed to phone@c.us; WhatsApp mostly answers under the person's
+        // @lid, and that is the chat the message (and its message_create event) belong to
+        String lidPhone = null;
+        String reported = model ? MessagePayloads.remote(result) : "";
+        if (sent.getId() == null && !reported.isEmpty() && !reported.equals(sent.getRemoteId())) {
+            lidPhone = phoneOf(sent.getRemoteId());
+            sent.setRemoteId(reported);
+        }
+        String phone = lidPhone;
 
         Recorded recorded = InboxIngestService.retrying(
-                () -> record(me, sender, sent, out, type == null ? "chat" : type, id, at, ack, now));
+                () -> record(me, sender, sent, out, type == null ? "chat" : type, id, at, ack, now, phone));
         WaWebChat chat = recorded.chat();
         try {
             chat = assignment.claimOnReply(me, chat);
@@ -261,6 +273,11 @@ public class InboxSendService {
         }
     }
 
+    /** The digits of a {@code phone@c.us} id, else null. */
+    private static String phoneOf(String remoteId) {
+        return remoteId != null && remoteId.endsWith("@c.us") ? remoteId.substring(0, remoteId.indexOf('@')) : null;
+    }
+
     /** A row that nobody has written to, assigned or routed: only an outbound message of ours can have created it. */
     private static boolean isOurOwnOutbound(WaWebChat chat) {
         return chat.getAssignedUserId() == null && chat.getAssignedTeamId() == null && chat.getLastInboundAt() == null;
@@ -272,12 +289,21 @@ public class InboxSendService {
      * source and sender, its status only moves up.
      */
     private Recorded record(AuthenticatedUser me, String senderName, WaWebChat sent, Outgoing out, String type,
-            String waMessageId, Instant at, int ack, Instant now) {
+            String waMessageId, Instant at, int ack, Instant now, String lidPhone) {
         // a chat without an id is stored now, the device having accepted its first message; a row another writer
         // created for the same remote id wins, and a lost race is retried by the caller
         WaWebChat chat = sent.getId() == null
                 ? chats.findByPhoneNumberIdAndRemoteId(sent.getPhoneNumberId(), sent.getRemoteId()).orElse(sent)
                 : chats.findById(sent.getId()).orElse(sent);
+        if (sent.getId() == null) {
+            // the person the console wrote to becomes (or already is) a contact, carrying the phone that was typed
+            Contact contact = lidPhone != null
+                    ? contacts.linkLidToPhone(sent.getWorkspaceId(), sent.getCustomerId(), chat.getRemoteId(),
+                            lidPhone, now)
+                    : contacts.upsertFromChat(sent.getWorkspaceId(), sent.getCustomerId(), chat.getRemoteId(), null,
+                            null, now);
+            if (contact != null) chat.setContactId(contact.getId());
+        }
         if (chat.getId() == null) {
             chat = chats.save(chat);
         } else if (sent.getId() == null && isOurOwnOutbound(chat)) {

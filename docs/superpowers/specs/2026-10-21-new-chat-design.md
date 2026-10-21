@@ -45,12 +45,17 @@ Returns the `MessageView` of the first message (its `chatId` is where the consol
      `ChatAssignmentService.assign(me, chat, me.userId(), null)`), whatever `claimOnReply` says:
      starting a chat is an explicit claim.
    - then the message is sent exactly as `POST /chats/{id}/messages` would.
-4. If no chat exists: the contact is upserted for the remote id (`ContactService.upsertFromChat`
-   with no name), and an **unsaved** `WaWebChat` (OPEN, `assignedUserId = me`, `assignedAt = now`)
-   is handed to `InboxSendService.send`. The chat row is saved only when the device answered, in
-   the same step that stores the message. No `ASSIGNED` action is recorded for a chat born
-   assigned to its creator (the first message, "sent by me", says it). A failed RPC leaves no chat
-   row; the contact may remain (harmless, and it is what the agent typed).
+4. If no chat exists: an **unsaved** `WaWebChat` (OPEN, `assignedUserId = me`, `assignedAt = now`,
+   `contactId` = the brand's contact with that phone if there is one, for template placeholders)
+   is handed to `InboxSendService.send`. The chat row and the contact are written only when the
+   device answered, in the same step that stores the message, under the remote id WhatsApp
+   reported for the message. WhatsApp mostly answers under the person's `…@lid` even though the
+   send was addressed to `phone@c.us`; the chat then lives under the lid, and the contact gets both
+   the typed phone and the lid (`ContactService.linkLidToPhone`): a contact already known by that
+   phone takes the lid, and a nameless hidden contact that ingest created from our own
+   `message_create` a moment earlier is folded away. No `ASSIGNED` action is recorded for a chat
+   born assigned to its creator (the first message, "sent by me", says it). A failed RPC leaves
+   no chat row and no contact.
    - Race: an inbound message creates the same chat between the lookup and the save. The unique
      index rejects the save, the existing retry re-runs the step, which then finds the chat by
      `(pn, remoteId)` and stores the message into it (so the routed or unassigned state wins;

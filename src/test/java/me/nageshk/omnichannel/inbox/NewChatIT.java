@@ -202,6 +202,77 @@ class NewChatIT extends InboxApiTestBase {
         assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(chats.count()).isZero();
         assertThat(messages.count()).isZero();
+        assertThat(contacts.count()).isZero();
+    }
+
+    /**
+     * WhatsApp addresses most people by their LID: a send to {@code phone@c.us} comes back (model and
+     * {@code message_create} event alike) under {@code …@lid}. One chat, one contact carrying both ids.
+     */
+    private void lidReportedForTheTypedPhone(boolean eventFirst) throws Exception {
+        lidReportedForTheTypedPhone(eventFirst, null);
+    }
+
+    private void lidReportedForTheTypedPhone(boolean eventFirst, Contact known) throws Exception {
+        String lid = "103238296682612@lid";
+        String serialized = "true_" + lid + "_9";
+        Exchange ex = viaDevice(agentToken, Map.of("phone", "919811111111", "text", "hello"), req -> {
+            if (eventFirst) {
+                publisher.publishEvent(new WhatsAppEvent(this, number.getId(), brand.getId(), acme.getId(),
+                        "message_create", model(lid, serialized, "hello"), null, System.currentTimeMillis()));
+            }
+            return Envelope.response(req.id(), model(lid, serialized, "hello"));
+        });
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ex.request().params().get("chatId").asString()).isEqualTo("919811111111@c.us");
+        assertThat(chats.count()).isEqualTo(1);
+        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(number.getId(), lid).orElseThrow();
+        assertThat(ex.response().getBody().get("chatId").asString()).isEqualTo(chat.getId());
+        assertThat(chat.getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(chat.getLastMessage().text()).isEqualTo("hello");
+        assertThat(messages.findByPhoneNumberIdAndWaMessageId(number.getId(), serialized).orElseThrow().getChatId())
+                .isEqualTo(chat.getId());
+        assertThat(contacts.count()).isEqualTo(1);
+        Contact contact = contacts.findById(chat.getContactId()).orElseThrow();
+        assertThat(contact.getPhone()).isEqualTo("919811111111");
+        assertThat(contact.getWaId()).isEqualTo(lid);
+        if (known != null) {
+            assertThat(contact.getId()).isEqualTo(known.getId());
+            assertThat(contact.getName()).isEqualTo(known.getName());
+        }
+    }
+
+    /** A contact added by hand, phone only: the console's send is what teaches us the person's lid. */
+    private Contact knownContact() {
+        Contact c = new Contact();
+        c.setWorkspaceId(brand.getId());
+        c.setCustomerId(acme.getId());
+        c.setName("Nia Known");
+        c.setNameEdited(true);
+        c.setPhone("919811111111");
+        c.setSource(me.nageshk.omnichannel.contact.ContactSource.MANUAL);
+        return contacts.save(c);
+    }
+
+    @Test
+    void typedPhoneOfAKnownContactTakesTheLid() throws Exception {
+        lidReportedForTheTypedPhone(false, knownContact());
+    }
+
+    @Test
+    void typedPhoneOfAKnownContactTakesTheLidWhenTheEventComesFirst() throws Exception {
+        lidReportedForTheTypedPhone(true, knownContact());
+    }
+
+    @Test
+    void lidReportedForTheTypedPhoneWhenTheEventComesFirst() throws Exception {
+        lidReportedForTheTypedPhone(true);
+    }
+
+    @Test
+    void lidReportedForTheTypedPhoneWhenOnlyTheReplyCarriesIt() throws Exception {
+        lidReportedForTheTypedPhone(false);
     }
 
     @Test

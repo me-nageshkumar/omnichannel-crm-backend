@@ -8,7 +8,6 @@ import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.contact.Contact;
 import me.nageshk.omnichannel.contact.ContactRepository;
-import me.nageshk.omnichannel.contact.ContactService;
 import me.nageshk.omnichannel.contact.Phones;
 import me.nageshk.omnichannel.phone.PhoneNumber;
 import me.nageshk.omnichannel.phone.PhoneNumberRepository;
@@ -29,7 +28,6 @@ public class NewChatService {
     private final InboxDevices devices;
     private final InboxScopeService scopes;
     private final WaWebChatRepository chats;
-    private final ContactService contacts;
     private final ContactRepository contactRepository;
     private final ChatAssignmentService assignment;
     private final InboxSendService sender;
@@ -64,13 +62,15 @@ public class NewChatService {
             return sender.send(me, workspaceId, chat, message);
         }
 
-        Contact contact = contacts.upsertFromChat(workspaceId, number.getCustomerId(), remoteId, null, null, null);
+        // the contact is only created once the device answered, under the id WhatsApp really used (often a @lid);
+        // a contact already known by this phone lends its name to a template meanwhile
         WaWebChat fresh = new WaWebChat();
         fresh.setCustomerId(number.getCustomerId());
         fresh.setWorkspaceId(workspaceId);
         fresh.setPhoneNumberId(phoneNumberId);
         fresh.setRemoteId(remoteId);
-        fresh.setContactId(contact.getId());
+        fresh.setContactId(contactRepository.findByWorkspaceIdAndPhone(workspaceId, phone).map(Contact::getId)
+                .orElse(null));
         fresh.setStatus(ChatStatus.OPEN);
         fresh.setAssignedUserId(me.userId());
         fresh.setAssignedAt(clock.instant());
