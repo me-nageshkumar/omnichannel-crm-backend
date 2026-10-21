@@ -31,8 +31,13 @@ class CampaignController {
     private final CampaignService service;
     private final CampaignLifecycleService lifecycle;
     private final CampaignViews views;
+    private final CampaignQueryService queries;
+    private final CampaignCounter counter;
 
-    CampaignController(CampaignService service, CampaignLifecycleService lifecycle, CampaignViews views) {
+    CampaignController(CampaignService service, CampaignLifecycleService lifecycle, CampaignViews views,
+            CampaignQueryService queries, CampaignCounter counter) {
+        this.queries = queries;
+        this.counter = counter;
         this.service = service;
         this.lifecycle = lifecycle;
         this.views = views;
@@ -105,6 +110,23 @@ class CampaignController {
     @GetMapping("/{id}")
     @PreAuthorize("@access.has(#workspaceId, 'campaign:view')")
     CampaignView get(@PathVariable String workspaceId, @PathVariable String id) {
-        return views.detail(service.require(workspaceId, id));
+        Campaign c = service.require(workspaceId, id);
+        c.setCounts(counter.refresh(c.getId()));
+        return views.detail(c);
+    }
+
+    @GetMapping
+    @PreAuthorize("@access.has(#workspaceId, 'campaign:view')")
+    CampaignQueryService.CampaignPage list(@PathVariable String workspaceId,
+            @RequestParam(required = false) CampaignStatus status, @RequestParam(defaultValue = "0") int page) {
+        return queries.list(workspaceId, status, page);
+    }
+
+    @GetMapping("/{id}/recipients")
+    @PreAuthorize("@access.has(#workspaceId, 'campaign:view')")
+    CampaignQueryService.RecipientPage recipients(@PathVariable String workspaceId, @PathVariable String id,
+            @RequestParam(required = false) RecipientStatus status, @RequestParam(defaultValue = "0") int page) {
+        service.require(workspaceId, id);
+        return queries.recipients(id, status, page);
     }
 }
