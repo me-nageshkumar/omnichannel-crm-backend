@@ -82,11 +82,13 @@ public class InboxController {
     private final InboxSendService sender;
     private final WaWebMessageRepository messageRepository;
     private final ChatMediaService chatMedia;
+    private final NewChatService newChats;
 
     public InboxController(InboxQueryService query, InboxScopeService scopeService, InboxStreamBroker broker,
             AccessTokenAuthenticator authenticator, InboxViews views, InboxSettingService settings, ChatAssignmentService assignment,
             PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService,
-            InboxSendService sender, WaWebMessageRepository messageRepository, ChatMediaService chatMedia) {
+            InboxSendService sender, WaWebMessageRepository messageRepository, ChatMediaService chatMedia,
+            NewChatService newChats) {
         this.query = query;
         this.scopeService = scopeService;
         this.broker = broker;
@@ -100,6 +102,7 @@ public class InboxController {
         this.sender = sender;
         this.messageRepository = messageRepository;
         this.chatMedia = chatMedia;
+        this.newChats = newChats;
     }
 
     @GetMapping("/phone-numbers")
@@ -183,6 +186,15 @@ public class InboxController {
     public ChatView read(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String chatId) {
         return views.chat(query.markRead(query.requireVisible(me, workspaceId, chatId)));
+    }
+
+    /** Starts (or lands in) the chat of a phone number and sends its first message; see {@link NewChatService}. */
+    @PostMapping("/phone-numbers/{phoneNumberId}/chats")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    public CompletableFuture<MessageView> startChat(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @PathVariable String phoneNumberId,
+            @RequestBody(required = false) NewChatRequest req) {
+        return newChats.start(me, workspaceId, phoneNumberId, req);
     }
 
     /** Sends a text or a template to the chat through the number's device; see {@link InboxSendService}. */

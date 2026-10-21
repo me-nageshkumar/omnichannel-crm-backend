@@ -273,6 +273,7 @@ bundle is served by the backend (`GET /api/scripts/page`), so the rebuilt bundle
 |---|---|---|
 | GET `/phone-numbers` | inbox:view | numbers of the brand with status |
 | GET `/phone-numbers/{pn}/chats?scope=&status=&q=&unread=&before=&limit=` | inbox:view | `scope` mine/team/unassigned/all; `status` OPEN (default) / CLOSED / ALL; `q` matches contact name or phone (prefix, case-insensitive); `before` = lastMessageAt cursor; limit ≤ 100, default 50 → `{items, hasMore}` |
+| POST `/phone-numbers/{pn}/chats` `{phone, text \| templateId+values}` | inbox:send | start or land in the chat of a phone number and send its first message → MessageView; see the new-chat design |
 | GET `/phone-numbers/{pn}/stream` | inbox:view | SSE |
 | GET/PUT `/phone-numbers/{pn}/settings` | inbox:settings | routing |
 | GET `/assignees` | inbox:assign | `{users: [{id, name, username}], teams: [{id, name}]}` — users with access to the workspace, enabled |
