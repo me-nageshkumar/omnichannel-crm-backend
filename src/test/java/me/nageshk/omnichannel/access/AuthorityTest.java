@@ -13,7 +13,7 @@ class AuthorityTest {
     @Test
     void codesAreUnique() {
         Set<String> codes = Arrays.stream(Authority.values()).map(Authority::code).collect(Collectors.toSet());
-        assertThat(codes).hasSize(Authority.values().length).hasSize(32);
+        assertThat(codes).hasSize(Authority.values().length).hasSize(35);
     }
 
     @Test

@@ -60,9 +60,10 @@ class RoleSeederIT {
                         "phone-number:manage", "team:manage", "contact:view", "contact:annotate", "contact:edit",
                         "contact:import", "contact:export", "contact:bulk", "contact:delete", "contact-field:manage",
                         "template:view", "template:manage", "inbox:view", "inbox:view-team", "inbox:view-all",
-                        "inbox:send", "inbox:assign", "inbox:settings");
+                        "inbox:send", "inbox:assign", "inbox:settings", "campaign:view", "campaign:manage",
+                        "campaign:settings");
         assertThat(role(BuiltInRoles.AGENT).getAuthorities())
-                .containsExactlyInAnyOrder("contact:view", "contact:annotate", "template:view", "inbox:view", "inbox:send");
+                .containsExactlyInAnyOrder("contact:view", "contact:annotate", "template:view", "inbox:view", "inbox:send", "campaign:view");
     }
 
     @Test
@@ -108,7 +109,7 @@ class RoleSeederIT {
     void freshDatabaseCreatesDocumentsAndGivesDefaults() {
         clearAll();
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(32)
+        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(35)
                 .allMatch(AuthorityDefinition::isBuiltIn)
                 .allMatch(d -> "system".equals(d.getCreatedBy()));
         AuthorityDefinition cv = authorities.findById("customer:view").orElseThrow();
@@ -127,7 +128,7 @@ class RoleSeederIT {
         mongo.insert(new org.bson.Document("_id", KNOWN).append("codes",
                 Arrays.stream(Authority.values()).map(Authority::code).toList()), "system_state");
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(32);
+        assertThat(authorities.findAll()).hasSize(35);
         assertThat(role(BuiltInRoles.TEAM_LEAD).getAuthorities()).doesNotContain("user:view");
         assertThat(mongo.findById(KNOWN, org.bson.Document.class, "system_state")).isNull();
     }

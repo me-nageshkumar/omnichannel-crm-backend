@@ -119,6 +119,16 @@ public class ApiExceptionHandler {
                 "code", ValidationException.CODE, "message", message, "fields", fields));
     }
 
+    @ExceptionHandler(CodedException.class)
+    public ResponseEntity<Map<String, String>> coded(CodedException e) {
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put("code", e.code());
+        body.put("message", String.valueOf(e.getMessage()));
+        if (e.field() != null) body.put("field", e.field());
+        body.putAll(e.extra());
+        return ResponseEntity.status(e.status()).body(body);
+    }
+
     @ExceptionHandler(TooManyRowsException.class)
     public ResponseEntity<Map<String, String>> tooManyRows(TooManyRowsException e) {
         return body(HttpStatus.BAD_REQUEST, TooManyRowsException.CODE, e.getMessage());

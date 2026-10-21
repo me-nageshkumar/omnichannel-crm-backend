@@ -27,4 +27,38 @@ class ApiExceptionHandlerTest {
                 .containsEntry("level", "PLATFORM")
                 .containsEntry("message", "Disabled by platform staff. Only platform staff can enable it.");
     }
+
+    @Test
+    void codedExceptionCarriesStatusCodeAndField() {
+        var response = new ApiExceptionHandler().coded(new CodedException(HttpStatus.BAD_REQUEST,
+                "TEMPLATE_HAS_LINK", "templateIds", "Campaign messages cannot contain links."));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).containsOnly(
+                java.util.Map.entry("code", "TEMPLATE_HAS_LINK"),
+                java.util.Map.entry("message", "Campaign messages cannot contain links."),
+                java.util.Map.entry("field", "templateIds"));
+    }
+
+    @Test
+    void codedExceptionWithoutFieldHasNoFieldKey() {
+        var response = new ApiExceptionHandler().coded(
+                me.nageshk.omnichannel.campaign.CampaignErrors.notEditable());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).containsOnlyKeys("code", "message")
+                .containsEntry("message", "Only a draft campaign can be edited.");
+    }
+
+    @Test
+    void codedExceptionExtrasJoinTheBody() {
+        var response = new ApiExceptionHandler().coded(
+                me.nageshk.omnichannel.campaign.CampaignErrors.senderNotAvailable("919800000001"));
+
+        assertThat(response.getBody())
+                .containsEntry("code", "SENDER_NOT_AVAILABLE")
+                .containsEntry("field", "senderIds")
+                .containsEntry("number", "919800000001")
+                .containsEntry("message", "+919800000001 cannot send campaigns right now.");
+    }
 }

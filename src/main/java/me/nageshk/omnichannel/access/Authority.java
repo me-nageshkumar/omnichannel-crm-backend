@@ -77,6 +77,14 @@ public enum Authority {
     INBOX_ASSIGN("inbox:assign", RoleLevel.BRAND, "Assign, reassign, unassign visible chats",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD),
     INBOX_SETTINGS("inbox:settings", RoleLevel.BRAND, "Edit a number's routing settings",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    CAMPAIGN_VIEW("campaign:view", RoleLevel.BRAND, "See campaigns, their recipients and the senders",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD, AGENT),
+    CAMPAIGN_MANAGE("campaign:manage", RoleLevel.BRAND,
+            "Create, edit, start, pause, resume, terminate and delete draft campaigns",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD),
+    CAMPAIGN_SETTINGS("campaign:settings", RoleLevel.BRAND,
+            "Edit campaign settings, sender states and where each sender runs",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER);
 
     private final String code;
