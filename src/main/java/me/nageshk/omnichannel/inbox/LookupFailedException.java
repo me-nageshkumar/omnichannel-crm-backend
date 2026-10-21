@@ -6,6 +6,10 @@ public class LookupFailedException extends RuntimeException {
     public static final String CODE = "LOOKUP_FAILED";
 
     public LookupFailedException() {
-        super("Could not check this number on WhatsApp, try again");
+        this("Could not check this number on WhatsApp, try again");
+    }
+
+    public LookupFailedException(String message) {
+        super(message);
     }
 }

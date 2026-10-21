@@ -5,12 +5,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import lombok.RequiredArgsConstructor;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.contact.Phones;
 import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.rpc.RpcDispatcher;
+import me.nageshk.omnichannel.rpc.RpcException;
 import me.nageshk.omnichannel.ws.DeviceSession;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
@@ -27,6 +29,8 @@ public class NumberLookupService {
 
     static final Duration REGISTERED_FRESH = Duration.ofDays(30);
     static final Duration UNREGISTERED_FRESH = Duration.ofDays(7);
+
+    private static final String OUTDATED_EXTENSION = "The WhatsApp extension needs an update to check numbers";
 
     private final WaNumberLookupRepository lookups;
     private final PhoneNumberRepository numbers;
@@ -58,10 +62,18 @@ public class NumberLookupService {
         DeviceSession device = devices.requireReady(workspaceId, phoneNumberId);
         ObjectNode params = mapper.createObjectNode().put("phone", phone);
         return dispatcher.call(device, "getNumberId", params).handle((result, error) -> {
-            // an RpcException or a TimeoutException, possibly wrapped in a CompletionException
-            if (error != null) throw new LookupFailedException();
+            if (error != null) throw failure(error);
             return view(InboxIngestService.retrying(() -> store(workspaceId, phoneNumberId, phone, result)), false);
         });
+    }
+
+    /** An RpcException or a TimeoutException, possibly wrapped in a CompletionException. */
+    private static LookupFailedException failure(Throwable error) {
+        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+        if (cause instanceof RpcException rpc && RpcException.METHOD_NOT_FOUND.equals(rpc.code())) {
+            return new LookupFailedException(OUTDATED_EXTENSION);
+        }
+        return new LookupFailedException();
     }
 
     private WaNumberLookup store(String workspaceId, String phoneNumberId, String phone, JsonNode result) {

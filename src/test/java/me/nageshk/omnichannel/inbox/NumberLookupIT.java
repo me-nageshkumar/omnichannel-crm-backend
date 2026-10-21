@@ -204,6 +204,17 @@ class NumberLookupIT extends InboxApiTestBase {
     }
 
     @Test
+    void outdatedExtensionIs502WithAnUpdateMessage() throws Exception {
+        Exchange ex = viaDevice(agentToken, "919811111111", false,
+                req -> Envelope.errorResponse(req.id(), "METHOD_NOT_FOUND", "no such method"));
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(ex.response().getBody().get("code").asString()).isEqualTo("LOOKUP_FAILED");
+        assertThat(ex.response().getBody().get("message").asString())
+                .isEqualTo("The WhatsApp extension needs an update to check numbers");
+        assertThat(lookups.count()).isZero();
+    }
+
+    @Test
     void silentDeviceIs502AfterTheTimeout() throws Exception {
         // the device receives the request and never answers; omnichannel.rpc.timeout=2s
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
