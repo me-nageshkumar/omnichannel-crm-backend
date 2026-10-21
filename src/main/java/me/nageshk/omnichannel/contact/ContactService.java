@@ -109,6 +109,16 @@ public class ContactService {
         return require(workspaceId, id);
     }
 
+    /** Names the contact, as if typed by a person, only while it has no name; a blank {@code name} does nothing. */
+    public void nameIfBlank(String workspaceId, String contactId, String name) {
+        String n = name == null ? "" : name.trim();
+        if (contactId == null || n.isEmpty()) return;
+        if (n.length() > MAX_NAME) n = n.substring(0, MAX_NAME);
+        mongo.updateFirst(byId(workspaceId, contactId).addCriteria(new Criteria().orOperator(
+                        Criteria.where("name").is(null), Criteria.where("name").regex("^\\s*$"))),
+                new Update().set("name", n).set("nameEdited", true), Contact.class);
+    }
+
     public Contact clearDoNotContact(String workspaceId, String id) {
         require(workspaceId, id);
         mongo.updateFirst(byId(workspaceId, id), new Update().unset("doNotContact"), Contact.class);

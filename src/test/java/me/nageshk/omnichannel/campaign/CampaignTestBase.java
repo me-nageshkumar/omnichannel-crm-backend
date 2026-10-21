@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.function.Consumer;
@@ -90,6 +91,7 @@ abstract class CampaignTestBase {
     @Autowired @Qualifier("campaignCsvGridFs") GridFsTemplate csvFiles;
     @Autowired CampaignSenderService senders;
     @Autowired CampaignSenderRepository senderRepository;
+    @Autowired CampaignRunner runner;
 
     Customer acme;
     Workspace brand;
@@ -186,13 +188,42 @@ abstract class CampaignTestBase {
     }
 
 
-    CampaignRecipient recipient(String campaignId, String phone) {
+    /** An unsaved PENDING recipient of the brand. */
+    CampaignRecipient newRecipient(String campaignId, String phone) {
         CampaignRecipient r = new CampaignRecipient();
         r.setCampaignId(campaignId);
         r.setWorkspaceId(brand.getId());
         r.setPhone(phone);
         r.setStatus(RecipientStatus.PENDING);
         return r;
+    }
+
+    /** The stored recipient of the campaign with this phone. */
+    CampaignRecipient recipient(String campaignId, String phone) {
+        return mongo.findOne(new Query(Criteria.where("campaignId").is(campaignId).and("phone").is(phone)),
+                CampaignRecipient.class);
+    }
+
+    /** A connected, ready device for the number that answers on its own; close it. */
+    AutoDevice device(PhoneNumber n) throws Exception {
+        return new AutoDevice(port, testDevices, n);
+    }
+
+    /** Runs one tick and waits until every sender's work of it has finished. */
+    void tickNow() throws Exception {
+        runner.tick().get(10, TimeUnit.SECONDS);
+    }
+
+    /** A fresh cached lookup of the brand for the phone, as n1 answered it. */
+    void seedLookup(String phone, boolean registered) {
+        WaNumberLookup row = new WaNumberLookup();
+        row.setWorkspaceId(brand.getId());
+        row.setPhoneNumberId(n1.getId());
+        row.setPhone(phone);
+        row.setRegistered(registered);
+        row.setWaPhone(registered ? phone + "@c.us" : null);
+        row.setCheckedAt(clock.instant());
+        mongo.save(row);
     }
 
     /** The brand's template of this name, created when absent; returns its id. */

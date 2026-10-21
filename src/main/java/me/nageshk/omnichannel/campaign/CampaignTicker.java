@@ -1,0 +1,33 @@
+package me.nageshk.omnichannel.campaign;
+
+import java.time.Clock;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+/** Runs the campaign tick on {@code campaignScheduler}; tests switch it off and tick by hand. */
+@Component
+@ConditionalOnProperty(name = "omnichannel.campaign.auto-tick", havingValue = "true", matchIfMissing = true)
+class CampaignTicker {
+
+    private final CampaignRunner runner;
+    private final Clock clock;
+
+    CampaignTicker(CampaignRunner runner, Clock clock) {
+        this.runner = runner;
+        this.clock = clock;
+    }
+
+    @Scheduled(fixedDelayString = "${omnichannel.campaign.tick:10s}", scheduler = "campaignScheduler")
+    void tick() {
+        runner.tick();
+    }
+
+    /** Sends that were in flight when the application stopped never finished: fail them before the first tick. */
+    @EventListener(ApplicationReadyEvent.class)
+    void atStartup() {
+        runner.failStuck(clock.instant());
+    }
+}

@@ -6,6 +6,9 @@ de:
 omnichannel:
   super-admin:
     password: ""
+  # tests drive CampaignRunner.tick() themselves
+  campaign:
+    auto-tick: false
 logging:
   level:
     de.flapdoodle: WARN

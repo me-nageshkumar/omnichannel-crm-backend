@@ -120,11 +120,11 @@ class CampaignStartIT extends CampaignTestBase {
                 Contact.class);
         contact("Recent", "919811110002");
         contact("Older", "919811110003");
-        CampaignRecipient recent = recipient("elsewhere", "919811110002");
+        CampaignRecipient recent = newRecipient("elsewhere", "919811110002");
         recent.setStatus(RecipientStatus.SENT);
         recent.setSentAt(clock.instant().minus(Duration.ofDays(6)));
         mongo.save(recent);
-        CampaignRecipient older = recipient("elsewhere", "919811110003");
+        CampaignRecipient older = newRecipient("elsewhere", "919811110003");
         older.setStatus(RecipientStatus.DELIVERED);
         older.setSentAt(clock.instant().minus(Duration.ofDays(8)));
         mongo.save(older);
