@@ -1,11 +1,13 @@
 package me.nageshk.omnichannel.campaign;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import me.nageshk.omnichannel.api.DuplicateException;
@@ -35,6 +37,10 @@ public class CampaignValidator {
     /** What a valid request resolved to: the cleaned name and audience, the templates, mappings and senders. */
     public record Validated(String name, Campaign.Audience audience, List<MessageTemplate> templates,
             List<Campaign.PlaceholderMapping> placeholders, List<String> senderIds) {
+
+        Validated withAudience(Campaign.Audience a) {
+            return new Validated(name, a, templates, placeholders, senderIds);
+        }
     }
 
     private final CampaignRepository campaigns;
@@ -60,9 +66,9 @@ public class CampaignValidator {
      */
     Validated validate(String workspaceId, CampaignRequest req, List<String> csvHeaders, String excludeId) {
         String name = name(workspaceId, req.name(), excludeId);
-        Campaign.Audience audience = audience(workspaceId, req.audience());
+        Campaign.Audience audience = audience(workspaceId, req.audience(), csvHeaders);
         List<MessageTemplate> chosen = templates(workspaceId, req.templateIds());
-        List<Campaign.PlaceholderMapping> mappings = placeholders(workspaceId, chosen, req.placeholders());
+        List<Campaign.PlaceholderMapping> mappings = placeholders(workspaceId, chosen, req.placeholders(), csvHeaders);
         List<String> senderIds = senders(workspaceId, req.senderIds());
         return new Validated(name, audience, chosen, mappings, senderIds);
     }
@@ -83,10 +89,10 @@ public class CampaignValidator {
         return name;
     }
 
-    private Campaign.Audience audience(String workspaceId, CampaignRequest.AudienceRequest a) {
-        if (a == null || a.kind() != AudienceKind.FILTER) {
-            throw new ValidationException("audience.kind", "unsupported");
-        }
+    private Campaign.Audience audience(String workspaceId, CampaignRequest.AudienceRequest a, List<String> csvHeaders) {
+        if (a == null || a.kind() == null) throw new ValidationException("audience.kind", "unsupported");
+        if (a.kind() == AudienceKind.CSV) return csvAudience(a, csvHeaders);
+        if (a.kind() != AudienceKind.FILTER) throw new ValidationException("audience.kind", "unsupported");
         if (a.filterId() == null || a.filterId().isBlank()) {
             throw new ValidationException("audience.filterId", "required");
         }
@@ -94,6 +100,20 @@ public class CampaignValidator {
                 .orElseThrow(() -> new ValidationException("audience.filterId", "unknown filter"));
         return new Campaign.Audience(AudienceKind.FILTER, f.getId(), f.getName(), f.getFilter(), null, null, null,
                 null, null, null);
+    }
+
+    /** The CSV audience's columns; the file's name, row count and id are filled in by the service. */
+    private static Campaign.Audience csvAudience(CampaignRequest.AudienceRequest a, List<String> headers) {
+        if (headers == null) throw new ValidationException("file", "required");
+        String phone = a.phoneColumn() == null ? "" : a.phoneColumn().trim();
+        if (phone.isEmpty()) throw CampaignErrors.phoneColumnRequired();
+        if (!headers.contains(phone)) throw new ValidationException("audience.phoneColumn", "is not a column of the file");
+        String name = a.nameColumn() == null ? "" : a.nameColumn().trim();
+        if (!name.isEmpty() && !headers.contains(name)) {
+            throw new ValidationException("audience.nameColumn", "is not a column of the file");
+        }
+        return new Campaign.Audience(AudienceKind.CSV, null, null, null, null, headers, null, phone,
+                name.isEmpty() ? null : name, null);
     }
 
     private List<MessageTemplate> templates(String workspaceId, List<String> raw) {
@@ -116,7 +136,7 @@ public class CampaignValidator {
     }
 
     private List<Campaign.PlaceholderMapping> placeholders(String workspaceId, List<MessageTemplate> chosen,
-            List<Campaign.PlaceholderMapping> supplied) {
+            List<Campaign.PlaceholderMapping> supplied, List<String> csvHeaders) {
         Map<String, TemplatePlaceholder> used = new LinkedHashMap<>();
         for (MessageTemplate t : chosen) {
             for (TemplatePlaceholder p : t.getPlaceholders()) used.putIfAbsent(p.getName(), p);
@@ -131,12 +151,32 @@ public class CampaignValidator {
             String fallback = m == null || m.fallback() == null ? "" : m.fallback();
             if (fallback.length() > MAX_TEXT) throw new ValidationException("placeholders", "fallback is too long");
             if (CampaignLinks.containsLink(fallback)) throw CampaignErrors.templateHasLink("placeholders");
-            Campaign.PlaceholderSource source = m == null || m.source() == null ? defaultSource(p)
-                    : checked(workspaceId, m.source());
+            Campaign.PlaceholderSource source = csvHeaders != null ? csvSource(m, csvHeaders)
+                    : m == null || m.source() == null ? defaultSource(p) : checked(workspaceId, m.source());
             if (source == null) throw CampaignErrors.placeholderUnmapped();
             out.add(new Campaign.PlaceholderMapping(p.getName(), source, fallback));
         }
+        if (csvHeaders != null) {
+            Set<String> columns = new HashSet<>();
+            for (Campaign.PlaceholderMapping m : out) {
+                if (m.source().kind() == PlaceholderSourceKind.CSV_COLUMN && !columns.add(m.source().column())) {
+                    throw CampaignErrors.columnReused();
+                }
+            }
+        }
         return out;
+    }
+
+    /** A CSV audience takes a column of the file or fixed text; there is no contact to read from. */
+    private static Campaign.PlaceholderSource csvSource(Campaign.PlaceholderMapping m, List<String> headers) {
+        Campaign.PlaceholderSource s = m == null ? null : m.source();
+        if (s == null || s.kind() == null) return null;
+        return switch (s.kind()) {
+            case CSV_COLUMN -> s.column() != null && headers.contains(s.column().trim())
+                    ? new Campaign.PlaceholderSource(s.kind(), null, null, s.column().trim(), null) : null;
+            case FIXED -> fixed(s);
+            default -> null;
+        };
     }
 
     /** What a contact placeholder takes without being told; an agent placeholder has no default. */

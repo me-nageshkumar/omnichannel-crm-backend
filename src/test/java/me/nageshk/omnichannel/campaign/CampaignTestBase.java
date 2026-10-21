@@ -23,6 +23,11 @@ import me.nageshk.omnichannel.tenant.Workspace;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.WorkspaceRole;
 import org.junit.jupiter.api.AfterEach;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.data.mongodb.gridfs.GridFsTemplate;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
@@ -76,6 +81,7 @@ abstract class CampaignTestBase {
     @Autowired TestDevices testDevices;
     @Autowired MongoTemplate mongo;
     @Autowired FixedRandom random;
+    @Autowired @Qualifier("campaignCsvGridFs") GridFsTemplate csvFiles;
     @Autowired CampaignSenderService senders;
     @Autowired CampaignSenderRepository senderRepository;
 
@@ -117,6 +123,7 @@ abstract class CampaignTestBase {
     private void clean() {
         testUsers.deleteAll();
         for (Class<?> c : collections()) mongo.remove(new Query(), c);
+        csvFiles.delete(new Query());
         clock.set(WED_11_IST);
         random.offset = 0;
         random.max = false;
@@ -202,5 +209,36 @@ abstract class CampaignTestBase {
     /** {@code path} is relative to the brand's {@code /api/workspaces/{id}}. */
     ResponseEntity<JsonNode> api(HttpMethod m, String path, User who, Object body) {
         return rest.exchange(url("/api/workspaces/" + brand.getId() + path), m, auth(who, body), JsonNode.class);
+    }
+
+    /** Number of files in the {@code campaign_csv} bucket. */
+    long gridFsFiles() {
+        return mongo.getCollection("campaign_csv.files").countDocuments();
+    }
+
+    /**
+     * A multipart request: part {@code campaign} as JSON and, unless {@code csv} is null, part {@code file}
+     * named {@code leads.csv}. {@code path} is relative to the brand's {@code /api/workspaces/{id}}.
+     */
+    ResponseEntity<JsonNode> multipart(HttpMethod m, String path, User who, Object campaignJson, String csv) {
+        MultiValueMap<String, Object> parts = new LinkedMultiValueMap<>();
+        HttpHeaders json = new HttpHeaders();
+        json.setContentType(MediaType.APPLICATION_JSON);
+        if (campaignJson != null) parts.add("campaign", new HttpEntity<>(campaignJson, json));
+        if (csv != null) parts.add("file", fileResource(csv));
+        HttpHeaders h = new HttpHeaders();
+        h.setBearerAuth(token(who));
+        h.setContentType(MediaType.MULTIPART_FORM_DATA);
+        return rest.exchange(url("/api/workspaces/" + brand.getId() + path), m, new HttpEntity<>(parts, h),
+                JsonNode.class);
+    }
+
+    ByteArrayResource fileResource(String csv) {
+        return new ByteArrayResource(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+            @Override
+            public String getFilename() {
+                return "leads.csv";
+            }
+        };
     }
 }
