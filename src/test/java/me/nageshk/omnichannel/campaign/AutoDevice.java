@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import me.nageshk.omnichannel.phone.PhoneNumber;
 import me.nageshk.omnichannel.rpc.Envelope;
@@ -33,7 +34,7 @@ class AutoDevice implements AutoCloseable {
     private final FakeDevice device;
     private final List<Envelope> requests = new CopyOnWriteArrayList<>();
     private final Thread answering;
-    private volatile Runnable onLookup = () -> { };
+    private volatile Consumer<String> onLookup = phone -> { };
     private volatile boolean closed;
 
     AutoDevice(int port, TestDevices testDevices, PhoneNumber n) throws Exception {
@@ -64,7 +65,12 @@ class AutoDevice implements AutoCloseable {
 
     /** Runs before each lookup is answered. */
     void onLookup(Runnable r) {
-        onLookup = r;
+        onLookup = phone -> r.run();
+    }
+
+    /** Runs with the looked-up phone before each lookup is answered. */
+    void onLookup(Consumer<String> c) {
+        onLookup = c;
     }
 
     List<Envelope> requests() {
@@ -93,9 +99,10 @@ class AutoDevice implements AutoCloseable {
 
     private Envelope answer(Envelope req) {
         if ("getNumberId".equals(req.method())) {
-            onLookup.run();
+            String phone = req.params().get("phone").asString();
+            onLookup.accept(phone);
             try {
-                JsonNode result = lookupAnswer.apply(req.params().get("phone").asString());
+                JsonNode result = lookupAnswer.apply(phone);
                 return Envelope.response(req.id(), result == null ? MAPPER.nullNode() : result);
             } catch (RuntimeException e) {
                 return Envelope.errorResponse(req.id(), "PAGE_ERROR", "boom");

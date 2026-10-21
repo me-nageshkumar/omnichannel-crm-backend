@@ -91,7 +91,10 @@ public class CampaignRunner {
     private final Clock clock;
     private final Executor executor;
     private final Duration stuckAfter;
+    /** Senders whose work of an earlier tick has not finished. */
     private final Set<String> busy = ConcurrentHashMap.newKeySet();
+    /** {@code workspaceId/phone} of the recipients being handled now, so two senders never message one phone at once. */
+    private final Set<String> phonesInFlight = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean ticking = new AtomicBoolean();
 
     CampaignRunner(MongoTemplate mongo, CampaignSenderService senders, CampaignSettingsService settingsService,
@@ -130,9 +133,9 @@ public class CampaignRunner {
         if (!ticking.compareAndSet(false, true)) return CompletableFuture.completedFuture(null);
         try {
             Instant now = clock.instant();
-            failStuck(now);
             List<Campaign> running = mongo.find(new Query(Criteria.where("status").is(CampaignStatus.RUNNING))
                     .with(Sort.by("startedAt", "_id")), Campaign.class);
+            if (!running.isEmpty()) failStuck(now);
             Map<String, List<Campaign>> byWorkspace = new LinkedHashMap<>();
             for (Campaign c : running) byWorkspace.computeIfAbsent(c.getWorkspaceId(), k -> new ArrayList<>()).add(c);
             List<CompletableFuture<Void>> started = new ArrayList<>();
@@ -216,17 +219,38 @@ public class CampaignRunner {
 
     // ---- one sender ----
 
-    /** Claims and handles recipients until one is not a free skip, at most {@link #FREE_SKIPS} free skips more. */
+    /**
+     * Claims and handles recipients until one is not a free skip, at most {@link #FREE_SKIPS} free skips more. What
+     * the tick saw may have changed while this sender waited for a thread: a claim is released when the window has
+     * closed (and the sender stops), when its campaign is no longer RUNNING (and that campaign is passed over), or
+     * when another sender is working on the same phone of the workspace (and this sender stops for the tick).
+     */
     private void process(CampaignSender sender, List<Campaign> campaigns, CampaignSettings settings) {
         try {
+            List<Campaign> open = new ArrayList<>(campaigns);
             int freeSkips = FREE_SKIPS;
             while (true) {
-                Claim claim = claim(sender, campaigns, settings);
+                Claim claim = claim(sender, open, settings);
                 if (claim == null) return;
+                if (!SenderPolicy.inWindow(settings, clock.instant())) {
+                    release(claim);
+                    return;
+                }
+                if (!isRunning(claim.campaign())) {
+                    release(claim);
+                    open.remove(claim.campaign());
+                    continue;
+                }
+                String phoneKey = claim.campaign().getWorkspaceId() + "/" + claim.recipient().getPhone();
+                if (!phonesInFlight.add(phoneKey)) {
+                    release(claim);
+                    return;
+                }
                 boolean free;
                 try {
                     free = handle(claim);
                 } finally {
+                    phonesInFlight.remove(phoneKey);
                     counter.refresh(claim.campaign().getId());
                 }
                 if (!free || freeSkips-- <= 0) return;
@@ -234,6 +258,11 @@ public class CampaignRunner {
         } catch (RuntimeException e) {
             log.warn("campaign work of sender {} failed", sender.getPhoneNumberId(), e);
         }
+    }
+
+    private boolean isRunning(Campaign c) {
+        return mongo.exists(new Query(Criteria.where("_id").is(c.getId()).and("status").is(CampaignStatus.RUNNING)),
+                Campaign.class);
     }
 
     /** The oldest campaign's first PENDING recipient that waits for no other sender, now SENDING; null when none. */

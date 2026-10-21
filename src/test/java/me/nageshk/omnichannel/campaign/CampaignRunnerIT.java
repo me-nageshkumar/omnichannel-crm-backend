@@ -6,10 +6,15 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import me.nageshk.omnichannel.contact.Contact;
 import me.nageshk.omnichannel.contact.ContactService;
 import me.nageshk.omnichannel.contact.DoNotContact;
@@ -53,15 +58,42 @@ class CampaignRunnerIT extends CampaignTestBase {
 
     /** Creates and starts a CSV campaign on n1 whose phone column is {@code Phone} and name column {@code Name}. */
     String csvCampaign(String name, String csv, String templateId, List<Map<String, Object>> placeholders) {
+        return csvCampaign(name, csv, templateId, placeholders, n1);
+    }
+
+    String csvCampaign(String name, String csv, String templateId, List<Map<String, Object>> placeholders,
+            PhoneNumber sender) {
         Map<String, Object> audience = new LinkedHashMap<>();
         audience.put("kind", "CSV");
         audience.put("phoneColumn", "Phone");
         audience.put("nameColumn", "Name");
         Map<String, Object> body = Map.of("name", name, "audience", audience, "templateIds", List.of(templateId),
-                "placeholders", placeholders, "senderIds", List.of(n1.getId()));
+                "placeholders", placeholders, "senderIds", List.of(sender.getId()));
         String id = multipart(HttpMethod.POST, "/campaigns", manager, body, csv).getBody().get("id").asString();
         api(HttpMethod.POST, "/campaigns/" + id + "/start", manager, null);
         return id;
+    }
+
+    /** Holds both threads of {@code campaignScheduler} until the returned latch is counted down. */
+    CountDownLatch holdCampaignScheduler() {
+        CountDownLatch gate = new CountDownLatch(1);
+        ThreadPoolTaskScheduler scheduler = context.getBean("campaignScheduler", ThreadPoolTaskScheduler.class);
+        for (int i = 0; i < 2; i++) {
+            scheduler.execute(() -> {
+                try {
+                    gate.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        return gate;
+    }
+
+    /** {@code sendMessage} requests to the phone across the devices. */
+    static long sendsTo(String phone, AutoDevice... devices) {
+        return Arrays.stream(devices).flatMap(d -> d.requests("sendMessage").stream())
+                .filter(e -> e.params().get("chatId").asString().equals(phone + "@c.us")).count();
     }
 
     static Map<String, Object> column(String placeholder, String column) {
@@ -445,6 +477,79 @@ class CampaignRunnerIT extends CampaignTestBase {
             assertThat(r.getError()).isEqualTo("HAS_LINK");
             assertThat(d.requests("sendMessage")).isEmpty();
             assertThat(sender(n1).getNextSendAt()).isNull();
+        }
+    }
+
+    @Test
+    void twoSendersNeverMessageOnePhoneAtOnce() throws Exception {
+        try (AutoDevice d1 = device(n1); AutoDevice d2 = device(n2)) {
+            // the first lookup of P1 waits (up to a second) for a second one: two senders both holding P1
+            CountDownLatch both = new CountDownLatch(2);
+            Consumer<String> meet = phone -> {
+                if (!P1.equals(phone)) return;
+                both.countDown();
+                try {
+                    both.await(1, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            };
+            d1.onLookup(meet);
+            d2.onLookup(meet);
+            String t = templateNamed("City Hi", "Hi {{contact.name}} from {{city}}");
+            List<Map<String, Object>> mapped = List.of(column("contact.name", "Name"), column("city", "City"));
+            String a = csvCampaign("A", "Phone,Name,City\n9811100001,Asha,Pune\n9811100002,Bina,Pune", t, mapped, n1);
+            String b = csvCampaign("B", "Phone,Name,City\n9811100001,Asha,Pune\n9811100003,Chitra,Pune", t, mapped,
+                    n2);
+            tickNow();
+            assertThat(sendsTo(P1, d1, d2)).isEqualTo(1);
+
+            clock.advance(Duration.ofSeconds(45));
+            tickNow();
+            assertThat(sendsTo(P1, d1, d2)).isEqualTo(1);
+            CampaignRecipient ra = recipient(a, P1);
+            CampaignRecipient rb = recipient(b, P1);
+            assertThat(List.of(ra.getStatus(), rb.getStatus()))
+                    .containsExactlyInAnyOrder(RecipientStatus.SENT, RecipientStatus.SKIPPED);
+            CampaignRecipient skipped = ra.getStatus() == RecipientStatus.SKIPPED ? ra : rb;
+            assertThat(skipped.getSkipReason()).isEqualTo(SkipReason.RECENTLY_MESSAGED);
+            assertThat(sendsTo(P2, d1, d2) + sendsTo(P3, d1, d2)).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void pauseBetweenTickAndSendReleasesTheClaim() throws Exception {
+        try (AutoDevice d = device(n1)) {
+            String id = startedFilterCampaign("Paused late", List.of(P1), n1);
+            CountDownLatch gate = holdCampaignScheduler();
+            CompletableFuture<Void> tick = runner.tick();
+            mongo.updateFirst(new Query(Criteria.where("_id").is(id)),
+                    new Update().set("status", CampaignStatus.PAUSED).set("pausedBy", PausedBy.USER), Campaign.class);
+            gate.countDown();
+            tick.get(10, TimeUnit.SECONDS);
+            CampaignRecipient r = recipient(id, P1);
+            assertThat(r.getStatus()).isEqualTo(RecipientStatus.PENDING);
+            assertThat(r.getSenderId()).isNull();
+            assertThat(r.getAttemptedAt()).isNull();
+            assertThat(d.requests()).isEmpty();
+            assertThat(sender(n1).getNextSendAt()).isNull();
+        }
+    }
+
+    @Test
+    void windowClosingBetweenTickAndSendReleasesTheClaim() throws Exception {
+        try (AutoDevice d = device(n1)) {
+            clock.set(Instant.parse("2026-10-21T12:29:59Z"));   // 17:59:59 IST
+            String id = startedFilterCampaign("Late", List.of(P1), n1);
+            CountDownLatch gate = holdCampaignScheduler();
+            CompletableFuture<Void> tick = runner.tick();
+            clock.set(Instant.parse("2026-10-21T12:30:00Z"));   // 18:00 IST
+            gate.countDown();
+            tick.get(10, TimeUnit.SECONDS);
+            CampaignRecipient r = recipient(id, P1);
+            assertThat(r.getStatus()).isEqualTo(RecipientStatus.PENDING);
+            assertThat(r.getSenderId()).isNull();
+            assertThat(d.requests()).isEmpty();
         }
     }
 

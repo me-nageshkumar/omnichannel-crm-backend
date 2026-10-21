@@ -19,7 +19,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
         @CompoundIndex(name = "sender_sent", def = "{'senderId': 1, 'sentAt': 1}"),
         @CompoundIndex(name = "sender_attempted", def = "{'senderId': 1, 'attemptedAt': 1}"),
         @CompoundIndex(name = "message", def = "{'messageId': 1}"),
-        @CompoundIndex(name = "chat_sent", def = "{'chatId': 1, 'sentAt': -1}")
+        @CompoundIndex(name = "chat_sent", def = "{'chatId': 1, 'sentAt': -1}"),
+        @CompoundIndex(name = "status_attempted", def = "{'status': 1, 'attemptedAt': 1}",
+                partialFilter = "{'status': 'SENDING'}")
 })
 @Getter
 @Setter
