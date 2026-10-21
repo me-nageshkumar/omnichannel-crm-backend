@@ -1,9 +1,19 @@
 package me.nageshk.omnichannel.campaign;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.function.Consumer;
 import me.nageshk.omnichannel.access.BuiltInRoles;
+import me.nageshk.omnichannel.contact.Contact;
+import me.nageshk.omnichannel.contact.ContactAttribute;
+import me.nageshk.omnichannel.contact.ContactFilter;
+import me.nageshk.omnichannel.template.MessageTemplate;
 import me.nageshk.omnichannel.phone.PhoneNumber;
 import me.nageshk.omnichannel.support.MutableClock;
 import me.nageshk.omnichannel.support.TestDevices;
@@ -81,7 +91,8 @@ abstract class CampaignTestBase {
 
     /** The collections each test starts without; later tasks add their documents here. */
     List<Class<?>> collections() {
-        return List.of(CampaignSettings.class, CampaignSender.class, CampaignRecipient.class);
+        return List.of(CampaignSettings.class, CampaignSender.class, CampaignRecipient.class, Campaign.class,
+                Contact.class, ContactFilter.class, ContactAttribute.class, MessageTemplate.class);
     }
 
     @BeforeEach
@@ -122,6 +133,49 @@ abstract class CampaignTestBase {
         CampaignSender s = sender(n);
         change.accept(s);
         senderRepository.save(s);
+    }
+
+    Campaign campaign(String id) {
+        return mongo.findById(id, Campaign.class);
+    }
+
+    /** A TEXT template of the brand with the given body; returns its id. */
+    String template(String name, String body) {
+        List<Map<String, Object>> settings = new ArrayList<>();
+        Matcher m = Pattern.compile("\\{\\{\\s*([^}]+?)\\s*}}").matcher(body);
+        Set<String> seen = new HashSet<>();
+        while (m.find()) {
+            String ph = m.group(1);
+            if (!seen.add(ph)) continue;
+            settings.add(ph.startsWith("contact.") ? Map.of("name", ph, "fallback", "there")
+                    : Map.of("name", ph, "label", ph, "required", false));
+        }
+        ResponseEntity<JsonNode> res = api(HttpMethod.POST, "/templates", manager,
+                Map.of("name", name, "type", "TEXT", "content", Map.of("body", body), "placeholders", settings));
+        return res.getBody().get("id").asString();
+    }
+
+    /** A saved contact filter of the brand; returns its id. */
+    String filter(String name, Map<String, Object> spec) {
+        ResponseEntity<JsonNode> res = api(HttpMethod.POST, "/contact-filters", manager,
+                Map.of("name", name, "filter", spec));
+        return res.getBody().get("id").asString();
+    }
+
+    Contact contact(String name, String phone) {
+        Contact c = new Contact();
+        c.setWorkspaceId(brand.getId());
+        c.setCustomerId(acme.getId());
+        c.setName(name);
+        c.setPhone(phone);
+        return mongo.save(c);
+    }
+
+    /** The body of a campaign request aimed at a saved filter. */
+    Map<String, Object> filterCampaign(String name, String filterId, List<String> templateIds,
+            List<Map<String, Object>> placeholders, List<String> senderIds) {
+        return Map.of("name", name, "audience", Map.of("kind", "FILTER", "filterId", filterId),
+                "templateIds", templateIds, "placeholders", placeholders, "senderIds", senderIds);
     }
 
     User brandUser(Workspace w, String username, String roleName) {

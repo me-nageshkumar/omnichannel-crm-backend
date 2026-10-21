@@ -55,6 +55,13 @@ class CampaignIndexesIT {
         assertThat(phone.isUnique()).isTrue();
     }
 
+    @Test
+    void campaignIndexesAreNamedAndNameIsUniquePerWorkspace() {
+        assertThat(names(Campaign.class)).contains("ws_nameKey", "ws_status");
+        assertThat(mongo.indexOps(Campaign.class).getIndexInfo().stream()
+                .filter(i -> i.getName().equals("ws_nameKey")).findFirst().orElseThrow().isUnique()).isTrue();
+    }
+
     private List<String> names(Class<?> type) {
         return mongo.indexOps(type).getIndexInfo().stream().map(IndexInfo::getName).toList();
     }
