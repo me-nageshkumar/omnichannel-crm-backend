@@ -27,6 +27,7 @@ import me.nageshk.omnichannel.template.TemplateType;
 import me.nageshk.omnichannel.tenant.Team;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.WorkspaceRole;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
@@ -55,6 +56,14 @@ class NewChatIT extends InboxApiTestBase {
     @Autowired RoleRepository roles;
     @Autowired InboxSettingService settingService;
     @Autowired ApplicationEventPublisher publisher;
+    @Autowired WaNumberLookupRepository lookupRows;
+
+    private static final String LID = "103238296682612@lid";
+
+    @BeforeEach
+    void clearLookups() {
+        lookupRows.deleteAll();
+    }
 
     /** What the device saw and what the console got back. */
     record Exchange(ResponseEntity<JsonNode> response, Envelope request) {
@@ -91,8 +100,12 @@ class NewChatIT extends InboxApiTestBase {
         return m;
     }
 
-    /** Posts with a connected device and answers the {@code sendMessage} request it receives. */
-    private Exchange viaDevice(String token, Object body, Function<Envelope, Envelope> answer) throws Exception {
+    /**
+     * Posts with a connected device; the {@code getNumberId} request the lookup may send first is answered by
+     * {@code lookupAnswer}, then the {@code sendMessage} request by {@code answer}. The returned request is the send.
+     */
+    private Exchange viaDevice(String token, Object body, Function<Envelope, JsonNode> lookupAnswer,
+            Function<Envelope, Envelope> answer) throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
             Thread.sleep(200);
@@ -104,10 +117,27 @@ class NewChatIT extends InboxApiTestBase {
                 }
             });
             Envelope req = device.next();
+            if ("getNumberId".equals(req.method())) {
+                device.send(Envelope.response(req.id(), lookupAnswer.apply(req)));
+                req = device.next();
+            }
             assertThat(req.method()).isEqualTo("sendMessage");
             device.send(answer.apply(req));
             return new Exchange(http.get(5, TimeUnit.SECONDS), req);
         }
+    }
+
+    /** Posts with a connected device that finds the typed phone on WhatsApp, without a lid. */
+    private Exchange viaDevice(String token, Object body, Function<Envelope, Envelope> answer) throws Exception {
+        return viaDevice(token, body, req -> lookupAnswer(req.params().get("phone").asString() + "@c.us", null),
+                answer);
+    }
+
+    private ObjectNode lookupAnswer(String phone, String lid) {
+        ObjectNode answer = mapper.createObjectNode().put("phone", phone);
+        if (lid == null) answer.putNull("lid");
+        else answer.put("lid", lid);
+        return answer;
     }
 
     private Exchange sendOk(String token, Object body, String remoteId, String serialized, String text)
@@ -124,6 +154,40 @@ class NewChatIT extends InboxApiTestBase {
             assertThat(device.poll(Duration.ofMillis(300))).isEmpty();
             return res;
         }
+    }
+
+    /** Posts with a device that answers the lookup as given and must then receive nothing. */
+    private ResponseEntity<JsonNode> postAfterLookup(String token, Object body, JsonNode lookup) throws Exception {
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+            device.send(Envelope.event("ready", ready()));
+            Thread.sleep(200);
+            CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return post(token, body);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+            Envelope req = device.next();
+            assertThat(req.method()).isEqualTo("getNumberId");
+            device.send(lookup == null ? Envelope.errorResponse(req.id(), "PAGE_ERROR", "boom")
+                    : Envelope.response(req.id(), lookup));
+            ResponseEntity<JsonNode> res = http.get(5, TimeUnit.SECONDS);
+            assertThat(device.poll(Duration.ofMillis(300))).isEmpty();
+            return res;
+        }
+    }
+
+    private void seedLookup(String phone, boolean registered, String lid) {
+        WaNumberLookup row = new WaNumberLookup();
+        row.setWorkspaceId(brand.getId());
+        row.setPhoneNumberId(number.getId());
+        row.setPhone(phone);
+        row.setRegistered(registered);
+        row.setWaPhone(registered ? phone + "@c.us" : null);
+        row.setLid(lid);
+        row.setCheckedAt(Instant.now());
+        lookupRows.save(row);
     }
 
     private AuthenticatedUser managerMe() {
@@ -470,6 +534,145 @@ class NewChatIT extends InboxApiTestBase {
         lidChat(agent2);
 
         ResponseEntity<JsonNode> res = postUntouched(agentToken, Map.of("phone", "919811111111", "text", "hello"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(res.getBody().get("code").asString()).isEqualTo("CHAT_TAKEN");
+        assertThat(chats.count()).isEqualTo(1);
+    }
+
+    @Test
+    void numberNotOnWhatsAppIs409AndTouchesNothing() throws Exception {
+        ResponseEntity<JsonNode> res = postAfterLookup(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+                mapper.nullNode());
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(res.getBody().get("code").asString()).isEqualTo("NOT_ON_WHATSAPP");
+        assertThat(res.getBody().get("message").asString()).isEqualTo("This number is not on WhatsApp");
+        assertThat(chats.count()).isZero();
+        assertThat(contacts.count()).isZero();
+        assertThat(messages.count()).isZero();
+        assertThat(lookupRows.findByWorkspaceIdAndPhone(brand.getId(), "919811111111")).isPresent();
+    }
+
+    @Test
+    void lookupFailureIs502AndSendsNothing() throws Exception {
+        ResponseEntity<JsonNode> res = postAfterLookup(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+                null);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(res.getBody().get("code").asString()).isEqualTo("LOOKUP_FAILED");
+        assertThat(chats.count()).isZero();
+        assertThat(contacts.count()).isZero();
+        assertThat(lookupRows.count()).isZero();
+    }
+
+    private void lookupLidPutsTheChatUnderIt(boolean eventFirst, Contact known) throws Exception {
+        String serialized = "true_" + LID + "_9";
+        Exchange ex = viaDevice(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+                req -> lookupAnswer("919811111111@c.us", LID),
+                req -> {
+                    if (eventFirst) {
+                        publisher.publishEvent(new WhatsAppEvent(this, number.getId(), brand.getId(), acme.getId(),
+                                "message_create", model(LID, serialized, "hello"), null, System.currentTimeMillis()));
+                    }
+                    return Envelope.response(req.id(), model(LID, serialized, "hello"));
+                });
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ex.request().params().get("chatId").asString()).isEqualTo(LID); // addressed to the lid, not @c.us
+        assertThat(chats.count()).isEqualTo(1);
+        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(number.getId(), LID).orElseThrow();
+        assertThat(chat.getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(contacts.count()).isEqualTo(1);
+        Contact contact = contacts.findById(chat.getContactId()).orElseThrow();
+        assertThat(contact.getPhone()).isEqualTo("919811111111");
+        assertThat(contact.getWaId()).isEqualTo(LID);
+        if (known != null) {
+            assertThat(contact.getId()).isEqualTo(known.getId());
+            assertThat(contact.getName()).isEqualTo(known.getName());
+        }
+    }
+
+    @Test
+    void lookupLidPutsTheChatUnderTheLid() throws Exception {
+        lookupLidPutsTheChatUnderIt(false, null);
+    }
+
+    @Test
+    void lookupLidPutsTheChatUnderTheLidWhenTheEventComesFirst() throws Exception {
+        lookupLidPutsTheChatUnderIt(true, null);
+    }
+
+    @Test
+    void lookupLidOfAKnownContactIsLinked() throws Exception {
+        lookupLidPutsTheChatUnderIt(false, knownContact());
+    }
+
+    @Test
+    void lookupLidOfAKnownContactIsLinkedWhenTheEventComesFirst() throws Exception {
+        lookupLidPutsTheChatUnderIt(true, knownContact());
+    }
+
+    @Test
+    void cachedNotRegisteredDoesNotBlockAnExistingChat() throws Exception {
+        seedLookup("919811111111", false, null);
+        WaWebChat existing = chatOf("919811111111@c.us", "Nia", agent, null);
+
+        // the first device request must be sendMessage: an existing chat needs no lookup
+        Exchange ex = sendOk(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+                "919811111111@c.us", "true_919811111111@c.us_1", "hello");
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ex.response().getBody().get("chatId").asString()).isEqualTo(existing.getId());
+    }
+
+    @Test
+    void cachedLookupSkipsTheDevice() throws Exception {
+        seedLookup("919811111111", true, LID);
+
+        // sendOk fails if the first device request is not sendMessage, so no getNumberId frame was needed
+        Exchange ex = sendOk(agentToken, Map.of("phone", "919811111111", "text", "hello"), LID,
+                "true_" + LID + "_1", "hello");
+
+        assertThat(ex.request().params().get("chatId").asString()).isEqualTo(LID);
+    }
+
+    /** A chat ingest created under a lid whose contact never got a phone. */
+    private WaWebChat hiddenLidChat(User assignedTo) {
+        Contact c = new Contact();
+        c.setWorkspaceId(brand.getId());
+        c.setCustomerId(acme.getId());
+        c.setWaId(LID);
+        c.setSource(me.nageshk.omnichannel.contact.ContactSource.CHAT);
+        Contact hidden = contacts.save(c);
+        WaWebChat chat = chat(number, brand, hidden, 1);
+        chat.setRemoteId(LID);
+        chat.setAssignedUserId(assignedTo == null ? null : assignedTo.getId());
+        return chats.save(chat);
+    }
+
+    @Test
+    void lidOnlyChatIsFoundThroughTheLookup() throws Exception {
+        WaWebChat lid = hiddenLidChat(agent);
+
+        Exchange ex = viaDevice(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+                req -> lookupAnswer("919811111111@c.us", LID),
+                req -> Envelope.response(req.id(), model(LID, "true_" + LID + "_1", "hello")));
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ex.response().getBody().get("chatId").asString()).isEqualTo(lid.getId());
+        assertThat(chats.count()).isEqualTo(1);
+        // the chat is saved (has an id), and record only touches contacts for unsaved chats: the phone-less
+        // hidden contact stays as it is
+        assertThat(contacts.count()).isEqualTo(1);
+    }
+
+    @Test
+    void lidOnlyChatOfSomeoneElseIsRefusedAfterLookup() throws Exception {
+        hiddenLidChat(agent2);
+
+        ResponseEntity<JsonNode> res = postAfterLookup(agentToken, Map.of("phone", "919811111111", "text", "hello"),
+                lookupAnswer("919811111111@c.us", LID));
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(res.getBody().get("code").asString()).isEqualTo("CHAT_TAKEN");

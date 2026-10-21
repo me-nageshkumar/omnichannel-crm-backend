@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.inbox;
 
 import java.time.Clock;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import lombok.RequiredArgsConstructor;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
@@ -22,8 +23,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class NewChatService {
 
-    private static final String PHONE_MESSAGE = "must be 8 to 15 digits with the country code, e.g. 919812345678";
-
     private final PhoneNumberRepository numbers;
     private final InboxDevices devices;
     private final InboxScopeService scopes;
@@ -31,6 +30,7 @@ public class NewChatService {
     private final ContactRepository contactRepository;
     private final ChatAssignmentService assignment;
     private final InboxSendService sender;
+    private final NumberLookupService lookups;
     private final Clock clock;
 
     /**
@@ -40,27 +40,30 @@ public class NewChatService {
      *
      * @throws ValidationException if the phone is not 8 to 15 digits, or the message is invalid
      * @throws NotFoundException if the number is not in the workspace
+     * @throws NotOnWhatsAppException if no chat exists and WhatsApp does not know the phone
+     * @throws LookupFailedException if the device could not tell whether the phone is on WhatsApp; nothing is stored
      * @throws ChatTakenException if the chat is assigned to a user or a team and not visible to the caller; a chat
      *     with neither is free to claim
      */
     public CompletableFuture<MessageView> start(AuthenticatedUser me, String workspaceId, String phoneNumberId,
             NewChatRequest req) {
         String phone = Phones.normalise(req == null ? null : req.phone());
-        if (!Phones.isValid(phone)) throw new ValidationException("phone", PHONE_MESSAGE);
+        if (!Phones.isValid(phone)) throw new ValidationException("phone", Phones.MESSAGE);
         PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("phone number not found"));
         devices.requireReady(workspaceId, phoneNumberId);
-        String remoteId = phone + "@c.us";
         SendRequest message = new SendRequest(req.text(), req.templateId(), req.values());
 
-        WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, remoteId);
-        if (chat != null) {
-            boolean assigned = chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null;
-            if (assigned && !scopes.scopeOf(me, workspaceId).covers(chat)) throw new ChatTakenException();
-            if (chat.getStatus() == ChatStatus.CLOSED) chat = assignment.reopen(me, chat);
-            if (chat.getAssignedUserId() == null) chat = assignment.assign(me, chat, me.userId(), null);
-            return sender.send(me, workspaceId, chat, message);
-        }
+        WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, phone + "@c.us");
+        if (chat != null) return sendToExisting(me, workspaceId, chat, message);
+
+        // a number nobody has chatted with: ask WhatsApp (or the cache) whether it exists and under which id; the
+        // request thread waits for the device, as the send it replaces would have
+        NumberLookup lookup = await(lookups.lookup(workspaceId, phoneNumberId, phone, false));
+        if (!lookup.registered()) throw new NotOnWhatsAppException();
+        String remoteId = lookup.remoteId();
+        chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
+        if (chat != null) return sendToExisting(me, workspaceId, chat, message);
 
         // the contact is only created once the device answered, under the id WhatsApp really used (often a @lid);
         // a contact already known by this phone lends its name to a template meanwhile
@@ -74,7 +77,27 @@ public class NewChatService {
         fresh.setStatus(ChatStatus.OPEN);
         fresh.setAssignedUserId(me.userId());
         fresh.setAssignedAt(clock.instant());
-        return sender.send(me, workspaceId, fresh, message);
+        return sender.send(me, workspaceId, fresh, message, phone);
+    }
+
+    /** Writes to a chat that exists: refused if taken, reopened if closed, claimed if nobody has it. */
+    private CompletableFuture<MessageView> sendToExisting(AuthenticatedUser me, String workspaceId, WaWebChat chat,
+            SendRequest message) {
+        boolean assigned = chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null;
+        if (assigned && !scopes.scopeOf(me, workspaceId).covers(chat)) throw new ChatTakenException();
+        if (chat.getStatus() == ChatStatus.CLOSED) chat = assignment.reopen(me, chat);
+        if (chat.getAssignedUserId() == null) chat = assignment.assign(me, chat, me.userId(), null);
+        return sender.send(me, workspaceId, chat, message);
+    }
+
+    /** Joins the future; a failure surfaces as the exception it carries, so the API handler maps it. */
+    private static <T> T await(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException r) throw r;
+            throw new IllegalStateException(e.getCause());
+        }
     }
 
     /**

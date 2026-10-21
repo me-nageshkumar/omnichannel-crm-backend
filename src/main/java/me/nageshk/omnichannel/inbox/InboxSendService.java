@@ -75,18 +75,26 @@ public class InboxSendService {
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
 
+    /** Sends to a chat the console did not address by a typed phone. */
+    public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
+            SendRequest req) {
+        return send(me, workspaceId, chat, req, null);
+    }
+
     /**
      * Callers check {@code inbox:send} and that the chat is visible to {@code me}. The chat may be unsaved (no id):
      * it is stored with the first message once the device accepted it, or merged into the row that exists for the
      * same remote id by then. The future fails with the {@code RpcException} of a device error or timeout, in which
-     * case nothing is stored.
+     * case nothing is stored. {@code typedPhone} is the phone the console addressed an unsaved chat by (null for
+     * saved chats): it is what the contact of a chat stored under a {@code @lid} is linked to.
      *
+     * @param typedPhone normalised digits the console typed for an unsaved chat, else null
      * @throws ChatClosedException if the chat is closed
      * @throws NoDeviceException if the number is disabled or its device is missing or not CONNECTED
      * @throws ValidationException for a bad request, a missing template value or a contact card template
      */
     public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
-            SendRequest req) {
+            SendRequest req, String typedPhone) {
         if (chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
         DeviceSession device = devices.requireReady(workspaceId, chat);
         Outgoing out = outgoing(me, workspaceId, chat, req);
@@ -96,7 +104,8 @@ public class InboxSendService {
         params.put("content", out.content());
         params.set("options", out.options());
         params.put("sendSeen", true);
-        return dispatcher.call(device, "sendMessage", params).thenApply(result -> afterSend(me, chat, out, result));
+        return dispatcher.call(device, "sendMessage", params)
+                .thenApply(result -> afterSend(me, chat, out, result, typedPhone));
     }
 
     // ---- request to outgoing message ----
@@ -206,7 +215,8 @@ public class InboxSendService {
 
     // ---- after the device answered ----
 
-    private MessageView afterSend(AuthenticatedUser me, WaWebChat sent, Outgoing out, JsonNode result) {
+    private MessageView afterSend(AuthenticatedUser me, WaWebChat sent, Outgoing out, JsonNode result,
+            String typedPhone) {
         Instant now = clock.instant();
         boolean model = result != null && result.isObject();
         String waMessageId = model ? MessagePayloads.waMessageId(result) : "";
@@ -223,10 +233,10 @@ public class InboxSendService {
         String sender = users.findById(me.userId()).map(User::getName).orElse(me.getUsername());
         // a chat started from the console was addressed to phone@c.us; WhatsApp mostly answers under the person's
         // @lid, and that is the chat the message (and its message_create event) belong to
-        String lidPhone = null;
+        String lidPhone = typedPhone;
         String reported = model ? MessagePayloads.remote(result) : "";
         if (sent.getId() == null && !reported.isEmpty() && !reported.equals(sent.getRemoteId())) {
-            lidPhone = phoneOf(sent.getRemoteId());
+            if (lidPhone == null) lidPhone = phoneOf(sent.getRemoteId());
             sent.setRemoteId(reported);
         }
         String phone = lidPhone;
@@ -297,7 +307,7 @@ public class InboxSendService {
                 : chats.findById(sent.getId()).orElse(sent);
         if (sent.getId() == null) {
             // the person the console wrote to becomes (or already is) a contact, carrying the phone that was typed
-            Contact contact = lidPhone != null
+            Contact contact = lidPhone != null && chat.getRemoteId().endsWith("@lid")
                     ? contacts.linkLidToPhone(sent.getWorkspaceId(), sent.getCustomerId(), chat.getRemoteId(),
                             lidPhone, now)
                     : contacts.upsertFromChat(sent.getWorkspaceId(), sent.getCustomerId(), chat.getRemoteId(), null,

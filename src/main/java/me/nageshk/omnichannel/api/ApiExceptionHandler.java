@@ -5,6 +5,7 @@ import me.nageshk.omnichannel.inbox.ChatClosedException;
 import me.nageshk.omnichannel.inbox.ChatTakenException;
 import me.nageshk.omnichannel.inbox.LookupFailedException;
 import me.nageshk.omnichannel.inbox.MediaUnavailableException;
+import me.nageshk.omnichannel.inbox.NotOnWhatsAppException;
 import me.nageshk.omnichannel.rpc.RpcException;
 import me.nageshk.omnichannel.user.InvalidOtpException;
 import me.nageshk.omnichannel.user.TwoFactorStateException;
@@ -63,6 +64,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ChatTakenException.class)
     public ResponseEntity<Map<String, String>> chatTaken(ChatTakenException e) {
         return body(HttpStatus.CONFLICT, ChatTakenException.CODE, e.getMessage());
+    }
+
+    @ExceptionHandler(NotOnWhatsAppException.class)
+    public ResponseEntity<Map<String, String>> notOnWhatsApp(NotOnWhatsAppException e) {
+        return body(HttpStatus.CONFLICT, NotOnWhatsAppException.CODE, e.getMessage());
     }
 
     @ExceptionHandler(MediaUnavailableException.class)
@@ -211,6 +217,7 @@ public class ApiExceptionHandler {
         Throwable cause = e.getCause();
         if (cause instanceof RpcException rpc) return rpc(rpc);
         if (cause instanceof LookupFailedException lookup) return lookupFailed(lookup);
+        if (cause instanceof NotOnWhatsAppException absent) return notOnWhatsApp(absent);
         if (cause instanceof MediaUnavailableException media) return mediaUnavailable(media);
         if (cause instanceof TimeoutException t) return timeout(t);
         return body(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL", String.valueOf(cause));
