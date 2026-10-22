@@ -27,6 +27,7 @@ public class BrandPhoneNumberController {
     public record AddRequest(String number, String label, String connectionType) {}
 
     public record LabelRequest(String label) {}
+    public record TeamRequest(String teamId) {}
 
     private static final String MANAGE = "phone-number:manage";
 
@@ -60,6 +61,13 @@ public class BrandPhoneNumberController {
     }
 
     /** A number disabled above the caller's level cannot be deleted (and re-added) to get around the disable. */
+    @PutMapping("/{id}/team")
+    @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
+    public PhoneNumberView setTeam(@PathVariable String workspaceId, @PathVariable String id,
+            @RequestBody(required = false) TeamRequest req) {
+        return service.view(service.setTeam(service.requireInWorkspace(workspaceId, id), req == null ? null : req.teamId()));
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")

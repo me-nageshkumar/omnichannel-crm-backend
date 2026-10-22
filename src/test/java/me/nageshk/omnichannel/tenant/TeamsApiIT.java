@@ -34,6 +34,7 @@ class TeamsApiIT {
     @Autowired ObjectMapper mapper;
     @Autowired TestUsers testUsers;
     @Autowired TeamRepository teams;
+    @Autowired me.nageshk.omnichannel.phone.PhoneNumberRepository phoneNumbers;
 
     Customer acme;
     Workspace brandA;
@@ -202,5 +203,26 @@ class TeamsApiIT {
         send(put(teamsOf(brandA) + "/" + t.getId()), agentToken, Map.of("name", "X", "memberIds", List.of()))
                 .andExpect(status().isForbidden());
         assertThat(teams.findById(t.getId()).orElseThrow().getName()).isEqualTo("Sales");
+    }
+
+    @Test
+    void teamListsItsNumbers() throws Exception {
+        Team sales = team(brandA, "Sales");
+        team(brandA, "Returns");
+        me.nageshk.omnichannel.phone.PhoneNumber n = testUsers.phoneNumber(acme.getId(), brandA.getId(), "919900000021");
+        n.setLabel("Shop");
+        n.setTeamId(sales.getId());
+        phoneNumbers.save(n);
+
+        JsonNode list = mapper.readTree(send(get(teamsOf(brandA)), wmToken, null).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        JsonNode returns = list.get(0);
+        assertThat(returns.get("name").asString()).isEqualTo("Returns");
+        assertThat(returns.get("phoneNumbers")).isEmpty();
+        JsonNode salesRow = list.get(1);
+        assertThat(salesRow.get("phoneNumbers")).hasSize(1);
+        assertThat(salesRow.get("phoneNumbers").get(0).get("id").asString()).isEqualTo(n.getId());
+        assertThat(salesRow.get("phoneNumbers").get(0).get("number").asString()).isEqualTo("919900000021");
+        assertThat(salesRow.get("phoneNumbers").get(0).get("label").asString()).isEqualTo("Shop");
     }
 }

@@ -23,7 +23,9 @@ public record PhoneNumberView(
         String wrongNumber,
         Instant wrongNumberAt,
         boolean hasDevice,
-        Instant creationTime) {
+        Instant creationTime,
+        TeamRef team) {
+    public record TeamRef(String id, String name) {}
 
     public record Page(java.util.List<PhoneNumberView> items, long total, int page) {}
 }

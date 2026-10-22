@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.phone;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.mongodb.repository.MongoRepository;
@@ -14,4 +15,5 @@ public interface PhoneNumberRepository extends MongoRepository<PhoneNumber, Stri
     Optional<PhoneNumber> findByDeviceKeyHash(String deviceKeyHash);
 
     boolean existsByNumber(String number);
+    List<PhoneNumber> findByWorkspaceIdAndTeamIdIn(String workspaceId, Collection<String> teamIds);
 }

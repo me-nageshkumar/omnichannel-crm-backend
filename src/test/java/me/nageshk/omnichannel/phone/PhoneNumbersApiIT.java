@@ -39,6 +39,7 @@ class PhoneNumbersApiIT {
     @Autowired PhoneNumberRepository numbers;
     @Autowired org.springframework.data.mongodb.core.MongoTemplate mongo;
     @Autowired ConnectionTypeBackfill backfill;
+    @Autowired me.nageshk.omnichannel.tenant.TeamRepository teams;
 
     Customer acme;
     Workspace brandA;
@@ -300,5 +301,49 @@ class PhoneNumbersApiIT {
         backfill.run(null);
         assertThat(mongo.getCollection("phoneNumbers").find().first().getString("connectionType"))
                 .isEqualTo("WHATSAPP_WEB");
+    }
+
+    @Test
+    void setTeamStoresAndShowsTheTeam() throws Exception {
+        String id = add(brandA, "919900000011", wmToken);
+        me.nageshk.omnichannel.tenant.Team sales = team(brandA, "Sales");
+        send(put(numbersOf(brandA) + "/" + id + "/team"), wmToken, Map.of("teamId", sales.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.team.id").value(sales.getId()))
+                .andExpect(jsonPath("$.team.name").value("Sales"));
+        send(get(numbersOf(brandA)), wmToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].team.id").value(sales.getId()));
+        assertThat(numbers.findById(id).orElseThrow().getTeamId()).isEqualTo(sales.getId());
+    }
+
+    @Test
+    void setTeamRejectsTeamOfAnotherWorkspace() throws Exception {
+        String id = add(brandA, "919900000012", wmToken);
+        me.nageshk.omnichannel.tenant.Team elsewhere = team(brandB, "Elsewhere");
+        send(put(numbersOf(brandA) + "/" + id + "/team"), wmToken, Map.of("teamId", elsewhere.getId()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.teamId").exists());
+        assertThat(numbers.findById(id).orElseThrow().getTeamId()).isNull();
+    }
+
+    @Test
+    void clearTeamWithNull() throws Exception {
+        String id = add(brandA, "919900000013", wmToken);
+        me.nageshk.omnichannel.tenant.Team sales = team(brandA, "Sales");
+        send(put(numbersOf(brandA) + "/" + id + "/team"), wmToken, Map.of("teamId", sales.getId()))
+                .andExpect(status().isOk());
+        java.util.Map<String, Object> none = new HashMap<>();
+        none.put("teamId", null);
+        send(put(numbersOf(brandA) + "/" + id + "/team"), wmToken, none).andExpect(status().isOk())
+                .andExpect(jsonPath("$.team").value(org.hamcrest.Matchers.nullValue()));
+        send(put(numbersOf(brandA) + "/" + id + "/team"), agentToken, none).andExpect(status().isForbidden());
+    }
+
+    private me.nageshk.omnichannel.tenant.Team team(Workspace w, String name) {
+        me.nageshk.omnichannel.tenant.Team t = new me.nageshk.omnichannel.tenant.Team();
+        t.setCustomerId(w.getCustomerId());
+        t.setWorkspaceId(w.getId());
+        t.setName(name);
+        return teams.save(t);
     }
 }

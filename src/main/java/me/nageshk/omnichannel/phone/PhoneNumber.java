@@ -27,6 +27,9 @@ public class PhoneNumber {
     @Indexed
     private String workspaceId;
     private String label;
+    /** The team that works this number (chat-assignment design §3.1); null until an admin sets one. */
+    @Indexed(sparse = true)
+    private String teamId;
     private ConnectionType connectionType;
     private Disabled disabled;
 

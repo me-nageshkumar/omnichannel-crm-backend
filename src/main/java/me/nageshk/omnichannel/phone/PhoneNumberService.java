@@ -22,7 +22,10 @@ import me.nageshk.omnichannel.enablement.Enablement;
 import me.nageshk.omnichannel.inbox.InboxCleanup;
 import me.nageshk.omnichannel.phone.DeviceAccessChanged.Reason;
 import me.nageshk.omnichannel.phone.PhoneNumberStatus.Status;
+import java.util.Objects;
 import me.nageshk.omnichannel.tenant.Customer;
+import me.nageshk.omnichannel.tenant.Team;
+import me.nageshk.omnichannel.tenant.TeamRepository;
 import me.nageshk.omnichannel.tenant.CustomerRepository;
 import me.nageshk.omnichannel.tenant.Workspace;
 import me.nageshk.omnichannel.tenant.WorkspaceRepository;
@@ -53,11 +56,14 @@ public class PhoneNumberService {
     private final ConnectCodeRepository codes;
     private final AccessService access;
     private final InboxCleanup inboxCleanup;
+    private final TeamRepository teams;
     private final Clock clock;
 
     public PhoneNumberService(PhoneNumberRepository numbers, WorkspaceRepository workspaces,
             CustomerRepository customers, Enablement enablement, LiveDevices live, ApplicationEventPublisher events,
-            ConnectCodeRepository codes, AccessService access, InboxCleanup inboxCleanup, Clock clock) {
+            ConnectCodeRepository codes, AccessService access, InboxCleanup inboxCleanup, TeamRepository teams,
+            Clock clock) {
+        this.teams = teams;
         this.codes = codes;
         this.inboxCleanup = inboxCleanup;
         this.access = access;
@@ -115,6 +121,23 @@ public class PhoneNumberService {
         return numbers.save(n);
     }
 
+    /**
+     * Sets (or clears, with null) the team that works the number; the team must belong to the number's workspace.
+     * Publishes {@link PhoneNumberEvents.TeamChanged} only when the owner actually changed.
+     */
+    public PhoneNumber setTeam(PhoneNumber n, String teamId) {
+        String wanted = teamId == null || teamId.isBlank() ? null : teamId;
+        if (wanted != null && teams.findByIdAndWorkspaceId(wanted, n.getWorkspaceId()).isEmpty()) {
+            throw new ValidationException("teamId", "unknown team");
+        }
+        String previous = n.getTeamId();
+        if (Objects.equals(previous, wanted)) return n;
+        n.setTeamId(wanted);
+        PhoneNumber saved = numbers.save(n);
+        events.publishEvent(new PhoneNumberEvents.TeamChanged(saved, previous));
+        return saved;
+    }
+
     public void delete(PhoneNumber n) {
         inboxCleanup.deleteForNumber(n.getId());
         codes.deleteByPhoneNumberId(n.getId());
@@ -170,7 +193,8 @@ public class PhoneNumberService {
     public PhoneNumberView view(PhoneNumber n) {
         Workspace w = workspaces.findById(n.getWorkspaceId()).orElse(null);
         Customer c = customers.findById(n.getCustomerId()).orElse(null);
-        return view(n, w, c);
+        Team t = n.getTeamId() == null ? null : teams.findById(n.getTeamId()).orElse(null);
+        return view(n, w, c, t);
     }
 
     public List<PhoneNumberView> views(List<PhoneNumber> list) {
@@ -178,7 +202,10 @@ public class PhoneNumberService {
                 .stream().collect(Collectors.toMap(Workspace::getId, Function.identity()));
         Map<String, Customer> cs = customers.findAllById(list.stream().map(PhoneNumber::getCustomerId).distinct().toList())
                 .stream().collect(Collectors.toMap(Customer::getId, Function.identity()));
-        return list.stream().map(n -> view(n, ws.get(n.getWorkspaceId()), cs.get(n.getCustomerId()))).toList();
+        Map<String, Team> ts = teams.findAllById(list.stream().map(PhoneNumber::getTeamId).filter(Objects::nonNull)
+                .distinct().toList()).stream().collect(Collectors.toMap(Team::getId, Function.identity()));
+        return list.stream().map(n -> view(n, ws.get(n.getWorkspaceId()), cs.get(n.getCustomerId()),
+                n.getTeamId() == null ? null : ts.get(n.getTeamId()))).toList();
     }
 
     /**
@@ -200,12 +227,13 @@ public class PhoneNumberService {
         return new PhoneNumberView.Page(items, all.size(), p);
     }
 
-    private PhoneNumberView view(PhoneNumber n, Workspace w, Customer c) {
+    private PhoneNumberView view(PhoneNumber n, Workspace w, Customer c, Team t) {
         PhoneNumberStatus s = PhoneNumberStatus.of(n, w, c, live.stateOf(n.getId()));
         return new PhoneNumberView(n.getId(), n.getNumber(), n.getLabel(), n.getConnectionType(), n.getCustomerId(),
                 c == null ? null : c.getName(), n.getWorkspaceId(), w == null ? null : w.getName(),
                 s.status(), n.getDisabled(), s.disabledBecause(), n.getLastConnectedAt(), n.getLastSeenAt(),
-                n.getLastWrongNumber(), n.getLastWrongNumberAt(), n.getDeviceKeyHash() != null, n.getCreationTime());
+                n.getLastWrongNumber(), n.getLastWrongNumberAt(), n.getDeviceKeyHash() != null, n.getCreationTime(),
+                t == null ? null : new PhoneNumberView.TeamRef(t.getId(), t.getName()));
     }
 
     private void publish(PhoneNumber n, Reason reason) {

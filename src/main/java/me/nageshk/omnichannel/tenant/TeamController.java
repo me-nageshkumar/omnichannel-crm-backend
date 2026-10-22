@@ -25,7 +25,8 @@ public class TeamController {
 
     public record Member(String id, String name, String username) {}
 
-    public record TeamView(String id, String name, List<Member> members) {}
+    public record NumberRef(String id, String number, String label) {}
+    public record TeamView(String id, String name, List<Member> members, List<NumberRef> phoneNumbers) {}
 
     public record CreateRequest(String name) {}
 
@@ -60,6 +61,7 @@ public class TeamController {
 
     private static TeamView view(TeamWithMembers t) {
         return new TeamView(t.team().getId(), t.team().getName(),
-                t.members().stream().map(u -> new Member(u.getId(), u.getName(), u.getUsername())).toList());
+                t.members().stream().map(u -> new Member(u.getId(), u.getName(), u.getUsername())).toList(),
+                t.phoneNumbers().stream().map(n -> new NumberRef(n.getId(), n.getNumber(), n.getLabel())).toList());
     }
 }

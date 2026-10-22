@@ -10,6 +10,8 @@ import me.nageshk.omnichannel.api.DuplicateException;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.NotInWorkspaceException;
 import me.nageshk.omnichannel.api.ValidationException;
+import me.nageshk.omnichannel.phone.PhoneNumber;
+import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserAdminService;
 import org.springframework.dao.DuplicateKeyException;
@@ -24,24 +26,31 @@ import org.springframework.stereotype.Service;
 public class TeamService {
 
     /** A team with its members resolved, in the stored order. */
-    public record TeamWithMembers(Team team, List<User> members) {}
+    public record TeamWithMembers(Team team, List<User> members, List<PhoneNumber> phoneNumbers) {}
 
     private final TeamRepository teams;
     private final WorkspaceRepository workspaces;
     private final UserAdminService userAdmin;
+    private final PhoneNumberRepository phoneNumbers;
 
-    public TeamService(TeamRepository teams, WorkspaceRepository workspaces, UserAdminService userAdmin) {
+    public TeamService(TeamRepository teams, WorkspaceRepository workspaces, UserAdminService userAdmin,
+            PhoneNumberRepository phoneNumbers) {
         this.teams = teams;
         this.workspaces = workspaces;
         this.userAdmin = userAdmin;
+        this.phoneNumbers = phoneNumbers;
     }
 
     /** @throws NotFoundException if the workspace is not the customer's */
     public List<TeamWithMembers> list(String customerId, String workspaceId) {
         requireWorkspace(customerId, workspaceId);
         Map<String, User> byId = usersWithAccess(customerId, workspaceId);
-        return teams.findByWorkspaceIdOrderByName(workspaceId).stream()
-                .map(t -> resolve(t, byId))
+        List<Team> all = teams.findByWorkspaceIdOrderByName(workspaceId);
+        Map<String, List<PhoneNumber>> numbersByTeam = phoneNumbers
+                .findByWorkspaceIdAndTeamIdIn(workspaceId, all.stream().map(Team::getId).toList()).stream()
+                .collect(Collectors.groupingBy(PhoneNumber::getTeamId));
+        return all.stream()
+                .map(t -> resolve(t, byId, numbersByTeam.getOrDefault(t.getId(), List.of())))
                 .toList();
     }
 
@@ -93,8 +102,13 @@ public class TeamService {
                 .collect(Collectors.toMap(User::getId, Function.identity()));
     }
 
-    private static TeamWithMembers resolve(Team t, Map<String, User> byId) {
-        return new TeamWithMembers(t, t.getMemberIds().stream().map(byId::get).filter(u -> u != null).toList());
+    private TeamWithMembers resolve(Team t, Map<String, User> byId) {
+        return resolve(t, byId, phoneNumbers.findByWorkspaceIdAndTeamIdIn(t.getWorkspaceId(), List.of(t.getId())));
+    }
+
+    private static TeamWithMembers resolve(Team t, Map<String, User> byId, List<PhoneNumber> numbers) {
+        return new TeamWithMembers(t, t.getMemberIds().stream().map(byId::get).filter(u -> u != null).toList(),
+                numbers);
     }
 
     private Team save(Team t) {
