@@ -437,9 +437,7 @@ class NewChatIT extends InboxApiTestBase {
     }
 
     private void claimOnReply(boolean on) {
-        settingService.put(brand.getId(), number.getId(),
-                new InboxSettingService.SettingsRequest(new InboxSetting.Routing(RoutingMode.NONE, null, null), on,
-                        null));
+        settingService.putDefault(brand.getId(), new RoutingSetting.Request(false, false, null, null, on, null));
     }
 
     /** The device's own message_create reaches the server before the sendMessage result, which creates the chat row. */

@@ -15,6 +15,7 @@ import me.nageshk.omnichannel.support.FakeDevice;
 import me.nageshk.omnichannel.template.TemplateContent;
 import me.nageshk.omnichannel.template.TemplateRequest;
 import me.nageshk.omnichannel.template.TemplateRequest.PlaceholderSetting;
+import me.nageshk.omnichannel.tenant.Team;
 import me.nageshk.omnichannel.template.TemplateService;
 import me.nageshk.omnichannel.template.TemplateType;
 import me.nageshk.omnichannel.user.User;
@@ -38,6 +39,7 @@ class CampaignChatIT extends InboxApiTestBase {
     @Autowired AccessService access;
     @Autowired TemplateService templateService;
     @Autowired InboxSettingService settingService;
+    @Autowired me.nageshk.omnichannel.phone.PhoneNumberRepository phoneNumbers;
     @Autowired ChatAssignmentService assignment;
     @Autowired ApplicationEventPublisher publisher;
 
@@ -108,9 +110,13 @@ class CampaignChatIT extends InboxApiTestBase {
         return chats.save(c);
     }
 
+    /** The agent's own team owns the number and always gets its chats. */
     private void routeToAgent() {
-        settingService.put(brand.getId(), number.getId(), new InboxSettingService.SettingsRequest(
-                new InboxSetting.Routing(RoutingMode.USER, null, agent.getId()), null, null));
+        Team solo = team("Solo", agent);
+        number.setTeamId(solo.getId());
+        number = phoneNumbers.save(number);
+        settingService.putOverride(brand.getId(), solo.getId(),
+                new RoutingSetting.Request(true, false, agent.getId(), null, null, null));
     }
 
     private long routedActions() {
@@ -119,8 +125,8 @@ class CampaignChatIT extends InboxApiTestBase {
 
     @Test
     void freshCampaignChatIsUnassignedAndMarked() throws Exception {
-        settingService.put(brand.getId(), number.getId(), new InboxSettingService.SettingsRequest(
-                new InboxSetting.Routing(RoutingMode.NONE, null, null), true, null)); // claimOnReply on
+        settingService.putDefault(brand.getId(),
+                new RoutingSetting.Request(false, false, null, null, true, null)); // claimOnReply on
         Exchange ex = campaignSend(PHONE, REMOTE, templateId("Hi {{contact.name}}"), Map.of("contact.name", "Asha"));
         MessageView sent = ex.view();
         WaWebChat chat = chats.findById(sent.chatId()).orElseThrow();

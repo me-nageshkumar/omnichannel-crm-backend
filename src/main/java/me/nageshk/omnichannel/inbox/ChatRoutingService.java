@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import me.nageshk.omnichannel.phone.PhoneNumber;
+import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.tenant.Team;
 import me.nageshk.omnichannel.tenant.TeamRepository;
 import me.nageshk.omnichannel.user.User;
@@ -17,13 +19,17 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-/** Applies a number's routing setting to a new or reopened chat and records the {@code ROUTED} action. */
+/**
+ * Applies the owning team's effective routing setting to a new or reopened chat and records the {@code ROUTED}
+ * action (design §3.4). A number without an owning team routes nothing.
+ */
 @Service
 public class ChatRoutingService {
 
     private final InboxSettingService settings;
     private final MongoTemplate mongo;
     private final TeamRepository teams;
+    private final PhoneNumberRepository phoneNumbers;
     private final UserRepository users;
     private final UserAdminService userAdmin;
     private final WaWebChatRepository chats;
@@ -32,11 +38,13 @@ public class ChatRoutingService {
     private final Clock clock;
 
     public ChatRoutingService(InboxSettingService settings, MongoTemplate mongo, TeamRepository teams,
-            UserRepository users, UserAdminService userAdmin, WaWebChatRepository chats,
-            WaWebChatActionRepository actions, ApplicationEventPublisher publisher, Clock clock) {
+            PhoneNumberRepository phoneNumbers, UserRepository users, UserAdminService userAdmin,
+            WaWebChatRepository chats, WaWebChatActionRepository actions, ApplicationEventPublisher publisher,
+            Clock clock) {
         this.settings = settings;
         this.mongo = mongo;
         this.teams = teams;
+        this.phoneNumbers = phoneNumbers;
         this.users = users;
         this.userAdmin = userAdmin;
         this.chats = chats;
@@ -46,38 +54,32 @@ public class ChatRoutingService {
     }
 
     /**
-     * Sets the assignment the number's settings ask for and saves the chat; a chat the settings leave alone is
-     * returned untouched. Publishes {@link InboxEvents.ActionRecorded} but not {@code ChatChanged}: the caller is
-     * the ingestion, which publishes the fresh chat afterwards.
+     * Sets the assignment the owning team's setting asks for and saves the chat; a chat the setting leaves alone
+     * (or whose number has no owning team) is returned untouched. Publishes {@link InboxEvents.ActionRecorded} but
+     * not {@code ChatChanged}: the caller is the ingestion, which publishes the fresh chat afterwards.
      */
     public WaWebChat route(WaWebChat chat) {
-        InboxSetting setting = settings.get(chat.getWorkspaceId(), chat.getPhoneNumberId());
+        Team team = owningTeam(chat);
+        if (team == null) return chat;
+        InboxSetting setting = settings.effective(chat.getWorkspaceId(), team.getId());
         InboxSetting.Routing routing = setting.getRouting();
         if (routing == null || routing.mode() == RoutingMode.NONE) return chat;
+        Map<String, User> reachable = reachable(chat);
         switch (routing.mode()) {
             case TEAM -> {
-                Team team = team(chat, routing.teamId());
-                if (team == null) return chat;
                 return routed(chat, null, team);
             }
             case USER -> {
-                User user = routing.userId() == null ? null : users.findById(routing.userId()).orElse(null);
-                if (user == null) return chat;
-                if (reachable(chat).get(user.getId()) != null && eligible(user, chat.getWorkspaceId())) {
-                    return routed(chat, user, null);
-                }
-                // the configured user can no longer take chats: the team queue if one is set, else nobody
-                Team team = team(chat, routing.teamId());
-                return team == null ? chat : routed(chat, null, team);
+                User user = routing.userId() == null ? null : reachable.get(routing.userId());
+                // the configured member can no longer take chats: the team queue
+                return routed(chat, user != null && eligible(user, team, chat.getWorkspaceId()) ? user : null, team);
             }
             case ROUND_ROBIN -> {
-                Team team = team(chat, routing.teamId());
-                if (team == null) return chat;
-                User next = nextMember(chat, setting, team);
+                User next = nextMember(team, reachable, chat.getWorkspaceId());
                 if (next != null) {
-                    // only the cursor: saving the whole setting could revert an edit made since it was read
-                    mongo.updateFirst(new Query(Criteria.where("phoneNumberId").is(chat.getPhoneNumberId())),
-                            new Update().set("roundRobinCursor", next.getId()), InboxSetting.class);
+                    // only the cursor: saving the whole team could revert an edit made since it was read
+                    mongo.updateFirst(new Query(Criteria.where("_id").is(team.getId())),
+                            new Update().set("roundRobinCursor", next.getId()), Team.class);
                 }
                 return routed(chat, next, team);
             }
@@ -87,19 +89,20 @@ public class ChatRoutingService {
         }
     }
 
-    private Team team(WaWebChat chat, String teamId) {
+    /** The team that works the chat's number, or null when the number has none (or it was deleted). */
+    private Team owningTeam(WaWebChat chat) {
+        String teamId = phoneNumbers.findById(chat.getPhoneNumberId()).map(PhoneNumber::getTeamId).orElse(null);
         return teamId == null ? null : teams.findByIdAndWorkspaceId(teamId, chat.getWorkspaceId()).orElse(null);
     }
 
-    /** The first eligible member after the cursor in {@code memberIds} order, wrapping; null when none is. */
-    private User nextMember(WaWebChat chat, InboxSetting setting, Team team) {
+    /** The first eligible member after the team's cursor in {@code memberIds} order, wrapping; null when none is. */
+    private User nextMember(Team team, Map<String, User> reachable, String workspaceId) {
         List<String> members = team.getMemberIds();
         if (members.isEmpty()) return null;
-        Map<String, User> reachable = reachable(chat);
-        int start = members.indexOf(setting.getRoundRobinCursor()) + 1;
+        int start = members.indexOf(team.getRoundRobinCursor()) + 1;
         for (int i = 0; i < members.size(); i++) {
             User u = reachable.get(members.get((start + i) % members.size()));
-            if (u != null && eligible(u, chat.getWorkspaceId())) return u;
+            if (u != null && eligible(u, team, workspaceId)) return u;
         }
         return null;
     }
@@ -110,8 +113,10 @@ public class ChatRoutingService {
                 .collect(Collectors.toMap(User::getId, Function.identity()));
     }
 
-    private static boolean eligible(User u, String workspaceId) {
-        return u.isActive() && u.getDisabled() == null && UserAdminService.brandDisabled(u, workspaceId) == null;
+    /** Active, not disabled anywhere that matters, and a member of the team. */
+    static boolean eligible(User u, Team team, String workspaceId) {
+        return u.isActive() && u.getDisabled() == null && UserAdminService.brandDisabled(u, workspaceId) == null
+                && team.getMemberIds().contains(u.getId());
     }
 
     private WaWebChat routed(WaWebChat chat, User user, Team team) {

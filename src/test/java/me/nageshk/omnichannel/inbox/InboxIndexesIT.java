@@ -76,15 +76,21 @@ class InboxIndexesIT {
     }
 
     @Test
-    void settingIsUniquePerPhoneNumber() {
+    void settingIsUniquePerWorkspaceAndTeam() {
         InboxSetting a = new InboxSetting();
         a.setWorkspaceId("w1");
-        a.setPhoneNumberId("p1");
         mongo.save(a);
         InboxSetting b = new InboxSetting();
         b.setWorkspaceId("w1");
-        b.setPhoneNumberId("p1");
         assertThatThrownBy(() -> mongo.save(b)).isInstanceOf(DuplicateKeyException.class);
+        InboxSetting c = new InboxSetting();
+        c.setWorkspaceId("w1");
+        c.setTeamId("t1");
+        mongo.save(c);
+        InboxSetting d = new InboxSetting();
+        d.setWorkspaceId("w1");
+        d.setTeamId("t1");
+        assertThatThrownBy(() -> mongo.save(d)).isInstanceOf(DuplicateKeyException.class);
     }
 
     @Test
@@ -104,7 +110,7 @@ class InboxIndexesIT {
                 "phone_user_last_message", "phone_team_last_message", "phone_contact", "workspace_contact");
         assertThat(names(WaWebMessage.class)).contains("phone_wamessage_unique", "chat_timestamp");
         assertThat(names(WaWebChatAction.class)).contains("chat_at");
-        assertThat(names(InboxSetting.class)).contains("phone_unique");
+        assertThat(names(InboxSetting.class)).contains("workspace_team_unique");
         assertThat(names(WaNumberLookup.class)).contains("ws_phone");
     }
 

@@ -23,6 +23,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -49,14 +52,6 @@ public class InboxController {
 
     /** Which statuses the chat list shows. */
     public enum StatusFilter { OPEN, CLOSED, ALL }
-
-    public record SettingsRequest(RoutingMode mode, String teamId, String userId, Boolean claimOnReply,
-            Boolean keepAssignmentOnClose) {
-    }
-
-    public record SettingsView(RoutingMode mode, String teamId, String userId, boolean claimOnReply,
-            boolean keepAssignmentOnClose) {
-    }
 
     public record AssignRequest(String userId, String teamId) {
     }
@@ -139,23 +134,45 @@ public class InboxController {
                 .orElseThrow(() -> new NotFoundException("session ended")));
     }
 
-    @GetMapping("/phone-numbers/{phoneNumberId}/settings")
+    @GetMapping("/settings")
     @PreAuthorize("@access.has(#workspaceId, 'inbox:settings')")
-    public SettingsView settings(@PathVariable String workspaceId, @PathVariable String phoneNumberId) {
-        phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
-        return view(settings.get(workspaceId, phoneNumberId));
+    public RoutingSetting defaultSettings(@PathVariable String workspaceId) {
+        return settings.defaultView(workspaceId);
     }
 
-    @PutMapping("/phone-numbers/{phoneNumberId}/settings")
+    @PutMapping("/settings")
     @PreAuthorize("@access.has(#workspaceId, 'inbox:settings')")
-    public SettingsView updateSettings(@PathVariable String workspaceId, @PathVariable String phoneNumberId,
-            @RequestBody(required = false) SettingsRequest req) {
-        phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
-        if (req == null) throw new ValidationException("mode", "required");
-        InboxSetting.Routing routing = req.mode() == null ? null
-                : new InboxSetting.Routing(req.mode(), req.teamId(), req.userId());
-        return view(settings.put(workspaceId, phoneNumberId,
-                new InboxSettingService.SettingsRequest(routing, req.claimOnReply(), req.keepAssignmentOnClose())));
+    public RoutingSetting updateDefaultSettings(@PathVariable String workspaceId,
+            @RequestBody(required = false) RoutingSetting.Request req) {
+        settings.putDefault(workspaceId, req);
+        return settings.defaultView(workspaceId);
+    }
+
+    @GetMapping("/settings/teams")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:settings')")
+    public List<RoutingSetting> teamSettings(@PathVariable String workspaceId) {
+        return settings.teamSettings(workspaceId);
+    }
+
+    @GetMapping("/settings/teams/{teamId}")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:settings')")
+    public RoutingSetting teamSettings(@PathVariable String workspaceId, @PathVariable String teamId) {
+        return settings.teamView(workspaceId, teamId);
+    }
+
+    @PutMapping("/settings/teams/{teamId}")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:settings')")
+    public RoutingSetting updateTeamSettings(@PathVariable String workspaceId, @PathVariable String teamId,
+            @RequestBody(required = false) RoutingSetting.Request req) {
+        settings.putOverride(workspaceId, teamId, req);
+        return settings.teamView(workspaceId, teamId);
+    }
+
+    @DeleteMapping("/settings/teams/{teamId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:settings')")
+    public void deleteTeamSettings(@PathVariable String workspaceId, @PathVariable String teamId) {
+        settings.deleteOverride(workspaceId, teamId);
     }
 
     @GetMapping("/assignees")
@@ -293,8 +310,4 @@ public class InboxController {
         return new Person(u.getId(), u.getName(), u.getUsername(), u.availabilityStatus());
     }
 
-    private static SettingsView view(InboxSetting s) {
-        InboxSetting.Routing r = s.getRouting();
-        return new SettingsView(r.mode(), r.teamId(), r.userId(), s.isClaimOnReply(), s.isKeepAssignmentOnClose());
-    }
 }

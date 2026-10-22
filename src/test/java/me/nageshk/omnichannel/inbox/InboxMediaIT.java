@@ -63,7 +63,6 @@ class InboxMediaIT extends InboxApiTestBase {
     @Autowired TemplateMediaService templateMedia;
     @Autowired PhoneNumberService phoneNumbers;
     @Autowired ChatMediaService chatMedia;
-    @Autowired InboxSettingRepository settings;
     @Autowired @Qualifier("chatMediaGridFs") GridFsTemplate chatMediaGridFs;
 
     @AfterEach
@@ -412,11 +411,6 @@ class InboxMediaIT extends InboxApiTestBase {
         WaWebChat chat = chatWithAarav();
         WaWebMessage m = imageMessage(chat);
         action(chat, 1, ActionType.ASSIGNED);
-        InboxSetting setting = new InboxSetting();
-        setting.setCustomerId(acme.getId());
-        setting.setWorkspaceId(brand.getId());
-        setting.setPhoneNumberId(number.getId());
-        settings.save(setting);
         String mediaId = chatMedia.store(brand.getId(), number.getId(), m.getId(), "image/png", "a.png", png());
         // another number's data stays
         WaWebChat otherChat = chat(otherNumber, other, contact(other, "Zed", "919800000009"), 1);
@@ -429,7 +423,6 @@ class InboxMediaIT extends InboxApiTestBase {
         assertThat(chats.findAll()).extracting(WaWebChat::getId).containsExactly(otherChat.getId());
         assertThat(messages.findAll()).extracting(WaWebMessage::getId).containsExactly(otherMessage.getId());
         assertThat(actions.count()).isZero();
-        assertThat(settings.findByPhoneNumberId(number.getId())).isEmpty();
         assertThat(chatMediaGridFs.findOne(new Query(
                 org.springframework.data.mongodb.core.query.Criteria.where("_id").is(new ObjectId(mediaId)))))
                 .isNull();

@@ -1,12 +1,14 @@
 package me.nageshk.omnichannel.inbox;
 
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
-/** Routing settings by phone number. */
 public interface InboxSettingRepository extends MongoRepository<InboxSetting, String> {
+    /** The brand default when {@code teamId} is null, else that team's override. */
+    Optional<InboxSetting> findByWorkspaceIdAndTeamId(String workspaceId, String teamId);
 
-    Optional<InboxSetting> findByPhoneNumberId(String phoneNumberId);
+    List<InboxSetting> findByWorkspaceId(String workspaceId);
 
-    void deleteByPhoneNumberId(String phoneNumberId);
+    void deleteByWorkspaceIdAndTeamId(String workspaceId, String teamId);
 }

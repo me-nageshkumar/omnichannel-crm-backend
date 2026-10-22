@@ -3,29 +3,52 @@ package me.nageshk.omnichannel.inbox;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-/** Routing settings of one phone number; without a document the mode is NONE. */
+/**
+ * How a team's new chats are routed and what happens to the assignment on reply and close. One document per
+ * scope: {@code teamId} null is the brand default (always present once anyone asked for it), a non-null
+ * {@code teamId} is that team's override (design §3.4). The owning team of a chat's number decides which applies.
+ *
+ * <p>The unique index {@code workspace_team_unique} on {@code (workspaceId, teamId)} is created by
+ * {@link InboxSettingsMigration}, not by annotation: the per-number documents it moves away would violate it.
+ */
 @Document("inboxSettings")
-@CompoundIndex(name = "phone_unique", def = "{'phoneNumberId': 1}", unique = true)
 @Getter
 @Setter
 public class InboxSetting {
+
+    public static final int DEFAULT_STICKY_DAYS = 30;
+    public static final int MAX_STICKY_DAYS = 365;
 
     @Id
     private String id;
     private String customerId;
     private String workspaceId;
-    private String phoneNumberId;
-    private Routing routing = new Routing(RoutingMode.NONE, null, null);
+    /** Null for the brand default. */
+    private String teamId;
+    private Routing routing = new Routing(RoutingMode.TEAM, null);
+    /** How long a returning customer goes back to the agent who last handled them; 0 turns it off. */
+    private int stickyDays = DEFAULT_STICKY_DAYS;
     /** Replying to an unassigned chat assigns it to the replier. */
     private boolean claimOnReply = true;
     /** Keep the assignment when a chat is closed. */
     private boolean keepAssignmentOnClose = false;
-    /** User id last assigned by round robin. */
-    private String roundRobinCursor;
 
-    public record Routing(RoutingMode mode, String teamId, String userId) {
+    /** The team is always the owning (or target) team; {@code userId} only with {@link RoutingMode#USER}. */
+    public record Routing(RoutingMode mode, String userId) {
+    }
+
+    /** Copies everything but identity and scope into a new document for {@code teamId}. */
+    InboxSetting copyFor(String teamId) {
+        InboxSetting s = new InboxSetting();
+        s.setCustomerId(customerId);
+        s.setWorkspaceId(workspaceId);
+        s.setTeamId(teamId);
+        s.setRouting(routing);
+        s.setStickyDays(stickyDays);
+        s.setClaimOnReply(claimOnReply);
+        s.setKeepAssignmentOnClose(keepAssignmentOnClose);
+        return s;
     }
 }

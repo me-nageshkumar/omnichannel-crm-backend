@@ -87,7 +87,7 @@ public class ChatAssignmentService {
         if (chat.getStatus() == ChatStatus.CLOSED) return chat;
         chat.setStatus(ChatStatus.CLOSED);
         boolean cleared = false;
-        if (!settings.get(chat.getWorkspaceId(), chat.getPhoneNumberId()).isKeepAssignmentOnClose()) {
+        if (!settings.effectiveFor(chat).isKeepAssignmentOnClose()) {
             cleared = chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null;
             chat.setAssignedUserId(null);
             chat.setAssignedTeamId(null);
@@ -115,7 +115,7 @@ public class ChatAssignmentService {
      */
     public WaWebChat claimOnReply(AuthenticatedUser me, WaWebChat chat) {
         if (chat.getAssignedUserId() != null) return chat;
-        if (!settings.get(chat.getWorkspaceId(), chat.getPhoneNumberId()).isClaimOnReply()) return chat;
+        if (!settings.effectiveFor(chat).isClaimOnReply()) return chat;
         chat.setAssignedUserId(me.userId());
         WaWebChatAction action = action(me, chat, ActionType.ASSIGNED);
         action.setToUserId(me.userId());

@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.inbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -296,33 +297,51 @@ class InboxApiIT extends InboxApiTestBase {
 
     @Test
     void settingsRoundTrip() throws Exception {
-        String url = inbox() + "/phone-numbers/" + number.getId() + "/settings";
+        String url = inbox() + "/settings";
+        Team sales = team("Sales", agent);
 
         send(get(url), managerToken, null).andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("NONE"))
+                .andExpect(jsonPath("$.teamId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.inherited").value(false))
+                .andExpect(jsonPath("$.assignToTeam").value(true))
+                .andExpect(jsonPath("$.roundRobin").value(false))
+                .andExpect(jsonPath("$.stickyDays").value(30))
                 .andExpect(jsonPath("$.claimOnReply").value(true))
                 .andExpect(jsonPath("$.keepAssignmentOnClose").value(false));
 
-        send(put(url), managerToken, Map.of("mode", "TEAM", "teamId", support.getId(), "claimOnReply", false,
-                "keepAssignmentOnClose", true)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("TEAM"))
-                .andExpect(jsonPath("$.teamId").value(support.getId()));
+        send(put(url), managerToken, Map.of("assignToTeam", true, "roundRobin", true, "stickyDays", 7))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roundRobin").value(true))
+                .andExpect(jsonPath("$.stickyDays").value(7));
+        send(get(url), managerToken, null).andExpect(jsonPath("$.roundRobin").value(true));
 
-        send(get(url), managerToken, null).andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("TEAM"))
-                .andExpect(jsonPath("$.teamId").value(support.getId()))
-                .andExpect(jsonPath("$.userId").doesNotExist())
-                .andExpect(jsonPath("$.claimOnReply").value(false))
-                .andExpect(jsonPath("$.keepAssignmentOnClose").value(true));
-
-        send(put(url), managerToken, Map.of("mode", "USER", "userId", agent.getId())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("USER"))
+        // a team without an override shows the default, flagged as inherited
+        send(get(url + "/teams/" + sales.getId()), managerToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamId").value(sales.getId()))
+                .andExpect(jsonPath("$.inherited").value(true))
+                .andExpect(jsonPath("$.roundRobin").value(true));
+        send(put(url + "/teams/" + sales.getId()), managerToken,
+                Map.of("assignToTeam", true, "roundRobin", false, "userId", agent.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inherited").value(false))
                 .andExpect(jsonPath("$.userId").value(agent.getId()))
-                .andExpect(jsonPath("$.claimOnReply").value(false));
+                .andExpect(jsonPath("$.stickyDays").value(7));
+        send(get(url + "/teams"), managerToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].teamId").value(sales.getId()))
+                .andExpect(jsonPath("$[0].inherited").value(false))
+                .andExpect(jsonPath("$[1].teamId").value(support.getId()))
+                .andExpect(jsonPath("$[1].inherited").value(true));
+        send(delete(url + "/teams/" + sales.getId()), managerToken, null).andExpect(status().isNoContent());
+        send(get(url + "/teams/" + sales.getId()), managerToken, null).andExpect(jsonPath("$.inherited").value(true));
 
-        send(put(url), managerToken, Map.of("teamId", support.getId())).andExpect(status().isBadRequest());
-        send(put(url), agentToken, Map.of("mode", "NONE")).andExpect(status().isForbidden());
+        send(put(url), managerToken, Map.of("assignToTeam", true, "roundRobin", false, "userId", agent.getId()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.userId").exists());
+        send(put(url), managerToken, Map.of("assignToTeam", true, "roundRobin", true, "userId", agent.getId()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.routing").exists());
+        send(put(url), agentToken, Map.of("assignToTeam", false)).andExpect(status().isForbidden());
         send(get(url), agentToken, null).andExpect(status().isForbidden());
+        send(get(url + "/teams/nope"), managerToken, null).andExpect(status().isNotFound());
     }
 
     @Test

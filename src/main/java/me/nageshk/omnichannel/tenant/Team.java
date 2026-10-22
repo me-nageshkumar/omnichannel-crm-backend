@@ -26,6 +26,8 @@ public class Team {
     private String workspaceId;
     private String name;
     private List<String> memberIds = new ArrayList<>();
+    /** The member round robin assigned last, across every number the team owns (design §3.4). */
+    private String roundRobinCursor;
 
     /** Optimistic lock: a save from a stale copy fails instead of undoing a concurrent membership change. */
     @Version

@@ -17,7 +17,6 @@ public class InboxCleanup {
     private final WaWebChatRepository chats;
     private final WaWebMessageRepository messages;
     private final WaWebChatActionRepository actions;
-    private final InboxSettingRepository settings;
     private final ChatMediaService media;
 
     /** Deletes the number's chats, messages, chat actions, routing settings and media. Safe to run again. */
@@ -28,7 +27,6 @@ public class InboxCleanup {
         }
         messages.deleteByPhoneNumberId(phoneNumberId);
         chats.deleteByPhoneNumberId(phoneNumberId);
-        settings.deleteByPhoneNumberId(phoneNumberId);
         media.deleteByPhoneNumber(phoneNumberId);
     }
 }

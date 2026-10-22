@@ -9,6 +9,8 @@ import me.nageshk.omnichannel.access.BuiltInRoles;
 import me.nageshk.omnichannel.events.WhatsAppEvent;
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.tenant.Customer;
+import me.nageshk.omnichannel.phone.PhoneNumber;
+import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.tenant.Team;
 import me.nageshk.omnichannel.tenant.TeamRepository;
 import me.nageshk.omnichannel.tenant.Workspace;
@@ -59,7 +61,7 @@ class ChatRoutingIT {
 
     @Autowired ApplicationEventPublisher publisher;
     @Autowired InboxSettingService settings;
-    @Autowired InboxSettingRepository settingRepo;
+    @Autowired PhoneNumberRepository phoneNumbers;
     @Autowired WaWebChatRepository chats;
     @Autowired WaWebChatActionRepository actions;
     @Autowired TeamRepository teams;
@@ -112,9 +114,23 @@ class ChatRoutingIT {
         return teams.save(t);
     }
 
-    private void configure(RoutingMode mode, String teamId, String userId) {
-        settings.put(brand.getId(), pn,
-                new InboxSettingService.SettingsRequest(new InboxSetting.Routing(mode, teamId, userId), null, null));
+    /** {@code team} owns the number and gets an override with the given switches. */
+    private void configure(Team team, RoutingMode mode, String userId) {
+        PhoneNumber number = phoneNumbers.findById(pn).orElseThrow();
+        number.setTeamId(team.getId());
+        phoneNumbers.save(number);
+        settings.putOverride(brand.getId(), team.getId(), new RoutingSetting.Request(mode != RoutingMode.NONE,
+                mode == RoutingMode.ROUND_ROBIN, mode == RoutingMode.USER ? userId : null, null, null, null));
+    }
+
+    private String cursorOf(Team team) {
+        return teams.findById(team.getId()).orElseThrow().getRoundRobinCursor();
+    }
+
+    private void setCursor(Team team, String userId) {
+        Team t = teams.findById(team.getId()).orElseThrow();
+        t.setRoundRobinCursor(userId);
+        teams.save(t);
     }
 
     private void message(String digits, boolean fromMe, long epochSeconds) {
@@ -146,9 +162,20 @@ class ChatRoutingIT {
     }
 
     @Test
+    void noneOnAnOwnedNumberLeavesUnassigned() {
+        Team support = team("Support", agent("a"));
+        configure(support, RoutingMode.NONE, null);
+
+        message("919911111111", false, T);
+
+        assertThat(chat("919911111111").getAssignedTeamId()).isNull();
+        assertThat(actions.findAll()).isEmpty();
+    }
+
+    @Test
     void teamModeQueuesOnTeam() {
         Team support = team("Support", agent("a"));
-        configure(RoutingMode.TEAM, support.getId(), null);
+        configure(support, RoutingMode.TEAM, null);
 
         message("919911111111", false, T);
 
@@ -167,13 +194,14 @@ class ChatRoutingIT {
     @Test
     void userModeAssignsUser() {
         User a = agent("a");
-        configure(RoutingMode.USER, null, a.getId());
+        Team solo = team("Solo", a);
+        configure(solo, RoutingMode.USER, a.getId());
 
         message("919911111111", false, T);
 
         WaWebChat c = chat("919911111111");
         assertThat(c.getAssignedUserId()).isEqualTo(a.getId());
-        assertThat(c.getAssignedTeamId()).isNull();
+        assertThat(c.getAssignedTeamId()).isEqualTo(solo.getId());
         assertThat(actions.findAll()).singleElement().satisfies(x -> {
             assertThat(x.getType()).isEqualTo(ActionType.ROUTED);
             assertThat(x.getToUserId()).isEqualTo(a.getId());
@@ -182,9 +210,10 @@ class ChatRoutingIT {
     }
 
     @Test
-    void userModeWithADisabledUserLeavesTheChatUnassigned() {
+    void userModeWithADisabledUserQueuesOnTheTeam() {
         User a = agent("a");
-        configure(RoutingMode.USER, null, a.getId());
+        Team solo = team("Solo", a);
+        configure(solo, RoutingMode.USER, a.getId());
         a.setActive(false);
         users.save(a);
 
@@ -192,42 +221,40 @@ class ChatRoutingIT {
 
         WaWebChat c = chat("919911111111");
         assertThat(c.getAssignedUserId()).isNull();
-        assertThat(c.getAssignedTeamId()).isNull();
-        assertThat(actions.findAll()).isEmpty();
+        assertThat(c.getAssignedTeamId()).isEqualTo(solo.getId());
+        assertThat(actions.findAll()).singleElement().satisfies(x -> assertThat(x.getToUserId()).isNull());
     }
 
     @Test
-    void userModeWithABrandDisabledOrUnreachableUserLeavesTheChatUnassigned() {
+    void userModeWithABrandDisabledOrUnreachableUserQueuesOnTheTeam() {
         User blocked = agent("blocked");
         User away = agent("away");
-        configure(RoutingMode.USER, null, blocked.getId());
+        Team solo = team("Solo", blocked, away);
+        configure(solo, RoutingMode.USER, blocked.getId());
         blocked.setBrandDisables(List.of(new me.nageshk.omnichannel.user.BrandDisable(brand.getId(),
                 new me.nageshk.omnichannel.enablement.Disabled("x",
                         me.nageshk.omnichannel.enablement.EnableLevel.COMPANY, java.time.Instant.now()))));
         users.save(blocked);
         message("919911111111", false, T);
 
-        configure(RoutingMode.USER, null, away.getId());
+        configure(solo, RoutingMode.USER, away.getId());
         away.setWorkspaceRoles(List.of(new WorkspaceRole(other.getId(), testUsers.roleId(BuiltInRoles.AGENT))));
         users.save(away);
         message("919922222222", false, T + 1);
 
         assertThat(chat("919911111111").getAssignedUserId()).isNull();
+        assertThat(chat("919911111111").getAssignedTeamId()).isEqualTo(solo.getId());
         assertThat(chat("919922222222").getAssignedUserId()).isNull();
-        assertThat(actions.findAll()).isEmpty();
+        assertThat(chat("919922222222").getAssignedTeamId()).isEqualTo(solo.getId());
     }
 
     @Test
-    void userModeWithAnIneligibleUserQueuesOnTheConfiguredTeamOnly() {
+    void userModeWithAnIneligibleUserQueuesOnTheOwningTeam() {
         User a = agent("a");
         Team support = team("Support", a);
+        configure(support, RoutingMode.USER, a.getId());
         a.setActive(false);
         users.save(a);
-        InboxSetting setting = settings.get(brand.getId(), pn);
-        setting.setCustomerId(acme.getId());
-        setting.setWorkspaceId(brand.getId());
-        setting.setRouting(new InboxSetting.Routing(RoutingMode.USER, support.getId(), a.getId()));
-        settingRepo.save(setting);
 
         message("919911111111", false, T);
 
@@ -237,32 +264,18 @@ class ChatRoutingIT {
     }
 
     @Test
-    void roundRobinCursorWriteLeavesTheRestOfTheSettingAlone() {
+    void roundRobinCursorIsStoredOnTheTeam() {
         User a = agent("a");
         Team support = team("Support", a);
-        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
-        // the routing read a copy of the setting, then an admin saved a different one before the cursor moved
-        InboxSetting stale = settingRepo.findByPhoneNumberId(pn).orElseThrow();
-        InboxSettingService staleSettings = org.mockito.Mockito.mock(InboxSettingService.class);
-        org.mockito.Mockito.when(staleSettings.get(brand.getId(), pn)).thenReturn(stale);
-        settings.put(brand.getId(), pn, new InboxSettingService.SettingsRequest(
-                new InboxSetting.Routing(RoutingMode.ROUND_ROBIN, support.getId(), null), false, true));
-        ChatRoutingService routing = new ChatRoutingService(staleSettings, mongo, teams, users, userAdmin, chats,
-                actions, publisher, clock);
-        WaWebChat fresh = new WaWebChat();
-        fresh.setCustomerId(acme.getId());
-        fresh.setWorkspaceId(brand.getId());
-        fresh.setPhoneNumberId(pn);
-        fresh.setRemoteId("919911111111@c.us");
-        fresh.setStatus(ChatStatus.OPEN);
-        fresh = chats.save(fresh);
+        configure(support, RoutingMode.ROUND_ROBIN, null);
 
-        routing.route(fresh);
+        message("919911111111", false, T);
 
-        InboxSetting now = settingRepo.findByPhoneNumberId(pn).orElseThrow();
-        assertThat(now.getRoundRobinCursor()).isEqualTo(a.getId());
-        assertThat(now.isClaimOnReply()).isFalse();
-        assertThat(now.isKeepAssignmentOnClose()).isTrue();
+        assertThat(cursorOf(support)).isEqualTo(a.getId());
+        Team now = teams.findById(support.getId()).orElseThrow();
+        assertThat(now.getName()).isEqualTo("Support");
+        assertThat(now.getMemberIds()).containsExactly(a.getId());
+        assertThat(mongo.count(new Query(), InboxSetting.class)).isEqualTo(2); // brand default + override
     }
 
     @Test
@@ -273,7 +286,7 @@ class ChatRoutingIT {
         Team support = team("Support", a, b, c);
         b.setActive(false);
         users.save(b);
-        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
+        configure(support, RoutingMode.ROUND_ROBIN, null);
 
         message("919911111111", false, T);
         message("919922222222", false, T + 1);
@@ -283,7 +296,7 @@ class ChatRoutingIT {
         assertThat(chat("919922222222").getAssignedUserId()).isEqualTo(c.getId());
         assertThat(chat("919933333333").getAssignedUserId()).isEqualTo(a.getId());
         assertThat(chat("919911111111").getAssignedTeamId()).isEqualTo(support.getId());
-        assertThat(settingRepo.findByPhoneNumberId(pn).orElseThrow().getRoundRobinCursor()).isEqualTo(a.getId());
+        assertThat(cursorOf(support)).isEqualTo(a.getId());
     }
 
     @Test
@@ -298,7 +311,7 @@ class ChatRoutingIT {
                 new me.nageshk.omnichannel.enablement.Disabled("x",
                         me.nageshk.omnichannel.enablement.EnableLevel.COMPANY, java.time.Instant.now()))));
         users.save(a);
-        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
+        configure(support, RoutingMode.ROUND_ROBIN, null);
 
         message("919911111111", false, T);
         message("919922222222", false, T + 1);
@@ -313,7 +326,7 @@ class ChatRoutingIT {
         Team support = team("Support", a);
         a.setActive(false);
         users.save(a);
-        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
+        configure(support, RoutingMode.ROUND_ROBIN, null);
 
         message("919911111111", false, T);
 
@@ -330,7 +343,7 @@ class ChatRoutingIT {
     @Test
     void outboundFirstMessageIsNotRouted() {
         User a = agent("a");
-        configure(RoutingMode.USER, null, a.getId());
+        configure(team("Solo", a), RoutingMode.USER, a.getId());
 
         message("919911111111", true, T);
 
@@ -346,7 +359,7 @@ class ChatRoutingIT {
         WaWebChat c = chat("919911111111");
         c.setStatus(ChatStatus.CLOSED);
         chats.save(c);
-        configure(RoutingMode.USER, null, a.getId());
+        configure(team("Solo", a), RoutingMode.USER, a.getId());
 
         message("919911111111", false, T + 1);
 
@@ -362,7 +375,7 @@ class ChatRoutingIT {
     void reopenedAssignedChatIsNotRouted() {
         User a = agent("a");
         User b = agent("b");
-        configure(RoutingMode.USER, null, a.getId());
+        configure(team("Solo", a), RoutingMode.USER, a.getId());
         message("919911111111", false, T);
         WaWebChat c = chat("919911111111");
         c.setStatus(ChatStatus.CLOSED);
@@ -379,7 +392,7 @@ class ChatRoutingIT {
     @Test
     void routedActionIsRecordedBySystem() {
         User a = agent("a");
-        configure(RoutingMode.USER, null, a.getId());
+        configure(team("Solo", a), RoutingMode.USER, a.getId());
 
         message("919911111111", false, T);
 
@@ -401,15 +414,13 @@ class ChatRoutingIT {
         User b = agent("b");
         User gone = agent("gone");
         Team support = team("Support", a, b);
-        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
-        InboxSetting s = settingRepo.findByPhoneNumberId(pn).orElseThrow();
-        s.setRoundRobinCursor(gone.getId());
-        settingRepo.save(s);
+        configure(support, RoutingMode.ROUND_ROBIN, null);
+        setCursor(support, gone.getId());
 
         message("919911111111", false, T);
 
         assertThat(chat("919911111111").getAssignedUserId()).isEqualTo(a.getId());
-        assertThat(settingRepo.findByPhoneNumberId(pn).orElseThrow().getRoundRobinCursor()).isEqualTo(a.getId());
+        assertThat(cursorOf(support)).isEqualTo(a.getId());
     }
 
     @Test
@@ -417,10 +428,8 @@ class ChatRoutingIT {
         User a = agent("a");
         User b = agent("b");
         Team support = team("Support", a, b);
-        configure(RoutingMode.ROUND_ROBIN, support.getId(), null);
-        InboxSetting s = settingRepo.findByPhoneNumberId(pn).orElseThrow();
-        s.setRoundRobinCursor(a.getId());
-        settingRepo.save(s);
+        configure(support, RoutingMode.ROUND_ROBIN, null);
+        setCursor(support, a.getId());
         for (User u : List.of(a, b)) {
             u.setActive(false);
             users.save(u);
@@ -429,13 +438,13 @@ class ChatRoutingIT {
         message("919911111111", false, T);
 
         assertThat(chat("919911111111").getAssignedTeamId()).isEqualTo(support.getId());
-        assertThat(settingRepo.findByPhoneNumberId(pn).orElseThrow().getRoundRobinCursor()).isEqualTo(a.getId());
+        assertThat(cursorOf(support)).isEqualTo(a.getId());
     }
 
     @Test
-    void teamModeWithADeletedTeamLeavesTheChatUntouched() {
+    void aDeletedOwningTeamLeavesTheChatUntouched() {
         Team support = team("Support", agent("a"));
-        configure(RoutingMode.TEAM, support.getId(), null);
+        configure(support, RoutingMode.TEAM, null);
         teams.deleteById(support.getId());
 
         message("919911111111", false, T);
@@ -447,15 +456,16 @@ class ChatRoutingIT {
     }
 
     @Test
-    void userModeWithADeletedUserLeavesTheChatUntouched() {
+    void userModeWithADeletedUserQueuesOnTheTeam() {
         User a = agent("a");
-        configure(RoutingMode.USER, null, a.getId());
+        Team solo = team("Solo", a);
+        configure(solo, RoutingMode.USER, a.getId());
         users.deleteById(a.getId());
 
         message("919911111111", false, T);
 
         WaWebChat c = chat("919911111111");
         assertThat(c.getAssignedUserId()).isNull();
-        assertThat(actions.findAll()).isEmpty();
+        assertThat(c.getAssignedTeamId()).isEqualTo(solo.getId());
     }
 }

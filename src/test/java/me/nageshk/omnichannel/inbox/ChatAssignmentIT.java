@@ -119,8 +119,8 @@ class ChatAssignmentIT {
     }
 
     private void configure(boolean claimOnReply, boolean keepAssignmentOnClose) {
-        settings.put(brand.getId(), pn, new InboxSettingService.SettingsRequest(
-                new InboxSetting.Routing(RoutingMode.NONE, null, null), claimOnReply, keepAssignmentOnClose));
+        settings.putDefault(brand.getId(),
+                new RoutingSetting.Request(false, false, null, null, claimOnReply, keepAssignmentOnClose));
     }
 
     @Test
