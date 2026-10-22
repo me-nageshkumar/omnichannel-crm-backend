@@ -53,7 +53,7 @@ public enum Authority {
             CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD),
     CONTACT_EXPORT("contact:export", RoleLevel.BRAND, "Export contacts to CSV",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD),
-    CONTACT_BULK("contact:bulk", RoleLevel.BRAND, "Bulk label and attribute actions, edit saved filters",
+    CONTACT_BULK("contact:bulk", RoleLevel.BRAND, "Bulk label and attribute actions, saved filters and the filter builder",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER, TEAM_LEAD),
     CONTACT_DELETE("contact:delete", RoleLevel.BRAND, "Delete contacts (one or bulk) and other people's notes",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),

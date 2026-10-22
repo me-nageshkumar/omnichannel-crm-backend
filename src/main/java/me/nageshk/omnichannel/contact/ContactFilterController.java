@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.contact;
 
 import java.util.List;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.contact.advanced.RuleGroup;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/workspaces/{workspaceId}/contact-filters")
 public class ContactFilterController {
 
-    public record FilterRequest(String name, ContactFilterSpec filter) {}
+    public record FilterRequest(String name, ContactFilterSpec filter, RuleGroup rules) {}
 
     private final ContactFilterService service;
 
@@ -34,18 +35,25 @@ public class ContactFilterController {
         return service.list(workspaceId);
     }
 
+    @GetMapping("/{id}")
+    @PreAuthorize("@access.has(#workspaceId, 'contact:view')")
+    public FilterView get(@PathVariable String workspaceId, @PathVariable String id) {
+        return service.get(workspaceId, id);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("@access.has(#workspaceId, 'contact:bulk')")
     public FilterView create(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @RequestBody FilterRequest req) {
-        return service.create(workspaceId, me.getUsername(), req.name(), req.filter());
+        return service.create(workspaceId, me.getUsername(), req.name(), req.filter(),
+                req.rules());
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("@access.has(#workspaceId, 'contact:bulk')")
     public FilterView update(@PathVariable String workspaceId, @PathVariable String id, @RequestBody FilterRequest req) {
-        return service.update(workspaceId, id, req.name(), req.filter());
+        return service.update(workspaceId, id, req.name(), req.filter(), req.rules());
     }
 
     @DeleteMapping("/{id}")

@@ -4,7 +4,10 @@ import java.time.Instant;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
+import me.nageshk.omnichannel.contact.advanced.RuleGroup;
+import me.nageshk.omnichannel.contact.advanced.Uses;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -20,10 +23,20 @@ public class ContactFilter {
     private String workspaceId;
     private String name;
     private String nameKey;
+    /** Set for SIMPLE filters; null for ADVANCED ones. */
     private ContactFilterSpec filter;
+    /** Set for ADVANCED filters, as sent by the client. */
+    private RuleGroup rules;
+    /** The compiled query of {@link #rules}, written by the server only; carries no workspace clause. */
+    private String queryJson;
+    private Integer queryVersion;
+    private Uses uses;
+    private FilterKind kind;
     private String createdBy;
     @CreatedDate
     private Instant creationTime;
+    @LastModifiedDate
+    private Instant lastUpdateTime;
 
     /** Also sets the case-folded key used for the uniqueness index. */
     public void setName(String name) {

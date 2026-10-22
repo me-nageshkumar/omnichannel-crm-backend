@@ -10,12 +10,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 import me.nageshk.omnichannel.api.ValidationException;
+import me.nageshk.omnichannel.contact.advanced.WorkspaceZone;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 @Service
-public class CampaignSettingsService {
+public class CampaignSettingsService implements WorkspaceZone {
 
     private static final Pattern COUNTRY_CODE = Pattern.compile("^[1-9][0-9]{0,2}$");
     private static final Pattern TIME = Pattern.compile("^([01][0-9]|2[0-3]):[0-5][0-9]$");
@@ -35,6 +36,11 @@ public class CampaignSettingsService {
                 return repository.findByWorkspaceId(workspaceId).orElseThrow(() -> raced);
             }
         });
+    }
+
+    @Override
+    public ZoneId zoneOf(String workspaceId) {
+        return ZoneId.of(get(workspaceId).getTimezone());
     }
 
     /** Replaces the settings; {@code body.version()} must be the stored version. */

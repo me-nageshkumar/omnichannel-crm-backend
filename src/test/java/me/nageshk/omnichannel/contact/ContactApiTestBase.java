@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -31,6 +32,7 @@ abstract class ContactApiTestBase {
     @Autowired ContactAttributeRepository attributes;
     @Autowired ContactNoteRepository notes;
     @Autowired ContactFilterRepository filters;
+    @Autowired MongoTemplate mongo;
 
     Customer acme;
     Workspace brandA;
