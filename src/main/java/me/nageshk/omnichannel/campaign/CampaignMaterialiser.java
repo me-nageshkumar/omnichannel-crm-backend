@@ -7,7 +7,9 @@ import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.contact.Contact;
 import me.nageshk.omnichannel.contact.ContactQuery;
+import me.nageshk.omnichannel.contact.FilterKind;
 import me.nageshk.omnichannel.contact.Phones;
+import me.nageshk.omnichannel.contact.QueryTimeouts;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -24,13 +26,15 @@ public class CampaignMaterialiser {
     private final ContactQuery contactQuery;
     private final CampaignCsvStore csvStore;
     private final RecipientSkips skips;
+    private final QueryTimeouts timeouts;
 
     CampaignMaterialiser(MongoTemplate mongo, ContactQuery contactQuery, CampaignCsvStore csvStore,
-            RecipientSkips skips) {
+            RecipientSkips skips, QueryTimeouts timeouts) {
         this.mongo = mongo;
         this.contactQuery = contactQuery;
         this.csvStore = csvStore;
         this.skips = skips;
+        this.timeouts = timeouts;
     }
 
     /** One source row: the raw phone cell (or contact phone), its contact when known, and the CSV cells. */
@@ -66,13 +70,17 @@ public class CampaignMaterialiser {
 
     private void filter(Run run) {
         String ws = run.campaign.getWorkspaceId();
-        Criteria base = contactQuery.build(ws, run.campaign.getAudience().filterSpec());
+        Campaign.Audience audience = run.campaign.getAudience();
+        Criteria base = audience.filterKind() == FilterKind.ADVANCED
+                ? contactQuery.advanced(ws, audience.filterQueryJson())
+                : contactQuery.build(ws, audience.filterSpec());
         String lastId = null;
         while (true) {
             List<Criteria> all = new ArrayList<>(List.of(base, Criteria.where("phone").ne(null)));
             if (lastId != null) all.add(Criteria.where("_id").gt(lastId));
-            List<Contact> page = mongo.find(new Query(new Criteria().andOperator(all)).with(Sort.by("_id"))
-                    .limit(PAGE), Contact.class);
+            Query q = new Query(new Criteria().andOperator(all)).with(Sort.by("_id")).limit(PAGE)
+                    .maxTime(timeouts.materialise());
+            List<Contact> page = QueryTimeouts.guarded(() -> mongo.find(q, Contact.class));
             if (page.isEmpty()) return;
             lastId = page.get(page.size() - 1).getId();
             write(run, page.stream().map(c -> new Row(c.getPhone(), c, null)).toList(), page);

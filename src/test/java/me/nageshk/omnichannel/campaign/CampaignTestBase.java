@@ -14,6 +14,7 @@ import me.nageshk.omnichannel.access.BuiltInRoles;
 import me.nageshk.omnichannel.contact.Contact;
 import me.nageshk.omnichannel.contact.ContactAttribute;
 import me.nageshk.omnichannel.contact.ContactFilter;
+import me.nageshk.omnichannel.contact.ContactLabel;
 import me.nageshk.omnichannel.inbox.InboxSetting;
 import me.nageshk.omnichannel.inbox.WaNumberLookup;
 import me.nageshk.omnichannel.inbox.WaWebChat;
@@ -106,8 +107,8 @@ abstract class CampaignTestBase {
     /** The collections each test starts without; later tasks add their documents here. */
     List<Class<?>> collections() {
         return List.of(CampaignSettings.class, CampaignSender.class, CampaignRecipient.class, Campaign.class,
-                Contact.class, ContactFilter.class, ContactAttribute.class, MessageTemplate.class, WaWebChat.class,
-                WaWebMessage.class, WaWebChatAction.class, WaNumberLookup.class, InboxSetting.class);
+                Contact.class, ContactFilter.class, ContactAttribute.class, ContactLabel.class,
+                MessageTemplate.class, WaWebChat.class, WaWebMessage.class, WaWebChatAction.class, WaNumberLookup.class, InboxSetting.class);
     }
 
     @BeforeEach
@@ -175,6 +176,22 @@ abstract class CampaignTestBase {
     String filter(String name, Map<String, Object> spec) {
         ResponseEntity<JsonNode> res = api(HttpMethod.POST, "/contact-filters", manager,
                 Map.of("name", name, "filter", spec));
+        return res.getBody().get("id").asString();
+    }
+
+    /** A label of the brand. */
+    ContactLabel label(String name) {
+        ContactLabel l = new ContactLabel();
+        l.setWorkspaceId(brand.getId());
+        l.setName(name);
+        l.setColor("#336699");
+        return mongo.save(l);
+    }
+
+    /** A saved ADVANCED filter of the brand over the rules; returns its id. */
+    String advancedFilter(String name, Map<String, Object> rules) {
+        ResponseEntity<JsonNode> res = api(HttpMethod.POST, "/contact-filters", manager,
+                Map.of("name", name, "rules", rules));
         return res.getBody().get("id").asString();
     }
 

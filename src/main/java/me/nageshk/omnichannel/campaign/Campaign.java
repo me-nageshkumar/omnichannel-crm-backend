@@ -6,6 +6,8 @@ import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 import me.nageshk.omnichannel.contact.ContactFilterSpec;
+import me.nageshk.omnichannel.contact.FilterKind;
+import me.nageshk.omnichannel.contact.advanced.Uses;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
@@ -47,10 +49,10 @@ public class Campaign {
     @Version
     private Long version;
 
-    /** The audience as it was when the campaign was saved: a filter's name and spec are snapshotted. */
+    /** The audience as it was when the campaign was saved: a filter's name and spec are snapshotted, and for an advanced one its stored query and uses. */
     public record Audience(AudienceKind kind, String filterId, String filterName, ContactFilterSpec filterSpec,
             String csvFileName, List<String> csvHeaders, Integer csvRows, String phoneColumn, String nameColumn,
-            String csvFileId) {
+            String csvFileId, FilterKind filterKind, String filterQueryJson, Uses uses) {
     }
 
     public record PlaceholderMapping(String name, PlaceholderSource source, String fallback) {

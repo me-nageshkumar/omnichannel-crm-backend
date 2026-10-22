@@ -15,6 +15,7 @@ import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.contact.ContactAttributeRepository;
 import me.nageshk.omnichannel.contact.ContactFilter;
 import me.nageshk.omnichannel.contact.ContactFilterRepository;
+import me.nageshk.omnichannel.contact.FilterKind;
 import me.nageshk.omnichannel.phone.ConnectionType;
 import me.nageshk.omnichannel.phone.PhoneNumber;
 import me.nageshk.omnichannel.phone.PhoneNumberRepository;
@@ -99,7 +100,7 @@ public class CampaignValidator {
         ContactFilter f = filters.findByIdAndWorkspaceId(a.filterId(), workspaceId)
                 .orElseThrow(() -> new ValidationException("audience.filterId", "unknown filter"));
         return new Campaign.Audience(AudienceKind.FILTER, f.getId(), f.getName(), f.getFilter(), null, null, null,
-                null, null, null);
+                null, null, null, FilterKind.orSimple(f.getKind()), f.getQueryJson(), f.getUses());
     }
 
     /** The CSV audience's columns; the file's name, row count and id are filled in by the service. */
@@ -113,7 +114,7 @@ public class CampaignValidator {
             throw new ValidationException("audience.nameColumn", "is not a column of the file");
         }
         return new Campaign.Audience(AudienceKind.CSV, null, null, null, null, headers, null, phone,
-                name.isEmpty() ? null : name, null);
+                name.isEmpty() ? null : name, null, null, null, null);
     }
 
     private List<MessageTemplate> templates(String workspaceId, List<String> raw) {

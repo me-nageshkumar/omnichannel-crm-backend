@@ -162,7 +162,7 @@ public class CampaignService {
 
     private static Campaign.Audience withFile(Campaign.Audience a, String fileName, Integer rows, String fileId) {
         return new Campaign.Audience(a.kind(), a.filterId(), a.filterName(), a.filterSpec(), fileName, a.csvHeaders(),
-                rows, a.phoneColumn(), a.nameColumn(), fileId);
+                rows, a.phoneColumn(), a.nameColumn(), fileId, a.filterKind(), a.filterQueryJson(), a.uses());
     }
 
     /** The campaign only while it is still a draft, so a start that wins the race is never overwritten. */
