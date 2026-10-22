@@ -16,12 +16,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** A brand's saved contact filters: {@code contact:view} to list, {@code contact:bulk} to change. */
+/** A brand's saved contact filters: {@code contact:view} to list and preview, {@code contact:bulk} to change. */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/contact-filters")
 public class ContactFilterController {
 
     public record FilterRequest(String name, ContactFilterSpec filter, RuleGroup rules) {}
+
+    public record PreviewRequest(RuleGroup rules, Integer sample) {}
 
     private final ContactFilterService service;
 
@@ -39,6 +41,12 @@ public class ContactFilterController {
     @PreAuthorize("@access.has(#workspaceId, 'contact:view')")
     public FilterView get(@PathVariable String workspaceId, @PathVariable String id) {
         return service.get(workspaceId, id);
+    }
+
+    @PostMapping("/preview")
+    @PreAuthorize("@access.has(#workspaceId, 'contact:view')")
+    public ContactFilterService.Preview preview(@PathVariable String workspaceId, @RequestBody PreviewRequest req) {
+        return service.preview(workspaceId, req.rules(), req.sample());
     }
 
     @PostMapping

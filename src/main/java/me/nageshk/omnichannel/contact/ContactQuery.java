@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
+import me.nageshk.omnichannel.contact.advanced.StoredQueryCriteria;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Component;
 
@@ -46,6 +47,12 @@ public class ContactQuery {
         return scoped(workspaceId, parts(workspaceId, spec));
     }
 
+    /** The brand's contacts matching a stored advanced query (one written by {@code AdvancedFilters}). */
+    public Criteria advanced(String workspaceId, String queryJson) {
+        return scoped(workspaceId, List.of(new StoredQueryCriteria(queryJson)));
+    }
+
+    /** {@code workspaceId = ws AND every part}: the one place a brand clause is added to a filter's conditions. */
     private static Criteria scoped(String workspaceId, List<Criteria> parts) {
         Criteria base = Criteria.where("workspaceId").is(workspaceId);
         return parts.isEmpty() ? base : base.andOperator(parts);

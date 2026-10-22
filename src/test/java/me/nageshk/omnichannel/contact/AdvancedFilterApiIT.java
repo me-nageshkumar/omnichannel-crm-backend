@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import me.nageshk.omnichannel.tenant.Workspace;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -210,6 +211,65 @@ class AdvancedFilterApiIT extends ContactApiTestBase {
         send(delete(filtersUrl() + "/" + id), wmToken, null).andExpect(status().isNoContent());
         send(get(filtersUrl() + "/" + id), agentToken, null).andExpect(status().isNotFound());
         send(post(base(brandA) + "/contacts/search"), agentToken, Map.of("filterId", id))
+                .andExpect(status().isNotFound());
+    }
+
+    String previewUrl() {
+        return filtersUrl() + "/preview";
+    }
+
+    Contact labelled(Workspace w, String name, String phone, String... labelIds) {
+        Contact c = contact(w, name, phone);
+        c.getLabels().addAll(List.of(labelIds));
+        return contacts.save(c);
+    }
+
+    @Test
+    void previewCountsSamplesAndShowsTheQuery() throws Exception {
+        labelled(brandA, "Asha", "919800000001", vip.getId());
+        labelled(brandA, "Bala", "919800000002", vip.getId());
+        labelled(brandA, "Chitra", "919800000003");
+        // brandB's contact carries its own label and, as a stray id, brandA's: the workspace clause still keeps it out
+        labelled(brandB, "Dev", "919800000004", label(brandB, "VIP").getId(), vip.getId());
+        send(post(previewUrl()), agentToken, Map.of("rules", group("and", rule("labels", "has", vip.getId())),
+                "sample", 1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(2))
+                .andExpect(jsonPath("$.sample.length()").value(1))
+                .andExpect(jsonPath("$.sample[0].name").isNotEmpty())
+                .andExpect(jsonPath("$.sample[0].phone").isNotEmpty())
+                .andExpect(jsonPath("$.query['$and'][0].labels").value(vip.getId()));
+        assertThat(filters.count()).isZero();
+    }
+
+    @Test
+    void sampleIsClampedTo1To25() throws Exception {
+        for (int i = 0; i < 30; i++) labelled(brandA, "C" + i, "9198000001" + String.format("%02d", i), vip.getId());
+        Map<String, Object> rules = group("and", rule("labels", "has", vip.getId()));
+        send(post(previewUrl()), agentToken, Map.of("rules", rules, "sample", 100)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(30))
+                .andExpect(jsonPath("$.sample.length()").value(25));
+        send(post(previewUrl()), agentToken, Map.of("rules", rules, "sample", 0)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(30))
+                .andExpect(jsonPath("$.sample.length()").value(1));
+        send(post(previewUrl()), agentToken, Map.of("rules", rules)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(30))
+                .andExpect(jsonPath("$.sample.length()").value(10));
+    }
+
+    @Test
+    void previewValidation() throws Exception {
+        send(post(previewUrl()), agentToken, Map.of()).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION"))
+                .andExpect(jsonPath("$.fields.rules").value("is required"));
+        send(post(previewUrl()), agentToken, Map.of("rules", group("and", rule("labels", "has", "nope"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields['rules[0].value']").value("is not a label of this brand"));
+    }
+
+    @Test
+    void previewNeedsAccessToTheWorkspace() throws Exception {
+        send(post(previewUrl()), wmBToken, Map.of("rules", group("and", rule("name", "contains", "a"))))
                 .andExpect(status().isNotFound());
     }
 

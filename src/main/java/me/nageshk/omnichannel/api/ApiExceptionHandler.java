@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.api;
 
+import com.mongodb.MongoExecutionTimeoutException;
 import me.nageshk.omnichannel.auth.AccountLockedException;
 import me.nageshk.omnichannel.inbox.ChatClosedException;
 import me.nageshk.omnichannel.inbox.ChatTakenException;
@@ -214,6 +215,12 @@ public class ApiExceptionHandler {
             default -> HttpStatus.BAD_REQUEST;
         };
         return body(status, e.code(), e.getMessage());
+    }
+
+    /** A filter query over its time limit, whether or not it went through {@code QueryTimeouts.guarded}. */
+    @ExceptionHandler({QueryTimeoutException.class, MongoExecutionTimeoutException.class})
+    public ResponseEntity<Map<String, String>> queryTimeout(RuntimeException e) {
+        return body(HttpStatus.GATEWAY_TIMEOUT, QueryTimeoutException.CODE, QueryTimeoutException.MESSAGE);
     }
 
     @ExceptionHandler(TimeoutException.class)
