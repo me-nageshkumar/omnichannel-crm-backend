@@ -12,4 +12,10 @@ public interface ContactFilterRepository extends MongoRepository<ContactFilter, 
     Optional<ContactFilter> findByIdAndWorkspaceId(String id, String workspaceId);
 
     Optional<ContactFilter> findByWorkspaceIdAndNameKey(String workspaceId, String nameKey);
+
+    List<ContactFilter> findByWorkspaceIdAndKindAndUsesLabelIdsOrderByNameKey(String workspaceId, FilterKind kind,
+            String labelId);
+
+    List<ContactFilter> findByWorkspaceIdAndKindAndUsesAttributeIdsOrderByNameKey(String workspaceId, FilterKind kind,
+            String attributeId);
 }

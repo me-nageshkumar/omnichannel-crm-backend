@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import me.nageshk.omnichannel.api.DuplicateException;
+import me.nageshk.omnichannel.api.FilterInUseException;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
+import me.nageshk.omnichannel.contact.advanced.CampaignUses;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -25,12 +27,16 @@ public class ContactFieldService {
     private final ContactLabelRepository labels;
     private final ContactAttributeRepository attributes;
     private final MongoTemplate mongo;
+    private final ContactFilterRepository filters;
+    private final CampaignUses campaigns;
 
     public ContactFieldService(ContactLabelRepository labels, ContactAttributeRepository attributes,
-            MongoTemplate mongo) {
+            MongoTemplate mongo, ContactFilterRepository filters, CampaignUses campaigns) {
         this.labels = labels;
         this.attributes = attributes;
         this.mongo = mongo;
+        this.filters = filters;
+        this.campaigns = campaigns;
     }
 
     public List<LabelView> labelViews(String workspaceId) {
@@ -53,6 +59,8 @@ public class ContactFieldService {
 
     public void deleteLabel(String workspaceId, String id) {
         requireLabel(workspaceId, id);
+        refuseIfUsed(filters.findByWorkspaceIdAndKindAndUsesLabelIdsOrderByNameKey(workspaceId, FilterKind.ADVANCED, id),
+                campaigns.using(workspaceId, "labelIds", id));
         labels.deleteById(id);
         mongo.updateMulti(new Query(Criteria.where("workspaceId").is(workspaceId).and("labels").is(id)),
                 new Update().pull("labels", id), Contact.class);
@@ -70,10 +78,18 @@ public class ContactFieldService {
 
     public void deleteAttribute(String workspaceId, String id) {
         requireAttribute(workspaceId, id);
+        refuseIfUsed(filters.findByWorkspaceIdAndKindAndUsesAttributeIdsOrderByNameKey(workspaceId, FilterKind.ADVANCED,
+                id), campaigns.using(workspaceId, "attributeIds", id));
         attributes.deleteById(id);
         String key = "attributes." + id;
         mongo.updateMulti(new Query(Criteria.where("workspaceId").is(workspaceId).and(key).exists(true)),
                 new Update().unset(key), Contact.class);
+    }
+
+    private static void refuseIfUsed(List<ContactFilter> usedBy, List<FilterInUseException.Ref> campaigns) {
+        if (usedBy.isEmpty() && campaigns.isEmpty()) return;
+        throw new FilterInUseException(
+                usedBy.stream().map(f -> new FilterInUseException.Ref(f.getId(), f.getName())).toList(), campaigns);
     }
 
     public ContactLabel requireLabel(String workspaceId, String id) {

@@ -158,6 +158,13 @@ public class ApiExceptionHandler {
                 "code", AuthorityInUseException.CODE, "message", String.valueOf(e.getMessage()), "roles", e.roles()));
     }
 
+    @ExceptionHandler(FilterInUseException.class)
+    public ResponseEntity<Map<String, Object>> filterInUse(FilterInUseException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", FilterInUseException.CODE, "message", FilterInUseException.MESSAGE,
+                "filters", e.filters(), "campaigns", e.campaigns()));
+    }
+
     @ExceptionHandler(TemplateInUseException.class)
     public ResponseEntity<Map<String, String>> templateInUse(TemplateInUseException e) {
         return body(HttpStatus.CONFLICT, TemplateInUseException.CODE, e.getMessage());
