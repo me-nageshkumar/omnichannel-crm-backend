@@ -125,10 +125,10 @@ public class TestUsers {
         roles.deleteAll();
         mongo.remove(new Query(), "system_state");
         mongo.remove(new Query(), "authorities");
-        mongo.remove(new Query(), "phone_numbers");
-        mongo.remove(new Query(), "connect_codes");
-        for (String c : List.of("contacts", "contact_labels", "contact_attributes", "contact_notes", "contact_filters",
-                "message_templates", "template_media.files", "template_media.chunks"))
+        mongo.remove(new Query(), "phoneNumbers");
+        mongo.remove(new Query(), "connectCodes");
+        for (String c : List.of("contacts", "contactLabels", "contactAttributes", "contactNotes", "contactFilters",
+                "messageTemplates", "templateMedia.files", "templateMedia.chunks"))
             mongo.remove(new Query(), c);
         roleSeeder.seed();
         roleCache.evictAll();

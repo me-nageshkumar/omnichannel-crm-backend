@@ -10,7 +10,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A note on a contact, with its author. */
-@Document("contact_notes")
+@Document("contactNotes")
 @CompoundIndex(name = "ws_contact", def = "{'workspaceId': 1, 'contactId': 1}")
 @Getter
 @Setter

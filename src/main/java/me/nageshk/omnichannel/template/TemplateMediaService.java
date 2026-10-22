@@ -25,7 +25,7 @@ import org.springframework.data.mongodb.gridfs.GridFsTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-/** Template media in the GridFS bucket {@code template_media}: type detection, brand scoping, copy and orphan sweep. */
+/** Template media in the GridFS bucket {@code templateMedia}: type detection, brand scoping, copy and orphan sweep. */
 @Service
 public class TemplateMediaService {
 

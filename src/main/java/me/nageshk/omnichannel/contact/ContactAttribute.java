@@ -7,7 +7,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A free-text field a brand defines for its contacts; the name is unique per brand ignoring case, the key never changes. */
-@Document("contact_attributes")
+@Document("contactAttributes")
 @CompoundIndex(name = "ws_nameKey", def = "{'workspaceId': 1, 'nameKey': 1}", unique = true)
 @CompoundIndex(name = "ws_key", def = "{'workspaceId': 1, 'key': 1}", unique = true,
         partialFilter = "{'key': {$type: 'string'}}")

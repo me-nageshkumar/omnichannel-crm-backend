@@ -8,7 +8,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One audited write to an authority. Kept after the authority is deleted. */
-@Document("authority_changes")
+@Document("authorityChanges")
 @Getter
 @Setter
 public class AuthorityChange {

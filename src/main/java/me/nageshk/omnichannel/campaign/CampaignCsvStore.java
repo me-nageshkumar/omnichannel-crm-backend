@@ -12,7 +12,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.gridfs.GridFsTemplate;
 import org.springframework.stereotype.Component;
 
-/** The uploaded CSV files of campaign audiences, in the GridFS bucket {@code campaign_csv}. */
+/** The uploaded CSV files of campaign audiences, in the GridFS bucket {@code campaignCsv}. */
 @Component
 public class CampaignCsvStore {
 

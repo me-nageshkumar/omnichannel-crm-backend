@@ -10,7 +10,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One audited write to a role. Kept after the role is deleted. */
-@Document("role_changes")
+@Document("roleChanges")
 @Getter
 @Setter
 public class RoleChange {

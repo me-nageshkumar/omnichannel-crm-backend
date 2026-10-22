@@ -76,7 +76,7 @@ class CampaignIndexesIT {
         mongo.save(r);
         mongo.save(recipient("c1", "919811111112"));
         assertThat(mongo.count(CampaignCounter.replied("c1"), CampaignRecipient.class)).isEqualTo(1);
-        org.bson.Document plan = mongo.getCollection("campaign_recipients")
+        org.bson.Document plan = mongo.getCollection("campaignRecipients")
                 .find(CampaignCounter.replied("c1").getQueryObject()).explain();
         org.bson.Document winning = plan.get("queryPlanner", org.bson.Document.class).get("winningPlan",
                 org.bson.Document.class);

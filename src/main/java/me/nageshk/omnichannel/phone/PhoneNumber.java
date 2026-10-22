@@ -12,7 +12,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A brand's WhatsApp number, and the one device key that may connect WhatsApp Web for it. */
-@Document("phone_numbers")
+@Document("phoneNumbers")
 @Getter
 @Setter
 public class PhoneNumber {

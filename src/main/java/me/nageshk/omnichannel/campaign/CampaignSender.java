@@ -11,7 +11,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A phone number's campaign state: its warm-up, rests, pauses and pacing. One per number. */
-@Document("campaign_senders")
+@Document("campaignSenders")
 @Getter
 @Setter
 public class CampaignSender {

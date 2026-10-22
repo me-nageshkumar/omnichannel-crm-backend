@@ -10,7 +10,7 @@ import org.springframework.data.mongodb.gridfs.GridFsTemplate;
 @Configuration
 public class CampaignCsvConfig {
 
-    public static final String BUCKET = "campaign_csv";
+    public static final String BUCKET = "campaignCsv";
 
     @Bean
     public GridFsTemplate campaignCsvGridFs(MongoDatabaseFactory factory, MongoConverter converter) {

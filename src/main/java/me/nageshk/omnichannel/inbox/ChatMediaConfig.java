@@ -10,7 +10,7 @@ import org.springframework.data.mongodb.gridfs.GridFsTemplate;
 @Configuration
 public class ChatMediaConfig {
 
-    public static final String BUCKET = "chat_media";
+    public static final String BUCKET = "chatMedia";
 
     @Bean
     public GridFsTemplate chatMediaGridFs(MongoDatabaseFactory factory, MongoConverter converter) {

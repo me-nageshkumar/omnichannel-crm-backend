@@ -8,7 +8,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One audited enable or disable of a number, brand, customer, login or brand access. */
-@Document("enablement_changes")
+@Document("enablementChanges")
 @Getter
 @Setter
 public class EnablementChange {

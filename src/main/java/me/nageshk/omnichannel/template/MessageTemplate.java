@@ -14,7 +14,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A reusable message a brand sends: the name is unique per brand ignoring case, archived templates included. */
-@Document("message_templates")
+@Document("messageTemplates")
 @CompoundIndex(name = "ws_nameKey", def = "{'workspaceId': 1, 'nameKey': 1}", unique = true)
 @CompoundIndex(name = "ws_status_nameKey", def = "{'workspaceId': 1, 'status': 1, 'nameKey': 1}")
 @Getter

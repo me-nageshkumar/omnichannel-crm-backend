@@ -301,9 +301,9 @@ abstract class CampaignTestBase {
         return rest.exchange(url("/api/workspaces/" + brand.getId() + path), m, auth(who, body), JsonNode.class);
     }
 
-    /** Number of files in the {@code campaign_csv} bucket. */
+    /** Number of files in the {@code campaignCsv} bucket. */
     long gridFsFiles() {
-        return mongo.getCollection("campaign_csv.files").countDocuments();
+        return mongo.getCollection("campaignCsv.files").countDocuments();
     }
 
     /**

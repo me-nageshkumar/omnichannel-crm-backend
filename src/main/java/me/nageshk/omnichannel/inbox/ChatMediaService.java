@@ -27,7 +27,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Media of inbox messages in the GridFS bucket {@code chat_media}: stored when a console send carries media, and
+ * Media of inbox messages in the GridFS bucket {@code chatMedia}: stored when a console send carries media, and
  * fetched from the phone the first time someone opens an inbound one (spec section 7).
  */
 @Service

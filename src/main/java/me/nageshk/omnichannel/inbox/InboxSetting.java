@@ -7,7 +7,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** Routing settings of one phone number; without a document the mode is NONE. */
-@Document("inbox_settings")
+@Document("inboxSettings")
 @CompoundIndex(name = "phone_unique", def = "{'phoneNumberId': 1}", unique = true)
 @Getter
 @Setter

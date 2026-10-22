@@ -12,7 +12,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One conversation between a WhatsApp Web number and a remote chat. */
-@Document("wa_web_chats")
+@Document("waWebChats")
 @CompoundIndexes({
         @CompoundIndex(name = "phone_remote_unique", def = "{'phoneNumberId': 1, 'remoteId': 1}", unique = true),
         @CompoundIndex(name = "phone_last_message", def = "{'phoneNumberId': 1, 'lastMessageAt': -1, '_id': -1}"),

@@ -9,7 +9,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A named contact filter shared by everyone in the brand. */
-@Document("contact_filters")
+@Document("contactFilters")
 @CompoundIndex(name = "ws_nameKey", def = "{'workspaceId': 1, 'nameKey': 1}", unique = true)
 @Getter
 @Setter

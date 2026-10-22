@@ -12,7 +12,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** How campaigns of one workspace pace and protect their senders. */
-@Document("campaign_settings")
+@Document("campaignSettings")
 @Getter
 @Setter
 public class CampaignSettings {

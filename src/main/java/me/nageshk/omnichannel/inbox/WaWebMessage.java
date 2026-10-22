@@ -10,7 +10,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A message in a chat, in either direction. */
-@Document("wa_web_messages")
+@Document("waWebMessages")
 @CompoundIndexes({
         @CompoundIndex(name = "phone_wamessage_unique", def = "{'phoneNumberId': 1, 'waMessageId': 1}", unique = true),
         @CompoundIndex(name = "chat_timestamp", def = "{'chatId': 1, 'timestamp': -1, '_id': -1}")
@@ -50,7 +50,7 @@ public class WaWebMessage {
     @CreatedDate
     private Instant creationTime;
 
-    /** {@code mediaId} is the chat_media GridFS id once the bytes are fetched, else null. */
+    /** {@code mediaId} is the chatMedia GridFS id once the bytes are fetched, else null. */
     public record Media(String mimetype, String filename, Long size, String mediaId, Instant downloadedAt) {
     }
 

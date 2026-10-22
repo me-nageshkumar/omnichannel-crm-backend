@@ -8,7 +8,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A one-time code that swaps for a number's device key; only its SHA-256 is stored. */
-@Document("connect_codes")
+@Document("connectCodes")
 @Getter
 @Setter
 public class ConnectCode {

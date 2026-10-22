@@ -8,7 +8,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** The last answer to "is this phone number on WhatsApp", one row per workspace and phone. */
-@Document("wa_number_lookups")
+@Document("waNumberLookups")
 @CompoundIndex(name = "ws_phone", def = "{'workspaceId': 1, 'phone': 1}", unique = true)
 @Getter
 @Setter

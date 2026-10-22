@@ -11,7 +11,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
  * An access token ended by logout, keyed by its {@code jti}. The TTL index removes the entry once
  * the token would have expired anyway.
  */
-@Document("revoked_tokens")
+@Document("revokedTokens")
 @Getter
 @NoArgsConstructor
 public class RevokedToken {

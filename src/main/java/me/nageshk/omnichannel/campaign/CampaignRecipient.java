@@ -10,7 +10,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One row of a campaign's audience and what became of it. */
-@Document("campaign_recipients")
+@Document("campaignRecipients")
 @CompoundIndexes({
         @CompoundIndex(name = "campaign_phone", def = "{'campaignId': 1, 'phone': 1}", unique = true,
                 partialFilter = "{'phone': {$type: 'string'}}"),

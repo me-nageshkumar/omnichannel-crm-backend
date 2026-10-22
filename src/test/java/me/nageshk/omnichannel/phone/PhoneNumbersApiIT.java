@@ -298,7 +298,7 @@ class PhoneNumbersApiIT {
         send(get(numbersOf(brandA)), wmToken, null)
                 .andExpect(jsonPath("$[0].connectionType").value("WHATSAPP_WEB"));
         backfill.run(null);
-        assertThat(mongo.getCollection("phone_numbers").find().first().getString("connectionType"))
+        assertThat(mongo.getCollection("phoneNumbers").find().first().getString("connectionType"))
                 .isEqualTo("WHATSAPP_WEB");
     }
 }

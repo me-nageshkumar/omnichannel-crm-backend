@@ -7,7 +7,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** A coloured tag a brand can put on contacts; the name is unique per brand ignoring case. */
-@Document("contact_labels")
+@Document("contactLabels")
 @CompoundIndex(name = "ws_nameKey", def = "{'workspaceId': 1, 'nameKey': 1}", unique = true)
 @Getter
 @Setter

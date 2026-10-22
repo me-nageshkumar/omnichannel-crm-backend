@@ -19,7 +19,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 @EnableScheduling
 public class TemplateMediaConfig {
 
-    public static final String BUCKET = "template_media";
+    public static final String BUCKET = "templateMedia";
 
     @Bean
     public ThreadPoolTaskScheduler taskScheduler() {
