@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.inbox;
 
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -9,6 +11,7 @@ import me.nageshk.omnichannel.phone.PhoneNumber;
 import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.tenant.Team;
 import me.nageshk.omnichannel.tenant.TeamRepository;
+import me.nageshk.omnichannel.user.Availability;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserAdminService;
 import me.nageshk.omnichannel.user.UserRepository;
@@ -20,11 +23,20 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 /**
- * Applies the owning team's effective routing setting to a new or reopened chat and records the {@code ROUTED}
- * action (design §3.4). A number without an owning team routes nothing.
+ * Applies a team's effective routing setting to a chat and records the {@code ROUTED} action (design §3.2–3.4):
+ * a returning customer first (sticky), then the setting's mode over the team's available members. A number without
+ * an owning team routes nothing.
  */
 @Service
 public class ChatRoutingService {
+
+    /**
+     * How one routing run differs from the default: a member to skip (a hand-back), whether the sticky rule may
+     * apply, and the reason to record on the action.
+     */
+    public record RoutingOptions(String excludeUserId, boolean sticky, RoutedReason reason) {
+        public static final RoutingOptions DEFAULT = new RoutingOptions(null, true, null);
+    }
 
     private final InboxSettingService settings;
     private final MongoTemplate mongo;
@@ -54,34 +66,42 @@ public class ChatRoutingService {
     }
 
     /**
-     * Sets the assignment the owning team's setting asks for and saves the chat; a chat the setting leaves alone
-     * (or whose number has no owning team) is returned untouched. Publishes {@link InboxEvents.ActionRecorded} but
-     * not {@code ChatChanged}: the caller is the ingestion, which publishes the fresh chat afterwards.
+     * Routes under the owning team of the chat's number with {@link RoutingOptions#DEFAULT}; a chat whose number
+     * has no owning team is returned untouched. Publishes {@link InboxEvents.ActionRecorded} but not
+     * {@code ChatChanged}: the caller is the ingestion, which publishes the fresh chat afterwards.
      */
     public WaWebChat route(WaWebChat chat) {
         Team team = owningTeam(chat);
-        if (team == null) return chat;
+        return team == null ? chat : route(chat, team, RoutingOptions.DEFAULT);
+    }
+
+    /** Routes under {@code team}'s effective setting; the chat is saved only when the setting assigns something. */
+    public WaWebChat route(WaWebChat chat, Team team, RoutingOptions options) {
         InboxSetting setting = settings.effective(chat.getWorkspaceId(), team.getId());
         InboxSetting.Routing routing = setting.getRouting();
         if (routing == null || routing.mode() == RoutingMode.NONE) return chat;
         Map<String, User> reachable = reachable(chat);
+        User sticky = options.sticky() ? stickyAgent(chat, setting, team, reachable, options.excludeUserId()) : null;
+        if (sticky != null) return routed(chat, sticky, team, RoutedReason.STICKY, options.excludeUserId());
         switch (routing.mode()) {
             case TEAM -> {
-                return routed(chat, null, team);
+                return routed(chat, null, team, options.reason(), options.excludeUserId());
             }
             case USER -> {
                 User user = routing.userId() == null ? null : reachable.get(routing.userId());
+                boolean ok = user != null && eligible(user, team, chat.getWorkspaceId())
+                        && !user.getId().equals(options.excludeUserId());
                 // the configured member can no longer take chats: the team queue
-                return routed(chat, user != null && eligible(user, team, chat.getWorkspaceId()) ? user : null, team);
+                return routed(chat, ok ? user : null, team, options.reason(), options.excludeUserId());
             }
             case ROUND_ROBIN -> {
-                User next = nextMember(team, reachable, chat.getWorkspaceId());
+                User next = nextMember(team, reachable, chat.getWorkspaceId(), options.excludeUserId());
                 if (next != null) {
                     // only the cursor: saving the whole team could revert an edit made since it was read
                     mongo.updateFirst(new Query(Criteria.where("_id").is(team.getId())),
                             new Update().set("roundRobinCursor", next.getId()), Team.class);
                 }
-                return routed(chat, next, team);
+                return routed(chat, next, team, options.reason(), options.excludeUserId());
             }
             default -> {
                 return chat;
@@ -95,13 +115,28 @@ public class ChatRoutingService {
         return teamId == null ? null : teams.findByIdAndWorkspaceId(teamId, chat.getWorkspaceId()).orElse(null);
     }
 
+    /** The agent who last handled this chat, when that was inside the sticky window and they can take it now. */
+    private User stickyAgent(WaWebChat chat, InboxSetting setting, Team team, Map<String, User> reachable,
+            String excludeUserId) {
+        if (setting.getStickyDays() <= 0 || chat.getLastAgentUserId() == null || chat.getLastAgentAt() == null) {
+            return null;
+        }
+        if (chat.getLastAgentUserId().equals(excludeUserId)) return null;
+        Instant oldest = clock.instant().minus(Duration.ofDays(setting.getStickyDays()));
+        if (chat.getLastAgentAt().isBefore(oldest)) return null;
+        User agent = reachable.get(chat.getLastAgentUserId());
+        return agent != null && eligible(agent, team, chat.getWorkspaceId()) ? agent : null;
+    }
+
     /** The first eligible member after the team's cursor in {@code memberIds} order, wrapping; null when none is. */
-    private User nextMember(Team team, Map<String, User> reachable, String workspaceId) {
+    private User nextMember(Team team, Map<String, User> reachable, String workspaceId, String excludeUserId) {
         List<String> members = team.getMemberIds();
         if (members.isEmpty()) return null;
         int start = members.indexOf(team.getRoundRobinCursor()) + 1;
         for (int i = 0; i < members.size(); i++) {
-            User u = reachable.get(members.get((start + i) % members.size()));
+            String id = members.get((start + i) % members.size());
+            if (id.equals(excludeUserId)) continue;
+            User u = reachable.get(id);
             if (u != null && eligible(u, team, workspaceId)) return u;
         }
         return null;
@@ -113,13 +148,14 @@ public class ChatRoutingService {
                 .collect(Collectors.toMap(User::getId, Function.identity()));
     }
 
-    /** Active, not disabled anywhere that matters, and a member of the team. */
+    /** Active, not disabled anywhere that matters, a member of the team, and available right now (§3.2). */
     static boolean eligible(User u, Team team, String workspaceId) {
         return u.isActive() && u.getDisabled() == null && UserAdminService.brandDisabled(u, workspaceId) == null
-                && team.getMemberIds().contains(u.getId());
+                && team.getMemberIds().contains(u.getId())
+                && u.availabilityStatus() == Availability.Status.AVAILABLE;
     }
 
-    private WaWebChat routed(WaWebChat chat, User user, Team team) {
+    private WaWebChat routed(WaWebChat chat, User user, Team team, RoutedReason reason, String excludedUserId) {
         chat.setAssignedUserId(user == null ? null : user.getId());
         chat.setAssignedTeamId(team == null ? null : team.getId());
         chat.setAssignedAt(clock.instant());
@@ -137,6 +173,8 @@ public class ChatRoutingService {
             a.setToTeamId(team.getId());
             a.setToTeamName(team.getName());
         }
+        a.setReason(reason);
+        a.setExcludedUserId(excludedUserId);
         a.setAt(chat.getAssignedAt());
         a = actions.save(a);
         publisher.publishEvent(new InboxEvents.ActionRecorded(chat, a));

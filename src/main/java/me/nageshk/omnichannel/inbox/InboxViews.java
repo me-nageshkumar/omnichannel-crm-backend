@@ -32,12 +32,15 @@ public class InboxViews {
         Map<String, Contact> contactsById = new HashMap<>();
         contacts.findAllById(ids(chats, WaWebChat::getContactId)).forEach(c -> contactsById.put(c.getId(), c));
         Map<String, String> userNames = new HashMap<>();
-        users.findAllById(ids(chats, WaWebChat::getAssignedUserId)).forEach(u -> userNames.put(u.getId(), u.getName()));
+        java.util.Set<String> userIds = new java.util.HashSet<>(ids(chats, WaWebChat::getAssignedUserId));
+        userIds.addAll(ids(chats, WaWebChat::getLastAgentUserId));
+        users.findAllById(userIds).forEach(u -> userNames.put(u.getId(), u.getName()));
         Map<String, String> teamNames = new HashMap<>();
         teams.findAllById(ids(chats, WaWebChat::getAssignedTeamId)).forEach(t -> teamNames.put(t.getId(), t.getName()));
         return chats.stream().map(c -> toView(c, contactsById.get(c.getContactId()),
                 ref(c.getAssignedUserId(), userNames.get(c.getAssignedUserId())),
-                ref(c.getAssignedTeamId(), teamNames.get(c.getAssignedTeamId())))).toList();
+                ref(c.getAssignedTeamId(), teamNames.get(c.getAssignedTeamId())),
+                ref(c.getLastAgentUserId(), userNames.get(c.getLastAgentUserId())))).toList();
     }
 
     public MessageView message(WaWebMessage m) {
@@ -55,10 +58,12 @@ public class InboxViews {
 
     public ActionView action(WaWebChatAction a) {
         return new ActionView(a.getId(), a.getType(), named(a.getByUserId(), a.getByName()),
-                ref(a.getToUserId(), a.getToUserName()), ref(a.getToTeamId(), a.getToTeamName()), a.getAt());
+                ref(a.getToUserId(), a.getToUserName()), ref(a.getToTeamId(), a.getToTeamName()), a.getAt(),
+                a.getReason(), ref(a.getFromTeamId(), a.getFromTeamName()));
     }
 
-    private static ChatView toView(WaWebChat c, Contact contact, ChatView.Ref user, ChatView.Ref team) {
+    private static ChatView toView(WaWebChat c, Contact contact, ChatView.Ref user, ChatView.Ref team,
+            ChatView.Ref lastAgent) {
         String phone = contact == null ? null : contact.getPhone();
         WaWebChat.LastMessage last = c.getLastMessage();
         return new ChatView(c.getId(), c.getPhoneNumberId(), c.getRemoteId(),
@@ -67,7 +72,7 @@ public class InboxViews {
                 c.getStatus(), user, team, c.getUnreadCount(), c.getLastMessageAt(),
                 last == null ? null
                         : new ChatView.LastMessage(last.direction(), last.type(), last.text(), last.status()),
-                c.getCreationTime());
+                c.getCreationTime(), lastAgent);
     }
 
     private static ChatView.Ref ref(String id, String name) {

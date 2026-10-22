@@ -346,4 +346,26 @@ class ChatAssignmentIT {
             assertThat(a.getToTeamName()).isEqualTo("Support");
         });
     }
+
+    @Test
+    void assignToUserSetsLastAgent() {
+        User agent = user("agent", brand);
+        WaWebChat c = chat();
+        assertThat(c.getLastAgentUserId()).isNull();
+
+        WaWebChat result = assignment.assign(me, c, agent.getId(), null);
+
+        assertThat(result.getLastAgentUserId()).isEqualTo(agent.getId());
+        assertThat(result.getLastAgentAt()).isNotNull();
+        WaWebChat cleared = assignment.unassign(me, result);
+        assertThat(cleared.getLastAgentUserId()).isEqualTo(agent.getId()); // never cleared
+    }
+
+    @Test
+    void claimOnReplySetsLastAgent() {
+        configure(true, false);
+        WaWebChat result = assignment.claimOnReply(me, chat());
+        assertThat(result.getAssignedUserId()).isEqualTo(manager.getId());
+        assertThat(result.getLastAgentUserId()).isEqualTo(manager.getId());
+    }
 }

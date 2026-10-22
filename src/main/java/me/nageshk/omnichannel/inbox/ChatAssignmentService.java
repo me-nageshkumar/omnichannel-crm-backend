@@ -68,6 +68,7 @@ public class ChatAssignmentService {
 
         chat.setAssignedUserId(user == null ? null : user.getId());
         chat.setAssignedTeamId(team == null ? null : team.getId());
+        if (user != null) lastAgent(chat, user.getId());
         WaWebChatAction action = action(me, chat, ActionType.ASSIGNED);
         action.setToUserId(chat.getAssignedUserId());
         action.setToUserName(user == null ? null : user.getName());
@@ -117,6 +118,7 @@ public class ChatAssignmentService {
         if (chat.getAssignedUserId() != null) return chat;
         if (!settings.effectiveFor(chat).isClaimOnReply()) return chat;
         chat.setAssignedUserId(me.userId());
+        lastAgent(chat, me.userId());
         WaWebChatAction action = action(me, chat, ActionType.ASSIGNED);
         action.setToUserId(me.userId());
         action.setToUserName(action.getByName());
@@ -125,6 +127,11 @@ public class ChatAssignmentService {
             teams.findById(chat.getAssignedTeamId()).ifPresent(t -> action.setToTeamName(t.getName()));
         }
         return commit(chat, action, true);
+    }
+
+    private void lastAgent(WaWebChat chat, String userId) {
+        chat.setLastAgentUserId(userId);
+        chat.setLastAgentAt(clock.instant());
     }
 
     private User userWithAccess(WaWebChat chat, String userId) {

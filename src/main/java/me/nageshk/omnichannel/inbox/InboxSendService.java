@@ -371,6 +371,11 @@ public class InboxSendService {
         message = cacheMedia(message, out);
 
         InboxIngestService.foldOutbound(chat, message, message.getTimestamp());
+        if (actor.userId() != null) {
+            // a person handled this chat: a returning customer may stick to them (design §3.3)
+            chat.setLastAgentUserId(actor.userId());
+            chat.setLastAgentAt(now);
+        }
         return new Recorded(chats.save(chat), message, inserted);
     }
 }

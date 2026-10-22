@@ -322,6 +322,19 @@ class InboxSendIT extends InboxApiTestBase {
     }
 
     @Test
+    void userSendSetsLastAgent() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        chat.setAssignedUserId(agent.getId()); // already someone else's: no claim, but the sender handled it
+        chats.save(chat);
+
+        sendOk(managerToken, chat, Map.of("text", "hello"), "true_" + chat.getRemoteId() + "_41", "hello", "chat");
+
+        WaWebChat after = chats.findById(chat.getId()).orElseThrow();
+        assertThat(after.getLastAgentUserId()).isEqualTo(manager.getId());
+        assertThat(after.getLastAgentAt()).isNotNull();
+    }
+
+    @Test
     void templateTextRendersContactName() throws Exception {
         WaWebChat chat = chatWithAarav();
         String id = textTemplate("Hello", "Hi {{contact.name}}", nameSetting());

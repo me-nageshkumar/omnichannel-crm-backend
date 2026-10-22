@@ -63,7 +63,7 @@ class InboxStreamBrokerTest {
     }
 
     private static ChatView chatView() {
-        return new ChatView("c1", PN, "9199@c.us", null, ChatStatus.OPEN, null, null, 0, null, null, null);
+        return new ChatView("c1", PN, "9199@c.us", null, ChatStatus.OPEN, null, null, 0, null, null, null, null);
     }
 
     private static MessageView messageView() {
@@ -72,7 +72,7 @@ class InboxStreamBrokerTest {
     }
 
     private static ActionView actionView() {
-        return new ActionView("a1", ActionType.CLOSED, null, null, null, null);
+        return new ActionView("a1", ActionType.CLOSED, null, null, null, null, null, null);
     }
 
     @Test

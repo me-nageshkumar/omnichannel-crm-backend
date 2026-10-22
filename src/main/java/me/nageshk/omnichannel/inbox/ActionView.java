@@ -9,5 +9,7 @@ public record ActionView(
         ChatView.Ref by,
         ChatView.Ref toUser,
         ChatView.Ref toTeam,
-        Instant at) {
+        Instant at,
+        RoutedReason reason,
+        ChatView.Ref fromTeam) {
 }

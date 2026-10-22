@@ -141,6 +141,7 @@ class CampaignChatIT extends InboxApiTestBase {
         assertThat(ex.request().params().get("content").asString()).isEqualTo("Hi Asha");
         assertThat(actions.count()).isZero();
         assertThat(contacts.findByWorkspaceIdAndPhone(brand.getId(), PHONE)).isPresent();
+        assertThat(chat.getLastAgentUserId()).isNull();
     }
 
     @Test

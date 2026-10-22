@@ -48,6 +48,9 @@ public class WaWebChat {
     private Instant lastOutboundAt;
     /** The campaign whose first message started the chat, else null; such a chat is routed on the first reply. */
     private String campaignId;
+    /** The user who last sent in, or was assigned, this chat; never cleared, so a returning customer can stick. */
+    private String lastAgentUserId;
+    private Instant lastAgentAt;
     @CreatedDate
     private Instant creationTime;
     @LastModifiedDate

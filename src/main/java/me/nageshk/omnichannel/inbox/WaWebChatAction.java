@@ -28,4 +28,11 @@ public class WaWebChatAction {
     private String toTeamId;
     private String toTeamName;
     private Instant at;
+    /** Only on {@code ROUTED}: why routing chose as it did when it was not the plain setting. */
+    private RoutedReason reason;
+    /** Only on {@code ROUTED} with {@link RoutedReason#HANDED_BACK}/{@code MEMBER_REMOVED}: who was skipped. */
+    private String excludedUserId;
+    /** Only on {@code TRANSFERRED}: the team the chat left. */
+    private String fromTeamId;
+    private String fromTeamName;
 }
