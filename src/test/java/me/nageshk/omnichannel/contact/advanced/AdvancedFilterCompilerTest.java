@@ -94,9 +94,21 @@ class AdvancedFilterCompilerTest {
 
     @Test
     void regexMetacharactersAreEscaped() {
-        assertCompiles(and(rule("name", "contains", ".*+?()[]{}|^$\\")),
+        assertCompiles(and(rule("name", "contains", ".*+?()[]{}|^$\\-/")),
                 """
-                {"$and":[{"name":{"$regex":"\\\\.\\\\*\\\\+\\\\?\\\\(\\\\)\\\\[\\\\]\\\\{\\\\}\\\\|\\\\^\\\\$\\\\\\\\","$options":"i"}}]}""");
+                {"$and":[{"name":{"$regex":"\\\\.\\\\*\\\\+\\\\?\\\\(\\\\)\\\\[\\\\]\\\\{\\\\}\\\\|\\\\^\\\\$\\\\\\\\\\\\-\\\\/","$options":"i"}}]}""");
+    }
+
+    @Test
+    void hostileValuesStayLiterals() {
+        assertCompiles(and(rule("name", "contains", "$where")), """
+                {"$and":[{"name":{"$regex":"\\\\$where","$options":"i"}}]}""");
+        assertCompiles(and(rule("name", "is", "{$ne:1}")), """
+                {"$and":[{"name":{"$regex":"^\\\\{\\\\$ne:1\\\\}$","$options":"i"}}]}""");
+        assertThatThrownBy(() -> AdvancedFilterCompiler.compile(and(rule("labels", "has", "$ne")), R))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(e -> assertThat(((ValidationException) e).fields())
+                        .isEqualTo(Map.of("rules[0].value", "is not a label of this brand")));
     }
 
     @Test

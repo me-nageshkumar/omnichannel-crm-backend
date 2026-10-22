@@ -61,10 +61,10 @@ public final class AdvancedFilterCompiler {
         };
     }
 
-    /** Phone values keep only their ASCII digits; other text is trimmed; both are escaped. */
+    /** Phone values keep only their ASCII digits; other text is stripped; both are escaped. */
     private static String pattern(Rule r) {
         String value = (String) r.value();
-        String v = "phone".equals(r.field()) ? value.replaceAll("[^0-9]", "") : value.trim();
+        String v = "phone".equals(r.field()) ? value.replaceAll("[^0-9]", "") : value.strip();
         return ContactQuery.escape(v);
     }
 

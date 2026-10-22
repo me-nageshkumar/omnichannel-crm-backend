@@ -144,7 +144,8 @@ public final class AdvancedFilterValidator {
     }
 
     private static boolean validText(Object o) {
-        return o instanceof String s && !s.isBlank() && s.length() <= MAX_VALUE_LENGTH;
+        return o instanceof String s && !s.isBlank() && s.length() <= MAX_VALUE_LENGTH
+                && s.chars().noneMatch(Character::isISOControl);
     }
 
     private void source(String s, String vp) {

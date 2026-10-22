@@ -42,6 +42,17 @@ class AdvancedFilterValidatorTest {
     }
 
     @Test
+    void controlCharactersAreRejected() {
+        String single = "must be a text of 1 to 200 characters";
+        String list = "must be a list of 1 to 20 values of 1 to 200 characters";
+        for (String bad : List.of("\u0001", "\u0000", "a\u0000b")) {
+            assertFails(and(rule("name", "contains", bad)), "rules[0].value", single);
+        }
+        assertFails(and(rule("labels", "hasAny", List.of("l1", "a\u0000b"))), "rules[0].value", list);
+        assertFails(and(rule("source", "in", List.of("CHAT", "\u0001"))), "rules[0].value", list);
+    }
+
+    @Test
     void acceptsEveryOperatorOfEveryFieldType() {
         List<RuleNode> rules = new ArrayList<>();
         for (String f : List.of("name", "phone", "attributes.a1")) {
