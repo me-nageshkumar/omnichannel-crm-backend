@@ -81,7 +81,7 @@ public class ContactQuery {
         parts.add(new Criteria().orOperator(any));
     }
 
-    static String escape(String s) {
+    public static String escape(String s) {
         return s.replaceAll("[\\\\^$.|?*+()\\[\\]{}\\-/]", "\\\\$0");
     }
 
