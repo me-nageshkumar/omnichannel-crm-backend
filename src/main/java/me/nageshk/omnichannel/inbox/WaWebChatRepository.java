@@ -19,5 +19,9 @@ public interface WaWebChatRepository extends MongoRepository<WaWebChat, String> 
     @Query(value = "{ 'phoneNumberId': ?0 }", fields = "{ '_id': 1 }")
     List<WaWebChat> findIdsByPhoneNumberId(String phoneNumberId);
 
+    /** A team's queue: open chats routed to the team that nobody has taken, oldest message first. */
+    List<WaWebChat> findByWorkspaceIdAndAssignedTeamIdAndAssignedUserIdIsNullAndStatusOrderByLastMessageAtAsc(
+            String workspaceId, String assignedTeamId, ChatStatus status);
+
     void deleteByPhoneNumberId(String phoneNumberId);
 }

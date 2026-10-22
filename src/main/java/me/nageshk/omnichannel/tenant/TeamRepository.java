@@ -9,4 +9,7 @@ public interface TeamRepository extends MongoRepository<Team, String> {
     List<Team> findByWorkspaceIdOrderByName(String workspaceId);
 
     Optional<Team> findByIdAndWorkspaceId(String id, String workspaceId);
+
+    /** Every team, in any workspace, the user is a member of. */
+    List<Team> findByMemberIdsContaining(String userId);
 }
