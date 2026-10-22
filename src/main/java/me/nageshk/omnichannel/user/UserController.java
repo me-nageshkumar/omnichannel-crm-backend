@@ -6,6 +6,7 @@ import java.security.Principal;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -19,6 +20,7 @@ public class UserController {
     public record ConfirmRequest(@NotBlank String secret, @NotBlank String otp) {}
 
     public record DisableRequest(@NotBlank String otp) {}
+    public record AvailabilityRequest(Availability.Status status) {}
 
     private final UserService users;
 
@@ -29,6 +31,11 @@ public class UserController {
     @GetMapping
     public UserService.CurrentUser me(Principal principal) {
         return users.currentUser(principal.getName());
+    }
+
+    @PutMapping("/availability")
+    public UserService.CurrentUser availability(Principal principal, @RequestBody(required = false) AvailabilityRequest req) {
+        return users.setAvailability(principal.getName(), req == null ? null : req.status());
     }
 
     @PostMapping("/two-factor/initiate")

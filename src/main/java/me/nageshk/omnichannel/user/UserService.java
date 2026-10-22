@@ -1,5 +1,10 @@
 package me.nageshk.omnichannel.user;
 
+import java.time.Clock;
+import java.time.Instant;
+import org.springframework.context.ApplicationEventPublisher;
+import me.nageshk.omnichannel.api.ValidationException;
+
 import me.nageshk.omnichannel.enablement.Disabled;
 import java.util.List;
 import java.util.Set;
@@ -37,7 +42,8 @@ public class UserService {
             RoleRef role,
             Set<String> authorities,
             List<WorkspaceAccess> workspaces,
-            boolean mustChangePassword) {}
+            boolean mustChangePassword,
+            Availability availability) {}
 
     public record CustomerRef(String id, String name) {}
 
@@ -52,9 +58,13 @@ public class UserService {
     private final CustomerRepository customers;
     private final TotpService totp;
     private final LoginAttemptService attempts;
+    private final ApplicationEventPublisher events;
+    private final Clock clock;
 
     public UserService(UserRepository users, AccessService access, RoleCache roles, CustomerRepository customers,
-            TotpService totp, LoginAttemptService attempts) {
+            TotpService totp, LoginAttemptService attempts, ApplicationEventPublisher events, Clock clock) {
+        this.events = events;
+        this.clock = clock;
         this.users = users;
         this.access = access;
         this.roles = roles;
@@ -89,7 +99,19 @@ public class UserService {
                 roleRef(u.getRoleId(), null),
                 authorities,
                 workspaces,
-                u.isMustChangePassword());
+                u.isMustChangePassword(),
+                u.getAvailability() == null ? new Availability(Availability.Status.AVAILABLE, null) : u.getAvailability());
+    }
+
+    /** The user's own Available / Away switch; publishes {@link UserEvents.AvailabilityChanged} on a real change. */
+    public CurrentUser setAvailability(String username, Availability.Status status) {
+        if (status == null) throw new ValidationException("status", "required");
+        User user = require(username);
+        Availability.Status previous = user.availabilityStatus();
+        user.setAvailability(new Availability(status, Instant.now(clock)));
+        users.save(user);
+        if (previous != status) events.publishEvent(new UserEvents.AvailabilityChanged(user, previous));
+        return currentUser(username);
     }
 
     /** A fresh secret and QR code; nothing is stored until {@link #confirmTwoFactor}. */

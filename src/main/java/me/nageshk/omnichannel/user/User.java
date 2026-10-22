@@ -42,6 +42,8 @@ public class User {
     private boolean active;
     private Disabled disabled;
     private TwoFactor twoFactor;
+    /** Null means AVAILABLE: existing users never set it. */
+    private Availability availability;
 
     /** Bumping this invalidates every issued access token for the user. */
     private long tokenVersion;
@@ -59,5 +61,10 @@ public class User {
     public void setWorkspaceRoles(List<WorkspaceRole> workspaceRoles) {
         this.workspaceRoles = workspaceRoles == null ? new ArrayList<>() : workspaceRoles;
     }
+    /** The status routing should read: AVAILABLE until the user says otherwise. */
+    public Availability.Status availabilityStatus() {
+        return availability == null ? Availability.Status.AVAILABLE : availability.status();
+    }
+
     public List<BrandDisable> getBrandDisables() { return brandDisables == null ? new ArrayList<>() : brandDisables; }
 }

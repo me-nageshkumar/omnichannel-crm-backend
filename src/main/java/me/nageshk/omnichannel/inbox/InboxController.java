@@ -13,6 +13,7 @@ import me.nageshk.omnichannel.inbox.InboxScope.ListScope;
 import me.nageshk.omnichannel.phone.PhoneNumberService;
 import me.nageshk.omnichannel.phone.PhoneNumberView;
 import me.nageshk.omnichannel.tenant.TeamService;
+import me.nageshk.omnichannel.user.Availability;
 import me.nageshk.omnichannel.user.User;
 import me.nageshk.omnichannel.user.UserAdminService;
 import org.springframework.core.io.Resource;
@@ -60,7 +61,7 @@ public class InboxController {
     public record AssignRequest(String userId, String teamId) {
     }
 
-    public record Person(String id, String name, String username) {
+    public record Person(String id, String name, String username, Availability.Status availability) {
     }
 
     public record TeamRef(String id, String name) {
@@ -289,7 +290,7 @@ public class InboxController {
     }
 
     private static Person person(User u) {
-        return new Person(u.getId(), u.getName(), u.getUsername());
+        return new Person(u.getId(), u.getName(), u.getUsername(), u.availabilityStatus());
     }
 
     private static SettingsView view(InboxSetting s) {

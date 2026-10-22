@@ -341,6 +341,7 @@ class InboxApiIT extends InboxApiTestBase {
         body.get("users").forEach(u -> users.add(u.get("username").asString()));
         assertThat(users).containsExactlyInAnyOrder("manager", "manager2", "agent", "agent2");
         assertThat(body.get("users").get(0).get("name").asString()).startsWith("Test ");
+        body.get("users").forEach(u -> assertThat(u.get("availability").asString()).isEqualTo("AVAILABLE"));
         List<String> teamNames = new java.util.ArrayList<>();
         body.get("teams").forEach(t -> teamNames.add(t.get("name").asString()));
         assertThat(teamNames).containsExactly("Sales", "Support");
