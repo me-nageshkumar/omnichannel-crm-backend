@@ -7,10 +7,10 @@ duplicate across brands, a safe render step, role-based access and demo data.
 
 **Architecture:** Contact attributes gain an immutable `key`. A new package `me.nageshk.omnichannel.template` holds:
 - `PlaceholderParser`, the grammar gate;
-- `MessageTemplate`, a document in `message_templates`;
+- `MessageTemplate`, a document in `messageTemplates`;
 - `TemplateValidator`, for per-type content rules;
 - `TemplateService`, for CRUD, attribute binding, warnings and duplicate;
-- `TemplateMediaService`, for GridFS bucket `template_media`, magic-byte sniffing and the orphan sweep;
+- `TemplateMediaService`, for GridFS bucket `templateMedia`, magic-byte sniffing and the orphan sweep;
 - `TemplateRenderer`, which builds the context and renders with JMustache;
 - brand-scoped controllers under `/api/workspaces/{workspaceId}/templates…` and `…/template-media…`;
 - `TemplateDemoSeeder`.
@@ -24,8 +24,8 @@ embedded flapdoodle Mongo.
 ## Global Constraints
 
 - **Branch** `feature/message-templates` in the main checkout (no `.worktrees`). Whole suite: `./mvnw test`.
-- **Package** `me.nageshk.omnichannel.template`. **Collections** `message_templates` and GridFS bucket `template_media`
-  (`template_media.files`, `template_media.chunks`). Extend `support/TestUsers.deleteAll()` to clear all three.
+- **Package** `me.nageshk.omnichannel.template`. **Collections** `messageTemplates` and GridFS bucket `templateMedia`
+  (`templateMedia.files`, `templateMedia.chunks`). Extend `support/TestUsers.deleteAll()` to clear all three.
 - **Style:**
   - Lombok `@Getter`/`@Setter` on documents, never hand-written plain accessors;
   - records for views and requests;
@@ -271,7 +271,7 @@ Tests `template/TemplateBindingIT`:
 
 **Files:**
 - `application.yml` (multipart 16MB/17MB);
-- new `template/TemplateMediaConfig`: a `GridFsTemplate` bean `templateMediaGridFs` on bucket `template_media`;
+- new `template/TemplateMediaConfig`: a `GridFsTemplate` bean `templateMediaGridFs` on bucket `templateMedia`;
 - new `template/MediaSniffer`, `template/TemplateMediaService`, `template/TemplateMediaController`, `template/MediaView`;
 - `TemplateValidator` and `TemplateService` for IMAGE, VIDEO, DOCUMENT and AUDIO;
 - new `template/TemplateMediaSweeper` (`@Scheduled(cron = "0 30 3 * * *")` plus `@EnableScheduling` on
@@ -303,7 +303,7 @@ Rules:
   - no other template may reference it (field `mediaId` "is used by another template");
   - `voiceNote` is valid only when opus.
 - Replacing the media on update deletes the old file after the save. Deleting a template deletes its file.
-- `sweepOrphans` deletes files with `uploadedAt < cutoff` that no `message_templates.media.mediaId` refers to. The
+- `sweepOrphans` deletes files with `uploadedAt < cutoff` that no `messageTemplates.media.mediaId` refers to. The
   scheduled call passes now − 24 h.
 
 Tests:

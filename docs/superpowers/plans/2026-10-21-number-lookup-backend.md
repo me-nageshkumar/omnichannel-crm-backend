@@ -4,7 +4,7 @@
 
 **Goal:** A cached "is this number on WhatsApp" lookup, exposed as a GET and enforced by `NewChatService` before a first message to an unknown number.
 
-**Architecture:** `NumberLookupService` reads a `wa_number_lookups` cache, otherwise asks the device's `getNumberId` RPC and stores the answer. `NewChatService.start` looks a number up only when no chat is known for it, refuses unregistered numbers, and creates the chat under the id the lookup reported. `InboxSendService.send` learns the typed phone so the contact of a lid chat gets it.
+**Architecture:** `NumberLookupService` reads a `waNumberLookups` cache, otherwise asks the device's `getNumberId` RPC and stores the answer. `NewChatService.start` looks a number up only when no chat is known for it, refuses unregistered numbers, and creates the chat under the id the lookup reported. `InboxSendService.send` learns the typed phone so the contact of a lid chat gets it.
 
 **Tech Stack:** Spring Boot 4.1, Spring Data Mongo, Lombok, Jackson 3 (`tools.jackson.*`), JUnit 5 + `TestRestTemplate` + `FakeDevice` (RANDOM_PORT).
 
@@ -45,7 +45,7 @@
 
 **Interfaces:**
 - Produces:
-  - `@Document("wa_number_lookups") @CompoundIndex(name = "ws_phone", def = "{'workspaceId': 1, 'phone': 1}", unique = true) class WaNumberLookup { @Id String id; String workspaceId; String phoneNumberId; String phone; boolean registered; String waPhone; String lid; Instant checkedAt; }` (Lombok `@Getter @Setter`).
+  - `@Document("waNumberLookups") @CompoundIndex(name = "ws_phone", def = "{'workspaceId': 1, 'phone': 1}", unique = true) class WaNumberLookup { @Id String id; String workspaceId; String phoneNumberId; String phone; boolean registered; String waPhone; String lid; Instant checkedAt; }` (Lombok `@Getter @Setter`).
   - `interface WaNumberLookupRepository extends MongoRepository<WaNumberLookup, String> { Optional<WaNumberLookup> findByWorkspaceIdAndPhone(String workspaceId, String phone); }`
   - `public record NumberLookup(String phone, boolean registered, String remoteId, Instant checkedAt, boolean cached)`.
   - `public class LookupFailedException extends RuntimeException { public static final String CODE = "LOOKUP_FAILED"; }` message as in Global Constraints.

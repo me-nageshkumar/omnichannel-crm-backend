@@ -69,7 +69,7 @@ known lid returns `{phone, lid: null}`, unregistered returns `null`, not-ready t
 
 ### 3.1 Cache
 
-Collection `wa_number_lookups`, document `WaNumberLookup`:
+Collection `waNumberLookups`, document `WaNumberLookup`:
 
 | field | meaning |
 |---|---|
@@ -164,7 +164,7 @@ Precedence calls:
   even when the cache says not registered; a lid-only chat is found through the lookup and
   `CHAT_TAKEN` still applies to it; `LOOKUP_FAILED` → 502, no send. The existing fake device answers
   `getNumberId` in every current test so they keep passing.
-- `InboxIndexesIT`: `ws_phone` on `wa_number_lookups`.
+- `InboxIndexesIT`: `ws_phone` on `waNumberLookups`.
 
 ## 4. Console
 

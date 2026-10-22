@@ -76,9 +76,9 @@ are unchanged.
 
 - Access tokens gain a `jti` claim (random UUID). Pending (two-factor) tokens are unchanged.
 - `POST /api/auth/logout` with `Authorization: Bearer <access token>` ─► 204. It records the token's
-  `jti` in a new collection `revoked_tokens` `{ _id: jti, username, expiresAt }` with a TTL index on
+  `jti` in a new collection `revokedTokens` `{ _id: jti, username, expiresAt }` with a TTL index on
   `expiresAt`, so Mongo deletes each entry once the token would have expired anyway.
-- `AccessTokenAuthenticator` rejects a token whose `jti` is in `revoked_tokens` (REST and the
+- `AccessTokenAuthenticator` rejects a token whose `jti` is in `revokedTokens` (REST and the
   WebSocket `auth` frame alike). A token without `jti` (issued before this change) is still
   accepted until it expires.
 - Logout only ends the session it is called with; the same user's other tabs/devices and the

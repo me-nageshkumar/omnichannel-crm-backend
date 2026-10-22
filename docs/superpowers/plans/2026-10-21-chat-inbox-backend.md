@@ -4,7 +4,7 @@
 
 **Goal:** Persist every WhatsApp Web message per phone number as chats and messages, route and assign chats to teams and agents, expose a role-scoped inbox API with sending (text and templates), inbound media, live SSE updates and demo data.
 
-**Architecture:** A new `inbox` package. A `WhatsAppEvent` listener (replacing `ChatContactListener`) upserts contact → chat → message and drives routing; services for scope/visibility, routing + assignment, sending (through the existing `RpcDispatcher`), media (GridFS `chat_media`, lazy fetch through a new `downloadMedia` RPC) and an SSE broker; one controller under `/api/workspaces/{ws}/inbox`.
+**Architecture:** A new `inbox` package. A `WhatsAppEvent` listener (replacing `ChatContactListener`) upserts contact → chat → message and drives routing; services for scope/visibility, routing + assignment, sending (through the existing `RpcDispatcher`), media (GridFS `chatMedia`, lazy fetch through a new `downloadMedia` RPC) and an SSE broker; one controller under `/api/workspaces/{ws}/inbox`.
 
 **Tech Stack:** Spring Boot 4.1.1, Spring Data Mongo (flapdoodle embedded in tests), Lombok, Jackson 3 (`tools.jackson.*`), `SseEmitter`, GridFS, JUnit 5 + MockMvc/TestRestTemplate + `FakeDevice`.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Package `me.nageshk.omnichannel.inbox`; collections `wa_web_chats`, `wa_web_messages`, `wa_web_chat_actions`, `inbox_settings`; GridFS bucket `chat_media`.
+- Package `me.nageshk.omnichannel.inbox`; collections `waWebChats`, `waWebMessages`, `waWebChatActions`, `inboxSettings`; GridFS bucket `chatMedia`.
 - Lombok `@Getter/@Setter` on entities, records for views and requests. No hand-written getters/setters.
 - Jackson 3: `tools.jackson.databind.*`; annotations stay `com.fasterxml.jackson.annotation`.
 - Authorization through `@PreAuthorize("@access.has(#workspaceId, '<code>')")`; a chat or number outside the caller's scope is **404** (`NotFoundException`), never 403; a list `scope` the caller may not use is 403 (`ForbiddenException`).
@@ -211,13 +211,13 @@ Role seeder test: the four brand roles hold `inbox:view` and `inbox:send`; AGENT
 
 **Files:**
 - Create: `src/main/java/me/nageshk/omnichannel/inbox/{ChatMediaConfig,ChatMediaService,MediaUnavailableException,InboxCleanup}.java`; add `GET …/chats/{chatId}/messages/{messageId}/media` to `InboxController`; `MediaUnavailableException` → 410 `MEDIA_UNAVAILABLE` in `ApiExceptionHandler`; `RpcException` with code `MEDIA_UNAVAILABLE` maps to the same 410.
-- Modify: `InboxSendService` — copy template media bytes into `chat_media` and set `media.mediaId/downloadedAt` on the stored message (replaces the Task 7 TODO).
+- Modify: `InboxSendService` — copy template media bytes into `chatMedia` and set `media.mediaId/downloadedAt` on the stored message (replaces the Task 7 TODO).
 - Modify: `src/main/java/me/nageshk/omnichannel/phone/PhoneNumberService.java:115` `delete(PhoneNumber)` — call `InboxCleanup.deleteForNumber(phoneNumberId)` (chats, messages, actions, settings, media) before deleting the number.
 - Modify: `src/main/resources/wabridge/scripts/{page.js,manifest.json}` — commit the bundle rebuilt by the extension plan (`npm run build` in `whatsapp-web-extension` writes it here). Do this only after the extension plan's task is complete; if the bundle is unchanged, note it in the ledger.
 - Test: `src/test/java/me/nageshk/omnichannel/inbox/InboxMediaIT.java`
 
 **Interfaces:**
-- Produces: `ChatMediaConfig` with `@Bean GridFsTemplate chatMediaGridFs(...)` for bucket `chat_media` (same shape as `TemplateMediaConfig`, without a second `taskScheduler`); `ChatMediaService.store(workspaceId, phoneNumberId, messageId, mimetype, filename, byte[])` → mediaId; `open(workspaceId, mediaId)` → `TemplateMediaService.MediaFile`-like record `MediaFile(fileName, mimeType, size, GridFsResource)`; `deleteByPhoneNumber(phoneNumberId)`; `CompletableFuture<MediaFile> fetchIfNeeded(WaWebChat chat, WaWebMessage message)`: cached → immediate; else RPC `downloadMedia {messageId: waMessageId}` → result `{data, mimetype, filename, filesize}` base64-decoded (reject > 16 MB with `MediaUnavailableException`), stored, message updated, then opened. Null/absent `media` on the message → 404.
+- Produces: `ChatMediaConfig` with `@Bean GridFsTemplate chatMediaGridFs(...)` for bucket `chatMedia` (same shape as `TemplateMediaConfig`, without a second `taskScheduler`); `ChatMediaService.store(workspaceId, phoneNumberId, messageId, mimetype, filename, byte[])` → mediaId; `open(workspaceId, mediaId)` → `TemplateMediaService.MediaFile`-like record `MediaFile(fileName, mimeType, size, GridFsResource)`; `deleteByPhoneNumber(phoneNumberId)`; `CompletableFuture<MediaFile> fetchIfNeeded(WaWebChat chat, WaWebMessage message)`: cached → immediate; else RPC `downloadMedia {messageId: waMessageId}` → result `{data, mimetype, filename, filesize}` base64-decoded (reject > 16 MB with `MediaUnavailableException`), stored, message updated, then opened. Null/absent `media` on the message → 404.
 - Controller: returns `CompletableFuture<ResponseEntity<Resource>>` with the same headers as `TemplateMediaController.download` (inline for `image/*`, `video/*`, `audio/*`; attachment otherwise; `X-Content-Type-Options: nosniff`).
 
 - [ ] **Step 1: Write failing tests** (`InboxMediaIT`, `FakeDevice` like Task 7): `firstDownloadFetchesFromDeviceAndCaches` (message with `media.mimetype=image/png`, no `mediaId`; GET → device gets `downloadMedia` frame with `params.messageId` = waMessageId; answer `{data: base64(png), mimetype:"image/png", filename:"a.png", filesize: n}` → 200, body bytes equal, `Content-Disposition` inline, `X-Content-Type-Options: nosniff`; message now has `mediaId`); `secondDownloadNeedsNoDevice` (close the FakeDevice; GET → 200 from cache); `unavailableMediaIs410` (device answers error `MEDIA_UNAVAILABLE`); `noDeviceIs409`; `messageWithoutMediaIs404`; `outsideScopeIs404`; `templateImageSendCachesMedia` (send an IMAGE template as in Task 7 → stored message `media.available` true, GET works without any `downloadMedia` frame); `deletingNumberRemovesInboxData` (`PhoneNumberService.delete` → zero chats/messages/actions/settings and the GridFS file gone).

@@ -12,7 +12,7 @@ creating and which created ones no code checks.
 - The enum stays as the seed list and as constants for the built-ins.
 - A startup scanner of `@PreAuthorize` expressions feeds a computed status.
 - `AuthorityService` and `AuthorityController` carry the console API, with an audit trail in
-  `authority_changes`.
+  `authorityChanges`.
 
 **Tech Stack:** Spring Boot 3.5.6, Java 21, Spring Security 6 method security, Spring Data MongoDB
 (embedded flapdoodle in tests), JUnit 5, AssertJ, TestRestTemplate.
@@ -24,7 +24,7 @@ creating and which created ones no code checks.
 
 - Package `me.nageshk.omnichannel`. New classes go in `me.nageshk.omnichannel.access` unless named
   otherwise.
-- Collections are `authorities` and `authority_changes`. The `system_state` document
+- Collections are `authorities` and `authorityChanges`. The `system_state` document
   `known-authorities` is deleted by the seeder.
 - Code pattern: `^[a-z0-9]+(-[a-z0-9]+)*:[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 characters.
 - Group pattern: `^[a-z0-9]+(-[a-z0-9]+)*$`, at most 40 characters.
@@ -376,7 +376,7 @@ git commit -m "feat(access): read authority codes from @PreAuthorize checks"
     4. PLATFORM and kinds lacks GLOBAL → WRONG_LEVEL.
     5. COMPANY → ACTIVE whatever the kinds.
     6. Otherwise → ACTIVE.
-  - **`@Document("authority_changes") class AuthorityChange`**, with fields:
+  - **`@Document("authorityChanges") class AuthorityChange`**, with fields:
     - `id`
     - `@Indexed code`
     - `action` (`CREATED`, `UPDATED` or `DELETED`)

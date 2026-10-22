@@ -20,8 +20,8 @@ section — those are binding).
 
 ## Global Constraints
 
-- Package `me.nageshk.omnichannel.contact`. Collections: `contacts`, `contact_labels`,
-  `contact_attributes`, `contact_notes`, `contact_filters`.
+- Package `me.nageshk.omnichannel.contact`. Collections: `contacts`, `contactLabels`,
+  `contactAttributes`, `contactNotes`, `contactFilters`.
 - Every query, update, delete and export is scoped by `workspaceId`; anything of another brand is 404.
 - Controllers: `@PreAuthorize("@access.has(#workspaceId, '<code>')")`, the existing idiom (so
   `AuthorityCheckScanner` finds them). Errors use existing exceptions/codes: `VALIDATION` (400,

@@ -23,7 +23,10 @@ This repo continues the history of `whatsapp-backend`, which it replaces.
 ## Run
 
 Needs MongoDB (default `mongodb://localhost:27017/omnichannel_crm`, override with
-`OMNICHANNEL_MONGODB_URI`). Users live in the `users` collection; the Super Admin is seeded on first start
+`OMNICHANNEL_MONGODB_URI`). Collection and GridFS bucket names are camelCase (`phoneNumbers`,
+`waWebChats`, `chatMedia.files`); a database still on the old snake_case names is renamed on start by
+`CollectionRenames`, which keeps documents and indexes and never overwrites a collection that holds documents.
+Users live in the `users` collection; the Super Admin is seeded on first start
 and never overwritten afterwards (roles are seeded first, see [Roles and access](#roles-and-access)):
 
 | User | Variables | Notes |
@@ -91,7 +94,7 @@ curl -s localhost:8080/api/users/me -H "Authorization: Bearer $TOKEN"   # {id, n
 
 A wrong code on `confirm`/`disable` is 400 `INVALID_OTP` (not 401), so the session survives a typo.
 
-Log out ends only the calling session: the token's id goes into `revoked_tokens` (TTL-indexed, cleared
+Log out ends only the calling session: the token's id goes into `revokedTokens` (TTL-indexed, cleared
 when the token would have expired) and is refused from then on, over REST and the WebSocket. Tokens
 issued before logout existed carry no id and simply run to expiry.
 
@@ -111,7 +114,7 @@ Every logged-in user can use the console; what they see follows their authoritie
   level or below (PLATFORM: platform only; COMPANY: company and brand; BRAND: brand only). Built-in:
   `SUPER_ADMIN` (every platform authority, cannot be edited or given away), `ACCOUNT_MANAGER`,
   `CUSTOMER_ADMIN`, `WORKSPACE_MANAGER`, `TEAM_LEAD`, `AGENT`. Only the Super Admin
-  edits roles or creates custom ones; every change is recorded in `role_changes`. Edits apply on the
+  edits roles or creates custom ones; every change is recorded in `roleChanges`. Edits apply on the
   user's next request (authorities are not in the JWT).
 - **Per-workspace access:** a user has an optional company role (applies in every workspace of the
   customer, held by the Customer Admin) plus at most one brand role per workspace.
@@ -136,7 +139,7 @@ Every logged-in user can use the console; what they see follows their authoritie
 
 Numbers, brands, customers, logins and a person's access to one brand are enabled or disabled
 (`POST .../disable` and `.../enable`). Each disable records `{by, level, at}` as `disabled` on the
-thing (`null` when enabled); every change is kept in `enablement_changes`. The level is that of the
+thing (`null` when enabled); every change is kept in `enablementChanges`. The level is that of the
 role the actor holds the authority through: platform staff act at PLATFORM, a Customer Admin at
 COMPANY (even with brand authorities), a Workspace Manager at BRAND. **Anyone with the authority may
 disable; enabling needs a level at least that of the stored disable**, else 403
@@ -202,7 +205,7 @@ Authorities live in Mongo and the Super Admin manages them on the Authorities pa
 
 ## Phone numbers
 
-A brand's WhatsApp numbers live in `phone_numbers` (digits only, country code first, 8–15 digits,
+A brand's WhatsApp numbers live in `phoneNumbers` (digits only, country code first, 8–15 digits,
 unique across the platform; a brand may have several). The extension connects for exactly one number:
 
 Each number has a `connectionType`: `WHATSAPP_WEB` (a browser running WhatsApp Web with the extension
@@ -241,8 +244,8 @@ A brand's people, in `contacts` (one per brand and WhatsApp person; everything i
   number), `name` (the WhatsApp display name until a person edits it: `nameEdited`), `labels` (ids),
   `attributes` (attribute id to text, at most 500 characters), `source` (`CHAT`, `IMPORT`, `MANUAL`),
   `lastMessageAt`. Labels (name, colour, description) and attributes (name, description) are per-brand
-  lists in `contact_labels` / `contact_attributes`; names are unique per brand ignoring case; deleting
-  one removes it from every contact. Notes in `contact_notes`, saved filters in `contact_filters`.
+  lists in `contactLabels` / `contactAttributes`; names are unique per brand ignoring case; deleting
+  one removes it from every contact. Notes in `contactNotes`, saved filters in `contactFilters`.
 - **Identity:** within a brand no two contacts share a `phone` or a `waId` (partial unique indexes, so
   any number of contacts may have neither). A `@c.us` chat finds the contact by phone (linking an
   imported contact to its chat) else by `waId`, else creates it. A `@lid` chat finds by `waId`; if the
@@ -299,7 +302,7 @@ Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, 
 
 ## Message templates
 
-Reusable messages a brand sends, in `message_templates` (everything scoped by `workspaceId`; another
+Reusable messages a brand sends, in `messageTemplates` (everything scoped by `workspaceId`; another
 brand's template, media or contact answers 404). Package `me.nageshk.omnichannel.template`. A name is
 unique per brand ignoring case, archived templates included.
 

@@ -59,7 +59,7 @@ only auto-create contacts. This feature persists them.
 All documents carry `customerId` and `workspaceId`. These collections are specific to WhatsApp
 Web numbers; Cloud API numbers get their own later, so names carry the `wa_web_` prefix.
 
-### `wa_web_chats` — one row per (phone number, remote chat)
+### `waWebChats` — one row per (phone number, remote chat)
 | field | notes |
 |---|---|
 | `id` | |
@@ -78,7 +78,7 @@ Indexes: unique `(phoneNumberId, remoteId)`; `(phoneNumberId, lastMessageAt desc
 `(phoneNumberId, assignedUserId, lastMessageAt desc)`; `(phoneNumberId, assignedTeamId, lastMessageAt desc)`;
 `(workspaceId, contactId)`.
 
-### `wa_web_messages` — every message, both directions
+### `waWebMessages` — every message, both directions
 | field | notes |
 |---|---|
 | `id` | |
@@ -88,7 +88,7 @@ Indexes: unique `(phoneNumberId, remoteId)`; `(phoneNumberId, lastMessageAt desc
 | `source` | `CONTACT` (IN), `CONSOLE` (sent by our app), `WHATSAPP_WEB` (typed on the phone / WhatsApp Web tab). Campaigns add a value later. |
 | `type` | the whatsapp-web.js type string: `chat`, `image`, `video`, `audio`, `ptt`, `document`, `sticker`, `location`, `vcard`, `poll_creation`, `revoked`, anything else kept verbatim |
 | `body` | text, or the caption of a media message, or the vCard text |
-| `media` | `{mimetype, filename, size, mediaId, downloadedAt}`; `mediaId` is the `chat_media` GridFS id once fetched, else null |
+| `media` | `{mimetype, filename, size, mediaId, downloadedAt}`; `mediaId` is the `chatMedia` GridFS id once fetched, else null |
 | `location` | `{latitude, longitude, description}` for `location` |
 | `timestamp` | WhatsApp's message time (seconds → Instant) |
 | `status` | `PENDING`, `SENT`, `DELIVERED`, `READ`, `PLAYED`, `FAILED` — the highest reached |
@@ -103,18 +103,18 @@ Indexes: unique `(phoneNumberId, waMessageId)`; `(chatId, timestamp desc)`.
 Ack → status: -1 FAILED, 0 PENDING, 1 SENT, 2 DELIVERED, 3 READ, 4 PLAYED. Status never goes
 down (a late `ack=1` after `READ` is ignored); FAILED can be reached from any state.
 
-### `wa_web_chat_actions` — the audit trail, shown in the thread as system lines
+### `waWebChatActions` — the audit trail, shown in the thread as system lines
 `id, workspaceId, chatId, type, byUserId, byName, toUserId, toUserName, toTeamId, toTeamName, at`.
 `type`: `ROUTED` (automatic, `byUserId` null, shown as "System"), `ASSIGNED`, `UNASSIGNED`,
 `CLOSED`, `REOPENED`. Index `(chatId, at)`.
 
-### `inbox_settings` — routing per phone number
+### `inboxSettings` — routing per phone number
 `id, workspaceId, phoneNumberId (unique), routing {mode, teamId, userId}, claimOnReply (default true),
 keepAssignmentOnClose (default false), roundRobinCursor (user id last assigned)`.
 `mode`: `NONE` (default when no document), `TEAM`, `USER`, `ROUND_ROBIN`.
 
-### `chat_media` — GridFS bucket
-Media bytes of messages, inbound (fetched on demand) and outbound (copied from `template_media`
+### `chatMedia` — GridFS bucket
+Media bytes of messages, inbound (fetched on demand) and outbound (copied from `templateMedia`
 at send time so the thread shows what was sent). Metadata: `workspaceId`, `phoneNumberId`,
 `messageId`. 16 MB cap per file (whatsapp-web.js's own limit). Deleting a phone number deletes
 its chats, messages, actions, settings and media.
@@ -148,7 +148,7 @@ lazily (§6).
 Borrowed from the reference's `inboxSetting` + `ChatAssignmentService`, simplified.
 
 - **Routing** runs when a chat is created by an inbound message, and when an inbound message
-  reopens a closed chat that has no assignment. Per the number's `inbox_settings`:
+  reopens a closed chat that has no assignment. Per the number's `inboxSettings`:
   - `NONE`: stays unassigned.
   - `TEAM`: `assignedTeamId = teamId`, no user (the team queue).
   - `USER`: `assignedUserId = userId`.
@@ -185,9 +185,9 @@ Borrowed from the reference's `inboxSetting` + `ChatAssignmentService`, simplifi
   `missing` non-empty → 400 VALIDATION with `fields.<name> = "required"`. Then by type:
   - TEXT → content = body, `options.linkPreview` from the template.
   - IMAGE / VIDEO / DOCUMENT / AUDIO → content = caption or "", `options.media = {mimetype, data (base64), filename}`
-    read from `template_media`; AUDIO with `voiceNote` → `options.sendAudioAsVoice = true`;
+    read from `templateMedia`; AUDIO with `voiceNote` → `options.sendAudioAsVoice = true`;
     DOCUMENT → `options.sendMediaAsDocument = true`. The bytes are also copied into
-    `chat_media` and linked from the stored message.
+    `chatMedia` and linked from the stored message.
   - LOCATION → content "", `options.location = {latitude, longitude, description: name + ", " + address}`.
   - POLL → content "", `options.poll = {pollName: question, pollOptions: options, options: {allowMultipleAnswers}}`.
   - CONTACT_CARD → 400 VALIDATION `templateId: "contact cards cannot be sent from the inbox yet"`.
@@ -211,7 +211,7 @@ Borrowed from the reference's `inboxSetting` + `ChatAssignmentService`, simplifi
 
 **Media**: `GET …/chats/{chatId}/messages/{messageId}/media` streams the bytes. First call
 with no `mediaId`: RPC `downloadMedia {messageId: waMessageId}` to the extension (new page
-method, §9), store in `chat_media`, set `media.mediaId/downloadedAt`, then stream. Device not
+method, §9), store in `chatMedia`, set `media.mediaId/downloadedAt`, then stream. Device not
 connected → 409 `NO_DEVICE`; WhatsApp cannot resolve the media (expired, evicted) → 410
 `MEDIA_UNAVAILABLE` with message "Media is no longer available on the phone". Headers as the
 template media download (content type, inline disposition for image/video/audio, attachment
@@ -336,7 +336,7 @@ number six chats with the demo contacts: two assigned to demo-agent, one in the 
 queue, one assigned to demo-lead, one unassigned, one closed; each with 4–8 messages mixing
 contact text, console replies by demo-agent (with sent/delivered/read states), one WhatsApp Web
 reply with no agent, one inbound image whose bytes are the bundled demo PNG (so the thumbnail
-renders without a phone), and the matching actions. `wa_web_chats.remoteId` uses the contact's
+renders without a phone), and the matching actions. `waWebChats.remoteId` uses the contact's
 phone `@c.us`.
 
 ## 13. Calls made without asking

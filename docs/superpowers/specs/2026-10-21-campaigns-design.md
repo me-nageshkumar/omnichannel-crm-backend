@@ -28,7 +28,7 @@ The binding priority, in the user's words, is "what is sustainable and avoiding 
 
 ## 3. Vocabulary
 
-- **Sender**: a WhatsApp Web phone number of the workspace used by campaigns, with its own state and counters (`campaign_senders`).
+- **Sender**: a WhatsApp Web phone number of the workspace used by campaigns, with its own state and counters (`campaignSenders`).
 - **First message**: any campaign message. Campaign sends are cold by definition and all count toward the caps, whether or not a chat already exists.
 - **Recipient**: one row of a campaign's audience, materialised when the campaign starts.
 - **Workspace day**: a calendar day in the workspace's campaign timezone.
@@ -70,17 +70,17 @@ A two-column table under a "Saved mapping" select (`None` plus the saved names, 
 Below: checkbox "Create labels that do not exist yet", checkbox "Save this mapping as" with a name box, the five sample rows for the chosen phone and name columns, and the row count. Primary button "Import N rows".
 
 ### 4.4 Saved mappings
-Collection `contact_import_mappings`: `{ workspaceId, name, nameKey (unique per workspace), headerSignature: string[], mapping: ImportMapping, createdBy, creationTime, lastUsedAt }`. Endpoints under `/api/workspaces/{ws}/contacts/import-mappings`: `GET` (list), `POST` (create; name duplicate → 409 DUPLICATE on `name`), `DELETE /{id}`. All `contact:import`. Saving happens from the import request itself when `saveAs` is present: `mapping` JSON gains an optional `saveAs: string`; the server saves after a successful import. Choosing a saved mapping whose attribute no longer exists drops that row silently and shows the rest.
+Collection `contactImportMappings`: `{ workspaceId, name, nameKey (unique per workspace), headerSignature: string[], mapping: ImportMapping, createdBy, creationTime, lastUsedAt }`. Endpoints under `/api/workspaces/{ws}/contacts/import-mappings`: `GET` (list), `POST` (create; name duplicate → 409 DUPLICATE on `name`), `DELETE /{id}`. All `contact:import`. Saving happens from the import request itself when `saveAs` is present: `mapping` JSON gains an optional `saveAs: string`; the server saves after a successful import. Choosing a saved mapping whose attribute no longer exists drops that row silently and shows the rest.
 
 ### 4.5 Leads with phone only
 The dialog only requires the phone column; everything else may be "Not imported". A contact with only a phone is valid today.
 
 ## 5. Sender policy (ban avoidance)
 
-All numbers are in the server; the UI only displays them. Numeric values below are defaults in `campaign_settings` (§7.3); an admin may change them, and the settings page shows a warning next to any value looser than the default.
+All numbers are in the server; the UI only displays them. Numeric values below are defaults in `campaignSettings` (§7.3); an admin may change them, and the settings page shows a warning next to any value looser than the default.
 
 ### 5.1 Sender states
-`campaign_senders`, one document per `phoneNumberId` (created on first use, also listed for every enabled WhatsApp Web number of the workspace):
+`campaignSenders`, one document per `phoneNumberId` (created on first use, also listed for every enabled WhatsApp Web number of the workspace):
 
 ```
 { phoneNumberId (unique), workspaceId, state: WARMING|ACTIVE|RESTING|SUSPENDED|RETIRED,
@@ -102,7 +102,7 @@ All numbers are in the server; the UI only displays them. Numeric values below a
 - Campaigns may select WARMING and ACTIVE senders; the picker shows RESTING with "rests until" and no checkbox; SUSPENDED and RETIRED are hidden from the picker and shown on the Senders page.
 
 ### 5.2 Daily cap
-Counted per sender per workspace day over `campaign_recipients` with `status in (SENT, DELIVERED, READ, PLAYED, FAILED)` and `attemptedAt` in the day (a failed attempt still cost a send; `PLAYED` is treated as read everywhere). Only campaign sends count; agents' own sends from the inbox do not, on the assumption that they are replies in two-way chats and few New chat first messages. Cap by **age in sending days**: the number of distinct workspace days since `warmupStartedAt` on which the sender attempted at least one campaign send, plus one for today. Calendar days do not advance the age, so a number that rests, is paused, or sits over a weekend does not skip ahead (my call; stricter than calendar age and what "cool off" asks for). Stored on the sender as `sendingDays: int`, incremented by the first attempt of each workspace day.
+Counted per sender per workspace day over `campaignRecipients` with `status in (SENT, DELIVERED, READ, PLAYED, FAILED)` and `attemptedAt` in the day (a failed attempt still cost a send; `PLAYED` is treated as read everywhere). Only campaign sends count; agents' own sends from the inbox do not, on the assumption that they are replies in two-way chats and few New chat first messages. Cap by **age in sending days**: the number of distinct workspace days since `warmupStartedAt` on which the sender attempted at least one campaign send, plus one for today. Calendar days do not advance the age, so a number that rests, is paused, or sits over a weekend does not skip ahead (my call; stricter than calendar age and what "cool off" asks for). Stored on the sender as `sendingDays: int`, incremented by the first attempt of each workspace day.
 
 | Age | Cap |
 |---|---|
@@ -159,7 +159,7 @@ campaigns {
   counts: { total, pending, sent, delivered, read, replied, skipped, failed },   // maintained by the runner, recomputed on read of one campaign
   createdBy, creationTime, startedAt, finishedAt, lastUpdateTime, version }
 
-campaign_recipients {
+campaignRecipients {
   id, campaignId, workspaceId, phone (digits), contactId|null, templateId,
   values: Map<String,String> (CSV cells for CSV campaigns; empty for FILTER),
   status: PENDING|SENDING|SENT|DELIVERED|READ|FAILED|SKIPPED,     // READ covers PLAYED acks
@@ -173,7 +173,7 @@ Indexes: recipients unique `(campaignId, phone)`; `(campaignId, status)`; `(work
 
 ### 6.2 Lifecycle
 - **Create** (`POST /campaigns`, `campaign:manage`): body `{ name, audience: {kind, filterId} | {kind: CSV, phoneColumn, nameColumn|null}, templateIds, placeholders, senderIds }`; for CSV the request is multipart with parts `campaign` (JSON) and `file`. Validation: name, 1–5 templates per §5.7, every placeholder of every chosen template mapped (FILTER campaigns: CONTACT_* placeholders default to their field or attribute and AGENT placeholders need a source; CSV campaigns: every placeholder, contact ones included, needs a CSV column or fixed text, since there is no contact to read from; `{{contact.phone}}` may also map to the phone column), senders exist in the workspace, are WhatsApp Web, enabled, and WARMING/ACTIVE, at least one. Saved as DRAFT. A DRAFT can be edited (`PUT`) and deleted (`DELETE`).
-- **Start** (`POST /campaigns/{id}/start`): DRAFT → RUNNING. Materialises recipients synchronously in pages of 500 ordered by `_id` (cursor, never skip/limit): FILTER → `ContactQuery.build(ws, filterSpec)` restricted to contacts with a phone; CSV → the stored rows. Each row becomes a recipient or a SKIPPED one (`NO_PHONE`, invalid phone, `DUPLICATE` within the campaign, `DO_NOT_CONTACT`, `RECENTLY_MESSAGED`). The CSV rows are stored in GridFS at create time (bucket `campaign_csv`) and deleted after materialisation. Counts are set. Materialisation of 20,000 rows must finish within the request; the builder keeps it to a handful of bulk writes per page.
+- **Start** (`POST /campaigns/{id}/start`): DRAFT → RUNNING. Materialises recipients synchronously in pages of 500 ordered by `_id` (cursor, never skip/limit): FILTER → `ContactQuery.build(ws, filterSpec)` restricted to contacts with a phone; CSV → the stored rows. Each row becomes a recipient or a SKIPPED one (`NO_PHONE`, invalid phone, `DUPLICATE` within the campaign, `DO_NOT_CONTACT`, `RECENTLY_MESSAGED`). The CSV rows are stored in GridFS at create time (bucket `campaignCsv`) and deleted after materialisation. Counts are set. Materialisation of 20,000 rows must finish within the request; the builder keeps it to a handful of bulk writes per page.
 - **Pause** (`POST /{id}/pause`): RUNNING → PAUSED, `pausedBy = USER`. In-flight sends finish. **Resume** (`POST /{id}/resume`): PAUSED → RUNNING, clears `pausedBy`/`pauseReason`; allowed for SYSTEM pauses too (that is the admin's acknowledgement).
 - **Terminate** (`POST /{id}/terminate`, confirm in UI): RUNNING/PAUSED → TERMINATED; all PENDING recipients → SKIPPED `CANCELLED`. Final.
 - **Complete**: the runner sets COMPLETED when no PENDING or SENDING recipients remain. Final.
@@ -219,7 +219,7 @@ New Brand pages: **Campaigns** (`/campaigns`, `campaign:view`), with `/campaigns
 - **Campaigns list**: name, status label, progress "sent / total" with a bar, replied, skipped, started, actions (Start for DRAFT, Pause/Resume, Terminate with ConfirmModal, Delete for DRAFT). Banner at the top when any campaign is PAUSED by SYSTEM: "Campaigns were paused after two numbers were logged out this week. Review the senders before resuming."
 - **Campaign detail**: counts tiles (total, pending, sent, delivered, read, replied, skipped, failed), estimate, per-sender today table, recipients table with status filter and paging, actions. Polls every 5 s while RUNNING. Next to the counts a small countdown shows the refresh: a PatternFly `Progress` bar (size `sm`, no percentage text) that drains from full to empty over the 5 s with the label "Refreshing in 5 s", "4 s" … "1 s", then resets to full when the fetch starts; while a fetch is in flight the label reads "Refreshing…". The countdown stops on PAUSED, COMPLETED and TERMINATED (the page then shows "Refreshed <time>" and a Refresh button). A fetch error keeps the last numbers, shows an inline danger alert, and the countdown continues.
 - **Senders**: table of all workspace WhatsApp Web numbers: number, label, phone status, campaign state, age day, cap today, used today, pause reason, "runs on" (inline edit), actions Rest / Retire / Reactivate / Resume pause.
-- **Campaign settings**: timezone (IANA select), default country code (digits, default `91`), working days, start and end time, then pacing values (gaps, hourly cap, warm-up table, mature and healthy caps, rest days, recontact days, stop words). Each pacing field shows a warning "Looser than the recommended value" when looser than the default. `campaign_settings` is one document per workspace, created with defaults on first read; `timezone` defaults to `Asia/Kolkata` (my call: the user's numbers are Indian).
+- **Campaign settings**: timezone (IANA select), default country code (digits, default `91`), working days, start and end time, then pacing values (gaps, hourly cap, warm-up table, mature and healthy caps, rest days, recontact days, stop words). Each pacing field shows a warning "Looser than the recommended value" when looser than the default. `campaignSettings` is one document per workspace, created with defaults on first read; `timezone` defaults to `Asia/Kolkata` (my call: the user's numbers are Indian).
 
 ### 7.4 Contacts changes
 Import dialog per §4.3. Contact detail and list show a "Do not contact" label; the filter panel gets a "Do not contact" tri-state (any / only / exclude).

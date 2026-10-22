@@ -150,7 +150,7 @@ Notes:
 
 ## Media
 
-- **Storage.** Files go in MongoDB GridFS, bucket `template_media`. There's no new infrastructure. The metadata saved with
+- **Storage.** Files go in MongoDB GridFS, bucket `templateMedia`. There's no new infrastructure. The metadata saved with
   each file is `workspaceId`, `fileName`, `mimeType`, `size`, `uploadedBy` and `uploadedAt`.
 - **Size.** At most **16 MB** per file, matching WhatsApp's media limit. `spring.servlet.multipart.max-file-size` and
   `max-request-size` are raised to 16 MB and 17 MB. Contact import keeps its own 5 MB check in `ContactImportService`.
@@ -169,7 +169,7 @@ Notes:
 
 ## Template record
 
-Collection `message_templates`:
+Collection `messageTemplates`:
 
 | Field | Notes |
 |---|---|
@@ -314,7 +314,7 @@ brand already has templates. Otherwise each brand gets five templates:
 ## Brand and customer deletion
 
 Brands and customers can only be disabled today, never deleted, so nothing cascades. When brand or customer deletion is
-built, it must delete the brand's templates and their `template_media` files.
+built, it must delete the brand's templates and their `templateMedia` files.
 
 ## Calls made without asking (check these)
 

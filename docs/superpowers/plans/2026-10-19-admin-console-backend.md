@@ -4,7 +4,7 @@
 
 **Goal:** Backend support for the first console slice: super admin seeded with two-factor off, `GET /api/users/me`, wrong-code 400 on self-service two-factor, server-side logout, and serving the React build from the jar.
 
-**Architecture:** Small changes to the existing `user/`, `auth/`, `api/` and `config/` packages, plus one new Mongo collection `revoked_tokens` (TTL-indexed) checked by `AccessTokenAuthenticator`. A forwarding controller serves `index.html` for SPA routes, and a Maven profile copies the frontend's `dist/` into `static/`.
+**Architecture:** Small changes to the existing `user/`, `auth/`, `api/` and `config/` packages, plus one new Mongo collection `revokedTokens` (TTL-indexed) checked by `AccessTokenAuthenticator`. A forwarding controller serves `index.html` for SPA routes, and a Maven profile copies the frontend's `dist/` into `static/`.
 
 **Tech Stack:** Java 21, Spring Boot 3.5.6, Spring Security 6, Spring Data MongoDB, jjwt 0.12.6, JUnit 5 + MockMvc + embedded Mongo (flapdoodle, Mongo 7.0.12).
 
@@ -95,7 +95,7 @@ Keep the existing idempotence, missing-hash and device-user tests.
 
 **Files:**
 - Modify: `src/main/java/me/nageshk/omnichannel/auth/JwtService.java`
-- Create: `src/main/java/me/nageshk/omnichannel/auth/RevokedToken.java` (`@Document("revoked_tokens")`: `@Id String jti`, `String username`, `@Indexed(expireAfter = "0s") Instant expiresAt`)
+- Create: `src/main/java/me/nageshk/omnichannel/auth/RevokedToken.java` (`@Document("revokedTokens")`: `@Id String jti`, `String username`, `@Indexed(expireAfter = "0s") Instant expiresAt`)
 - Create: `src/main/java/me/nageshk/omnichannel/auth/RevokedTokenRepository.java` (`MongoRepository<RevokedToken, String>`)
 - Create: `src/main/java/me/nageshk/omnichannel/auth/LogoutController.java`
 - Modify: `src/main/java/me/nageshk/omnichannel/auth/AccessTokenAuthenticator.java`
@@ -118,7 +118,7 @@ Keep the existing idempotence, missing-hash and device-user tests.
   - `LogoutIT` (`@SpringBootTest @AutoConfigureMockMvc`; clear users and `RevokedTokenRepository` in `@BeforeEach`; user `dev` USER, two-factor off):
     - `logoutRevokesThatToken`: POST `/api/auth/logout` with token A → 204; GET `/api/status` with A → 401.
     - `otherTokensOfSameUserKeepWorking`: tokens A and B; logout A; GET `/api/status` with B → 200.
-    - `revocationEntryExpiresWithToken`: after logout, the `revoked_tokens` document for A's jti has `username=="dev"` and `expiresAt` equal to A's `expiresAt`; `mongoTemplate.indexOps(RevokedToken.class).getIndexInfo()` contains an index on `expiresAt` with `expireAfter` of 0 seconds.
+    - `revocationEntryExpiresWithToken`: after logout, the `revokedTokens` document for A's jti has `username=="dev"` and `expiresAt` equal to A's `expiresAt`; `mongoTemplate.indexOps(RevokedToken.class).getIndexInfo()` contains an index on `expiresAt` with `expireAfter` of 0 seconds.
     - `logoutTwiceIsUnauthorized`: logout A → 204; logout A again → 401.
     - `logoutWithoutTokenIsUnauthorized`: POST `/api/auth/logout` with no header → 401.
     - `logoutWithPendingTokenIsUnauthorized`: Bearer `jwt.issuePendingToken("dev")` → 401.

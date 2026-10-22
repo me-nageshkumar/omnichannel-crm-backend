@@ -8,10 +8,10 @@ code and device key; numbers, brands, customers and people are enabled/disabled 
 
 **Architecture:**
 - One small enablement core (`me.nageshk.omnichannel.enablement`): the `Disabled` record stored on
-  each thing, the actor-level resolution, the enable check, and an `enablement_changes` audit.
+  each thing, the actor-level resolution, the enable check, and an `enablementChanges` audit.
 - Users, customers, workspaces and per-brand access gain a `disabled` record; the existing
   deactivate/reactivate endpoints become disable/enable.
-- A new `me.nageshk.omnichannel.phone` package: `phone_numbers` documents, connect codes, device
+- A new `me.nageshk.omnichannel.phone` package: `phoneNumbers` documents, connect codes, device
   keys, brand and platform APIs, and a `DeviceAccessChanged` application event that the WebSocket
   layer listens to so a live socket closes the moment its number may no longer connect.
 - The WebSocket layer authenticates device keys, keys sessions by phone number id, confirms the
@@ -27,7 +27,7 @@ WebSocket test client.
 
 - Packages: `me.nageshk.omnichannel.enablement` (core), `me.nageshk.omnichannel.phone` (numbers,
   codes, keys, device API, demo seeder). Existing classes change in place.
-- Collections: `phone_numbers`, `connect_codes`, `enablement_changes`.
+- Collections: `phoneNumbers`, `connectCodes`, `enablementChanges`.
 - `Disabled` JSON shape everywhere: `{"by": "<username>", "level": "PLATFORM"|"COMPANY"|"BRAND",
   "at": "<ISO instant>"}`, or `null` when enabled. Existing `active` booleans stay in JSON and in
   Mongo (`active == (disabled == null)`); `disabled` is added beside them.

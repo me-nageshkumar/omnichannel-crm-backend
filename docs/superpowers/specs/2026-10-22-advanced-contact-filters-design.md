@@ -61,7 +61,7 @@ The compiled document is serialised with `Document.toJson()` and stored as a str
 
 ## 5. Storage
 
-`ContactFilter` (collection `contact_filters`) gains:
+`ContactFilter` (collection `contactFilters`) gains:
 - `kind: SIMPLE | ADVANCED` (existing documents are SIMPLE; null reads as SIMPLE)
 - `rules: RuleGroup` (ADVANCED only, stored as a sub-document verbatim)
 - `queryJson: String` (ADVANCED only, the compiled query as extended JSON; exposed to the console as `query`, parsed)

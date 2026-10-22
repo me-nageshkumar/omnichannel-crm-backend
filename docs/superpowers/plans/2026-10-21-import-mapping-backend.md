@@ -4,7 +4,7 @@
 
 **Goal:** A CSV import where the user maps columns to the phone, name, labels and attributes, with defaults, optional label creation and saved mappings, while an import without a mapping behaves exactly as today.
 
-**Architecture:** `ImportMapping` is the one mapping shape. The by-name match the old import did becomes `suggest(...)`, the preview endpoint returns it, and `ContactImportService.run` gains an overload that takes a mapping. Saved mappings live in `contact_import_mappings` behind their own small service and controller. The default country code is the workspace's `defaultCountryCode` from the campaigns plan's `campaign_settings`.
+**Architecture:** `ImportMapping` is the one mapping shape. The by-name match the old import did becomes `suggest(...)`, the preview endpoint returns it, and `ContactImportService.run` gains an overload that takes a mapping. Saved mappings live in `contactImportMappings` behind their own small service and controller. The default country code is the workspace's `defaultCountryCode` from the campaigns plan's `campaignSettings`.
 
 **Tech Stack:** Spring Boot 4.1, Spring Data Mongo, Lombok, Jackson 3 (`tools.jackson.*`), JUnit 5 + MockMvc (`ContactApiTestBase`), flapdoodle embedded Mongo.
 
@@ -43,7 +43,7 @@
 - Create: `src/main/java/me/nageshk/omnichannel/contact/ContactImportMappingRepository.java`
 - Create: `src/main/java/me/nageshk/omnichannel/contact/ContactImportMappingService.java`
 - Create: `src/main/java/me/nageshk/omnichannel/contact/ContactImportMappingController.java`
-- Modify: `src/test/java/me/nageshk/omnichannel/support/TestUsers.java` (add `"contact_import_mappings"` to the collection list in `deleteAll`)
+- Modify: `src/test/java/me/nageshk/omnichannel/support/TestUsers.java` (add `"contactImportMappings"` to the collection list in `deleteAll`)
 - Modify: `src/test/java/me/nageshk/omnichannel/contact/ContactApiTestBase.java` (`@Autowired ContactImportMappingRepository savedMappings;`)
 - Test: `src/test/java/me/nageshk/omnichannel/contact/ContactImportMappingsIT.java`
 
@@ -51,7 +51,7 @@
 - Consumes: `ContactApiTestBase`; `DuplicateException(field, message)`, `ValidationException`, `NotFoundException` from `me.nageshk.omnichannel.api`.
 - Produces:
   - `public record ImportMapping(String phone, String name, Labels labels, List<AttributeMapping> attributes, boolean createMissingLabels, String saveAs)` with nested `public record Labels(String column, List<String> defaults)` and `public record AttributeMapping(String attributeId, String column, String defaultValue)`. A compact constructor turns a null `labels` into `Labels(null, List.of())`, a null `defaults` or `attributes` into an empty list. `ImportMapping withoutSaveAs()` returns a copy with `saveAs = null`.
-  - `@Document("contact_import_mappings") @CompoundIndex(name = "ws_nameKey", def = "{'workspaceId': 1, 'nameKey': 1}", unique = true) class ContactImportMapping` (Lombok `@Getter @Setter`): `@Id String id; String workspaceId; String name; String nameKey; List<String> headerSignature; ImportMapping mapping; String createdBy; @CreatedDate Instant creationTime; Instant lastUsedAt;` and `setName` also sets `nameKey` (lower-case), as `ContactFilter` does.
+  - `@Document("contactImportMappings") @CompoundIndex(name = "ws_nameKey", def = "{'workspaceId': 1, 'nameKey': 1}", unique = true) class ContactImportMapping` (Lombok `@Getter @Setter`): `@Id String id; String workspaceId; String name; String nameKey; List<String> headerSignature; ImportMapping mapping; String createdBy; @CreatedDate Instant creationTime; Instant lastUsedAt;` and `setName` also sets `nameKey` (lower-case), as `ContactFilter` does.
   - `interface ContactImportMappingRepository extends MongoRepository<ContactImportMapping, String>`: `List<ContactImportMapping> findByWorkspaceId(String workspaceId); Optional<ContactImportMapping> findByIdAndWorkspaceId(String id, String workspaceId); Optional<ContactImportMapping> findByWorkspaceIdAndNameKey(String workspaceId, String nameKey);`
   - `public record ImportMappingView(String id, String name, List<String> headerSignature, ImportMapping mapping, String createdBy, Instant creationTime, Instant lastUsedAt)`.
   - `@Service ContactImportMappingService` with `public static final int MAX_NAME = 60;` and

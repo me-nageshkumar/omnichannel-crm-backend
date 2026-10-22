@@ -163,7 +163,7 @@ Role editing is **not** an authority: only the Super Admin can do it, and it can
   is added to the built-in roles listed as its defaults. Authorities the system has already seen are
   never re-added, so a Super Admin's removal sticks. The seen list is kept in Mongo. An authority
   removed from code is ignored where still stored.
-- Every create, edit and delete of a role writes a `role_changes` document: `roleId`, `roleName`,
+- Every create, edit and delete of a role writes a `roleChanges` document: `roleId`, `roleName`,
   `changedBy`, `at`, `action`, `added`, `removed`, and before/after description.
 
 ## Who may give a role: the strict-subset rule

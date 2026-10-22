@@ -80,15 +80,15 @@ Validation:
 
 Invalid input returns 400 `VALIDATION` with `fields`, as elsewhere.
 
-### `authority_changes` collection
+### `authorityChanges` collection
 
-The same shape as `role_changes`:
+The same shape as `roleChanges`:
 - `authority` (the code)
 - `action`: `CREATED`, `UPDATED` or `DELETED`
 - `before` and `after` (group, level, description)
 - `by` and `at`
 
-Retention is the same as `role_changes`.
+Retention is the same as `roleChanges`.
 
 ### Removed
 
@@ -217,7 +217,7 @@ Rules:
 | Create with an existing code | Never | 409 `DUPLICATE`, `field: "code"` |
 
 `AUTHORITY_IN_USE` carries the names of the roles that hold it, so the console can say which. Every
-create, update and delete writes an `authority_changes` entry.
+create, update and delete writes an `authorityChanges` entry.
 
 ## API
 
@@ -231,7 +231,7 @@ the console URL-encodes it.
 | POST | `/api/authorities` | `{code, group, level, description}` → 201 with the authority, as listed above. |
 | PUT | `/api/authorities/{code}` | `{group, level, description}` → the authority. |
 | DELETE | `/api/authorities/{code}` | 204. |
-| GET | `/api/authorities/{code}/history` | `authority_changes` for the code, newest first. |
+| GET | `/api/authorities/{code}/history` | `authorityChanges` for the code, newest first. |
 
 The builder confirms that a `:` in a path variable reaches the controller unchanged, through Spring
 and the firewall. If it doesn't, the builder takes the code as a query parameter on those three

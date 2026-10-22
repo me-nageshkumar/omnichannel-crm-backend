@@ -244,7 +244,7 @@ Save: name errors and the exactly-one check go into one `VALIDATION` map as toda
 @Test void builderShapedPayloadIsAccepted()        // groups and rules with "id", rules with "valueSource": "value", a {field: "lastMessageAt", operator: "isSet", value: ""} → 201
 @Test void legacyFilterWithoutKindReadsAsSimple()  // filters.save(ContactFilter without kind, filter = empty spec) → list item kind "SIMPLE"; PUT {name, filter} → 200, stored kind SIMPLE
 @Test void datesUseTheWorkspaceTimezone()          // creationTime after "2026-10-20" → $.query['$and'][0].creationTime['$gte']['$date'] == "2026-10-20T18:30:00Z";
-                                                   // mongo.updateFirst(campaign_settings of brandA, timezone "UTC"), save again → "2026-10-21T00:00:00Z"
+                                                   // mongo.updateFirst(campaignSettings of brandA, timezone "UTC"), save again → "2026-10-21T00:00:00Z"
 @Test void savingNeedsContactBulk()                // agentToken POST {name, rules} → 403; PUT → 403
 @Test void deleteAnAdvancedFilter()                // DELETE /{id} as wmToken → 204; GET /{id} → 404; POST /contacts/search {filterId} → 404
 ```

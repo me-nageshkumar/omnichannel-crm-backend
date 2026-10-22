@@ -63,14 +63,14 @@ through several roles, the highest counts. This applies to custom roles the same
 never overwritten by a lower one; a higher actor re-disabling replaces a lower record with theirs).
 
 Stored on each thing as `disabled: { by: <username>, level: PLATFORM|COMPANY|BRAND, at: Instant }`,
-null when enabled. Every enable/disable also writes a change record (`enablement_changes`: target
+null when enabled. Every enable/disable also writes a change record (`enablementChanges`: target
 type, target id, enabled before/after, by, level, at) so the console can show history later.
 
 ## Phone numbers
 
 ### Data
 
-Collection `phone_numbers`:
+Collection `phoneNumbers`:
 
 - `_id`: generated id.
 - `number`: digits only, country code first, no `+` (e.g. `919812345678`), 8–15 digits. Unique

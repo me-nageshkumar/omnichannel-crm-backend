@@ -68,17 +68,17 @@ upsert per message is fine).
 
 ## Labels and attributes
 
-- `contact_labels`: `id`, `workspaceId`, `name` (1–40 chars, unique per brand, case-insensitive),
+- `contactLabels`: `id`, `workspaceId`, `name` (1–40 chars, unique per brand, case-insensitive),
   `color` (one of PatternFly label colours: blue, teal, green, orange, purple, red, orangered, yellow,
   grey), `description` (≤ 200).
-- `contact_attributes`: `id`, `workspaceId`, `name` (1–40, unique per brand, case-insensitive),
+- `contactAttributes`: `id`, `workspaceId`, `name` (1–40, unique per brand, case-insensitive),
   `description` (≤ 200). Values are free text.
 - Deleting a label or attribute removes it from every contact of the brand (cascade).
 - Renaming keeps ids, so contacts follow.
 
 ## Notes
 
-`contact_notes`: `id`, `workspaceId`, `contactId`, `text` (1–2000), `createdBy` (username + name),
+`contactNotes`: `id`, `workspaceId`, `contactId`, `text` (1–2000), `createdBy` (username + name),
 `creationTime`, `lastUpdateTime`. The author may edit or delete their own note; a Workspace Manager /
 Customer Admin may delete any. Deleting a contact deletes its notes.
 
@@ -93,7 +93,7 @@ A structured filter (not raw Mongo), ANDed:
 - `source`: any of CHAT / IMPORT / MANUAL. `numberHidden`: true/false.
 - `createdFrom`/`createdTo`, `lastMessageFrom`/`lastMessageTo` (dates).
 
-Saved filters (`contact_filters`): `id`, `workspaceId`, `name` (unique per brand), the filter, created
+Saved filters (`contactFilters`): `id`, `workspaceId`, `name` (unique per brand), the filter, created
 by. Shared by everyone in the brand who can view contacts; created/edited/deleted by those with
 `contact:bulk`.
 
