@@ -84,6 +84,11 @@ class AdvancedFilterValidatorTest {
     }
 
     @Test
+    void aDeeplyNestedBodyStopsAtLevelSix() {
+        assertFails(nested(1000), "rules[0].rules[0].rules[0].rules[0].rules[0]", "is nested deeper than 5 levels");
+    }
+
+    @Test
     void ruleCapIsFifty() {
         List<RuleNode> a = IntStream.range(0, 25).mapToObj(i -> (RuleNode) rule("name", "is", "A")).toList();
         List<RuleNode> b = IntStream.range(0, 25).mapToObj(i -> (RuleNode) rule("name", "is", "B")).toList();
@@ -154,6 +159,8 @@ class AdvancedFilterValidatorTest {
     @Test
     void phoneValueWithoutDigitsIsRejected() {
         assertFails(and(rule("phone", "contains", "+ abc")), "rules[0].value", "must contain digits");
+        assertFails(and(rule("phone", "contains", "\u0663")), "rules[0].value", "must contain digits");
+        assertFails(and(rule("phone", "contains", "\uFF13")), "rules[0].value", "must contain digits");
         assertThatCode(() -> AdvancedFilterValidator.validate(and(rule("phone", "contains", "+91 98")), R))
                 .doesNotThrowAnyException();
     }

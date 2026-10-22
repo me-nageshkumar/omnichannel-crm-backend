@@ -91,7 +91,7 @@ public final class AdvancedFilterValidator {
         switch (type) {
             case TEXT -> {
                 String s = single(value, vp);
-                if ("phone".equals(r.field()) && s.chars().noneMatch(Character::isDigit)) {
+                if ("phone".equals(r.field()) && s.chars().noneMatch(c -> c >= '0' && c <= '9')) {
                     throw fail(vp, "must contain digits");
                 }
             }
