@@ -51,6 +51,7 @@
 | `FILTER_IN_USE` | 409 | `{code, message, filters: [{id, name}], campaigns: [{id, name}]}` | `This is used by a saved filter or a campaign. Remove it there first.` |
 | `QUERY_TIMEOUT` | 504 | `{code, message}` | `This filter takes too long to run. Make it more specific.` |
 
+- Mongo collection and GridFS bucket names are camelCase, never snake_case (`contactFilters`, `campaigns`); this plan adds no collection, but any collection name in code, tests or test clean-up lists uses the camelCase name. `CollectionRenamesIT` fails the suite if a mapped collection or bucket has an underscore; do not touch `config/CollectionRenames` (it holds the old names on purpose).
 - Time only through the `Clock` bean (`MutableClock` in campaign tests).
 - Wording "Enabled/Disabled", never "block", in code, comments and messages.
 - Per task: the named tests, then `./mvnw -q test` (whole suite) must exit 0.
