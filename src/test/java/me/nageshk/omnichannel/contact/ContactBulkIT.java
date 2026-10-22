@@ -277,7 +277,7 @@ class ContactBulkIT extends ContactApiTestBase {
         send(post(bulk()), wmToken, request(Map.of("ids", List.of(asha.getId()), "filter", Map.of()), "DELETE"))
                 .andExpect(status().isBadRequest());
         send(post(bulk()), wmToken, request(Map.of("filter", Map.of(), "filterId", "x"), "DELETE"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
         send(post(bulk()), wmToken, request(ids(asha.getId()), "BOGUS")).andExpect(status().isBadRequest());
         send(post(bulk()), wmToken, request(ids(asha.getId()), null)).andExpect(status().isBadRequest());
         assertThat(contacts.count()).isEqualTo(4);

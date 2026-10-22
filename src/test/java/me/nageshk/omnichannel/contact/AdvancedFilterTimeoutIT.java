@@ -38,4 +38,35 @@ class AdvancedFilterTimeoutIT extends ContactApiTestBase {
                 .andExpect(jsonPath("$.code").value("QUERY_TIMEOUT"))
                 .andExpect(jsonPath("$.message").value("This filter takes too long to run. Make it more specific."));
     }
+
+    private String advancedFilter() throws Exception {
+        Map<String, Object> rules = Map.of("combinator", "and", "not", false, "rules",
+                List.of(Map.of("field", "name", "operator", "contains", "value", "a")));
+        return json(send(post(base(brandA) + "/contact-filters"), leadToken, Map.of("name", "F", "rules", rules))
+                .andExpect(status().isCreated())).get("id").asString();
+    }
+
+    @Test
+    void searchTimeoutIs504() throws Exception {
+        String id = advancedFilter();
+        MongoTestCommands.alwaysTimeOut(client, true);
+        send(post(base(brandA) + "/contacts/search"), agentToken, Map.of("filterId", id))
+                .andExpect(status().isGatewayTimeout()).andExpect(jsonPath("$.code").value("QUERY_TIMEOUT"));
+    }
+
+    @Test
+    void countTimeoutIs504() throws Exception {
+        String id = advancedFilter();
+        MongoTestCommands.alwaysTimeOut(client, true);
+        send(post(base(brandA) + "/contacts/count"), agentToken, Map.of("selection", Map.of("filterId", id)))
+                .andExpect(status().isGatewayTimeout()).andExpect(jsonPath("$.code").value("QUERY_TIMEOUT"));
+    }
+
+    @Test
+    void exportTimeoutIs504() throws Exception {
+        String id = advancedFilter();
+        MongoTestCommands.alwaysTimeOut(client, true);
+        send(post(base(brandA) + "/contacts/export"), wmToken, Map.of("filterId", id))
+                .andExpect(status().isGatewayTimeout()).andExpect(jsonPath("$.code").value("QUERY_TIMEOUT"));
+    }
 }

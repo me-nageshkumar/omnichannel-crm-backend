@@ -2,7 +2,9 @@ package me.nageshk.omnichannel.contact;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import me.nageshk.omnichannel.access.BuiltInRoles;
 import me.nageshk.omnichannel.support.TestUsers;
 import me.nageshk.omnichannel.tenant.Customer;
@@ -16,8 +18,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Test fixture shared by the contact API tests: one customer, two brands, and a token per role in brand A. */
 @SpringBootTest
@@ -75,6 +82,14 @@ abstract class ContactApiTestBase {
         if (token != null) req = req.header("Authorization", "Bearer " + token);
         if (body != null) req = req.contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body));
         return mvc.perform(req);
+    }
+
+    /** Exports brand A's contacts as CSV and returns the body. */
+    protected String download(Map<String, Object> request, String token) throws Exception {
+        MvcResult started = send(post(base(brandA) + "/contacts/export"), token, request)
+                .andExpect(request().asyncStarted()).andReturn();
+        return mvc.perform(asyncDispatch(started)).andExpect(status().isOk()).andReturn().getResponse()
+                .getContentAsString(StandardCharsets.UTF_8);
     }
 
     JsonNode json(ResultActions result) throws Exception {

@@ -42,10 +42,12 @@ public class ContactExportController {
     private final ContactAttributeRepository attributes;
     private final WorkspaceRepository workspaces;
     private final Clock clock;
+    private final QueryTimeouts timeouts;
     private volatile int exportLimit;
 
     public ContactExportController(MongoTemplate mongo, ContactQuery query, ContactLabelRepository labels,
             ContactAttributeRepository attributes, WorkspaceRepository workspaces, Clock clock,
+            QueryTimeouts timeouts,
             @Value("${omnichannel.contacts.export-limit:100000}") int exportLimit) {
         this.mongo = mongo;
         this.query = query;
@@ -53,6 +55,7 @@ public class ContactExportController {
         this.attributes = attributes;
         this.workspaces = workspaces;
         this.clock = clock;
+        this.timeouts = timeouts;
         this.exportLimit = exportLimit;
     }
 
@@ -67,7 +70,8 @@ public class ContactExportController {
             @RequestBody(required = false) ExportRequest req) {
         ExportRequest r = req == null ? new ExportRequest(null, null) : req;
         Criteria criteria = query.forRequest(workspaceId, r.filter(), r.filterId());
-        long rows = mongo.count(new Query(criteria), Contact.class);
+        Query counting = new Query(criteria).maxTime(timeouts.count());
+        long rows = QueryTimeouts.guarded(() -> mongo.count(counting, Contact.class));
         if (rows > exportLimit) {
             throw new TooManyRowsException("this export has " + rows + " contacts, over the limit of " + exportLimit
                     + "; narrow the filter");

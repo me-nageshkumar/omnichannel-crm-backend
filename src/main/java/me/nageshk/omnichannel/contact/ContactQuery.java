@@ -36,7 +36,11 @@ public class ContactQuery {
         if (filterId != null) {
             ContactFilter saved = savedFilters.findByIdAndWorkspaceId(filterId, workspaceId)
                     .orElseThrow(() -> new NotFoundException("filter not found"));
-            parts.addAll(parts(workspaceId, saved.getFilter()));
+            if (FilterKind.orSimple(saved.getKind()) == FilterKind.ADVANCED) {
+                parts.add(new StoredQueryCriteria(saved.getQueryJson()));
+            } else {
+                parts.addAll(parts(workspaceId, saved.getFilter()));
+            }
         }
         parts.addAll(parts(workspaceId, inline));
         return scoped(workspaceId, parts);

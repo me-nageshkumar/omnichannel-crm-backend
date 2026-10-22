@@ -58,12 +58,6 @@ class ContactImportExportIT extends ContactApiTestBase {
         return upload(token, csv.getBytes(StandardCharsets.UTF_8));
     }
 
-    private String download(Map<String, Object> request, String token) throws Exception {
-        MvcResult started = send(post(exportUrl()), token, request).andExpect(request().asyncStarted()).andReturn();
-        return mvc.perform(asyncDispatch(started)).andExpect(status().isOk()).andReturn().getResponse()
-                .getContentAsString(StandardCharsets.UTF_8);
-    }
-
     @Test
     void importCreatesAndUpdates() throws Exception {
         Contact existing = contact(brandA, "Old Name", "919812345678");

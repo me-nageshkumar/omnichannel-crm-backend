@@ -23,7 +23,7 @@ public class ContactBulkService {
 
     public enum Action { ADD_LABELS, REMOVE_LABELS, SET_ATTRIBUTE, CLEAR_ATTRIBUTE, DELETE }
 
-    /** Exactly one of the three. */
+    /** {@code ids} alone, or {@code filter} and/or {@code filterId}. */
     public record Selection(List<String> ids, ContactFilterSpec filter, String filterId) {}
 
     public record Request(Selection selection, Action action, List<String> labelIds, String attributeId, String value) {}
@@ -36,18 +36,21 @@ public class ContactBulkService {
     private final ContactLabelRepository labels;
     private final ContactAttributeRepository attributes;
     private final AccessService access;
+    private final QueryTimeouts timeouts;
 
     public ContactBulkService(MongoTemplate mongo, ContactQuery query, ContactLabelRepository labels,
-            ContactAttributeRepository attributes, AccessService access) {
+            ContactAttributeRepository attributes, AccessService access, QueryTimeouts timeouts) {
         this.mongo = mongo;
         this.query = query;
         this.labels = labels;
         this.attributes = attributes;
         this.access = access;
+        this.timeouts = timeouts;
     }
 
     public long count(String workspaceId, Selection selection) {
-        return mongo.count(new Query(criteria(workspaceId, selection)), Contact.class);
+        Query q = new Query(criteria(workspaceId, selection)).maxTime(timeouts.count());
+        return QueryTimeouts.guarded(() -> mongo.count(q, Contact.class));
     }
 
     public Result run(String workspaceId, Request req) {
@@ -82,7 +85,8 @@ public class ContactBulkService {
                 needsChange = Criteria.where(key).exists(true);
             }
         }
-        long matched = mongo.count(new Query(criteria), Contact.class);
+        Query matching = new Query(criteria).maxTime(timeouts.count());
+        long matched = QueryTimeouts.guarded(() -> mongo.count(matching, Contact.class));
         long changed = matched == 0 ? 0
                 : mongo.updateMulti(new Query(new Criteria().andOperator(criteria, needsChange)), update, Contact.class)
                         .getModifiedCount();
@@ -118,9 +122,10 @@ public class ContactBulkService {
     }
 
     private Criteria criteria(String workspaceId, Selection s) {
-        if (s == null) throw new ValidationException("selection", "give exactly one of ids, filter or filterId");
-        int given = (s.ids() != null ? 1 : 0) + (s.filter() != null ? 1 : 0) + (s.filterId() != null ? 1 : 0);
-        if (given != 1) throw new ValidationException("selection", "give exactly one of ids, filter or filterId");
+        String shape = "give ids, or filter and/or filterId";
+        if (s == null) throw new ValidationException("selection", shape);
+        boolean byQuery = s.filter() != null || s.filterId() != null;
+        if ((s.ids() != null) == byQuery) throw new ValidationException("selection", shape);
         if (s.ids() != null) {
             if (s.ids().isEmpty()) throw new ValidationException("selection", "ids must not be empty");
             if (s.ids().size() > MAX_IDS) throw new ValidationException("selection", "at most " + MAX_IDS + " ids");
