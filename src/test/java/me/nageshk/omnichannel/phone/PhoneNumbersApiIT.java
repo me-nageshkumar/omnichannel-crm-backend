@@ -62,7 +62,7 @@ class PhoneNumbersApiIT {
         bossToken = testUsers.accessToken(
                 testUsers.createInCustomer(acme.getId(), "boss", BuiltInRoles.CUSTOMER_ADMIN, List.of()));
         wmToken = token("wm", BuiltInRoles.WORKSPACE_MANAGER);
-        leadToken = token("lead", BuiltInRoles.TEAM_LEAD);
+        leadToken = token("lead", BuiltInRoles.AGENT);
         agentToken = token("agent", BuiltInRoles.AGENT);
         amToken = testUsers.accessToken(testUsers.create("am", "pw", BuiltInRoles.ACCOUNT_MANAGER, null));
     }
@@ -147,9 +147,9 @@ class PhoneNumbersApiIT {
     }
 
     @Test
-    void teamLeadCanViewNotManage() throws Exception {
+    void agentCanNeitherViewNorManage() throws Exception {
         String id = add(brandA, "919928088743", wmToken);
-        send(get(numbersOf(brandA)), leadToken, null).andExpect(status().isOk());
+        send(get(numbersOf(brandA)), leadToken, null).andExpect(status().isForbidden());
         send(post(numbersOf(brandA)), leadToken, number("919900000001", null)).andExpect(status().isForbidden());
         send(post(numbersOf(brandA) + "/" + id + "/disable"), leadToken, null).andExpect(status().isForbidden());
     }

@@ -156,22 +156,22 @@ class RolesApiIT {
 
     @Test
     void editsBuiltInAuthorities() {
-        String id = idOf("TEAM_LEAD");
+        String id = idOf("AGENT");
         ResponseEntity<JsonNode> res = call(HttpMethod.PUT, "/api/roles/" + id,
                 Map.of("description", "lead", "authorities", List.of("user:view", "user:manage")));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(roles.findByName("TEAM_LEAD").get().getAuthorities())
+        assertThat(roles.findByName("AGENT").get().getAuthorities())
                 .containsExactlyInAnyOrder("user:view", "user:manage");
-        assertThat(roles.findByName("TEAM_LEAD").get().getDescription()).isEqualTo("lead");
+        assertThat(roles.findByName("AGENT").get().getDescription()).isEqualTo("lead");
     }
 
     @Test
     void cannotRenameBuiltIn() {
-        ResponseEntity<JsonNode> res = call(HttpMethod.PUT, "/api/roles/" + idOf("TEAM_LEAD"),
+        ResponseEntity<JsonNode> res = call(HttpMethod.PUT, "/api/roles/" + idOf("AGENT"),
                 Map.of("name", "CAPTAIN", "description", "d", "authorities", List.of()));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody().get("code").asString()).isEqualTo("VALIDATION");
-        assertThat(roles.findByName("TEAM_LEAD")).isPresent();
+        assertThat(roles.findByName("AGENT")).isPresent();
     }
 
     @Test
@@ -233,17 +233,15 @@ class RolesApiIT {
     }
 
     @Test
-    void previewReportsTeamLeadLosingAgent() {
-        call(HttpMethod.PUT, "/api/roles/" + idOf("TEAM_LEAD"),
-                Map.of("description", "lead", "authorities",
-                        List.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view",
-                                "inbox:view", "inbox:send", "campaign:view")));
+    void previewReportsSeniorRoleLosingAgent() {
+        create("SENIOR", "BRAND", List.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view",
+                                "inbox:view", "inbox:send", "campaign:view"));
         ResponseEntity<JsonNode> res = call(HttpMethod.POST, "/api/roles/" + idOf("AGENT") + "/preview",
                 Map.of("authorities", List.of("contact:view", "contact:annotate", "team:manage")));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         List<JsonNode> changes = StreamSupport.stream(res.getBody().get("changes").spliterator(), false).toList();
         assertThat(changes).anySatisfy(c -> {
-            assertThat(c.get("assigner").asString()).isEqualTo("TEAM_LEAD");
+            assertThat(c.get("assigner").asString()).isEqualTo("SENIOR");
             assertThat(c.get("assigned").asString()).isEqualTo("AGENT");
             assertThat(c.get("nowAssignable").asBoolean()).isFalse();
         });

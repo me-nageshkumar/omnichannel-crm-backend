@@ -24,7 +24,7 @@ class AssignmentPolicyTest {
 
     private final AssignmentPolicy policy = new AssignmentPolicy(AuthorityLevels.BUILT_IN);
 
-    private Role superAdmin, accountManager, device, customerAdmin, workspaceManager, teamLead, agent;
+    private Role superAdmin, accountManager, device, customerAdmin, workspaceManager, senior, agent;
     private List<Role> all;
 
     @BeforeEach
@@ -34,42 +34,43 @@ class AssignmentPolicyTest {
         device = role("SUPPORT", RoleLevel.PLATFORM, Set.of("customer:view"));
         customerAdmin = defaultRole(CUSTOMER_ADMIN);
         workspaceManager = defaultRole(WORKSPACE_MANAGER);
-        teamLead = defaultRole(TEAM_LEAD);
+        senior = role("SENIOR", RoleLevel.BRAND, Set.of("user:view", "contact:view", "contact:annotate", "template:view",
+                "inbox:view", "inbox:send", "campaign:view"));
         agent = defaultRole(AGENT);
-        all = List.of(superAdmin, accountManager, device, customerAdmin, workspaceManager, teamLead, agent);
+        all = List.of(superAdmin, accountManager, device, customerAdmin, workspaceManager, senior, agent);
     }
 
     // --- giving BRAND roles -------------------------------------------------------------------
 
     @Test
-    void customerAdminGivesWorkspaceManagerTeamLeadAgent() {
+    void customerAdminGivesWorkspaceManagerSeniorAgent() {
         Actor ca = customerAdminOf(ACME, A, B);
         assertThat(policy.assignableBrandRoles(ca, A, all))
-                .containsExactlyInAnyOrder(workspaceManager, teamLead, agent);
+                .containsExactlyInAnyOrder(workspaceManager, senior, agent);
         assertThat(policy.canGiveBrandRole(ca, B, workspaceManager)).isTrue();
         assertThat(policy.canGiveBrandRole(ca, "ws-elsewhere", agent)).isFalse();
     }
 
     @Test
-    void workspaceManagerGivesTeamLeadAndAgentButNotWorkspaceManager() {
+    void workspaceManagerGivesSeniorAndAgentButNotWorkspaceManager() {
         Actor wm = brandUser(ACME, Map.of(A, workspaceManager));
-        assertThat(policy.assignableBrandRoles(wm, A, all)).containsExactlyInAnyOrder(teamLead, agent);
+        assertThat(policy.assignableBrandRoles(wm, A, all)).containsExactlyInAnyOrder(senior, agent);
         assertThat(policy.canGiveBrandRole(wm, A, workspaceManager)).isFalse();
         assertThat(policy.canGiveBrandRole(wm, B, agent)).isFalse();
     }
 
     @Test
-    void teamLeadGivesNothing() {
-        Actor tl = brandUser(ACME, Map.of(A, teamLead));
+    void seniorGivesNothing() {
+        Actor tl = brandUser(ACME, Map.of(A, senior));
         assertThat(policy.assignableBrandRoles(tl, A, all)).isEmpty();
         assertThat(policy.canGiveBrandRole(tl, A, agent)).isFalse();
     }
 
     @Test
-    void teamLeadWithUserManageGivesAgentButNotTeamLead() {
-        teamLead.setAuthorities(Set.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view",
+    void seniorWithUserManageGivesAgentButNotSenior() {
+        senior.setAuthorities(Set.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view",
                 "inbox:view", "inbox:send", "campaign:view"));
-        Actor tl = brandUser(ACME, Map.of(A, teamLead));
+        Actor tl = brandUser(ACME, Map.of(A, senior));
         assertThat(policy.assignableBrandRoles(tl, A, all)).containsExactly(agent);
     }
 
@@ -109,7 +110,7 @@ class AssignmentPolicyTest {
     @Test
     void workspaceManagerChangesAnAgentInItsWorkspaceOnly() {
         Actor wm = brandUser(ACME, Map.of(A, workspaceManager));
-        Target agentInAandB = target(ACME, null, Map.of(A, agent, B, teamLead));
+        Target agentInAandB = target(ACME, null, Map.of(A, agent, B, senior));
         assertThat(policy.canChangeInWorkspace(wm, agentInAandB, A)).isTrue();
         assertThat(policy.canChangeInWorkspace(wm, agentInAandB, B)).isFalse();
         assertThat(policy.canChangeInWorkspace(wm, target(ACME, null, Map.of(B, agent)), A)).isTrue();

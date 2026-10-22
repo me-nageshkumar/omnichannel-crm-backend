@@ -34,7 +34,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Fixture of the inbox API tests: one customer with a brand, a number, a team "Support" and four users
- * (manager sees all, lead sees the team, agent and agent2 see their own), plus helpers to insert chats directly.
+ * (manager and manager2 see all, agent and agent2 see their own), plus helpers to insert chats directly.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -61,11 +61,11 @@ abstract class InboxApiTestBase {
     PhoneNumber otherNumber;
     Team support;
     User manager;
-    User lead;
+    User manager2;
     User agent;
     User agent2;
     String managerToken;
-    String leadToken;
+    String manager2Token;
     String agentToken;
     String agent2Token;
 
@@ -78,12 +78,12 @@ abstract class InboxApiTestBase {
         number = testDevices.number(brand, "9199" + (System.nanoTime() % 100000000));
         otherNumber = testDevices.number(other, "9188" + (System.nanoTime() % 100000000));
         manager = brandUser("manager", BuiltInRoles.WORKSPACE_MANAGER);
-        lead = brandUser("lead", BuiltInRoles.TEAM_LEAD);
+        manager2 = brandUser("manager2", BuiltInRoles.WORKSPACE_MANAGER);
         agent = brandUser("agent", BuiltInRoles.AGENT);
         agent2 = brandUser("agent2", BuiltInRoles.AGENT);
-        support = team("Support", lead);
+        support = team("Support", manager2);
         managerToken = testUsers.accessToken(manager);
-        leadToken = testUsers.accessToken(lead);
+        manager2Token = testUsers.accessToken(manager2);
         agentToken = testUsers.accessToken(agent);
         agent2Token = testUsers.accessToken(agent2);
     }

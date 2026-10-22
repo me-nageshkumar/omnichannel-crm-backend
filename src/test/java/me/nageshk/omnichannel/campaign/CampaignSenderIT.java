@@ -229,8 +229,6 @@ class CampaignSenderIT extends CampaignTestBase {
         assertThat(api(GET, "/campaigns/senders", agent, null).getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(api(PUT, "/campaigns/senders/" + n1.getId(), agent, Map.of("action", "REST")).getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
-        assertThat(api(PUT, "/campaigns/senders/" + n1.getId(), lead, Map.of("action", "REST")).getStatusCode())
-                .isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(put(otherNumber, Map.of("action", "REST")).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 

@@ -79,7 +79,7 @@ class CampaignSettingsIT extends CampaignTestBase {
 
     @Test
     void settingsNeedCampaignSettings() {
-        assertThat(api(GET, "/campaigns/settings", lead, null).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(api(GET, "/campaigns/settings", agent, null).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(api(PUT, "/campaigns/settings", agent, current()).getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
     }

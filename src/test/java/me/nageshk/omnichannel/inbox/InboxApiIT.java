@@ -46,7 +46,7 @@ class InboxApiIT extends InboxApiTestBase {
     void agentCannotRequestTeamScope() throws Exception {
         send(get(chatsUrl()).param("scope", "TEAM"), agentToken, null).andExpect(status().isForbidden());
         send(get(chatsUrl()).param("scope", "UNASSIGNED"), agentToken, null).andExpect(status().isForbidden());
-        send(get(chatsUrl()).param("scope", "ALL"), leadToken, null).andExpect(status().isForbidden());
+        send(get(chatsUrl()).param("scope", "ALL"), agent2Token, null).andExpect(status().isForbidden());
         send(get(chatsUrl()).param("scope", "MINE"), agentToken, null).andExpect(status().isOk());
     }
 
@@ -56,21 +56,21 @@ class InboxApiIT extends InboxApiTestBase {
     }
 
     @Test
-    void leadSeesTeamQueueAndUnassignedAndOwn() throws Exception {
+    void managerTeamListCoversEveryTeamQueueAndUnassigned() throws Exception {
         chat("OnTeam", "911", 1, null, support);
         chat("Queue", "912", 2, null, null);
-        chat("Own", "913", 3, lead, null);
+        chat("Own", "913", 3, manager2, null);
         chat("Theirs", "914", 4, agent2, null);
         Team sales = team("Sales", agent2);
         chat("OtherTeam", "915", 5, null, sales);
 
-        JsonNode page = json(send(get(chatsUrl()), leadToken, null).andExpect(status().isOk()));
+        JsonNode page = json(send(get(chatsUrl()).param("scope", "TEAM"), manager2Token, null).andExpect(status().isOk()));
 
-        // default scope is TEAM: team-routed and unassigned; the lead's own chat needs the MINE list
-        assertThat(names(page)).containsExactly("Queue", "OnTeam");
-        assertThat(names(json(send(get(chatsUrl()).param("scope", "MINE"), leadToken, null))))
+        // a manager sees every team: the Team list is every team-routed chat plus the unassigned ones
+        assertThat(names(page)).containsExactly("OtherTeam", "Queue", "OnTeam");
+        assertThat(names(json(send(get(chatsUrl()).param("scope", "MINE"), manager2Token, null))))
                 .containsExactly("Own");
-        assertThat(names(json(send(get(chatsUrl()).param("scope", "UNASSIGNED"), leadToken, null))))
+        assertThat(names(json(send(get(chatsUrl()).param("scope", "UNASSIGNED"), manager2Token, null))))
                 .containsExactly("Queue");
     }
 
@@ -256,16 +256,16 @@ class InboxApiIT extends InboxApiTestBase {
 
         send(post(url), agentToken, Map.of("userId", agent2.getId())).andExpect(status().isForbidden());
 
-        // the lead can see it once it is in the team queue
+        // the second manager can see it once it is in the team queue
         c.setAssignedUserId(null);
         c.setAssignedTeamId(support.getId());
         chats.save(c);
-        send(post(url), leadToken, Map.of("userId", lead.getId())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.assignedUser.name").value("Test lead"))
-                .andExpect(jsonPath("$.assignedUser.id").value(lead.getId()));
-        assertThat(chats.findById(c.getId()).orElseThrow().getAssignedUserId()).isEqualTo(lead.getId());
+        send(post(url), manager2Token, Map.of("userId", manager2.getId())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedUser.name").value("Test manager2"))
+                .andExpect(jsonPath("$.assignedUser.id").value(manager2.getId()));
+        assertThat(chats.findById(c.getId()).orElseThrow().getAssignedUserId()).isEqualTo(manager2.getId());
 
-        send(post(url), leadToken, Map.of()).andExpect(status().isBadRequest());
+        send(post(url), manager2Token, Map.of()).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -321,8 +321,8 @@ class InboxApiIT extends InboxApiTestBase {
                 .andExpect(jsonPath("$.claimOnReply").value(false));
 
         send(put(url), managerToken, Map.of("teamId", support.getId())).andExpect(status().isBadRequest());
-        send(put(url), leadToken, Map.of("mode", "NONE")).andExpect(status().isForbidden());
-        send(get(url), leadToken, null).andExpect(status().isForbidden());
+        send(put(url), agentToken, Map.of("mode", "NONE")).andExpect(status().isForbidden());
+        send(get(url), agentToken, null).andExpect(status().isForbidden());
     }
 
     @Test
@@ -335,11 +335,11 @@ class InboxApiIT extends InboxApiTestBase {
         users.save(blocked);
         team("Sales");
 
-        JsonNode body = json(send(get(inbox() + "/assignees"), leadToken, null).andExpect(status().isOk()));
+        JsonNode body = json(send(get(inbox() + "/assignees"), manager2Token, null).andExpect(status().isOk()));
 
         List<String> users = new java.util.ArrayList<>();
         body.get("users").forEach(u -> users.add(u.get("username").asString()));
-        assertThat(users).containsExactlyInAnyOrder("manager", "lead", "agent", "agent2");
+        assertThat(users).containsExactlyInAnyOrder("manager", "manager2", "agent", "agent2");
         assertThat(body.get("users").get(0).get("name").asString()).startsWith("Test ");
         List<String> teamNames = new java.util.ArrayList<>();
         body.get("teams").forEach(t -> teamNames.add(t.get("name").asString()));

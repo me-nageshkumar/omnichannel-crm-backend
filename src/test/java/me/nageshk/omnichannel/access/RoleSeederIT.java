@@ -41,11 +41,11 @@ class RoleSeederIT {
     }
 
     @Test
-    void seedsSevenBuiltInRoles() {
+    void seedsFiveBuiltInRoles() {
         Map<String, Role> byName = roles.findAll().stream().collect(Collectors.toMap(Role::getName, Function.identity()));
         assertThat(byName.keySet()).containsExactlyInAnyOrder(BuiltInRoles.SUPER_ADMIN,
                 BuiltInRoles.ACCOUNT_MANAGER, BuiltInRoles.CUSTOMER_ADMIN,
-                BuiltInRoles.WORKSPACE_MANAGER, BuiltInRoles.TEAM_LEAD, BuiltInRoles.AGENT);
+                BuiltInRoles.WORKSPACE_MANAGER, BuiltInRoles.AGENT);
         byName.forEach((n, r) -> {
             assertThat(r.isBuiltIn()).isTrue();
             assertThat(r.getLevel()).isEqualTo(BuiltInRoles.levelOf(n));
@@ -68,14 +68,10 @@ class RoleSeederIT {
 
     @Test
     void inboxAuthoritiesFollowTheRoleLadder() {
-        for (String name : List.of(BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER,
-                BuiltInRoles.TEAM_LEAD, BuiltInRoles.AGENT))
+        for (String name : List.of(BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER, BuiltInRoles.AGENT))
             assertThat(role(name).getAuthorities()).contains("inbox:view", "inbox:send");
         assertThat(role(BuiltInRoles.AGENT).getAuthorities())
                 .doesNotContain("inbox:view-team", "inbox:view-all", "inbox:assign", "inbox:settings");
-        assertThat(role(BuiltInRoles.TEAM_LEAD).getAuthorities())
-                .contains("inbox:view-team", "inbox:assign")
-                .doesNotContain("inbox:view-all", "inbox:settings");
         assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities())
                 .contains("inbox:view-team", "inbox:view-all", "inbox:assign", "inbox:settings");
     }
@@ -85,17 +81,17 @@ class RoleSeederIT {
         Map<String, String> before = roles.findAll().stream().collect(Collectors.toMap(Role::getName, Role::getId));
         seeder.seed();
         List<Role> after = roles.findAll();
-        assertThat(after).hasSize(6);
+        assertThat(after).hasSize(5);
         assertThat(after.stream().collect(Collectors.toMap(Role::getName, Role::getId))).isEqualTo(before);
     }
 
     @Test
     void removedAuthorityIsNotReAdded() {
-        Role tl = role(BuiltInRoles.TEAM_LEAD);
-        tl.getAuthorities().remove("user:view");
-        roles.save(tl);
+        Role wm = role(BuiltInRoles.WORKSPACE_MANAGER);
+        wm.getAuthorities().remove("user:view");
+        roles.save(wm);
         seeder.seed();
-        assertThat(role(BuiltInRoles.TEAM_LEAD).getAuthorities()).doesNotContain("user:view");
+        assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities()).doesNotContain("user:view");
     }
 
     private static final String KNOWN = "known-authorities";
@@ -121,15 +117,15 @@ class RoleSeederIT {
 
     @Test
     void migrationKeepsRemovalsAndDropsKnownAuthorities() {
-        Role tl = role(BuiltInRoles.TEAM_LEAD);
-        tl.getAuthorities().remove("user:view");
-        roles.save(tl);
+        Role wm = role(BuiltInRoles.WORKSPACE_MANAGER);
+        wm.getAuthorities().remove("user:view");
+        roles.save(wm);
         mongo.remove(new org.springframework.data.mongodb.core.query.Query(), "authorities");
         mongo.insert(new org.bson.Document("_id", KNOWN).append("codes",
                 Arrays.stream(Authority.values()).map(Authority::code).toList()), "system_state");
         seeder.seed();
         assertThat(authorities.findAll()).hasSize(35);
-        assertThat(role(BuiltInRoles.TEAM_LEAD).getAuthorities()).doesNotContain("user:view");
+        assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities()).doesNotContain("user:view");
         assertThat(mongo.findById(KNOWN, org.bson.Document.class, "system_state")).isNull();
     }
 

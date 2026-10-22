@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Demo data, only with {@code omnichannel.seed.demo=true}: customer "Demo Retail" (owner
- * {@code demo-admin}) with brands "Demo Fashion" and "Demo Electronics", a Workspace Manager, Team Lead
+ * {@code demo-admin}) with brands "Demo Fashion" and "Demo Electronics", a Workspace Manager, two agents
  * and Agent in Demo Fashion, and the number {@value #NUMBER} there. Temporary passwords are logged
  * once and must be changed at first login. Skipped when the customer exists; the number is skipped
  * when any brand already has it.
@@ -71,7 +71,7 @@ public class DemoSeeder implements ApplicationRunner {
         log.warn("demo seed: demo-admin / {} (Customer Admin, change at first login)", adminPassword);
 
         person("Demo Manager", "demo-manager", BuiltInRoles.WORKSPACE_MANAGER, customer, fashion);
-        person("Demo Lead", "demo-lead", BuiltInRoles.TEAM_LEAD, customer, fashion);
+        person("Demo Lead", "demo-lead", BuiltInRoles.AGENT, customer, fashion);
         person("Demo Agent", "demo-agent", BuiltInRoles.AGENT, customer, fashion);
 
         if (numbers.existsByNumber(NUMBER)) {

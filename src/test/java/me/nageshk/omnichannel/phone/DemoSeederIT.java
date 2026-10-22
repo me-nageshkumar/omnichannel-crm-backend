@@ -53,7 +53,7 @@ class DemoSeederIT {
         User admin = users.findByUsername("demo-admin").orElseThrow();
         assertThat(admin.getRoleId()).isEqualTo(testUsers.roleId(BuiltInRoles.CUSTOMER_ADMIN));
         for (String[] p : new String[][] {{"demo-manager", BuiltInRoles.WORKSPACE_MANAGER},
-                {"demo-lead", BuiltInRoles.TEAM_LEAD}, {"demo-agent", BuiltInRoles.AGENT}}) {
+                {"demo-lead", BuiltInRoles.AGENT}, {"demo-agent", BuiltInRoles.AGENT}}) {
             User u = users.findByUsername(p[0]).orElseThrow();
             assertThat(u.getCustomerId()).isEqualTo(c.getId());
             assertThat(u.getWorkspaceRoles()).singleElement().satisfies(wr -> {

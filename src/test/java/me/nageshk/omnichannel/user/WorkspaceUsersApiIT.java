@@ -70,7 +70,7 @@ class WorkspaceUsersApiIT {
         globexShop = testUsers.workspace(globex.getId(), "Globex Shop");
         boss = testUsers.createInCustomer(acme.getId(), "boss", BuiltInRoles.CUSTOMER_ADMIN, List.of());
         wm = inA("wm", BuiltInRoles.WORKSPACE_MANAGER);
-        lead = inA("lead", BuiltInRoles.TEAM_LEAD);
+        lead = inA("lead", BuiltInRoles.AGENT);
         agent = inA("agent", BuiltInRoles.AGENT);
         gboss = testUsers.createInCustomer(globex.getId(), "gboss", BuiltInRoles.CUSTOMER_ADMIN, List.of());
         bossToken = testUsers.accessToken(boss);
@@ -212,12 +212,12 @@ class WorkspaceUsersApiIT {
 
     @Test
     void addExistingCompanyUserToSecondWorkspace() throws Exception {
-        send(post(usersOf(brandB)), bossToken, existing(agent, BuiltInRoles.TEAM_LEAD))
+        send(post(usersOf(brandB)), bossToken, existing(agent, BuiltInRoles.WORKSPACE_MANAGER))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.user.id").value(agent.getId()))
                 .andExpect(jsonPath("$.temporaryPassword").doesNotExist());
         assertThat(users.findById(agent.getId()).orElseThrow().getWorkspaceRoles())
-                .containsExactly(role(brandA, BuiltInRoles.AGENT), role(brandB, BuiltInRoles.TEAM_LEAD));
+                .containsExactly(role(brandA, BuiltInRoles.AGENT), role(brandB, BuiltInRoles.WORKSPACE_MANAGER));
 
         send(post(usersOf(brandB)), bossToken, existing(agent, BuiltInRoles.AGENT))
                 .andExpect(status().isConflict())
@@ -245,8 +245,8 @@ class WorkspaceUsersApiIT {
     }
 
     @Test
-    void teamLeadCanViewButNotCreate() throws Exception {
-        send(get(usersOf(brandA)), leadToken, null).andExpect(status().isOk());
+    void agentCanNeitherViewNorCreate() throws Exception {
+        send(get(usersOf(brandA)), leadToken, null).andExpect(status().isForbidden());
         send(post(usersOf(brandA)), leadToken, newUser("newagent", BuiltInRoles.AGENT))
                 .andExpect(status().isForbidden());
         send(get("/api/workspaces/" + brandA.getId() + "/assignable-roles"), leadToken, null)
@@ -276,14 +276,14 @@ class WorkspaceUsersApiIT {
         Map<String, Object> change = new HashMap<>();
         change.put("name", "Agent Renamed");
         change.put("email", "a@example.com");
-        change.put("roleId", testUsers.roleId(BuiltInRoles.TEAM_LEAD));
+        change.put("roleId", testUsers.roleId(BuiltInRoles.AGENT));
         send(put(usersOf(brandA) + "/" + agent.getId()), wmToken, change)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Agent Renamed"))
-                .andExpect(jsonPath("$.workspaceRoles[0].role.name").value(BuiltInRoles.TEAM_LEAD));
+                .andExpect(jsonPath("$.workspaceRoles[0].role.name").value(BuiltInRoles.AGENT));
         User saved = users.findById(agent.getId()).orElseThrow();
         assertThat(saved.getEmail()).isEqualTo("a@example.com");
-        assertThat(saved.getWorkspaceRoles()).containsExactly(role(brandA, BuiltInRoles.TEAM_LEAD));
+        assertThat(saved.getWorkspaceRoles()).containsExactly(role(brandA, BuiltInRoles.AGENT));
 
         change.put("roleId", testUsers.roleId(BuiltInRoles.WORKSPACE_MANAGER));
         send(put(usersOf(brandA) + "/" + agent.getId()), wmToken, change).andExpect(status().isForbidden());
@@ -296,7 +296,7 @@ class WorkspaceUsersApiIT {
         assertThat(users.findById(wm2.getId()).orElseThrow().getWorkspaceRoles())
                 .containsExactly(role(brandA, BuiltInRoles.WORKSPACE_MANAGER));
         assertThat(users.findById(agent.getId()).orElseThrow().getWorkspaceRoles())
-                .containsExactly(role(brandA, BuiltInRoles.TEAM_LEAD));
+                .containsExactly(role(brandA, BuiltInRoles.AGENT));
     }
 
     @Test
@@ -339,15 +339,15 @@ class WorkspaceUsersApiIT {
     }
 
     @Test
-    void assignableRolesForWorkspaceManagerAreTeamLeadAndAgent() throws Exception {
+    void assignableRolesForWorkspaceManagerIsAgentOnly() throws Exception {
         JsonNode roles = json(send(get("/api/workspaces/" + brandA.getId() + "/assignable-roles"), wmToken, null)
                 .andExpect(status().isOk()));
         assertThat(StreamSupport.stream(roles.spliterator(), false).map(r -> r.get("name").asString()).toList())
-                .containsExactly(BuiltInRoles.AGENT, BuiltInRoles.TEAM_LEAD);
+                .containsExactly(BuiltInRoles.AGENT);
         JsonNode bossRoles = json(send(get("/api/workspaces/" + brandB.getId() + "/assignable-roles"), bossToken, null)
                 .andExpect(status().isOk()));
         assertThat(StreamSupport.stream(bossRoles.spliterator(), false).map(r -> r.get("name").asString()).toList())
-                .containsExactly(BuiltInRoles.AGENT, BuiltInRoles.TEAM_LEAD, BuiltInRoles.WORKSPACE_MANAGER);
+                .containsExactly(BuiltInRoles.AGENT, BuiltInRoles.WORKSPACE_MANAGER);
         send(get("/api/workspaces/" + brandB.getId() + "/assignable-roles"), wmToken, null)
                 .andExpect(status().isNotFound());
     }

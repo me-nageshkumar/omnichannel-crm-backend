@@ -34,7 +34,7 @@ class ContactsApiIT extends ContactApiTestBase {
     }
 
     @Test
-    void teamLeadAddsContact() throws Exception {
+    void managerAddsContact() throws Exception {
         ContactLabel vip = label(brandA, "VIP");
         ContactAttribute city = attribute(brandA, "City");
         Map<String, Object> b = body("  Asha Rao ", "+91 98123-45678");
@@ -195,7 +195,6 @@ class ContactsApiIT extends ContactApiTestBase {
         send(put(url() + "/" + c.getId()), agentToken, Map.of("name", "X")).andExpect(status().isForbidden());
         send(post(url()), agentToken, body("A", "919812345679")).andExpect(status().isForbidden());
         send(delete(url() + "/" + c.getId()), agentToken, null).andExpect(status().isForbidden());
-        send(delete(url() + "/" + c.getId()), leadToken, null).andExpect(status().isForbidden());
         assertThat(contacts.findById(c.getId()).orElseThrow().getName()).isEqualTo("Asha");
     }
 
@@ -205,7 +204,6 @@ class ContactsApiIT extends ContactApiTestBase {
         String noteId = addNote(c, agentToken, "mine");
         send(put(noteUrl(c) + "/" + noteId), leadToken, Map.of("text", "hijack")).andExpect(status().isForbidden());
         send(put(noteUrl(c) + "/" + noteId), wmToken, Map.of("text", "hijack")).andExpect(status().isForbidden());
-        send(delete(noteUrl(c) + "/" + noteId), leadToken, null).andExpect(status().isForbidden());
         assertThat(notes.findById(noteId).orElseThrow().getText()).isEqualTo("mine");
     }
 

@@ -27,7 +27,7 @@ class TemplateApiIT extends TemplateApiTestBase {
     }
 
     @Test
-    void teamLeadCreatesTextTemplate() throws Exception {
+    void managerCreatesTextTemplate() throws Exception {
         Map<String, Object> req = text("Welcome", "Hi {{ contact.name }}, your order {{order_id}} is ready",
                 setting("contact.name", "there", null, null, null),
                 setting("order_id", null, "Order id", "A-1", true));

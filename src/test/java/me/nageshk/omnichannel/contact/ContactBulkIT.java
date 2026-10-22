@@ -298,8 +298,8 @@ class ContactBulkIT extends ContactApiTestBase {
 
     @Test
     void deleteNeedsContactDelete() throws Exception {
-        send(post(bulk()), leadToken, request(ids(asha.getId()), "DELETE")).andExpect(status().isForbidden());
-        send(post(bulk()), leadToken, request(Map.of("filter", Map.of()), "DELETE")).andExpect(status().isForbidden());
+        send(post(bulk()), agentToken, request(ids(asha.getId()), "DELETE")).andExpect(status().isForbidden());
+        send(post(bulk()), agentToken, request(Map.of("filter", Map.of()), "DELETE")).andExpect(status().isForbidden());
         assertThat(contacts.count()).isEqualTo(4);
     }
 

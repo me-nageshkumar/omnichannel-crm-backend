@@ -151,14 +151,14 @@ class ContactFieldsApiIT extends ContactApiTestBase {
     }
 
     @Test
-    void teamLeadCannotManageFields() throws Exception {
+    void agentCannotManageFields() throws Exception {
         ContactLabel l = label(brandA, "VIP");
-        send(post(labelsUrl()), leadToken, Map.of("name", "X", "color", "blue")).andExpect(status().isForbidden());
-        send(put(labelsUrl() + "/" + l.getId()), leadToken, Map.of("name", "X", "color", "blue"))
+        send(post(labelsUrl()), agentToken, Map.of("name", "X", "color", "blue")).andExpect(status().isForbidden());
+        send(put(labelsUrl() + "/" + l.getId()), agentToken, Map.of("name", "X", "color", "blue"))
                 .andExpect(status().isForbidden());
-        send(delete(labelsUrl() + "/" + l.getId()), leadToken, null).andExpect(status().isForbidden());
-        send(post(attributesUrl()), leadToken, Map.of("name", "X")).andExpect(status().isForbidden());
-        send(get(labelsUrl()), leadToken, null).andExpect(status().isOk());
+        send(delete(labelsUrl() + "/" + l.getId()), agentToken, null).andExpect(status().isForbidden());
+        send(post(attributesUrl()), agentToken, Map.of("name", "X")).andExpect(status().isForbidden());
+        send(get(labelsUrl()), agentToken, null).andExpect(status().isOk());
     }
 
     @Test

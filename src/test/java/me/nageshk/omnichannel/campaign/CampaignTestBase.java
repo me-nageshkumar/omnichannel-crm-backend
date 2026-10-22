@@ -121,7 +121,7 @@ abstract class CampaignTestBase {
         n2 = testDevices.number(brand, "9197" + (System.nanoTime() % 100000000));
         otherNumber = testDevices.number(other, "9196" + (System.nanoTime() % 100000000));
         manager = brandUser(brand, "manager", BuiltInRoles.WORKSPACE_MANAGER);
-        lead = brandUser(brand, "lead", BuiltInRoles.TEAM_LEAD);
+        lead = brandUser(brand, "lead", BuiltInRoles.WORKSPACE_MANAGER);
         agent = brandUser(brand, "agent", BuiltInRoles.AGENT);
     }
 

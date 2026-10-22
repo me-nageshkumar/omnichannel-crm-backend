@@ -87,9 +87,9 @@ class AccessServiceIT {
     @Test
     void hasReadsThePrincipalAndSeparatesNoAccessFromNoAuthority() {
         signIn(customerUser("lead", null,
-                List.of(new WorkspaceRole(w1.getId(), testUsers.roleId(BuiltInRoles.TEAM_LEAD)))));
+                List.of(new WorkspaceRole(w1.getId(), testUsers.roleId(BuiltInRoles.AGENT)))));
 
-        assertThat(access.has(w1.getId(), "user:view")).isTrue();
+        assertThat(access.has(w1.getId(), "contact:view")).isTrue();
         assertThat(access.has(w1.getId(), "user:manage")).isFalse();
         assertThatThrownBy(() -> access.has(w2.getId(), "user:view")).isInstanceOf(NotFoundException.class);
     }

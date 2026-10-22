@@ -224,9 +224,9 @@ class DeviceConnectIT {
     }
 
     @Test
-    void teamLeadCannotGetCode() throws Exception {
+    void agentCannotGetCode() throws Exception {
         String leadToken = testUsers.accessToken(testUsers.createInCustomer(acme.getId(), "lead", null,
-                List.of(new WorkspaceRole(brandA.getId(), testUsers.roleId(BuiltInRoles.TEAM_LEAD)))));
+                List.of(new WorkspaceRole(brandA.getId(), testUsers.roleId(BuiltInRoles.AGENT)))));
         send(post(base() + "/" + id + "/connect-code"), leadToken, null).andExpect(status().isForbidden());
     }
 }

@@ -58,7 +58,7 @@ class TeamsApiIT {
         globex = testUsers.customer("Globex");
         boss = testUsers.createInCustomer(acme.getId(), "boss", BuiltInRoles.CUSTOMER_ADMIN, List.of());
         wm = inA("wm", BuiltInRoles.WORKSPACE_MANAGER);
-        lead = inA("lead", BuiltInRoles.TEAM_LEAD);
+        lead = inA("lead", BuiltInRoles.WORKSPACE_MANAGER);
         agent = inA("agent", BuiltInRoles.AGENT);
         bOnly = testUsers.createInCustomer(acme.getId(), "bonly", null,
                 List.of(new WorkspaceRole(brandB.getId(), testUsers.roleId(BuiltInRoles.AGENT))));
@@ -195,10 +195,11 @@ class TeamsApiIT {
     }
 
     @Test
-    void teamLeadCannotManageTeams() throws Exception {
+    void agentCannotManageTeams() throws Exception {
         Team t = team(brandA, "Sales");
-        send(post(teamsOf(brandA)), leadToken, Map.of("name", "New")).andExpect(status().isForbidden());
-        send(put(teamsOf(brandA) + "/" + t.getId()), leadToken, Map.of("name", "X", "memberIds", List.of()))
+        String agentToken = testUsers.accessToken(agent);
+        send(post(teamsOf(brandA)), agentToken, Map.of("name", "New")).andExpect(status().isForbidden());
+        send(put(teamsOf(brandA) + "/" + t.getId()), agentToken, Map.of("name", "X", "memberIds", List.of()))
                 .andExpect(status().isForbidden());
         assertThat(teams.findById(t.getId()).orElseThrow().getName()).isEqualTo("Sales");
     }

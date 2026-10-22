@@ -35,7 +35,6 @@ public class RoleSeeder implements ApplicationRunner {
         BUILT_INS.put(BuiltInRoles.ACCOUNT_MANAGER, "Platform staff who manage customers");
         BUILT_INS.put(BuiltInRoles.CUSTOMER_ADMIN, "Runs a customer company and all its workspaces");
         BUILT_INS.put(BuiltInRoles.WORKSPACE_MANAGER, "Runs one workspace");
-        BUILT_INS.put(BuiltInRoles.TEAM_LEAD, "Leads a team in a workspace");
         BUILT_INS.put(BuiltInRoles.AGENT, "Handles conversations in a workspace");
     }
 

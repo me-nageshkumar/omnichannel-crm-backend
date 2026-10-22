@@ -7,7 +7,6 @@ public final class BuiltInRoles {
     public static final String ACCOUNT_MANAGER = "ACCOUNT_MANAGER";
     public static final String CUSTOMER_ADMIN = "CUSTOMER_ADMIN";
     public static final String WORKSPACE_MANAGER = "WORKSPACE_MANAGER";
-    public static final String TEAM_LEAD = "TEAM_LEAD";
     public static final String AGENT = "AGENT";
 
     private BuiltInRoles() {}

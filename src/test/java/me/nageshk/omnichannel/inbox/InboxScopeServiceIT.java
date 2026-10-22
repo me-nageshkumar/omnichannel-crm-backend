@@ -85,8 +85,14 @@ class InboxScopeServiceIT {
     }
 
     @Test
-    void teamLeadGetsTeamWithOwnMemberships() {
-        AuthenticatedUser lead = brandUser("lead", BuiltInRoles.TEAM_LEAD, brand);
+    void teamViewerGetsTeamWithOwnMemberships() {
+        Role viewer = new Role();
+        viewer.setName("TEAM_VIEWER");
+        viewer.setLevel(RoleLevel.BRAND);
+        viewer.setAuthorities(new java.util.HashSet<>(List.of("inbox:view", "inbox:view-team")));
+        roles.save(viewer);
+        roleCache.evictAll();
+        AuthenticatedUser lead = brandUser("lead", "TEAM_VIEWER", brand);
         Team support = team(brand, "Support", lead.userId());
         team(brand, "Sales", "someone-else");
         team(other, "Elsewhere", lead.userId());

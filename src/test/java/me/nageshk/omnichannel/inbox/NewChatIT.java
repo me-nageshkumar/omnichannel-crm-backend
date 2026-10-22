@@ -376,13 +376,13 @@ class NewChatIT extends InboxApiTestBase {
     void unassignedChatIsClaimedByTheCaller() throws Exception {
         WaWebChat queue = chatOf("919811111111@c.us", "Nia", null, support);
 
-        Exchange ex = sendOk(leadToken, Map.of("phone", "919811111111", "text", "hello"),
+        Exchange ex = sendOk(manager2Token, Map.of("phone", "919811111111", "text", "hello"),
                 "919811111111@c.us", "true_919811111111@c.us_1", "hello");
 
         assertThat(ex.response().getBody().get("chatId").asString()).isEqualTo(queue.getId());
         WaWebChat after = chats.findById(queue.getId()).orElseThrow();
-        assertThat(after.getAssignedUserId()).isEqualTo(lead.getId());
-        assertThat(after.getAssignedTeamId()).isEqualTo(support.getId()); // lead is a member, team kept
+        assertThat(after.getAssignedUserId()).isEqualTo(manager2.getId());
+        assertThat(after.getAssignedTeamId()).isEqualTo(support.getId()); // manager2 is a member, team kept
         assertThat(actions.findAll()).extracting(WaWebChatAction::getType).containsExactly(ActionType.ASSIGNED);
     }
 
@@ -495,11 +495,11 @@ class NewChatIT extends InboxApiTestBase {
         claimOnReply(false);
         WaWebChat queue = chatOf("919811111111@c.us", "Nia", null, support);
 
-        sendOk(leadToken, Map.of("phone", "919811111111", "text", "hello"),
+        sendOk(manager2Token, Map.of("phone", "919811111111", "text", "hello"),
                 "919811111111@c.us", "true_919811111111@c.us_1", "hello");
 
         WaWebChat after = chats.findById(queue.getId()).orElseThrow();
-        assertThat(after.getAssignedUserId()).isEqualTo(lead.getId());
+        assertThat(after.getAssignedUserId()).isEqualTo(manager2.getId());
         assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
         assertThat(actions.findAll()).extracting(WaWebChatAction::getType).containsExactly(ActionType.ASSIGNED);
     }

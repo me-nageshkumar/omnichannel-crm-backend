@@ -59,7 +59,7 @@ abstract class ContactApiTestBase {
         bossToken = testUsers.accessToken(
                 testUsers.createInCustomer(acme.getId(), "boss", BuiltInRoles.CUSTOMER_ADMIN, List.of()));
         wmToken = brandToken("wm", BuiltInRoles.WORKSPACE_MANAGER, brandA);
-        leadToken = brandToken("lead", BuiltInRoles.TEAM_LEAD, brandA);
+        leadToken = brandToken("lead", BuiltInRoles.WORKSPACE_MANAGER, brandA);
         agentToken = brandToken("agent", BuiltInRoles.AGENT, brandA);
         wmBToken = brandToken("wmb", BuiltInRoles.WORKSPACE_MANAGER, brandB);
     }

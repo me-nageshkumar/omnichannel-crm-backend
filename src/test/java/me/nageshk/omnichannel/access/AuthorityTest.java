@@ -34,8 +34,7 @@ class AuthorityTest {
     @Test
     void defaultRolesAreBuiltInAndMayHoldTheAuthority() {
         Set<String> builtIn = Set.of(BuiltInRoles.SUPER_ADMIN, BuiltInRoles.ACCOUNT_MANAGER,
-                BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER,
-                BuiltInRoles.TEAM_LEAD, BuiltInRoles.AGENT);
+                BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER, BuiltInRoles.AGENT);
         for (Authority a : Authority.values()) {
             for (String r : a.defaultRoles()) {
                 assertThat(builtIn).as("%s default role %s", a.code(), r).contains(r);
