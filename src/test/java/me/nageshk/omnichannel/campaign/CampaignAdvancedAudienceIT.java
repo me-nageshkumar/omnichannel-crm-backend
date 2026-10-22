@@ -64,6 +64,20 @@ class CampaignAdvancedAudienceIT extends CampaignTestBase {
     }
 
     @Test
+    void anOlderFilterCampaignReportsSimpleAndACsvCampaignReportsNull() {
+        String id = create(filter("Old", Map.of()));
+        mongo.getCollection("campaigns").updateOne(new org.bson.Document("_id", new org.bson.types.ObjectId(id)),
+                new org.bson.Document("$unset", new org.bson.Document("audience.filterKind", "")));
+        assertThat(campaign(id).getAudience().filterKind()).isNull();
+        ResponseEntity<JsonNode> got = api(HttpMethod.GET, "/campaigns/" + id, manager, null);
+        assertThat(got.getBody().at("/audience/filterKind").asString()).isEqualTo("SIMPLE");
+
+        String csv = startedCsvCampaign("Csv", "phone\n919800000001\n", null, n1);
+        JsonNode csvView = api(HttpMethod.GET, "/campaigns/" + csv, manager, null).getBody();
+        assertThat(csvView.at("/audience/filterKind").isNull()).isTrue();
+    }
+
+    @Test
     void startMaterialisesTheAdvancedAudience() {
         ContactLabel vip = label("VIP");
         labelled("A", "919800000001", vip);

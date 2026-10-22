@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.campaign;
 
 import java.time.Clock;
 import java.util.List;
+import me.nageshk.omnichannel.contact.FilterKind;
 import org.springframework.stereotype.Component;
 
 /** Builds the views of campaigns. */
@@ -38,7 +39,8 @@ public class CampaignViews {
         Campaign.Audience a = c.getAudience();
         CampaignView.AudienceView audience = a == null ? null : new CampaignView.AudienceView(a.kind(),
                 a.filterId(), a.filterName(), a.filterSpec(), a.csvFileName(), a.csvHeaders(), a.csvRows(),
-                a.phoneColumn(), a.nameColumn(), a.filterKind());
+                a.phoneColumn(), a.nameColumn(),
+                a.kind() == AudienceKind.FILTER ? FilterKind.orSimple(a.filterKind()) : null);
         return new CampaignView(c.getId(), c.getName(), c.getStatus(), c.getPausedBy(), c.getPauseReason(), audience,
                 c.getTemplateIds(), c.getTemplateNames(), c.getPlaceholders(), c.getSenderIds(), c.getCounts(), estimate,
                 senders, c.getCreatedBy(), c.getCreationTime(), c.getStartedAt(), c.getFinishedAt(),
