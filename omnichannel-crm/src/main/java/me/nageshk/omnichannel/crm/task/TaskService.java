@@ -323,7 +323,7 @@ public class TaskService {
         }
     }
 
-    private List<TaskView> views(CrmContext ctx, List<CrmTask> tasks) {
+    List<TaskView> views(CrmContext ctx, List<CrmTask> tasks) {
         if (tasks.isEmpty()) return List.of();
         Set<String> users = new LinkedHashSet<>();
         Map<TargetType, Set<String>> ids = new HashMap<>();
