@@ -68,6 +68,14 @@ public class CrmSettingsService {
         });
     }
 
+    /** Points the brand's default pipeline at {@code pipelineId} (null = none) without a version check. */
+    public void setDefaultPipeline(String workspaceId, String pipelineId, String byUserId) {
+        mongo.updateFirst(new Query(Criteria.where("workspaceId").is(workspaceId)),
+                new Update().set("defaultPipelineId", pipelineId).set("lastModifiedBy", byUserId)
+                        .set("lastUpdateTime", Instant.now()).inc("version", 1),
+                CrmSettings.class);
+    }
+
     /** The brand, which must belong to the customer. */
     public PlatformBrand requireBrand(String customerId, String workspaceId) {
         return brands.find(workspaceId).filter(b -> b.customerId().equals(customerId))

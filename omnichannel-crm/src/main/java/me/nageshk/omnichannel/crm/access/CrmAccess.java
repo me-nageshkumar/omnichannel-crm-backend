@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.platform.NumberDirectory;
+import me.nageshk.omnichannel.crm.pipeline.CrmPipelineService;
 import me.nageshk.omnichannel.crm.platform.PlatformNumber;
 import me.nageshk.omnichannel.crm.settings.CrmDefaults;
 import me.nageshk.omnichannel.crm.settings.CrmSettings;
@@ -22,9 +23,11 @@ public class CrmAccess {
     private final NumberDirectory numbers;
     private final PipelineAccessReader assignments;
     private final PipelineIds pipelineIds;
+    private final CrmPipelineService pipelineService;
 
     CrmAccess(AccessService access, CrmSettingsService settings, NumberDirectory numbers,
-            PipelineAccessReader assignments, PipelineIds pipelineIds) {
+            PipelineAccessReader assignments, PipelineIds pipelineIds, CrmPipelineService pipelineService) {
+        this.pipelineService = pipelineService;
         this.access = access;
         this.settings = settings;
         this.numbers = numbers;
@@ -48,10 +51,15 @@ public class CrmAccess {
         return build(me, workspaceId, authorities, s);
     }
 
-    private CrmContext build(AuthenticatedUser me, String workspaceId, Set<String> authorities, CrmSettings s) {
+    private CrmContext build(AuthenticatedUser me, String workspaceId, Set<String> authorities, CrmSettings found) {
+        CrmSettings s = found;
         CrmContext check = new CrmContext(workspaceId, me.customerId(), me.userId(), authorities, s, List.of(),
                 Set.of(), PipelineAccess.ALL);
         check.require("crm:view");
+        if (s.isEnabled() && s.getDefaultPipelineId() == null) {
+            pipelineService.ensureDefault(workspaceId, s.getCustomerId(), me.userId());
+            s = settings.find(workspaceId).orElse(s);
+        }
         if (!s.isEnabled()) {
             return new CrmContext(workspaceId, me.customerId(), me.userId(), authorities, s, List.of(), Set.of(),
                     new PipelineAccess(false, Set.of()));

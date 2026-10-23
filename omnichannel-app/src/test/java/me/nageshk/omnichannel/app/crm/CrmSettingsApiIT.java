@@ -54,6 +54,13 @@ class CrmSettingsApiIT extends CrmTestBase {
         assertThat(v.get("lifecycleStatuses").get(0).get("isDefault").asBoolean()).isTrue();
         assertThat(v.has("enabled")).isFalse();
         assertThat(v.has("maxPipelines")).isFalse();
+        List<me.nageshk.omnichannel.crm.pipeline.CrmPipeline> pipelines = mongo.find(
+                new Query(Criteria.where("workspaceId").is(brand.getId())),
+                me.nageshk.omnichannel.crm.pipeline.CrmPipeline.class);
+        assertThat(pipelines).hasSize(1);
+        assertThat(pipelines.get(0).getName()).isEqualTo("Sales");
+        assertThat(pipelines.get(0).getStages()).hasSize(7);
+        assertThat(v.get("defaultPipelineId").asText()).isEqualTo(pipelines.get(0).getId());
     }
 
     @Test

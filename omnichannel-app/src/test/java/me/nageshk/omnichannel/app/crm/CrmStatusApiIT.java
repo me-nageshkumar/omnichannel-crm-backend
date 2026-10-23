@@ -53,6 +53,8 @@ class CrmStatusApiIT extends CrmTestBase {
                 .andExpect(jsonPath("$.code").value("CRM_NOT_ENABLED"));
         send(put(crm() + "/settings"), managerToken, Map.of("version", 0)).andExpect(status().isPaymentRequired())
                 .andExpect(jsonPath("$.code").value("CRM_NOT_ENABLED"));
+        send(get(crm() + "/pipelines"), managerToken, null).andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.code").value("CRM_NOT_ENABLED"));
         send(get(crm() + "/status"), managerToken, null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.enabled").value(false));
     }
