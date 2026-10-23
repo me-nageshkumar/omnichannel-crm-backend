@@ -9,6 +9,7 @@ import me.nageshk.omnichannel.crm.contact.dto.ContactSearchRequest;
 import me.nageshk.omnichannel.crm.contact.dto.ContactUpdateRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CreateRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CrmContactView;
+import me.nageshk.omnichannel.crm.contact.dto.InboxSummaryView;
 import me.nageshk.omnichannel.crm.contact.dto.MoveChannelRequest;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,9 +35,11 @@ public class CrmContactController {
     private final CrmContactService contacts;
     private final CaptureService capture;
     private final ChannelService channels;
+    private final InboxSummaryService inbox;
 
     CrmContactController(CrmAccess crmAccess, CrmContactService contacts, CaptureService capture,
-            ChannelService channels) {
+            ChannelService channels, InboxSummaryService inbox) {
+        this.inbox = inbox;
         this.crmAccess = crmAccess;
         this.contacts = contacts;
         this.capture = capture;
@@ -78,6 +81,13 @@ public class CrmContactController {
     public CaptureResult create(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @RequestBody CreateRequest request) {
         return capture.create(crmAccess.resolve(me, workspaceId), request);
+    }
+
+    @GetMapping("/by-chat/{chatId}/summary")
+    @PreAuthorize(VIEW)
+    public InboxSummaryView summary(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String chatId) {
+        return inbox.summary(crmAccess.resolve(me, workspaceId), chatId);
     }
 
     @GetMapping("/{id}/communication")

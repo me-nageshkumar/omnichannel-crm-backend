@@ -113,6 +113,13 @@ public class CrmContactService {
         return c;
     }
 
+    /** The brand contact on the channel number when the caller may see it (see {@link #load}), else empty. */
+    public java.util.Optional<CrmContact> findVisible(CrmContext ctx, String contactId, String phoneNumberId) {
+        CrmContact c = mongo.findOne(new Query(Criteria.where("workspaceId").is(ctx.workspaceId())
+                .and("contactId").is(contactId).and("channel.phoneNumberId").is(phoneNumberId)), CrmContact.class);
+        return java.util.Optional.ofNullable(c).filter(x -> visible(ctx, x));
+    }
+
     private static boolean visible(CrmContext ctx, CrmContact c) {
         return ctx.pipelines().all() || c.getPipelineIds().stream().anyMatch(ctx.pipelines()::allows);
     }

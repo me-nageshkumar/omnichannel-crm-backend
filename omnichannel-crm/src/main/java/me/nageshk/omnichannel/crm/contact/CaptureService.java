@@ -142,8 +142,23 @@ public class CaptureService {
                 deal.created());
     }
 
+    /**
+     * Why the caller cannot capture the chat, in the order capture checks it, or null when they can:
+     * {@code NO_EDIT}, {@code NO_PIPELINE_ACCESS}, {@code CHAT_NOT_ASSIGNED} (view-all users skip the last two).
+     */
+    String captureBlockedReason(CrmContext ctx, PlatformChat chat) {
+        if (!ctx.can("crm:edit")) return "NO_EDIT";
+        if (!hasAnyPipeline(ctx)) return "NO_PIPELINE_ACCESS";
+        if (!ctx.viewAll() && !assignedToMe(ctx, chat)) return "CHAT_NOT_ASSIGNED";
+        return null;
+    }
+
+    private static boolean hasAnyPipeline(CrmContext ctx) {
+        return ctx.viewAll() || !ctx.pipelines().pipelineIds().isEmpty();
+    }
+
     private static void requireAnyPipeline(CrmContext ctx) {
-        if (!ctx.viewAll() && ctx.pipelines().pipelineIds().isEmpty()) {
+        if (!hasAnyPipeline(ctx)) {
             throw CrmErrors.forbidden("NO_PIPELINE_ACCESS", "No pipeline is assigned to you");
         }
     }
