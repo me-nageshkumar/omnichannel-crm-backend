@@ -57,6 +57,11 @@ public class ApiExceptionHandler {
         return body(HttpStatus.CONFLICT, e.code(), e.getMessage());
     }
 
+    @ExceptionHandler(AssigneeCannotSeeNumberException.class)
+    public ResponseEntity<Map<String, String>> assigneeCannotSeeNumber(AssigneeCannotSeeNumberException e) {
+        return body(HttpStatus.UNPROCESSABLE_ENTITY, AssigneeCannotSeeNumberException.CODE, e.getMessage());
+    }
+
     @ExceptionHandler(ChatClosedException.class)
     public ResponseEntity<Map<String, String>> chatClosed(ChatClosedException e) {
         return body(HttpStatus.CONFLICT, ChatClosedException.CODE, e.getMessage());

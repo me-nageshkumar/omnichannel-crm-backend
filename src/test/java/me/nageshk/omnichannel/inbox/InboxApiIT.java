@@ -369,7 +369,62 @@ class InboxApiIT extends InboxApiTestBase {
         assertThat(teamNames).containsExactly("Sales", "Support");
         assertThat(body.get("teams").get(1).get("id").asString()).isEqualTo(support.getId());
 
-        send(get(inbox() + "/assignees"), agentToken, null).andExpect(status().isForbidden());
+        // agents may look too: the queue tab's claim menu needs the list
+        send(get(inbox() + "/assignees"), agentToken, null).andExpect(status().isOk());
+        send(get(inbox() + "/assignees"), null, null).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void assigneesForNumberListsOwningTeamAndAdminsWithAvailability() throws Exception {
+        team("Sales", agent2);
+
+        JsonNode body = json(send(get(inbox() + "/assignees").param("phoneNumberId", number.getId()), agentToken, null)
+                .andExpect(status().isOk()));
+
+        List<String> users = new java.util.ArrayList<>();
+        body.get("users").forEach(u -> users.add(u.get("username").asString()));
+        assertThat(users).containsExactlyInAnyOrder("manager", "manager2", "agent"); // agent2 cannot see this number
+        body.get("users").forEach(u -> assertThat(u.get("availability").asString()).isEqualTo("AVAILABLE"));
+        List<String> teamNames = new java.util.ArrayList<>();
+        body.get("teams").forEach(t -> teamNames.add(t.get("name").asString()));
+        assertThat(teamNames).containsExactly("Sales", "Support");
+        send(get(inbox() + "/assignees").param("phoneNumberId", otherNumber.getId()), agentToken, null)
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void claimEndpointNeedsOnlyInboxSend() throws Exception {
+        WaWebChat queued = chat("Queued", "911", 1, null, support);
+        String url = inbox() + "/chats/" + queued.getId() + "/claim";
+
+        send(post(url), agent2Token, null).andExpect(status().isNotFound()); // not their number, not their queue
+        send(post(url), agentToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedUser.id").value(agent.getId()))
+                .andExpect(jsonPath("$.assignedTeam.id").value(support.getId()))
+                .andExpect(jsonPath("$.lastAgent.id").value(agent.getId()));
+        send(post(url), manager2Token, null).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CHAT_TAKEN"));
+    }
+
+    @Test
+    void handoffEndpointShapes() throws Exception {
+        WaWebChat mine = chat("Mine", "911", 1, agent, support);
+        WaWebChat theirs = chat("Theirs", "912", 2, manager2, support);
+        Team sales = team("Sales", agent2);
+
+        send(post(inbox() + "/chats/" + mine.getId() + "/handoff"), agentToken,
+                Map.of("kind", "TO_USER", "userId", manager2.getId())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedUser.id").value(manager2.getId()));
+        send(post(inbox() + "/chats/" + theirs.getId() + "/handoff"), agentToken,
+                Map.of("kind", "TO_TEAM", "teamId", sales.getId())).andExpect(status().isNotFound());
+        send(post(inbox() + "/chats/" + theirs.getId() + "/handoff"), manager2Token,
+                Map.of("kind", "TO_TEAM", "teamId", sales.getId())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedTeam.id").value(sales.getId()))
+                .andExpect(jsonPath("$.assignedUser").doesNotExist());
+        send(post(inbox() + "/chats/" + mine.getId() + "/handoff"), manager2Token, Map.of("kind", "SIDEWAYS"))
+                .andExpect(status().isBadRequest());
+        send(post(inbox() + "/chats/" + mine.getId() + "/handoff"), manager2Token, Map.of("kind", "TO_USER"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.userId").exists());
     }
 
     @Test

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import me.nageshk.omnichannel.access.AccessService;
 import me.nageshk.omnichannel.access.BuiltInRoles;
+import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.support.TestUsers;
@@ -56,6 +57,7 @@ class ChatAssignmentIT {
 
     @Autowired ChatAssignmentService assignment;
     @Autowired InboxSettingService settings;
+    @Autowired me.nageshk.omnichannel.phone.PhoneNumberRepository phoneNumbers;
     @Autowired WaWebChatRepository chats;
     @Autowired WaWebChatActionRepository actions;
     @Autowired TeamRepository teams;
@@ -367,5 +369,228 @@ class ChatAssignmentIT {
         WaWebChat result = assignment.claimOnReply(me, chat());
         assertThat(result.getAssignedUserId()).isEqualTo(manager.getId());
         assertThat(result.getLastAgentUserId()).isEqualTo(manager.getId());
+    }
+
+    // --- claim and hand-offs (design §3.5, §3.6) ---------------------------------------------------------------
+
+    private Team owning(String name, User... members) {
+        Team t = team(name, members);
+        me.nageshk.omnichannel.phone.PhoneNumber number = phoneNumbers.findById(pn).orElseThrow();
+        number.setTeamId(t.getId());
+        phoneNumbers.save(number);
+        return t;
+    }
+
+    private void roundRobin(Team t) {
+        settings.putOverride(brand.getId(), t.getId(), new RoutingSetting.Request(true, true, null, null, null, null));
+    }
+
+    private WaWebChat chatOf(User user, Team team) {
+        WaWebChat c = chat();
+        c.setAssignedUserId(user == null ? null : user.getId());
+        c.setAssignedTeamId(team == null ? null : team.getId());
+        return chats.save(c);
+    }
+
+    /** A second chat of the number, with its own remote id. */
+    private WaWebChat anotherChatOf(User user, Team team) {
+        WaWebChat c = new WaWebChat();
+        c.setCustomerId(acme.getId());
+        c.setWorkspaceId(brand.getId());
+        c.setPhoneNumberId(pn);
+        c.setRemoteId("919922222222@c.us");
+        c.setStatus(ChatStatus.OPEN);
+        c.setAssignedUserId(user == null ? null : user.getId());
+        c.setAssignedTeamId(team == null ? null : team.getId());
+        return chats.save(c);
+    }
+
+    private static HandoffRequest toUser(String userId) {
+        return new HandoffRequest(HandoffRequest.Kind.TO_USER, userId, null);
+    }
+
+    private static HandoffRequest toTeam(String teamId) {
+        return new HandoffRequest(HandoffRequest.Kind.TO_TEAM, null, teamId);
+    }
+
+    @Test
+    void claimTakesUnassignedChatAndSetsLastAgent() {
+        Team support = owning("Support", manager);
+        WaWebChat c = chatOf(null, support);
+
+        WaWebChat result = assignment.claim(me, c);
+
+        assertThat(result.getAssignedUserId()).isEqualTo(manager.getId());
+        assertThat(result.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(result.getLastAgentUserId()).isEqualTo(manager.getId());
+        assertThat(actions.findAll()).singleElement().satisfies(a -> {
+            assertThat(a.getType()).isEqualTo(ActionType.ASSIGNED);
+            assertThat(a.getByUserId()).isEqualTo(manager.getId());
+            assertThat(a.getToUserId()).isEqualTo(manager.getId());
+            assertThat(a.getToTeamName()).isEqualTo("Support");
+        });
+    }
+
+    @Test
+    void claimOfTakenChatIs409() {
+        User agent = user("agent", brand);
+        WaWebChat c = chatOf(agent, null);
+
+        assertThatThrownBy(() -> assignment.claim(me, c)).isInstanceOf(ChatTakenException.class);
+        assertThat(chats.findById(c.getId()).orElseThrow().getAssignedUserId()).isEqualTo(agent.getId());
+    }
+
+    @Test
+    void handoffToTeammateAssigns() {
+        User agent = user("agent", brand);
+        Team support = owning("Support", manager, agent);
+        WaWebChat c = chatOf(manager, support);
+
+        WaWebChat result = assignment.handoff(me, c, toUser(agent.getId()), false);
+
+        assertThat(result.getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(result.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(result.getLastAgentUserId()).isEqualTo(agent.getId());
+        assertThat(actions.findAll()).singleElement().satisfies(a -> {
+            assertThat(a.getType()).isEqualTo(ActionType.ASSIGNED);
+            assertThat(a.getByUserId()).isEqualTo(manager.getId());
+            assertThat(a.getToUserId()).isEqualTo(agent.getId());
+        });
+    }
+
+    @Test
+    void handoffToNonMemberIs422() {
+        User outsider = user("outsider", brand);
+        Team support = owning("Support", manager);
+        WaWebChat c = chatOf(manager, support);
+
+        assertThatThrownBy(() -> assignment.handoff(me, c, toUser(outsider.getId()), false))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.fields()).containsKey("userId"));
+        assertThat(chats.findById(c.getId()).orElseThrow().getAssignedUserId()).isEqualTo(manager.getId());
+    }
+
+    @Test
+    void handBackRoutesToAnotherMember() {
+        User agent = user("agent", brand);
+        Team support = owning("Support", manager, agent);
+        roundRobin(support);
+        WaWebChat c = chatOf(manager, support);
+
+        WaWebChat result = assignment.handoff(me, c, toTeam(null), false);
+
+        assertThat(result.getAssignedUserId()).isEqualTo(agent.getId());
+        assertThat(result.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(actions.findAll()).singleElement().satisfies(a -> {
+            assertThat(a.getType()).isEqualTo(ActionType.ROUTED);
+            assertThat(a.getReason()).isEqualTo(RoutedReason.HANDED_BACK);
+            assertThat(a.getExcludedUserId()).isEqualTo(manager.getId());
+        });
+    }
+
+    @Test
+    void handBackWithNobodyElseQueues() {
+        Team support = owning("Support", manager);
+        roundRobin(support);
+        WaWebChat c = chatOf(manager, support);
+
+        WaWebChat result = assignment.handoff(me, c, toTeam(support.getId()), false);
+
+        assertThat(result.getAssignedUserId()).isNull();
+        assertThat(result.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(actions.findAll()).singleElement()
+                .satisfies(a -> assertThat(a.getReason()).isEqualTo(RoutedReason.HANDED_BACK));
+    }
+
+    @Test
+    void handBackSkipsSticky() {
+        User agent = user("agent", brand);
+        Team support = owning("Support", manager, agent);
+        roundRobin(support);
+        WaWebChat c = chatOf(manager, support);
+        c.setLastAgentUserId(manager.getId());
+        c.setLastAgentAt(java.time.Instant.now());
+        c = chats.save(c);
+
+        WaWebChat result = assignment.handoff(me, c, toTeam(null), false);
+
+        assertThat(result.getAssignedUserId()).isEqualTo(agent.getId());
+    }
+
+    @Test
+    void handBackOnATeamWithRoutingOffJustUnassigns() {
+        Team support = owning("Support", manager);
+        settings.putOverride(brand.getId(), support.getId(),
+                new RoutingSetting.Request(false, false, null, null, null, null));
+        WaWebChat c = chatOf(manager, support);
+
+        WaWebChat result = assignment.handoff(me, c, toTeam(null), false);
+
+        assertThat(result.getAssignedUserId()).isNull();
+        assertThat(result.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(actions.findAll()).singleElement()
+                .satisfies(a -> assertThat(a.getType()).isEqualTo(ActionType.UNASSIGNED));
+    }
+
+    @Test
+    void transferRecordsAndRoutesPerTargetSetting() {
+        User agent = user("agent", brand);
+        Team support = owning("Support", manager);
+        Team sales = team("Sales", agent);
+        WaWebChat c = chatOf(manager, support);
+
+        WaWebChat queued = assignment.handoff(me, c, toTeam(sales.getId()), false);
+
+        assertThat(queued.getAssignedTeamId()).isEqualTo(sales.getId());
+        assertThat(queued.getAssignedUserId()).isNull(); // brand default: team queue
+        assertThat(actions.findAll()).extracting(WaWebChatAction::getType)
+                .containsExactly(ActionType.TRANSFERRED, ActionType.ROUTED);
+        WaWebChatAction transferred = actions.findAll().get(0);
+        assertThat(transferred.getFromTeamId()).isEqualTo(support.getId());
+        assertThat(transferred.getFromTeamName()).isEqualTo("Support");
+        assertThat(transferred.getToTeamId()).isEqualTo(sales.getId());
+        assertThat(transferred.getByUserId()).isEqualTo(manager.getId());
+
+        // with round robin on the target, the chat lands on a member right away
+        roundRobin(sales);
+        WaWebChat other = anotherChatOf(manager, support);
+        WaWebChat assigned = assignment.handoff(me, other, toTeam(sales.getId()), false);
+        assertThat(assigned.getAssignedTeamId()).isEqualTo(sales.getId());
+        assertThat(assigned.getAssignedUserId()).isEqualTo(agent.getId());
+    }
+
+    @Test
+    void transferToUnknownTeamIs422() {
+        Team support = owning("Support", manager);
+        WaWebChat c = chatOf(manager, support);
+        assertThatThrownBy(() -> assignment.handoff(me, c, toTeam("nope"), false))
+                .isInstanceOfSatisfying(ValidationException.class, e -> assertThat(e.fields()).containsKey("teamId"));
+    }
+
+    @Test
+    void handoffOfSomeoneElsesChatIs404ForAgentButNotForManager() {
+        User agent = user("agent", brand);
+        Team support = owning("Support", manager, agent);
+        WaWebChat c = chatOf(agent, support);
+
+        assertThatThrownBy(() -> assignment.handoff(me, c, toUser(manager.getId()), false))
+                .isInstanceOf(NotFoundException.class);
+        WaWebChat result = assignment.handoff(me, c, toUser(manager.getId()), true);
+        assertThat(result.getAssignedUserId()).isEqualTo(manager.getId());
+    }
+
+    @Test
+    void assignToUserWhoCannotSeeNumberIs422() {
+        User agent = user("agent", brand);
+        owning("Support", manager);
+        WaWebChat c = chat();
+
+        assertThatThrownBy(() -> assignment.assign(me, c, agent.getId(), null))
+                .isInstanceOf(me.nageshk.omnichannel.api.AssigneeCannotSeeNumberException.class);
+        // a member may be assigned, and so may someone who sees every number
+        User boss = testUsers.createInCustomer(acme.getId(), "boss", null,
+                List.of(new WorkspaceRole(brand.getId(), testUsers.roleId(BuiltInRoles.WORKSPACE_MANAGER))));
+        assertThat(assignment.assign(me, c, manager.getId(), null).getAssignedUserId()).isEqualTo(manager.getId());
+        assertThat(assignment.assign(me, c, boss.getId(), null).getAssignedUserId()).isEqualTo(boss.getId());
     }
 }

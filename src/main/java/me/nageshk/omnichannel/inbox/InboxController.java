@@ -6,6 +6,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import me.nageshk.omnichannel.access.AccessService;
+import me.nageshk.omnichannel.access.Authority;
+import me.nageshk.omnichannel.phone.PhoneNumber;
+import me.nageshk.omnichannel.tenant.Team;
 import me.nageshk.omnichannel.api.NotFoundException;
 import me.nageshk.omnichannel.api.ValidationException;
 import me.nageshk.omnichannel.auth.AccessTokenAuthenticator;
@@ -81,12 +85,14 @@ public class InboxController {
     private final ChatMediaService chatMedia;
     private final NewChatService newChats;
     private final NumberLookupService numberLookups;
+    private final AccessService accessService;
 
     public InboxController(InboxQueryService query, InboxScopeService scopeService, InboxStreamBroker broker,
             AccessTokenAuthenticator authenticator, InboxViews views, InboxSettingService settings, ChatAssignmentService assignment,
             PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService,
             InboxSendService sender, WaWebMessageRepository messageRepository, ChatMediaService chatMedia,
-            NewChatService newChats, NumberLookupService numberLookups) {
+            NewChatService newChats, NumberLookupService numberLookups, AccessService accessService) {
+        this.accessService = accessService;
         this.query = query;
         this.scopeService = scopeService;
         this.broker = broker;
@@ -194,11 +200,29 @@ public class InboxController {
         settings.deleteOverride(workspaceId, teamId);
     }
 
+    /**
+     * Who a chat may be assigned to. With {@code phoneNumberId}, only people who can open that number: the owning
+     * team's members and holders of {@code inbox:view-all}; a number nobody owns lists everyone, as before.
+     */
     @GetMapping("/assignees")
-    @PreAuthorize("@access.has(#workspaceId, 'inbox:assign')")
-    public Assignees assignees(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId) {
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:view-queue') or @access.has(#workspaceId, 'inbox:assign')")
+    public Assignees assignees(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestParam(required = false) String phoneNumberId) {
+        Team owner = null;
+        if (phoneNumberId != null) {
+            PhoneNumber number = phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
+            if (!scopeService.visibleNumbers(me, workspaceId).stream().anyMatch(v -> v.number().getId().equals(number.getId()))) {
+                throw new NotFoundException("phone number not found");
+            }
+            owner = number.getTeamId() == null ? null
+                    : teamService.list(me.customerId(), workspaceId).stream().map(TeamService.TeamWithMembers::team)
+                            .filter(t -> t.getId().equals(number.getTeamId())).findFirst().orElse(null);
+        }
+        Team owningTeam = owner;
         List<Person> users = userAdmin.withAccessTo(me.customerId(), workspaceId).stream()
                 .filter(u -> u.isActive() && UserAdminService.brandDisabled(u, workspaceId) == null)
+                .filter(u -> owningTeam == null || owningTeam.getMemberIds().contains(u.getId())
+                        || accessService.inWorkspace(accessService.load(u), workspaceId).contains(Authority.INBOX_VIEW_ALL.code()))
                 .map(InboxController::person).toList();
         List<TeamRef> teams = teamService.list(me.customerId(), workspaceId).stream()
                 .map(t -> new TeamRef(t.team().getId(), t.team().getName())).toList();
@@ -297,6 +321,21 @@ public class InboxController {
         WaWebChat chat = query.requireVisible(me, workspaceId, chatId);
         return views.chat(req == null ? assignment.assign(me, chat, null, null)
                 : assignment.assign(me, chat, req.userId(), req.teamId()));
+    }
+
+    @PostMapping("/chats/{chatId}/claim")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    public ChatView claim(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String chatId) {
+        return views.chat(assignment.claim(me, query.requireVisible(me, workspaceId, chatId)));
+    }
+
+    @PostMapping("/chats/{chatId}/handoff")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    public ChatView handoff(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String chatId, @RequestBody(required = false) HandoffRequest req) {
+        WaWebChat chat = query.requireVisible(me, workspaceId, chatId);
+        return views.chat(assignment.handoff(me, chat, req, accessService.has(workspaceId, "inbox:assign")));
     }
 
     @PostMapping("/chats/{chatId}/unassign")
