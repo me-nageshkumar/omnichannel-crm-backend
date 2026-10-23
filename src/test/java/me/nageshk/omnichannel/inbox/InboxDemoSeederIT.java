@@ -200,6 +200,22 @@ class InboxDemoSeederIT {
     }
 
     @Test
+    void anEarlierDemoSeedGetsItsNumberOwnedByDemoSupport() {
+        seedAll();
+        // a demo database seeded before numbers had owning teams
+        PhoneNumber number = numbers.findAll().stream().filter(n -> DemoSeeder.NUMBER.equals(n.getNumber()))
+                .findFirst().orElseThrow();
+        number.setTeamId(null);
+        numbers.save(number);
+
+        seeder.run(null);
+
+        assertThat(numbers.findById(number.getId()).orElseThrow().getTeamId())
+                .isEqualTo(supportTeams().get(0).getId());
+        assertThat(chats.count()).isEqualTo(6);
+    }
+
+    @Test
     void secondRunIsNoop() {
         seedAll();
         seeder.run(null);

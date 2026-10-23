@@ -187,7 +187,11 @@ public class InboxDemoSeeder implements ApplicationRunner {
         if (brand == null) return;
         PhoneNumber number = numbers.findByWorkspaceIdOrderByNumber(brand.getId()).stream()
                 .filter(n -> DemoSeeder.NUMBER.equals(n.getNumber())).findFirst().orElse(null);
-        if (number == null || !chats.findIdsByPhoneNumberId(number.getId()).isEmpty()) return;
+        if (number == null) return;
+        if (!chats.findIdsByPhoneNumberId(number.getId()).isEmpty()) {
+            ownByExistingTeam(brand, number);
+            return;
+        }
 
         User agent = users.findByUsername("demo-agent").orElse(null);
         User lead = users.findByUsername("demo-lead").orElse(null);
@@ -210,6 +214,20 @@ public class InboxDemoSeeder implements ApplicationRunner {
         Instant now = clock.instant();
         for (Script script : SCRIPTS) chat(script, customer, brand, number, team, staff, byName.get(script.contact()), png, now);
         log.warn("demo seed: {} chats added to +{}", SCRIPTS.size(), DemoSeeder.NUMBER);
+    }
+
+    /**
+     * A demo database seeded before numbers had owning teams: the demo number goes to Demo Support if that team
+     * exists, so demo-agent sees it in the inbox. Its chats are not touched.
+     */
+    private void ownByExistingTeam(Workspace brand, PhoneNumber number) {
+        if (number.getTeamId() != null) return;
+        teams.findByWorkspaceIdOrderByName(brand.getId()).stream().filter(t -> TEAM.equals(t.getName())).findFirst()
+                .ifPresent(team -> {
+                    number.setTeamId(team.getId());
+                    numbers.save(number);
+                    log.warn("demo seed: +{} is now worked by {}", DemoSeeder.NUMBER, TEAM);
+                });
     }
 
     private Team team(Customer customer, Workspace brand, Map<Staff, User> staff) {
