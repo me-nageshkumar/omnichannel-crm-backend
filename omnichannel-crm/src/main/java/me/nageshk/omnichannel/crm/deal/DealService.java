@@ -25,9 +25,9 @@ import me.nageshk.omnichannel.crm.activity.FieldDiff;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.common.CrmPage;
 import me.nageshk.omnichannel.crm.common.CrmSort;
-import me.nageshk.omnichannel.crm.common.CustomFields;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
 import me.nageshk.omnichannel.crm.common.Ref;
+import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.company.CompanyCounters;
 import me.nageshk.omnichannel.crm.contact.Channel;
 import me.nageshk.omnichannel.crm.contact.CrmContact;
@@ -37,6 +37,7 @@ import me.nageshk.omnichannel.crm.deal.dto.DealRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealSearchRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealView;
 import me.nageshk.omnichannel.crm.deal.dto.MoveRequest;
+import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipelineService;
 import me.nageshk.omnichannel.crm.pipeline.CrmStage;
@@ -75,11 +76,13 @@ public class DealService {
     private final Placement placement;
     private final ActivityLog activities;
     private final LaneLocks lanes;
+    private final FieldDefinitionService fields;
     private final Clock clock;
 
     DealService(MongoTemplate mongo, CrmDealRepository repository, CrmContactService contacts,
             CrmPipelineService pipelines, ContactDirectory contactDirectory, PeopleDirectory people,
-            Placement placement, ActivityLog activities, LaneLocks lanes, Clock clock) {
+            Placement placement, ActivityLog activities, LaneLocks lanes, FieldDefinitionService fields, Clock clock) {
+        this.fields = fields;
         this.lanes = lanes;
         this.mongo = mongo;
         this.repository = repository;
@@ -185,6 +188,8 @@ public class DealService {
         if (t.length() > MAX_TITLE) t = t.substring(0, MAX_TITLE);
         CrmDeal d = newDeal(ctx, contact, name, pipeline, stage);
         d.setTitle(t);
+        // capture has no one to fill required fields; defaults still apply
+        d.setCustomFields(fields.values(ctx, TargetType.DEAL, Map.of(), null, true, false, new LinkedHashMap<>()));
         d.setOwnerId(contact.getOwnerId() != null ? contact.getOwnerId() : ctx.userId());
         d.setTeamId(contact.getTeamId());
         CrmDeal saved = appended(ctx, d);
@@ -221,7 +226,7 @@ public class DealService {
         String teamId = text(req.teamId(), null, "teamId", 64, errors);
         String source = pick(text(req.source(), null, "source", 64, errors), null, "source",
                 ctx.settings().getDealSources(), errors);
-        CustomFields.check(req.customFields(), errors);
+        Map<String, Object> custom = fields.values(ctx, TargetType.DEAL, Map.of(), req.customFields(), true, true, errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
         CrmContact primary = contacts.load(ctx, req.primaryCrmContactId().trim());
@@ -253,7 +258,7 @@ public class DealService {
         d.setTeamId(teamId);
         if (source != null) d.setSource(source);
         d.setLabelIds(labels(req.labelIds(), List.of()));
-        d.setCustomFields(req.customFields() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(req.customFields()));
+        d.setCustomFields(custom);
         CrmDeal saved = appended(ctx, d);
         afterCreate(ctx, saved, "Deal created");
         return view(ctx, reload(ctx, saved.getId()));
@@ -330,7 +335,8 @@ public class DealService {
             errors.put("stageId", "cannot change here; move the deal instead");
         if (req.primaryCrmContactId() != null && !present(req.primaryCrmContactId()))
             errors.put("primaryCrmContactId", "must not be blank");
-        CustomFields.check(req.customFields(), errors);
+        Map<String, Object> custom = fields.values(ctx, TargetType.DEAL, current.getCustomFields(), req.customFields(),
+                false, true, errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
         CrmPipeline from = pipelines.get(ctx, current.getPipelineId());
@@ -378,7 +384,7 @@ public class DealService {
                 current.getCustomFields());
         Map<String, Object> now = audited(title, amount, currency, prob, overridden, closeDate, companyId, primaryId,
                 linked, ownerId, teamId, source, labels(req.labelIds(), current.getLabelIds()),
-                req.customFields() != null ? new LinkedHashMap<>(req.customFields()) : current.getCustomFields());
+                custom);
         List<FieldDiff> diffs = ActivityLog.diff(was, now);
         if (diffs.isEmpty() && !pipelineChange) {
             if (!req.version().equals(current.getVersion())) throw versionConflict();

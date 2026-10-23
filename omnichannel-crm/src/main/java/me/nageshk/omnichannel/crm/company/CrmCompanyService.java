@@ -18,7 +18,6 @@ import me.nageshk.omnichannel.crm.activity.FieldDiff;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.common.CrmPage;
 import me.nageshk.omnichannel.crm.common.CrmSort;
-import me.nageshk.omnichannel.crm.common.CustomFields;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
 import me.nageshk.omnichannel.crm.common.Ref;
@@ -29,6 +28,7 @@ import me.nageshk.omnichannel.crm.company.dto.CompanySummaryView;
 import me.nageshk.omnichannel.crm.company.dto.CompanyView;
 import me.nageshk.omnichannel.crm.contact.CrmContactService;
 import me.nageshk.omnichannel.crm.deal.DealService;
+import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformPerson;
 import org.bson.types.Decimal128;
@@ -54,10 +54,12 @@ public class CrmCompanyService {
     private final DealService deals;
     private final CompanyCounters counters;
     private final ActivityLog activities;
+    private final FieldDefinitionService fields;
     private final Clock clock;
 
     CrmCompanyService(MongoTemplate mongo, PeopleDirectory people, CrmContactService contacts, DealService deals,
-            CompanyCounters counters, ActivityLog activities, Clock clock) {
+            CompanyCounters counters, ActivityLog activities, FieldDefinitionService fields, Clock clock) {
+        this.fields = fields;
         this.mongo = mongo;
         this.deals = deals;
         this.people = people;
@@ -228,9 +230,8 @@ public class CrmCompanyService {
         Map<String, Object> address = req.address() != null ? address(req.address(), errors) : addressMap(current.getAddress());
         List<String> labels = req.labelIds() != null ? req.labelIds().stream().filter(x -> x != null && !x.isBlank())
                 .map(String::trim).distinct().toList() : current.getLabelIds();
-        CustomFields.check(req.customFields(), errors);
-        Map<String, Object> custom = req.customFields() != null ? new LinkedHashMap<>(req.customFields())
-                : current.getCustomFields();
+        Map<String, Object> custom = fields.values(ctx, TargetType.COMPANY, current.getCustomFields(),
+                req.customFields(), current.getId() == null, true, errors);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", name);
         m.put("domain", domain);

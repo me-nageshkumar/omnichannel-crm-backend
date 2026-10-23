@@ -28,6 +28,7 @@ import me.nageshk.omnichannel.crm.company.CompanyCounters;
 import me.nageshk.omnichannel.crm.contact.dto.ContactSearchRequest;
 import me.nageshk.omnichannel.crm.contact.dto.ContactUpdateRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CrmContactView;
+import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
 import me.nageshk.omnichannel.crm.platform.ContactDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformContact;
@@ -53,10 +54,13 @@ public class CrmContactService {
     private final ContactCounters counters;
     private final CompanyCounters companyCounters;
     private final ActivityLog activities;
+    private final FieldDefinitionService fields;
     private final Clock clock;
 
     CrmContactService(MongoTemplate mongo, ContactDirectory contactDirectory, PeopleDirectory people,
-            ContactCounters counters, CompanyCounters companyCounters, ActivityLog activities, Clock clock) {
+            ContactCounters counters, CompanyCounters companyCounters, ActivityLog activities,
+            FieldDefinitionService fields, Clock clock) {
+        this.fields = fields;
         this.mongo = mongo;
         this.contactDirectory = contactDirectory;
         this.people = people;
@@ -140,13 +144,17 @@ public class CrmContactService {
         if (companyId != null && !companyId.equals(current.getCompanyId()) && !mongo.exists(
                 new Query(Criteria.where("_id").is(companyId).and("workspaceId").is(ctx.workspaceId())),
                 CompanyCounters.COMPANIES)) errors.put("companyId", "must be a company of this brand");
+        Map<String, Object> custom = fields.values(ctx, TargetType.CONTACT, current.getCustomFields(),
+                req.customFields(), false, true, errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
         Map<String, Object> before = fields(current.getFirstName(), current.getLastName(), current.getEmail(),
                 current.getJobTitle(), current.getOwnerId(), current.getLifecycleStatus(), current.getSource(),
                 current.getCompanyId());
+        before.put("customFields", current.getCustomFields() == null ? new LinkedHashMap<>() : current.getCustomFields());
         Map<String, Object> after = fields(firstName, lastName, email, jobTitle, ownerId, lifecycle, source,
                 companyId);
+        after.put("customFields", custom);
         List<FieldDiff> diffs = ActivityLog.diff(before, after);
         if (diffs.isEmpty()) {
             if (!req.version().equals(current.getVersion())) throw versionConflict();

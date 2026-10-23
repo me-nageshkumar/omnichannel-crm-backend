@@ -20,6 +20,7 @@ import me.nageshk.omnichannel.crm.contact.dto.CaptureResult;
 import me.nageshk.omnichannel.crm.contact.dto.CreateRequest;
 import me.nageshk.omnichannel.crm.deal.CaptureDeal;
 import me.nageshk.omnichannel.crm.deal.DealService;
+import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
 import me.nageshk.omnichannel.crm.platform.ChatDirectory;
 import me.nageshk.omnichannel.crm.platform.ContactDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
@@ -44,11 +45,13 @@ public class CaptureService {
     private final CrmContactService contactService;
     private final DealService deals;
     private final ActivityLog activities;
+    private final FieldDefinitionService fields;
     private final Clock clock;
 
     CaptureService(MongoTemplate mongo, ChatDirectory chats, ContactDirectory contactDirectory,
             PeopleDirectory people, PipelineIds pipelineIds, CrmContactService contactService, DealService deals,
-            ActivityLog activities, Clock clock) {
+            ActivityLog activities, FieldDefinitionService fields, Clock clock) {
+        this.fields = fields;
         this.deals = deals;
         this.mongo = mongo;
         this.chats = chats;
@@ -122,6 +125,8 @@ public class CaptureService {
             n.setLastName(lastName);
             n.setOwnerId(ctx.userId());
             n.setLifecycleStatus(defaultKey(ctx.settings().getLifecycleStatuses()));
+            // nobody fills required fields on a capture or an import; defaults still apply
+            n.setCustomFields(fields.values(ctx, TargetType.CONTACT, Map.of(), null, true, false, new LinkedHashMap<>()));
             n.setCreatedBy(ctx.userId());
             n.setLastModifiedBy(ctx.userId());
             try {
