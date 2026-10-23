@@ -525,18 +525,21 @@ class CrmDealsApiIT extends CrmTestBase {
     }
 
     @Test
+    /** Phase B: only defined fields are accepted (Ruling B1); undefined or malformed keys are field errors. */
     void customFieldKeysAreChecked() throws Exception {
-        for (String bad : List.of("a.b", "$set", "k".repeat(41))) {
+        for (String bad : List.of("a.b", "$set", "k".repeat(41), "budget")) {
             send(post(crm() + "/deals"), managerToken, body("title", "X", "pipelineId", sales,
                     "primaryCrmContactId", aliceId, "customFields", Map.of(bad, 1)))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION"))
-                    .andExpect(jsonPath("$.fields.customFields").exists());
+                    .andExpect(jsonPath("$.fields['customFields." + bad + "']").exists());
             send(put(crm() + "/deals/" + aliceDeal), managerToken, body("version", 0, "customFields", Map.of(bad, 1)))
-                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.customFields").exists());
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields['customFields." + bad + "']").exists());
         }
+        send(post(crm() + "/fields"), managerToken, Map.of("entityType", "DEAL", "key", "budget", "label", "Budget",
+                "type", "CURRENCY")).andExpect(status().isCreated());
         JsonNode ok = createDeal(body("title", "X", "pipelineId", sales, "primaryCrmContactId", aliceId,
-                "customFields", Map.of("budget_" + "k".repeat(33), 5)));
-        assertThat(ok.get("customFields").size()).isEqualTo(1);
+                "customFields", Map.of("budget", 5)));
+        assertThat(ok.get("customFields").get("budget").asInt()).isEqualTo(5);
     }
 
     @Test

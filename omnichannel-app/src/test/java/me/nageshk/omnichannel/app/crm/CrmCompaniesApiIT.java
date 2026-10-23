@@ -295,14 +295,15 @@ class CrmCompaniesApiIT extends CrmTestBase {
     }
 
     @Test
+    /** Phase B: only defined fields are accepted (Ruling B1); undefined or malformed keys are field errors. */
     void customFieldKeysAreChecked() throws Exception {
-        for (String bad : List.of("a.b", "$where", "k".repeat(41))) {
+        for (String bad : List.of("a.b", "$where", "k".repeat(41), "tier")) {
             send(post(crm() + "/companies"), managerToken, Map.of("name", "X", "customFields", Map.of(bad, 1)))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION"))
-                    .andExpect(jsonPath("$.fields.customFields").exists());
+                    .andExpect(jsonPath("$.fields['customFields." + bad + "']").exists());
         }
-        String id = create("Fine", Map.of("customFields", Map.of("tier", "gold"))).get("id").asText();
+        String id = create("Fine", Map.of()).get("id").asText();
         send(put(crm() + "/companies/" + id), managerToken, Map.of("version", 0, "customFields", Map.of("x.y", 1)))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.customFields").exists());
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields['customFields.x.y']").exists());
     }
 }
