@@ -51,7 +51,7 @@ class InboxStreamBrokerTest {
     });
 
     private static InboxScope mine(String userId) {
-        return new InboxScope(Level.MINE, userId, Set.of());
+        return new InboxScope(Level.MINE, userId, Set.of(), Set.of());
     }
 
     private static WaWebChat chatAssignedTo(String userId) {

@@ -17,6 +17,8 @@ import me.nageshk.omnichannel.enablement.EnableLevel;
 import me.nageshk.omnichannel.tenant.Team;
 import me.nageshk.omnichannel.user.BrandDisable;
 import me.nageshk.omnichannel.user.User;
+import java.util.stream.StreamSupport;
+import me.nageshk.omnichannel.phone.PhoneNumber;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
@@ -46,7 +48,7 @@ class InboxApiIT extends InboxApiTestBase {
     @Test
     void agentCannotRequestTeamScope() throws Exception {
         send(get(chatsUrl()).param("scope", "TEAM"), agentToken, null).andExpect(status().isForbidden());
-        send(get(chatsUrl()).param("scope", "UNASSIGNED"), agentToken, null).andExpect(status().isForbidden());
+        send(get(chatsUrl()).param("scope", "UNASSIGNED"), agentToken, null).andExpect(status().isOk());
         send(get(chatsUrl()).param("scope", "ALL"), agent2Token, null).andExpect(status().isForbidden());
         send(get(chatsUrl()).param("scope", "MINE"), agentToken, null).andExpect(status().isOk());
     }
@@ -71,8 +73,9 @@ class InboxApiIT extends InboxApiTestBase {
         assertThat(names(page)).containsExactly("OtherTeam", "Queue", "OnTeam");
         assertThat(names(json(send(get(chatsUrl()).param("scope", "MINE"), manager2Token, null))))
                 .containsExactly("Own");
+        // Unassigned is everything nobody has taken yet: team queues included
         assertThat(names(json(send(get(chatsUrl()).param("scope", "UNASSIGNED"), manager2Token, null))))
-                .containsExactly("Queue");
+                .containsExactly("OtherTeam", "Queue", "OnTeam");
     }
 
     @Test
@@ -289,9 +292,9 @@ class InboxApiIT extends InboxApiTestBase {
         assertThat(stored.getStatus()).isEqualTo(ChatStatus.CLOSED);
         assertThat(stored.getAssignedUserId()).isNull();
 
-        // once unassigned the agent no longer sees it; the manager reopens
-        send(post(inbox() + "/chats/" + c.getId() + "/reopen"), agentToken, null).andExpect(status().isNotFound());
-        send(post(inbox() + "/chats/" + c.getId() + "/reopen"), managerToken, null).andExpect(status().isOk())
+        // once unassigned it sits in the queue of the number's team, which the agent still sees; agent2 (no team) doesn't
+        send(post(inbox() + "/chats/" + c.getId() + "/reopen"), agent2Token, null).andExpect(status().isNotFound());
+        send(post(inbox() + "/chats/" + c.getId() + "/reopen"), agentToken, null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("OPEN"));
     }
 
@@ -439,5 +442,138 @@ class InboxApiIT extends InboxApiTestBase {
 
         assertThat(result.getResponse().getStatus()).isEqualTo(200);
         assertThat(result.getResponse().getContentType()).startsWith("text/event-stream");
+    }
+
+    // --- team-owned numbers, queue scope and the cross-number list (design §3.1, §3.5, §3.7) ---------------------
+
+    private PhoneNumber ownedNumber(Team owner, String digits) {
+        PhoneNumber n = testDevices.number(brand, digits + (System.nanoTime() % 1000000));
+        n.setTeamId(owner == null ? null : owner.getId());
+        return phoneNumbers.save(n);
+    }
+
+    private WaWebChat chatOn(PhoneNumber n, String name, String phone, long minutes, User assignedUser, Team team) {
+        WaWebChat c = chat(n, brand, contact(brand, name, phone), minutes);
+        c.setAssignedUserId(assignedUser == null ? null : assignedUser.getId());
+        c.setAssignedTeamId(team == null ? null : team.getId());
+        return chats.save(c);
+    }
+
+    private String list() {
+        return inbox() + "/chats";
+    }
+
+    @Test
+    void agentListsChatsAcrossOwnedNumbersNewestFirst() throws Exception {
+        PhoneNumber b = ownedNumber(support, "9188");
+        chat("OnA", "911", 1, agent, null);
+        chatOn(b, "OnB", "912", 2, agent, null);
+        chatOn(b, "Theirs", "913", 3, agent2, null);
+
+        JsonNode page = json(send(get(list()), agentToken, null).andExpect(status().isOk()));
+
+        assertThat(names(page)).containsExactly("OnB", "OnA");
+        assertThat(page.get("items").get(0).get("phoneNumberId").asString()).isEqualTo(b.getId());
+        assertThat(page.get("items").get(1).get("phoneNumberId").asString()).isEqualTo(number.getId());
+    }
+
+    @Test
+    void phoneNumberFilterNarrowsToB() throws Exception {
+        PhoneNumber b = ownedNumber(support, "9188");
+        chat("OnA", "911", 1, agent, null);
+        chatOn(b, "OnB", "912", 2, agent, null);
+
+        JsonNode page = json(send(get(list()).param("phoneNumberIds", b.getId()), agentToken, null)
+                .andExpect(status().isOk()));
+        assertThat(names(page)).containsExactly("OnB");
+
+        JsonNode both = json(send(get(list()).param("phoneNumberIds", b.getId() + "," + number.getId()), agentToken,
+                null).andExpect(status().isOk()));
+        assertThat(names(both)).containsExactly("OnB", "OnA");
+    }
+
+    @Test
+    void numberOutsideTeamsIs404OnListAndChat() throws Exception {
+        Team sales = team("Sales", agent2);
+        PhoneNumber c = ownedNumber(sales, "9177");
+        WaWebChat theirs = chatOn(c, "OnC", "913", 3, agent2, null);
+        chatOn(c, "Queued", "914", 4, null, null);
+
+        send(get(list()).param("phoneNumberIds", c.getId()), agentToken, null).andExpect(status().isNotFound());
+        send(get(inbox() + "/chats/" + theirs.getId()), agentToken, null).andExpect(status().isNotFound());
+        // nothing on C leaks into the unfiltered list either
+        assertThat(names(json(send(get(list()).param("scope", "UNASSIGNED"), agentToken, null)))).isEmpty();
+        send(get(list()).param("phoneNumberIds", c.getId()), managerToken, null).andExpect(status().isOk());
+    }
+
+    @Test
+    void unassignedTabShowsQueueOfOwnTeam() throws Exception {
+        Team sales = team("Sales", agent2);
+        chat("SupportQueue", "911", 1, null, support);
+        chat("Nobodys", "912", 2, null, null);
+        chat("SalesQueue", "913", 3, null, sales);
+        chat("Mine", "914", 4, agent, null);
+
+        JsonNode page = json(send(get(list()).param("scope", "UNASSIGNED"), agentToken, null)
+                .andExpect(status().isOk()));
+
+        assertThat(names(page)).containsExactly("Nobodys", "SupportQueue");
+        assertThat(names(json(send(get(list()), agentToken, null)))).containsExactly("Mine");
+    }
+
+    @Test
+    void agentCannotSeeTeammatesAssignedChat() throws Exception {
+        WaWebChat teammates = chat("Teammates", "911", 1, manager2, support);
+        chat("Mine", "912", 2, agent, support);
+
+        send(get(inbox() + "/chats/" + teammates.getId()), agentToken, null).andExpect(status().isNotFound());
+        assertThat(names(json(send(get(list()), agentToken, null)))).containsExactly("Mine");
+        assertThat(names(json(send(get(list()).param("scope", "UNASSIGNED"), agentToken, null)))).isEmpty();
+        send(get(inbox() + "/chats/" + teammates.getId()), manager2Token, null).andExpect(status().isOk());
+    }
+
+    @Test
+    void guestNumberShowsOnlyCoveredChats() throws Exception {
+        Team sales = team("Sales", agent2);
+        PhoneNumber c = ownedNumber(sales, "9177");
+        WaWebChat handedToMe = chatOn(c, "HandedToMe", "913", 3, agent, null);
+        chatOn(c, "SalesOwn", "914", 4, agent2, null);
+        chatOn(c, "SalesQueue", "915", 5, null, sales);
+
+        JsonNode numbers = json(send(get(inbox() + "/phone-numbers"), agentToken, null).andExpect(status().isOk()));
+        assertThat(numbers).hasSize(2);
+        JsonNode cRow = StreamSupport.stream(numbers.spliterator(), false)
+                .filter(n -> n.get("id").asString().equals(c.getId())).findFirst().orElseThrow();
+        assertThat(cRow.get("guest").asBoolean()).isTrue();
+        assertThat(cRow.get("team").get("id").asString()).isEqualTo(sales.getId());
+        JsonNode aRow = StreamSupport.stream(numbers.spliterator(), false)
+                .filter(n -> n.get("id").asString().equals(number.getId())).findFirst().orElseThrow();
+        assertThat(aRow.get("guest").asBoolean()).isFalse();
+
+        JsonNode page = json(send(get(list()).param("phoneNumberIds", c.getId()), agentToken, null)
+                .andExpect(status().isOk()));
+        assertThat(names(page)).containsExactly("HandedToMe");
+        send(get(inbox() + "/chats/" + handedToMe.getId()), agentToken, null).andExpect(status().isOk());
+        // the guest number's own queue is not the agent's
+        assertThat(names(json(send(get(list()).param("scope", "UNASSIGNED").param("phoneNumberIds", c.getId()),
+                agentToken, null)))).isEmpty();
+    }
+
+    @Test
+    void adminSeesUnownedNumber() throws Exception {
+        PhoneNumber d = ownedNumber(null, "9166");
+
+        JsonNode managers = json(send(get(inbox() + "/phone-numbers"), managerToken, null).andExpect(status().isOk()));
+        assertThat(StreamSupport.stream(managers.spliterator(), false).map(n -> n.get("id").asString()))
+                .containsExactlyInAnyOrder(number.getId(), d.getId());
+        assertThat(StreamSupport.stream(managers.spliterator(), false).map(n -> n.get("guest").asBoolean()))
+                .containsOnly(false);
+
+        JsonNode agents = json(send(get(inbox() + "/phone-numbers"), agentToken, null).andExpect(status().isOk()));
+        assertThat(StreamSupport.stream(agents.spliterator(), false).map(n -> n.get("id").asString()))
+                .containsExactly(number.getId());
+        // agent2 is in no team: nothing to see, and the list says so rather than failing
+        assertThat(json(send(get(inbox() + "/phone-numbers"), agent2Token, null).andExpect(status().isOk()))).isEmpty();
+        assertThat(names(json(send(get(list()), agent2Token, null).andExpect(status().isOk())))).isEmpty();
     }
 }

@@ -478,7 +478,8 @@ class NewChatIT extends InboxApiTestBase {
     void unseenChatQueuedToATeamIsRefused() throws Exception {
         WaWebChat queue = chatOf("919811111111@c.us", "Nia", null, support);
 
-        ResponseEntity<JsonNode> res = postUntouched(agentToken, Map.of("phone", "919811111111", "text", "hello"));
+        // agent2 is in no team, so Support's queue is not theirs to pick up by writing first
+        ResponseEntity<JsonNode> res = postUntouched(agent2Token, Map.of("phone", "919811111111", "text", "hello"));
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(res.getBody().get("code").asString()).isEqualTo("CHAT_TAKEN");

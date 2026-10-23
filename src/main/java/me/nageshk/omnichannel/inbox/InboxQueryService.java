@@ -6,6 +6,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Collection;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -53,19 +56,25 @@ public class InboxQueryService {
      *
      * @param requested the list to show, or null for the widest the user may see
      * @param status OPEN or CLOSED, or null for both
+     * @param phoneNumberIds the numbers to list, empty for every number the user may open
      * @param q case-insensitive prefix of the contact's name or phone
      * @param before only chats whose last message is older than this
      * @throws ForbiddenException if the user may not use the requested list
      */
-    public ChatsPage chats(AuthenticatedUser me, String workspaceId, String phoneNumberId, ListScope requested,
-            ChatStatus status, String q, boolean unreadOnly, Instant before, int limit) {
+    public ChatsPage chats(AuthenticatedUser me, String workspaceId, Collection<String> phoneNumberIds,
+            ListScope requested, ChatStatus status, String q, boolean unreadOnly, Instant before, int limit) {
         InboxScope scope = scopes.scopeOf(me, workspaceId);
         ListScope list = requested != null ? requested : scopes.defaultScope(scope);
         if (!scope.allows(list)) throw new ForbiddenException("you may not use the " + list + " list");
+        // the numbers asked for must all be ones the user may open; none asked for means all of them
+        Set<String> visible = scopes.visibleNumbers(scope, workspaceId).stream().map(v -> v.number().getId())
+                .collect(Collectors.toSet());
+        Collection<String> selected = phoneNumberIds == null || phoneNumberIds.isEmpty() ? visible : phoneNumberIds;
+        if (!visible.containsAll(selected)) throw new NotFoundException("phone number not found");
 
         List<Criteria> all = new ArrayList<>();
         all.add(where("workspaceId").is(workspaceId));
-        all.add(where("phoneNumberId").is(phoneNumberId));
+        all.add(where("phoneNumberId").in(List.copyOf(selected)));
         all.add(scope.criteriaFor(list));
         if (status != null) all.add(where("status").is(status));
         if (unreadOnly) all.add(where("unreadCount").gt(0));

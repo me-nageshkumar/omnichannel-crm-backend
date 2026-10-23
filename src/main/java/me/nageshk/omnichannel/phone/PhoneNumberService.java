@@ -233,7 +233,7 @@ public class PhoneNumberService {
                 c == null ? null : c.getName(), n.getWorkspaceId(), w == null ? null : w.getName(),
                 s.status(), n.getDisabled(), s.disabledBecause(), n.getLastConnectedAt(), n.getLastSeenAt(),
                 n.getLastWrongNumber(), n.getLastWrongNumberAt(), n.getDeviceKeyHash() != null, n.getCreationTime(),
-                t == null ? null : new PhoneNumberView.TeamRef(t.getId(), t.getName()));
+                t == null ? null : new PhoneNumberView.TeamRef(t.getId(), t.getName()), null);
     }
 
     private void publish(PhoneNumber n, Reason reason) {

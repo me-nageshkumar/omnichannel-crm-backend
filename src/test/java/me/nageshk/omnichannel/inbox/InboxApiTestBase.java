@@ -34,7 +34,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Fixture of the inbox API tests: one customer with a brand, a number, a team "Support" and four users
- * (manager and manager2 see all, agent and agent2 see their own), plus helpers to insert chats directly.
+ * (manager and manager2 see all; agent is in team Support, which owns {@code number}; agent2 is in no team), plus
+ * helpers to insert chats directly.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -47,6 +48,7 @@ abstract class InboxApiTestBase {
     @Autowired TestUsers testUsers;
     @Autowired TestDevices testDevices;
     @Autowired TeamRepository teams;
+    @Autowired me.nageshk.omnichannel.phone.PhoneNumberRepository phoneNumbers;
     @Autowired UserRepository users;
     @Autowired ContactRepository contacts;
     @Autowired WaWebChatRepository chats;
@@ -81,7 +83,9 @@ abstract class InboxApiTestBase {
         manager2 = brandUser("manager2", BuiltInRoles.WORKSPACE_MANAGER);
         agent = brandUser("agent", BuiltInRoles.AGENT);
         agent2 = brandUser("agent2", BuiltInRoles.AGENT);
-        support = team("Support", manager2);
+        support = team("Support", manager2, agent);
+        number.setTeamId(support.getId());
+        number = phoneNumbers.save(number);
         managerToken = testUsers.accessToken(manager);
         manager2Token = testUsers.accessToken(manager2);
         agentToken = testUsers.accessToken(agent);

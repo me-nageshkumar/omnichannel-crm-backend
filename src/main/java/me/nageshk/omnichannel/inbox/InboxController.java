@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.inbox;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
@@ -105,8 +106,26 @@ public class InboxController {
 
     @GetMapping("/phone-numbers")
     @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
-    public List<PhoneNumberView> numbers(@PathVariable String workspaceId) {
-        return phoneNumbers.views(phoneNumbers.listForWorkspace(workspaceId));
+    public List<PhoneNumberView> numbers(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId) {
+        List<InboxScopeService.VisibleNumber> visible = scopeService.visibleNumbers(me, workspaceId);
+        List<PhoneNumberView> views = phoneNumbers.views(visible.stream().map(InboxScopeService.VisibleNumber::number)
+                .toList());
+        List<PhoneNumberView> flagged = new ArrayList<>(views.size());
+        for (int i = 0; i < views.size(); i++) flagged.add(views.get(i).asGuest(visible.get(i).guest()));
+        return flagged;
+    }
+
+    @GetMapping("/chats")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
+    public ChatsPage chats(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestParam(required = false) List<String> phoneNumberIds, @RequestParam(required = false) ListScope scope,
+            @RequestParam(defaultValue = "OPEN") StatusFilter status, @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "false") boolean unread, @RequestParam(required = false) Instant before,
+            @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
+        ChatStatus wanted = status == StatusFilter.ALL ? null : ChatStatus.valueOf(status.name());
+        return query.chats(me, workspaceId, phoneNumberIds == null ? List.of() : phoneNumberIds, scope, wanted, q,
+                unread, before, checked(limit));
     }
 
     @GetMapping("/phone-numbers/{phoneNumberId}/chats")
@@ -118,7 +137,7 @@ public class InboxController {
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
         phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
         ChatStatus wanted = status == StatusFilter.ALL ? null : ChatStatus.valueOf(status.name());
-        return query.chats(me, workspaceId, phoneNumberId, scope, wanted, q, unread, before, checked(limit));
+        return query.chats(me, workspaceId, List.of(phoneNumberId), scope, wanted, q, unread, before, checked(limit));
     }
 
     @GetMapping(value = "/phone-numbers/{phoneNumberId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

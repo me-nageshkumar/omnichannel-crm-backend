@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.access.AccessService;
+import me.nageshk.omnichannel.phone.PhoneNumber;
+import me.nageshk.omnichannel.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.access.BuiltInRoles;
 import me.nageshk.omnichannel.access.Role;
 import me.nageshk.omnichannel.access.RoleCache;
@@ -38,6 +40,8 @@ class InboxScopeServiceIT {
     @Autowired TeamRepository teams;
     @Autowired RoleRepository roles;
     @Autowired RoleCache roleCache;
+    @Autowired PhoneNumberRepository phoneNumbers;
+    @Autowired WaWebChatRepository chats;
 
     Customer acme;
     Workspace brand;
@@ -46,6 +50,7 @@ class InboxScopeServiceIT {
     @BeforeEach
     void setUp() {
         testUsers.deleteAll();
+        chats.deleteAll();
         acme = testUsers.customer("Acme");
         brand = testUsers.workspace(acme.getId(), "Brand A");
         other = testUsers.workspace(acme.getId(), "Brand B");
@@ -71,17 +76,74 @@ class InboxScopeServiceIT {
         return teams.save(t);
     }
 
+    private PhoneNumber number(Workspace w, Team owner) {
+        PhoneNumber n = testUsers.phoneNumber(acme.getId(), w.getId(), "9199" + (System.nanoTime() % 100000000));
+        n.setTeamId(owner == null ? null : owner.getId());
+        return phoneNumbers.save(n);
+    }
+
     @Test
-    void agentGetsMine() {
+    void agentGetsQueueWithOwnTeamsAndOwnedNumbers() {
         AuthenticatedUser agent = brandUser("agent", BuiltInRoles.AGENT, brand);
-        team(brand, "Support", agent.userId());
+        Team support = team(brand, "Support", agent.userId());
+        Team sales = team(brand, "Sales", "someone-else");
+        PhoneNumber a = number(brand, support);
+        number(brand, sales);
+        number(brand, null);
 
         InboxScope scope = scopes.scopeOf(agent, brand.getId());
 
-        assertThat(scope.level()).isEqualTo(Level.MINE);
+        assertThat(scope.level()).isEqualTo(Level.QUEUE);
         assertThat(scope.userId()).isEqualTo(agent.userId());
-        assertThat(scope.teamIds()).isEmpty();
+        assertThat(scope.teamIds()).containsExactly(support.getId());
+        assertThat(scope.ownedNumberIds()).containsExactly(a.getId());
         assertThat(scopes.defaultScope(scope)).isEqualTo(ListScope.MINE);
+    }
+
+    @Test
+    void mineLevelStillKnowsItsTeams() {
+        Role viewOnly = new Role();
+        viewOnly.setName("VIEW_ONLY");
+        viewOnly.setLevel(RoleLevel.BRAND);
+        viewOnly.setAuthorities(new java.util.HashSet<>(List.of("inbox:view")));
+        roles.save(viewOnly);
+        roleCache.evictAll();
+        AuthenticatedUser user = brandUser("viewer", "VIEW_ONLY", brand);
+        Team support = team(brand, "Support", user.userId());
+        PhoneNumber a = number(brand, support);
+
+        InboxScope scope = scopes.scopeOf(user, brand.getId());
+
+        assertThat(scope.level()).isEqualTo(Level.MINE);
+        assertThat(scope.teamIds()).containsExactly(support.getId());
+        assertThat(scope.ownedNumberIds()).containsExactly(a.getId());
+    }
+
+    @Test
+    void visibleNumbersAreOwnedPlusGuestNumbersWithCoveredChats() {
+        AuthenticatedUser agent = brandUser("agent", BuiltInRoles.AGENT, brand);
+        Team support = team(brand, "Support", agent.userId());
+        Team sales = team(brand, "Sales", "someone-else");
+        PhoneNumber a = number(brand, support);
+        PhoneNumber c = number(brand, sales);
+        PhoneNumber d = number(brand, sales);
+        WaWebChat transferred = new WaWebChat();
+        transferred.setCustomerId(acme.getId());
+        transferred.setWorkspaceId(brand.getId());
+        transferred.setPhoneNumberId(c.getId());
+        transferred.setRemoteId("919911111111@c.us");
+        transferred.setStatus(ChatStatus.OPEN);
+        transferred.setAssignedTeamId(support.getId());
+        chats.save(transferred);
+
+        List<InboxScopeService.VisibleNumber> visible = scopes.visibleNumbers(agent, brand.getId());
+
+        assertThat(visible).extracting(v -> v.number().getId()).containsExactlyInAnyOrder(a.getId(), c.getId());
+        assertThat(visible).filteredOn(v -> v.number().getId().equals(a.getId())).singleElement()
+                .satisfies(v -> assertThat(v.guest()).isFalse());
+        assertThat(visible).filteredOn(v -> v.number().getId().equals(c.getId())).singleElement()
+                .satisfies(v -> assertThat(v.guest()).isTrue());
+        assertThat(visible).extracting(v -> v.number().getId()).doesNotContain(d.getId());
     }
 
     @Test
@@ -97,10 +159,13 @@ class InboxScopeServiceIT {
         team(brand, "Sales", "someone-else");
         team(other, "Elsewhere", lead.userId());
 
+        PhoneNumber a = number(brand, support);
+
         InboxScope scope = scopes.scopeOf(lead, brand.getId());
 
         assertThat(scope.level()).isEqualTo(Level.TEAM);
         assertThat(scope.teamIds()).containsExactly(support.getId());
+        assertThat(scope.ownedNumberIds()).containsExactly(a.getId());
         assertThat(scopes.defaultScope(scope)).isEqualTo(ListScope.TEAM);
     }
 
@@ -110,12 +175,19 @@ class InboxScopeServiceIT {
         Team support = team(brand, "Support", "x");
         Team sales = team(brand, "Sales", wm.userId());
         team(other, "Elsewhere", "x");
+        PhoneNumber owned = number(brand, support);
+        PhoneNumber unowned = number(brand, null);
+        number(other, null);
 
         InboxScope scope = scopes.scopeOf(wm, brand.getId());
 
         assertThat(scope.level()).isEqualTo(Level.ALL);
         assertThat(scope.teamIds()).containsExactlyInAnyOrder(support.getId(), sales.getId());
+        assertThat(scope.ownedNumberIds()).containsExactlyInAnyOrder(owned.getId(), unowned.getId());
         assertThat(scopes.defaultScope(scope)).isEqualTo(ListScope.ALL);
+        assertThat(scopes.visibleNumbers(wm, brand.getId())).extracting(v -> v.number().getId())
+                .containsExactlyInAnyOrder(owned.getId(), unowned.getId());
+        assertThat(scopes.visibleNumbers(wm, brand.getId())).allSatisfy(v -> assertThat(v.guest()).isFalse());
     }
 
     @Test
