@@ -165,6 +165,25 @@ public abstract class CrmTestBase {
         return chats.save(c);
     }
 
+    /** Switches CRM on for {@code brand} as the platform user, unlimited. */
+    void enableCrm() {
+        enableCrm(null, null);
+    }
+
+    void enableCrm(Integer maxPipelines, Integer maxCustomFields) {
+        try {
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("enabled", true);
+            body.put("maxPipelines", maxPipelines);
+            body.put("maxCustomFields", maxCustomFields);
+            send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
+                    "/api/customers/" + acme.getId() + "/workspaces/" + brand.getId() + "/crm"), staffToken, body)
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     String crm() {
         return "/api/workspaces/" + brand.getId() + "/crm";
     }
