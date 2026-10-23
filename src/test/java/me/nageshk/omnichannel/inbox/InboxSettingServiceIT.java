@@ -228,4 +228,19 @@ class InboxSettingServiceIT {
         assertThat(all.get(1).inherited()).isTrue();
         assertThat(all.get(1).roundRobin()).isFalse();
     }
+
+    @Test
+    void turningRoundRobinOnDropsTheMemberTheOverrideHad() {
+        Team support = team(brand, "Support", agent("a"));
+        String a = support.getMemberIds().get(0);
+        settings.putOverride(brand.getId(), support.getId(), request(true, false, a, null));
+
+        // the natural GET -> edit -> PUT: the console sends the member back as null with round robin on
+        InboxSetting s = settings.putOverride(brand.getId(), support.getId(), request(true, true, null, null));
+
+        assertThat(s.getRouting()).isEqualTo(new InboxSetting.Routing(RoutingMode.ROUND_ROBIN, null));
+        // but naming a member together with round robin is still refused
+        assertField(() -> settings.putOverride(brand.getId(), support.getId(), request(true, true, a, null)),
+                "routing", "round robin and one member cannot both be set");
+    }
 }

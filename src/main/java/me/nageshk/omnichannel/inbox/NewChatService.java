@@ -39,7 +39,7 @@ public class NewChatService {
      * chat is an explicit claim, whatever {@code claimOnReply} says.
      *
      * @throws ValidationException if the phone is not 8 to 15 digits, or the message is invalid
-     * @throws NotFoundException if the number is not in the workspace
+     * @throws NotFoundException if the number is not in the workspace, or the caller may not open it
      * @throws NotOnWhatsAppException if no chat exists and WhatsApp does not know the phone
      * @throws LookupFailedException if the device could not tell whether the phone is on WhatsApp; nothing is stored
      * @throws ChatTakenException if the chat is assigned to a user or a team and not visible to the caller; a chat
@@ -51,6 +51,10 @@ public class NewChatService {
         if (!Phones.isValid(phone)) throw new ValidationException("phone", Phones.MESSAGE);
         PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("phone number not found"));
+        // writing from a number is seeing it: the owning team's members and admins only (design §3.1)
+        if (scopes.visibleNumbers(me, workspaceId).stream().noneMatch(v -> v.number().getId().equals(phoneNumberId))) {
+            throw new NotFoundException("phone number not found");
+        }
         devices.requireReady(workspaceId, phoneNumberId);
         SendRequest message = new SendRequest(req.text(), req.templateId(), req.values());
 

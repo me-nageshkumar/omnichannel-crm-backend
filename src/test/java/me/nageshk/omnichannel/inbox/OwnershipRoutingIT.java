@@ -225,4 +225,37 @@ class OwnershipRoutingIT {
         assertThat(settings.override(brand.getId(), sales.getId()).orElseThrow().getRouting())
                 .isEqualTo(new InboxSetting.Routing(RoutingMode.TEAM, null));
     }
+
+    @Test
+    void ownerChangeRotatesReroutedChatsOverTheNewTeam() {
+        User s2 = agent("s2", BuiltInRoles.AGENT);
+        Team wideSales = team("Wide sales", s, s2);
+        roundRobin(wideSales);
+        WaWebChat one = chat("919911111111", ChatStatus.OPEN, p, support);
+        WaWebChat two = chat("919922222222", ChatStatus.OPEN, p, support);
+        WaWebChat three = chat("919933333333", ChatStatus.OPEN, q, support);
+
+        phoneNumberService.setTeam(phoneNumbers.findById(pn.getId()).orElseThrow(), wideSales.getId());
+
+        List<String> assignees = List.of(reload(one).getAssignedUserId(), reload(two).getAssignedUserId(),
+                reload(three).getAssignedUserId());
+        assertThat(assignees).containsExactlyInAnyOrder(s.getId(), s2.getId(), s.getId());
+        assertThat(assignees.get(0)).isNotEqualTo(assignees.get(1));
+    }
+
+    @Test
+    void memberRemovalRotatesReroutedChatsOverTheRemainingMembers() {
+        User r = agent("r", BuiltInRoles.AGENT);
+        Team trio = team("Trio", p, q, r);
+        pn = phoneNumberService.setTeam(phoneNumbers.findById(pn.getId()).orElseThrow(), trio.getId());
+        actions.deleteAll();
+        roundRobin(trio);
+        WaWebChat one = chat("919911111111", ChatStatus.OPEN, p, trio);
+        WaWebChat two = chat("919922222222", ChatStatus.OPEN, p, trio);
+
+        teamService.update(acme.getId(), brand.getId(), trio.getId(), "Trio", List.of(q.getId(), r.getId()));
+
+        assertThat(List.of(reload(one).getAssignedUserId(), reload(two).getAssignedUserId()))
+                .containsExactlyInAnyOrder(q.getId(), r.getId());
+    }
 }

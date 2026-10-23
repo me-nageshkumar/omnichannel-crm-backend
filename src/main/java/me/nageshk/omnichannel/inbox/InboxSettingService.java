@@ -117,7 +117,10 @@ public class InboxSettingService {
         RoutingSetting current = RoutingSetting.of(target, target.getTeamId(), false);
         boolean assignToTeam = r.assignToTeam() != null ? r.assignToTeam() : current.assignToTeam();
         boolean roundRobin = r.roundRobin() != null ? r.roundRobin() : current.roundRobin();
-        String userId = r.userId() != null ? (r.userId().isBlank() ? null : r.userId()) : current.userId();
+        // a request that turns round robin on, or assignment off, means the inherited member goes too
+        boolean dropsMember = Boolean.TRUE.equals(r.roundRobin()) || Boolean.FALSE.equals(r.assignToTeam());
+        String userId = r.userId() != null ? (r.userId().isBlank() ? null : r.userId())
+                : dropsMember ? null : current.userId();
         int stickyDays = r.stickyDays() != null ? r.stickyDays() : current.stickyDays();
 
         if (stickyDays < 0 || stickyDays > InboxSetting.MAX_STICKY_DAYS) {

@@ -227,7 +227,7 @@ Base `B = /api/workspaces/{ws}`.
 | `GET B/inbox/chats` | `inbox:view` | `?phoneNumberIds=a,b&scope=MINE\|UNASSIGNED\|TEAM\|ALL&status=OPEN\|CLOSED\|ALL&q=&unread=&before=&limit=` | `{items: ChatView[], hasMore}`; `ChatView` + `lastAgent: {id,name}\|null` |
 | `GET B/inbox/stream?phoneNumberIds=` | `inbox:view` | SSE | events `chat {chat, visible}`, `message {chatId, message}`, `action {chatId, action}`; `action` + `reason`, `fromTeam` |
 | `POST B/inbox/chats/{id}/claim` | `inbox:send` | — | `ChatView`; 409 `CHAT_TAKEN` |
-| `POST B/inbox/chats/{id}/handoff` | `inbox:send` | `{kind:"TO_USER", userId}` \| `{kind:"TO_TEAM", teamId?}` | `ChatView`; 422 `userId`/`teamId`; 404 when not the assignee (non-manager) |
+| `POST B/inbox/chats/{id}/handoff` | `inbox:send` | `{kind:"TO_USER", userId}` \| `{kind:"TO_TEAM", teamId?}` | `ChatView`; 400 `VALIDATION` with `fields.userId`/`fields.teamId`; 404 when not the assignee (non-manager) |
 | `GET B/inbox/assignees?phoneNumberId=` | `inbox:view-queue` or `inbox:assign` | — | `{users:[{id,name,username,availability}], teams:[{id,name}]}` |
 | `POST B/inbox/chats/{id}/assign` | `inbox:assign` | `{userId?, teamId?}` | `ChatView`; 422 `ASSIGNEE_CANNOT_SEE_NUMBER` |
 | `GET\|PUT B/inbox/settings` | `inbox:settings` | `RoutingSetting` | `RoutingSetting` (`teamId:null, inherited:false`) |

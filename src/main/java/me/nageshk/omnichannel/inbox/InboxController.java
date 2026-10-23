@@ -146,9 +146,9 @@ public class InboxController {
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization, @PathVariable String workspaceId,
             @RequestParam(required = false) List<String> phoneNumberIds) {
         Set<String> requested = phoneNumberIds == null ? Set.of() : Set.copyOf(phoneNumberIds);
-        if (!viewer(me, workspaceId, requested).phoneNumberIds().containsAll(requested)) {
-            throw new NotFoundException("phone number not found");
-        }
+        Set<String> visible = scopeService.visibleNumbers(me, workspaceId).stream().map(v -> v.number().getId())
+                .collect(java.util.stream.Collectors.toSet());
+        if (!visible.containsAll(requested)) throw new NotFoundException("phone number not found");
         // the stream outlives the request, so the viewer is re-authenticated from the token on every push and ping:
         // a user who is disabled, logged out, demoted or removed from the brand stops receiving at once
         String token = authorization.startsWith(BEARER) ? authorization.substring(BEARER.length()) : authorization;
@@ -157,15 +157,9 @@ public class InboxController {
                 .orElseThrow(() -> new NotFoundException("session ended")));
     }
 
-    /** The user's scope and the numbers they may see among {@code requested} (all visible ones when it is empty). */
+    /** The user's scope and the numbers they asked for; which chats that lets them hear about is the broker's call. */
     private InboxStreamBroker.Viewer viewer(AuthenticatedUser user, String workspaceId, Set<String> requested) {
-        InboxScope scope = scopeService.scopeOf(user, workspaceId);
-        Set<String> visible = scopeService.visibleNumbers(scope, workspaceId).stream().map(v -> v.number().getId())
-                .collect(java.util.stream.Collectors.toSet());
-        if (requested.isEmpty()) return new InboxStreamBroker.Viewer(scope, visible);
-        Set<String> selected = new java.util.HashSet<>(requested);
-        selected.retainAll(visible);
-        return new InboxStreamBroker.Viewer(scope, selected);
+        return new InboxStreamBroker.Viewer(scopeService.scopeOf(user, workspaceId), requested);
     }
 
 

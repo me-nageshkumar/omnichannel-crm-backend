@@ -49,9 +49,7 @@ public class AvailabilityRoutingListener {
                     team.getWorkspaceId(), team.getId(), ChatStatus.OPEN);
             for (WaWebChat chat : queued) {
                 try {
-                    // the team is re-read each time so the rotation sees the cursor the previous chat moved
-                    Team fresh = teams.findById(team.getId()).orElse(team);
-                    WaWebChat routed = routing.route(chat, fresh, ChatRoutingService.RoutingOptions.DEFAULT);
+                    WaWebChat routed = routing.route(chat, team, ChatRoutingService.RoutingOptions.DEFAULT);
                     if (routed.getAssignedUserId() != null) publisher.publishEvent(new InboxEvents.ChatChanged(routed));
                 } catch (RuntimeException ex) {
                     log.warn("re-routing queued chat {} after {} became available failed", chat.getId(),

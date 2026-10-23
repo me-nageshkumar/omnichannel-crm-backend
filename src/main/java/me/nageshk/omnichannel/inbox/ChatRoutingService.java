@@ -95,7 +95,9 @@ public class ChatRoutingService {
                 return routed(chat, ok ? user : null, team, options.reason(), options.excludeUserId());
             }
             case ROUND_ROBIN -> {
-                User next = nextMember(team, reachable, chat.getWorkspaceId(), options.excludeUserId());
+                // the cursor is read fresh: a caller re-routing many chats holds a Team loaded before the first move
+                Team current = teams.findById(team.getId()).orElse(team);
+                User next = nextMember(current, reachable, chat.getWorkspaceId(), options.excludeUserId());
                 if (next != null) {
                     // only the cursor: saving the whole team could revert an edit made since it was read
                     mongo.updateFirst(new Query(Criteria.where("_id").is(team.getId())),
@@ -124,8 +126,9 @@ public class ChatRoutingService {
         if (chat.getLastAgentUserId().equals(excludeUserId)) return null;
         Instant oldest = clock.instant().minus(Duration.ofDays(setting.getStickyDays()));
         if (chat.getLastAgentAt().isBefore(oldest)) return null;
+        // the agent need not be in the owning team: a chat handed to another team sticks to who handled it (§6.5)
         User agent = reachable.get(chat.getLastAgentUserId());
-        return agent != null && eligible(agent, team, chat.getWorkspaceId()) ? agent : null;
+        return agent != null && canTakeChats(agent, chat.getWorkspaceId()) ? agent : null;
     }
 
     /** The first eligible member after the team's cursor in {@code memberIds} order, wrapping; null when none is. */
@@ -148,11 +151,15 @@ public class ChatRoutingService {
                 .collect(Collectors.toMap(User::getId, Function.identity()));
     }
 
-    /** Active, not disabled anywhere that matters, a member of the team, and available right now (§3.2). */
-    static boolean eligible(User u, Team team, String workspaceId) {
+    /** Active, not disabled anywhere that matters, and available right now (§3.2). */
+    static boolean canTakeChats(User u, String workspaceId) {
         return u.isActive() && u.getDisabled() == null && UserAdminService.brandDisabled(u, workspaceId) == null
-                && team.getMemberIds().contains(u.getId())
                 && u.availabilityStatus() == Availability.Status.AVAILABLE;
+    }
+
+    /** {@link #canTakeChats} and a member of the team. */
+    static boolean eligible(User u, Team team, String workspaceId) {
+        return canTakeChats(u, workspaceId) && team.getMemberIds().contains(u.getId());
     }
 
     private WaWebChat routed(WaWebChat chat, User user, Team team, RoutedReason reason, String excludedUserId) {

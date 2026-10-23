@@ -51,13 +51,14 @@ class InboxStreamBrokerTest {
         return e;
     });
 
+    /** Own chats only; the viewer's team owns {@link #PN}, so that number's queue is theirs and "pn2" is a guest. */
     private static InboxScope mine(String userId) {
-        return new InboxScope(Level.MINE, userId, Set.of(), Set.of());
+        return new InboxScope(Level.MINE, userId, Set.of(), Set.of(PN));
     }
 
-    /** A viewer who sees only their own chats, on the given numbers (all of them when none are given). */
+    /** A viewer who sees only their own chats, looking at the given numbers (every visible one when none given). */
     private static InboxStreamBroker.Viewer viewer(String userId, String... numbers) {
-        return new InboxStreamBroker.Viewer(mine(userId), numbers.length == 0 ? Set.of(PN, "pn2") : Set.of(numbers));
+        return new InboxStreamBroker.Viewer(mine(userId), Set.of(numbers));
     }
 
     private static WaWebChat chatAssignedTo(String userId) {
@@ -174,6 +175,25 @@ class InboxStreamBrokerTest {
         broker.push(WS, chatAssignedTo("u2", "pn2"), chatView());
         assertThat(created.get(0).events).hasSize(1);
         assertThat(created.get(0).events.get(0)).contains("\"visible\":false");
+    }
+
+    @Test
+    void chatLeavingAGuestNumberIsAnnouncedInvisibleOnce() {
+        broker.subscribe(WS, () -> viewer("u1"));
+        broker.push(WS, chatAssignedTo("u1", "pn2"), chatView()); // mine, on a number my team does not own
+        broker.push(WS, chatAssignedTo("u2", "pn2"), chatView()); // handed to someone else: I must hear it left
+        broker.push(WS, chatAssignedTo("u2", "pn2"), chatView()); // and nothing more about it afterwards
+        assertThat(created.get(0).events).hasSize(2);
+        assertThat(created.get(0).events.get(0)).contains("\"visible\":true");
+        assertThat(created.get(0).events.get(1)).contains("\"visible\":false");
+    }
+
+    @Test
+    void unseenChatsOnGuestNumbersAreNeverAnnounced() {
+        broker.subscribe(WS, () -> viewer("u1"));
+        broker.push(WS, chatAssignedTo("u2", "pn2"), chatView());
+        broker.pushMessage(WS, chatAssignedTo("u2", "pn2"), messageView());
+        assertThat(created.get(0).events).isEmpty();
     }
 
     @Test

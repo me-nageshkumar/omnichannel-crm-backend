@@ -702,4 +702,37 @@ class ChatRoutingIT {
                 new ChatRoutingService.RoutingOptions(r.getId(), false, RoutedReason.HANDED_BACK));
         assertThat(again.getAssignedUserId()).isEqualTo(p.getId()); // p is next after r and only r is excluded
     }
+
+    @Test
+    void stickyFollowsAnAgentOutsideTheOwningTeam() {
+        User p = agent("p");
+        User s = agent("s");
+        Team sales = team("Sales", p);
+        team("Support", s);
+        configure(sales, RoutingMode.ROUND_ROBIN, null);
+        WaWebChat c = new WaWebChat();
+        c.setCustomerId(acme.getId());
+        c.setWorkspaceId(brand.getId());
+        c.setPhoneNumberId(pn);
+        c.setRemoteId("919911111111@c.us");
+        c.setStatus(ChatStatus.CLOSED);
+        c = chats.save(c);
+        lastHandledBy(c, s, java.time.Duration.ofDays(2)); // Support handled it after a transfer
+
+        message("919911111111", false, T);
+
+        assertThat(chat("919911111111").getAssignedUserId()).isEqualTo(s.getId());
+        assertThat(chat("919911111111").getAssignedTeamId()).isEqualTo(sales.getId());
+        assertThat(lastRouted().getReason()).isEqualTo(RoutedReason.STICKY);
+
+        // with s away the owning team's rotation takes over
+        away(s);
+        WaWebChat again = chat("919911111111");
+        again.setStatus(ChatStatus.CLOSED);
+        again.setAssignedUserId(null);
+        again.setAssignedTeamId(null);
+        chats.save(again);
+        message("919911111111", false, T + 1);
+        assertThat(chat("919911111111").getAssignedUserId()).isEqualTo(p.getId());
+    }
 }

@@ -436,6 +436,15 @@ class NewChatIT extends InboxApiTestBase {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
+    @Test
+    void numberOutsideTheCallersTeamsIs404AndTouchesNothing() throws Exception {
+        // agent2 is in no team: Support's number is not theirs to write from, even though it is in the brand
+        ResponseEntity<JsonNode> res = postUntouched(agent2Token, Map.of("phone", "919811111111", "text", "hello"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(chats.count()).isZero();
+    }
+
     private void claimOnReply(boolean on) {
         settingService.putDefault(brand.getId(), new RoutingSetting.Request(false, false, null, null, on, null));
     }
@@ -476,16 +485,17 @@ class NewChatIT extends InboxApiTestBase {
 
     @Test
     void unseenChatQueuedToATeamIsRefused() throws Exception {
-        WaWebChat queue = chatOf("919811111111@c.us", "Nia", null, support);
+        // a chat on Support's number that was handed to Sales: the Support agent sees the number, not that queue
+        Team sales = team("Sales", agent2);
+        WaWebChat queue = chatOf("919811111111@c.us", "Nia", null, sales);
 
-        // agent2 is in no team, so Support's queue is not theirs to pick up by writing first
-        ResponseEntity<JsonNode> res = postUntouched(agent2Token, Map.of("phone", "919811111111", "text", "hello"));
+        ResponseEntity<JsonNode> res = postUntouched(agentToken, Map.of("phone", "919811111111", "text", "hello"));
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(res.getBody().get("code").asString()).isEqualTo("CHAT_TAKEN");
         WaWebChat after = chats.findById(queue.getId()).orElseThrow();
         assertThat(after.getAssignedUserId()).isNull();
-        assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(after.getAssignedTeamId()).isEqualTo(sales.getId());
         assertThat(actions.count()).isZero();
     }
 
