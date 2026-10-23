@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.crm.activity.ActivityLog;
+import me.nageshk.omnichannel.crm.activity.ActivityType;
+import me.nageshk.omnichannel.crm.common.CrmTarget;
+import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.access.dto.UserPipelinesView;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -23,8 +27,11 @@ public class PipelineAccessService implements PipelineAccessReader {
     private final MongoTemplate mongo;
     private final PipelineIds pipelineIds;
     private final PeopleDirectory people;
+    private final ActivityLog activities;
 
-    PipelineAccessService(MongoTemplate mongo, PipelineIds pipelineIds, PeopleDirectory people) {
+    PipelineAccessService(MongoTemplate mongo, PipelineIds pipelineIds, PeopleDirectory people,
+            ActivityLog activities) {
+        this.activities = activities;
         this.mongo = mongo;
         this.pipelineIds = pipelineIds;
         this.people = people;
@@ -60,6 +67,11 @@ public class PipelineAccessService implements PipelineAccessReader {
                 .setOnInsert("creationTime", now);
         mongo.findAndModify(query(ctx.workspaceId(), userId), update,
                 FindAndModifyOptions.options().upsert(true).returnNew(true), CrmPipelineAccess.class);
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("userId", userId);
+        payload.put("pipelineIds", ids);
+        activities.record(ctx, ActivityType.SETTINGS_CHANGED, new CrmTarget(TargetType.SETTINGS, ctx.workspaceId()),
+                List.of(), null, null, "Changed CRM pipelines of " + userId, payload);
         return new UserPipelinesView(userId, ids);
     }
 

@@ -13,6 +13,10 @@ import java.util.Optional;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.crm.access.CrmContext;
+import me.nageshk.omnichannel.crm.activity.ActivityLog;
+import me.nageshk.omnichannel.crm.activity.ActivityType;
+import me.nageshk.omnichannel.crm.common.CrmTarget;
+import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.access.PipelineIds;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
@@ -38,9 +42,11 @@ public class CrmSettingsService {
     private final EnablementAudit audit;
     private final MongoTemplate mongo;
     private final PipelineIds pipelineIds;
+    private final ActivityLog activities;
 
     CrmSettingsService(CrmSettingsRepository repository, BrandDirectory brands, EnablementAudit audit,
-            MongoTemplate mongo, PipelineIds pipelineIds) {
+            MongoTemplate mongo, PipelineIds pipelineIds, ActivityLog activities) {
+        this.activities = activities;
         this.repository = repository;
         this.brands = brands;
         this.audit = audit;
@@ -142,7 +148,11 @@ public class CrmSettingsService {
                 new Query(Criteria.where("_id").is(current.getId()).and("workspaceId").is(ctx.workspaceId())
                         .and("version").is(req.version())),
                 update, FindAndModifyOptions.options().returnNew(true), CrmSettings.class);
-        if (saved != null) return saved;
+        if (saved != null) {
+            activities.record(ctx, ActivityType.SETTINGS_CHANGED, new CrmTarget(TargetType.SETTINGS, ctx.workspaceId()),
+                    List.of(), null, null, "Updated CRM settings", new java.util.LinkedHashMap<>());
+            return saved;
+        }
         if (repository.findById(current.getId()).isEmpty()) throw new NotFoundException("CRM settings not found");
         throw CrmErrors.conflict("VERSION_CONFLICT", "The settings were changed by someone else; reload and retry",
                 Map.of());

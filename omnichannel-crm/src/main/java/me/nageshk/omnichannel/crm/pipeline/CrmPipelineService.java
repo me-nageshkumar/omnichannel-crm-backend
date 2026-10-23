@@ -9,6 +9,10 @@ import java.util.UUID;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.crm.access.CrmContext;
+import me.nageshk.omnichannel.crm.activity.ActivityLog;
+import me.nageshk.omnichannel.crm.activity.ActivityType;
+import me.nageshk.omnichannel.crm.common.CrmTarget;
+import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.access.PipelineAccessService;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.pipeline.dto.PipelineRequest;
@@ -35,9 +39,12 @@ public class CrmPipelineService {
     private final CrmSettingsService settings;
     private final DealPlacement deals;
     private final PipelineAccessService access;
+    private final ActivityLog activities;
 
     CrmPipelineService(CrmPipelineRepository repository, MongoTemplate mongo, CrmSettingsService settings,
-            DealPlacement deals, PipelineAccessService access) {
+            DealPlacement deals, PipelineAccessService access,
+            ActivityLog activities) {
+        this.activities = activities;
         this.access = access;
         this.repository = repository;
         this.mongo = mongo;
@@ -145,6 +152,7 @@ public class CrmPipelineService {
         p.setIsDefault(makeDefault);
         CrmPipeline saved = repository.insert(p);
         if (makeDefault) promote(ctx, saved.getId());
+        changed(ctx, saved.getId(), "Created pipeline " + saved.getName());
         return saved;
     }
 
@@ -170,6 +178,7 @@ public class CrmPipelineService {
                 .set("rottingDays", req.rottingDays()).set("isDefault", isDefault);
         CrmPipeline saved = guarded(ctx, id, req.version(), u);
         if (isDefault && !wasDefault) promote(ctx, id);
+        changed(ctx, id, "Updated pipeline " + saved.getName());
         return saved;
     }
 
@@ -182,7 +191,9 @@ public class CrmPipelineService {
                 stageId -> deals.countInStage(ctx.workspaceId(), id, stageId));
         // deals leave a removed lane before the lane goes, so a failed relocation can simply be retried
         plan.moves().forEach((from, to) -> deals.relocateStage(ctx, id, from, to));
-        return guarded(ctx, id, version, new Update().set("stages", plan.stages()));
+        CrmPipeline saved = guarded(ctx, id, version, new Update().set("stages", plan.stages()));
+        changed(ctx, id, "Changed lanes of " + saved.getName());
+        return saved;
     }
 
     public void delete(CrmContext ctx, String id, String moveDealsToPipelineId) {
@@ -218,13 +229,21 @@ public class CrmPipelineService {
             }
             settings.setDefaultPipeline(ctx.workspaceId(), next.map(CrmPipeline::getId).orElse(null), ctx.userId());
         }
+        changed(ctx, id, "Deleted pipeline " + pipeline.getName());
     }
 
     /** Makes an accessible, active pipeline the only default and points the settings at it. */
     public void makeDefault(CrmContext ctx, String id) {
         ctx.require("crm:settings");
-        if (!get(ctx, id).isActive()) throw new ValidationException("defaultPipelineId", "must be an active pipeline");
+        CrmPipeline p = get(ctx, id);
+        if (!p.isActive()) throw new ValidationException("defaultPipelineId", "must be an active pipeline");
         promote(ctx, id);
+        changed(ctx, id, "Made " + p.getName() + " the default pipeline");
+    }
+
+    private void changed(CrmContext ctx, String pipelineId, String summary) {
+        activities.record(ctx, ActivityType.SETTINGS_CHANGED, new CrmTarget(TargetType.PIPELINE, pipelineId),
+                List.of(), null, null, summary, new java.util.LinkedHashMap<>(Map.of("pipelineId", pipelineId)));
     }
 
     /** Makes {@code id} the only default and points the settings at it. */
