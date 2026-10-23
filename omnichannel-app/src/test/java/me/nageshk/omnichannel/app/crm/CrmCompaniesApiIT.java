@@ -241,4 +241,68 @@ class CrmCompaniesApiIT extends CrmTestBase {
         JsonNode m = json(send(get(crm() + "/companies/" + id + "/summary"), managerToken, null));
         assertThat(m.get("openDealAmount").decimalValue()).isEqualByComparingTo("150");
     }
+
+    @Test
+    void openDealAmountCountsOnlyTheCallersPipelines() throws Exception {
+        String id = create("Acme Corp", Map.of()).get("id").asText();
+        String sales = "seed-sales-" + brand.getId();
+        String second = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
+                .andExpect(status().is2xxSuccessful())).get("id").asText();
+        send(post(crm() + "/deals"), managerToken, Map.of("title", "Hidden", "pipelineId", second,
+                "primaryCrmContactId", aliceId, "companyId", id, "amount", 50)).andExpect(status().isOk());
+        assignPipelines(agent, sales);
+
+        JsonNode found = json(send(post(crm() + "/companies/search"), agentToken, Map.of())
+                .andExpect(status().isOk()));
+        assertThat(found.get("items").get(0).get("openDealAmount").decimalValue()).isEqualByComparingTo("0");
+        JsonNode got = json(send(get(crm() + "/companies/" + id), agentToken, null).andExpect(status().isOk()));
+        assertThat(got.get("openDealAmount").decimalValue()).isEqualByComparingTo("0");
+        JsonNode summary = json(send(get(crm() + "/companies/" + id + "/summary"), agentToken, null)
+                .andExpect(status().isOk()));
+        assertThat(summary.get("company").get("openDealAmount").decimalValue()).isEqualByComparingTo("0");
+        assertThat(summary.get("openDealAmount").decimalValue()).isEqualByComparingTo("0");
+
+        JsonNode all = json(send(post(crm() + "/companies/search"), managerToken, Map.of()));
+        assertThat(all.get("items").get(0).get("openDealAmount").decimalValue()).isEqualByComparingTo("50");
+        assertThat(company(id).get("openDealAmount").decimalValue()).isEqualByComparingTo("50");
+        JsonNode managerSummary = json(send(get(crm() + "/companies/" + id + "/summary"), managerToken, null));
+        assertThat(managerSummary.get("company").get("openDealAmount").decimalValue()).isEqualByComparingTo("50");
+        // the agent's own deals count once they sit in Sales
+        send(post(crm() + "/deals"), managerToken, Map.of("title", "Visible", "pipelineId", sales,
+                "primaryCrmContactId", aliceId, "companyId", id, "amount", 20)).andExpect(status().isOk());
+        assertThat(json(send(get(crm() + "/companies/" + id), agentToken, null)).get("openDealAmount")
+                .decimalValue()).isEqualByComparingTo("20");
+    }
+
+    @Test
+    void searchAcceptsTheFieldCommaDirectionSort() throws Exception {
+        create("Beta", Map.of());
+        create("Alpha", Map.of());
+        JsonNode asc = json(send(post(crm() + "/companies/search"), managerToken, Map.of("sort", "name,asc"))
+                .andExpect(status().isOk()));
+        assertThat(asc.get("items").get(0).get("name").asText()).isEqualTo("Alpha");
+        JsonNode desc = json(send(post(crm() + "/companies/search"), managerToken, Map.of("sort", "name,desc"))
+                .andExpect(status().isOk()));
+        assertThat(desc.get("items").get(0).get("name").asText()).isEqualTo("Beta");
+        // a separate dir still works and wins over the suffix
+        JsonNode both = json(send(post(crm() + "/companies/search"), managerToken,
+                Map.of("sort", "name,asc", "dir", "desc")).andExpect(status().isOk()));
+        assertThat(both.get("items").get(0).get("name").asText()).isEqualTo("Beta");
+        send(post(crm() + "/companies/search"), managerToken, Map.of("sort", "lastActivityAt,desc"))
+                .andExpect(status().isOk());
+        send(post(crm() + "/companies/search"), managerToken, Map.of("sort", "name,sideways"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.dir").exists());
+    }
+
+    @Test
+    void customFieldKeysAreChecked() throws Exception {
+        for (String bad : List.of("a.b", "$where", "k".repeat(41))) {
+            send(post(crm() + "/companies"), managerToken, Map.of("name", "X", "customFields", Map.of(bad, 1)))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION"))
+                    .andExpect(jsonPath("$.fields.customFields").exists());
+        }
+        String id = create("Fine", Map.of("customFields", Map.of("tier", "gold"))).get("id").asText();
+        send(put(crm() + "/companies/" + id), managerToken, Map.of("version", 0, "customFields", Map.of("x.y", 1)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.customFields").exists());
+    }
 }

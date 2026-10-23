@@ -1,6 +1,11 @@
 package me.nageshk.omnichannel.crm.company;
 
 import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import me.nageshk.omnichannel.crm.access.PipelineAccess;
 import org.bson.Document;
 import org.bson.types.Decimal128;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -37,7 +42,7 @@ public class CompanyCounters {
     }
 
     /** Sum of the OPEN deals' amounts; {@code access} (when given) limits the deals to those pipelines. */
-    BigDecimal openAmount(String workspaceId, String companyId, me.nageshk.omnichannel.crm.access.PipelineAccess access) {
+    BigDecimal openAmount(String workspaceId, String companyId, PipelineAccess access) {
         Criteria c = Criteria.where("workspaceId").is(workspaceId).and("companyId").is(companyId).and("status")
                 .is("OPEN");
         Query q = new Query(access == null || access.all() ? c
@@ -51,5 +56,27 @@ public class CompanyCounters {
             else if (a instanceof String s && !s.isBlank()) sum = sum.add(new BigDecimal(s));
         }
         return sum;
+    }
+
+    /**
+     * Sum of the OPEN deals' amounts per company over the pipelines of {@code access} (one aggregation grouped by
+     * {@code companyId}); companies without such deals are absent. For restricted callers, whose view must not
+     * reveal the stored brand-wide figure.
+     */
+    Map<String, BigDecimal> openAmounts(String workspaceId, Collection<String> companyIds, PipelineAccess access) {
+        Map<String, BigDecimal> out = new HashMap<>();
+        if (companyIds.isEmpty()) return out;
+        Criteria c = new Criteria().andOperator(Criteria.where("workspaceId").is(workspaceId),
+                Criteria.where("companyId").in(companyIds), Criteria.where("status").is("OPEN"),
+                access.criteria("pipelineId"));
+        for (Document g : mongo.getCollection(DEALS).aggregate(List.of(
+                new Document("$match", c.getCriteriaObject()),
+                new Document("$group", new Document("_id", "$companyId").append("sum",
+                        new Document("$sum", new Document("$ifNull", List.of("$amount", 0)))))))) {
+            Object sum = g.get("sum");
+            out.put(String.valueOf(g.get("_id")), sum instanceof Decimal128 d ? d.bigDecimalValue()
+                    : sum instanceof Number n ? new BigDecimal(n.toString()) : BigDecimal.ZERO);
+        }
+        return out;
     }
 }

@@ -93,6 +93,21 @@ class CrmContactsApiIT extends CrmTestBase {
     }
 
     @Test
+    void searchAcceptsTheFieldCommaDirectionSort() throws Exception {
+        String bobId = captureAs(contact("Bob Marley", "919833333333"), number2);
+        assertThat(search(Map.of("sort", "lastActivityAt,desc"), managerToken).get("total").asLong()).isEqualTo(2);
+        assertThat(search(Map.of("sort", "creationTime,asc"), managerToken).get("items").get(0).get("id").asText())
+                .isEqualTo(aliceId);
+        assertThat(search(Map.of("sort", "creationTime,desc"), managerToken).get("items").get(0).get("id").asText())
+                .isEqualTo(bobId);
+        // a separate dir is still accepted
+        assertThat(search(Map.of("sort", "creationTime", "dir", "asc"), managerToken).get("items").get(0)
+                .get("id").asText()).isEqualTo(aliceId);
+        send(post(crm() + "/contacts/search"), managerToken, Map.of("sort", "creationTime,up"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.dir").exists());
+    }
+
+    @Test
     void searchFiltersByOwnerAndLifecycle() throws Exception {
         assertThat(search(Map.of("ownerId", manager.getId()), managerToken).get("total").asLong()).isEqualTo(1);
         assertThat(search(Map.of("ownerId", agent.getId()), managerToken).get("total").asLong()).isZero();

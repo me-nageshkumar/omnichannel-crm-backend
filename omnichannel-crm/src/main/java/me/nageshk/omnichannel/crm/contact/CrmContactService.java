@@ -19,6 +19,7 @@ import me.nageshk.omnichannel.crm.activity.ActivityType;
 import me.nageshk.omnichannel.crm.activity.FieldDiff;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.common.CrmPage;
+import me.nageshk.omnichannel.crm.common.CrmSort;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
 import me.nageshk.omnichannel.crm.common.Ref;
@@ -71,10 +72,7 @@ public class CrmContactService {
         Map<String, String> errors = new LinkedHashMap<>();
         if (page < 0) errors.put("page", "must not be negative");
         if (size < 1) errors.put("size", "must be at least 1");
-        String sort = req.sort() == null || req.sort().isBlank() ? "creationTime" : req.sort();
-        if (!SORTS.contains(sort)) errors.put("sort", "must be one of " + String.join(", ", new java.util.TreeSet<>(SORTS)));
-        String dir = req.dir() == null || req.dir().isBlank() ? "desc" : req.dir().toLowerCase();
-        if (!dir.equals("asc") && !dir.equals("desc")) errors.put("dir", "must be asc or desc");
+        CrmSort sorting = CrmSort.parse(req.sort(), req.dir(), SORTS, "creationTime", f -> "desc", errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
         size = Math.min(size, MAX_SIZE);
 
@@ -93,8 +91,7 @@ public class CrmContactService {
         }
         Query filter = new Query(new Criteria().andOperator(all));
         long total = mongo.count(filter, CrmContact.class);
-        Sort order = Sort.by(dir.equals("asc") ? Sort.Direction.ASC : Sort.Direction.DESC, sort)
-                .and(Sort.by(Sort.Direction.DESC, "_id"));
+        Sort order = Sort.by(sorting.direction(), sorting.field()).and(Sort.by(Sort.Direction.DESC, "_id"));
         List<CrmContact> found = mongo.find(
                 new Query(new Criteria().andOperator(all)).with(order).skip((long) page * size).limit(size),
                 CrmContact.class);

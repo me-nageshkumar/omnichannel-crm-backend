@@ -8,7 +8,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Pattern;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
@@ -18,6 +17,8 @@ import me.nageshk.omnichannel.crm.activity.ActivityType;
 import me.nageshk.omnichannel.crm.activity.FieldDiff;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.common.CrmPage;
+import me.nageshk.omnichannel.crm.common.CrmSort;
+import me.nageshk.omnichannel.crm.common.CustomFields;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
 import me.nageshk.omnichannel.crm.common.Ref;
@@ -72,10 +73,8 @@ public class CrmCompanyService {
         Map<String, String> errors = new LinkedHashMap<>();
         if (page < 0) errors.put("page", "must not be negative");
         if (size < 1) errors.put("size", "must be at least 1");
-        String sort = present(req.sort()) ? req.sort() : "name";
-        if (!SORTS.contains(sort)) errors.put("sort", "must be one of " + String.join(", ", new TreeSet<>(SORTS)));
-        String dir = present(req.dir()) ? req.dir().toLowerCase() : sort.equals("name") ? "asc" : "desc";
-        if (!dir.equals("asc") && !dir.equals("desc")) errors.put("dir", "must be asc or desc");
+        CrmSort sorting = CrmSort.parse(req.sort(), req.dir(), SORTS, "name",
+                f -> f.equals("name") ? "asc" : "desc", errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
         size = Math.min(size, MAX_SIZE);
 
@@ -90,11 +89,10 @@ public class CrmCompanyService {
         }
         Criteria filter = new Criteria().andOperator(all);
         long total = mongo.count(new Query(filter), CrmCompany.class);
-        Sort order = Sort.by(dir.equals("asc") ? Sort.Direction.ASC : Sort.Direction.DESC, sort)
-                .and(Sort.by(Sort.Direction.DESC, "_id"));
+        Sort order = Sort.by(sorting.direction(), sorting.field()).and(Sort.by(Sort.Direction.DESC, "_id"));
         List<CrmCompany> found = mongo.find(new Query(filter).with(order).skip((long) page * size).limit(size),
                 CrmCompany.class);
-        return new CrmPage<>(views(found), total, page);
+        return new CrmPage<>(views(ctx, found), total, page);
     }
 
     /** Case-insensitive prefix match on the name, first ten by name. */
@@ -109,7 +107,7 @@ public class CrmCompanyService {
     }
 
     public CompanyView get(CrmContext ctx, String id) {
-        return views(List.of(load(ctx, id))).get(0);
+        return views(ctx, List.of(load(ctx, id))).get(0);
     }
 
     /** @throws NotFoundException when missing or of another brand */
@@ -123,7 +121,7 @@ public class CrmCompanyService {
     public CompanySummaryView summary(CrmContext ctx, String id) {
         CrmCompany c = load(ctx, id);
         BigDecimal amount = counters.openAmount(ctx.workspaceId(), id, ctx.pipelines());
-        return new CompanySummaryView(views(List.of(c)).get(0), contacts.linkedTo(ctx, id),
+        return new CompanySummaryView(views(ctx, List.of(c)).get(0), contacts.linkedTo(ctx, id),
                 deals.openDealsOfCompany(ctx, id), c.getContactCount(), amount);
     }
 
@@ -141,7 +139,7 @@ public class CrmCompanyService {
         CrmCompany saved = mongo.insert(c);
         activities.record(ctx, ActivityType.RECORD_CREATED, new CrmTarget(TargetType.COMPANY, saved.getId()),
                 List.of(), null, null, "Created company " + saved.getName(), new LinkedHashMap<>());
-        return views(List.of(load(ctx, saved.getId()))).get(0);
+        return views(ctx, List.of(load(ctx, saved.getId()))).get(0);
     }
 
     public CompanyView update(CrmContext ctx, String id, CompanyRequest req) {
@@ -155,7 +153,7 @@ public class CrmCompanyService {
         List<FieldDiff> diffs = ActivityLog.diff(before, after);
         if (diffs.isEmpty()) {
             if (!req.version().equals(current.getVersion())) throw versionConflict();
-            return views(List.of(current)).get(0);
+            return views(ctx, List.of(current)).get(0);
         }
         Update u = new Update().set("lastModifiedBy", ctx.userId()).set("lastUpdateTime", Instant.now(clock))
                 .inc("version", 1);
@@ -179,7 +177,7 @@ public class CrmCompanyService {
         activities.record(ctx, ActivityType.FIELD_CHANGED, new CrmTarget(TargetType.COMPANY, id), List.of(), null,
                 null, "Changed " + String.join(", ", diffs.stream().map(FieldDiff::field).toList()),
                 new LinkedHashMap<>(Map.of("changes", changes)));
-        return views(List.of(saved)).get(0);
+        return views(ctx, List.of(saved)).get(0);
     }
 
     public void delete(CrmContext ctx, String id) {
@@ -230,6 +228,7 @@ public class CrmCompanyService {
         Map<String, Object> address = req.address() != null ? address(req.address(), errors) : addressMap(current.getAddress());
         List<String> labels = req.labelIds() != null ? req.labelIds().stream().filter(x -> x != null && !x.isBlank())
                 .map(String::trim).distinct().toList() : current.getLabelIds();
+        CustomFields.check(req.customFields(), errors);
         Map<String, Object> custom = req.customFields() != null ? new LinkedHashMap<>(req.customFields())
                 : current.getCustomFields();
         Map<String, Object> m = new LinkedHashMap<>();
@@ -327,12 +326,19 @@ public class CrmCompanyService {
         return s != null && !s.isBlank();
     }
 
-    private List<CompanyView> views(List<CrmCompany> list) {
+    /**
+     * View-all callers get the stored {@code openDealAmount}; restricted callers get it summed over the deals of
+     * their pipelines only, so the figure never reveals deals they cannot see.
+     */
+    private List<CompanyView> views(CrmContext ctx, List<CrmCompany> list) {
         Set<String> ownerIds = new java.util.HashSet<>();
         list.forEach(c -> {
             if (c.getOwnerId() != null) ownerIds.add(c.getOwnerId());
         });
         Map<String, PlatformPerson> persons = ownerIds.isEmpty() ? Map.of() : people.people(ownerIds);
+        Map<String, BigDecimal> scoped = ctx.pipelines().all() ? null
+                : counters.openAmounts(ctx.workspaceId(), list.stream().map(CrmCompany::getId).toList(),
+                        ctx.pipelines());
         return list.stream().map(c -> {
             Ref owner = null;
             if (c.getOwnerId() != null) {
@@ -343,7 +349,9 @@ public class CrmCompanyService {
             return new CompanyView(c.getId(), c.getName(), c.getDomain(), c.getWebsite(), c.getIndustry(),
                     c.getSize(), c.getAnnualRevenue(), c.getPhone(), c.getEmail(), c.getAddress(),
                     c.getDescription(), owner, c.getTeamId(), c.getLabelIds(), c.getCustomFields(),
-                    c.getContactCount(), c.getOpenDealAmount(), c.getLastActivityAt(), c.getCreationTime(),
+                    c.getContactCount(),
+                    scoped == null ? c.getOpenDealAmount() : scoped.getOrDefault(c.getId(), BigDecimal.ZERO),
+                    c.getLastActivityAt(), c.getCreationTime(),
                     c.getVersion());
         }).toList();
     }
