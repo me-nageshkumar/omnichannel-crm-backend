@@ -323,8 +323,9 @@ Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, 
 
 A per-brand CRM in the vertical module `omnichannel-crm` (package `me.nageshk.omnichannel.crm`). It keeps its data in
 `crm*` collections (`crmSettings`, `crmPipelines`, `crmContacts`, `crmCompanies`, `crmDeals`, `crmActivities`,
-`crmPipelineAccess`), every index of which leads with `workspaceId`; it declares indexes only on its own documents
-(`CrmIndexIsolationIT` checks that nothing else changes). Brands, numbers, people, platform contacts and chats come
+`crmPipelineAccess`), every index of which leads with `workspaceId`. Checked by tests: `CrmCollectionsTest`
+(structural) asserts every CRM `@Document` maps to a `crm*` collection; `CrmIndexIsolationIT` (runtime) asserts that
+exercising the API adds no index to any other collection and that every `crm*` index leads with `workspaceId`. Brands, numbers, people, platform contacts and chats come
 through the ports in `crm.platform`.
 
 - **Switching it on:** per brand, by a platform user with `crm:enable`:
