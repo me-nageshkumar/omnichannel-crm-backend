@@ -1,13 +1,16 @@
 package me.nageshk.omnichannel.crm.activity;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.TargetType;
@@ -22,14 +25,16 @@ import org.springframework.stereotype.Service;
 public class ActivityLog {
 
     private final MongoTemplate mongo;
+    private final Clock clock;
 
-    ActivityLog(MongoTemplate mongo) {
+    ActivityLog(MongoTemplate mongo, Clock clock) {
         this.mongo = mongo;
+        this.clock = clock;
     }
 
     /**
      * Appends an entry acted by the caller. {@code happenedAt} is now unless {@code payload.happenedAt} (an ISO
-     * instant, from the log endpoint) is given; then raises {@code lastActivityAt} of the target and every related
+     * instant, from the log endpoint; 400 when unparseable) is given; then raises {@code lastActivityAt} of the target and every related
      * contact, company and deal to it (never lowers it, never bumps {@code version}).
      */
     public CrmActivity record(CrmContext ctx, ActivityType type, CrmTarget target, List<CrmTarget> related,
@@ -73,11 +78,18 @@ public class ActivityLog {
         };
     }
 
-    private static Instant happenedAt(Object given) {
+    private Instant happenedAt(Object given) {
         if (given instanceof Instant i) return i;
         if (given instanceof Date d) return d.toInstant();
-        if (given instanceof String s && !s.isBlank()) return Instant.parse(s);
-        return Instant.now();
+        if (given == null || given instanceof String s && s.isBlank()) return Instant.now(clock);
+        if (given instanceof String s) {
+            try {
+                return Instant.parse(s);
+            } catch (DateTimeParseException e) {
+                throw new ValidationException("happenedAt", "must be an ISO-8601 instant");
+            }
+        }
+        throw new ValidationException("happenedAt", "must be an ISO-8601 instant");
     }
 
     /** The keys of {@code after} whose value differs from {@code before} (absent = null); numbers compare by value. */
