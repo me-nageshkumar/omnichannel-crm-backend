@@ -55,4 +55,12 @@ class CrmStoredShapeIT extends CrmTestBase {
         assertThat(infos).allSatisfy(i -> assertThat(i.getName().equals("_id_")
                 || i.getIndexFields().get(0).getKey().equals("workspaceId")).isTrue());
     }
+
+    @Test
+    void crmCompaniesHasTheDeclaredIndexes() {
+        var infos = mongo.indexOps("crmCompanies").getIndexInfo();
+        assertThat(infos).extracting(i -> i.getName()).contains("ws_id", "ws_name", "ws_owner");
+        assertThat(infos).allSatisfy(i -> assertThat(i.getName().equals("_id_")
+                || i.getIndexFields().get(0).getKey().equals("workspaceId")).isTrue());
+    }
 }

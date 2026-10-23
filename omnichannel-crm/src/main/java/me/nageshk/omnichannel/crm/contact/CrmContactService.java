@@ -3,10 +3,12 @@ package me.nageshk.omnichannel.crm.contact;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import me.nageshk.omnichannel.common.api.NotFoundException;
@@ -21,6 +23,7 @@ import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
 import me.nageshk.omnichannel.crm.common.Ref;
 import me.nageshk.omnichannel.crm.common.TargetType;
+import me.nageshk.omnichannel.crm.company.CompanyCounters;
 import me.nageshk.omnichannel.crm.contact.dto.ContactSearchRequest;
 import me.nageshk.omnichannel.crm.contact.dto.ContactUpdateRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CrmContactView;
@@ -47,15 +50,17 @@ public class CrmContactService {
     private final ContactDirectory contactDirectory;
     private final PeopleDirectory people;
     private final ContactCounters counters;
+    private final CompanyCounters companyCounters;
     private final ActivityLog activities;
     private final Clock clock;
 
     CrmContactService(MongoTemplate mongo, ContactDirectory contactDirectory, PeopleDirectory people,
-            ContactCounters counters, ActivityLog activities, Clock clock) {
+            ContactCounters counters, CompanyCounters companyCounters, ActivityLog activities, Clock clock) {
         this.mongo = mongo;
         this.contactDirectory = contactDirectory;
         this.people = people;
         this.counters = counters;
+        this.companyCounters = companyCounters;
         this.activities = activities;
         this.clock = clock;
     }
@@ -127,11 +132,17 @@ public class CrmContactService {
         String source = pick(req.source(), current.getSource(), "source", ctx.settings().getDealSources(), errors);
         if (ownerId != null && !ownerId.equals(current.getOwnerId()) && !people.isBrandUser(ctx.workspaceId(), ownerId))
             errors.put("ownerId", "must be a user of this brand");
+        String companyId = text(req.companyId(), current.getCompanyId(), "companyId", 64, errors);
+        if (companyId != null && !companyId.equals(current.getCompanyId()) && !mongo.exists(
+                new Query(Criteria.where("_id").is(companyId).and("workspaceId").is(ctx.workspaceId())),
+                CompanyCounters.COMPANIES)) errors.put("companyId", "must be a company of this brand");
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
         Map<String, Object> before = fields(current.getFirstName(), current.getLastName(), current.getEmail(),
-                current.getJobTitle(), current.getOwnerId(), current.getLifecycleStatus(), current.getSource());
-        Map<String, Object> after = fields(firstName, lastName, email, jobTitle, ownerId, lifecycle, source);
+                current.getJobTitle(), current.getOwnerId(), current.getLifecycleStatus(), current.getSource(),
+                current.getCompanyId());
+        Map<String, Object> after = fields(firstName, lastName, email, jobTitle, ownerId, lifecycle, source,
+                companyId);
         List<FieldDiff> diffs = ActivityLog.diff(before, after);
         if (diffs.isEmpty()) {
             if (!req.version().equals(current.getVersion())) throw versionConflict();
@@ -156,6 +167,10 @@ public class CrmContactService {
             m.put("to", d.to());
             return m;
         }).toList();
+        if (!Objects.equals(current.getCompanyId(), saved.getCompanyId())) {
+            companyCounters.recompute(ctx.workspaceId(), current.getCompanyId());
+            companyCounters.recompute(ctx.workspaceId(), saved.getCompanyId());
+        }
         activities.record(ctx, ActivityType.FIELD_CHANGED, new CrmTarget(TargetType.CONTACT, id), List.of(), null,
                 saved.getChannel().phoneNumberId(),
                 "Changed " + String.join(", ", diffs.stream().map(FieldDiff::field).toList()),
@@ -169,7 +184,7 @@ public class CrmContactService {
     }
 
     private static Map<String, Object> fields(String firstName, String lastName, String email, String jobTitle,
-            String ownerId, String lifecycle, String source) {
+            String ownerId, String lifecycle, String source, String companyId) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("firstName", firstName);
         m.put("lastName", lastName);
@@ -178,6 +193,7 @@ public class CrmContactService {
         m.put("ownerId", ownerId);
         m.put("lifecycleStatus", lifecycle);
         m.put("source", source);
+        m.put("companyId", companyId);
         return m;
     }
 
@@ -220,6 +236,7 @@ public class CrmContactService {
             });
         }
         Map<String, PlatformPerson> persons = people.people(userIds);
+        Map<String, Ref> companies = companyRefs(ws, list);
         Map<String, ContactCounters.Totals> restricted = ctx.pipelines().all() ? null
                 : counters.openTotals(ws, list.stream().map(CrmContact::getId).toList(), ctx.pipelines());
         List<CrmContactView> out = new ArrayList<>();
@@ -237,7 +254,7 @@ public class CrmContactService {
                     o.phoneNumberId(), o.chatId(), o.firstMessageAt(), ref(persons, o.capturedById()));
             out.add(new CrmContactView(c.getId(), c.getContactId(), c.getChannel(),
                     p != null && p.phone() != null ? p.phone() : c.getPhone(), name(c, p), c.getFirstName(),
-                    c.getLastName(), c.getEmail(), c.getJobTitle(), null, ref(persons, c.getOwnerId()),
+                    c.getLastName(), c.getEmail(), c.getJobTitle(), companies.get(c.getCompanyId()), ref(persons, c.getOwnerId()),
                     c.getLifecycleStatus(), c.getSource(), origin, c.getCustomFields(), count, amount,
                     c.getLastActivityAt(), c.getNextTaskDueAt(), p == null,
                     c.getChannelHistory().stream().map(h -> new CrmContactView.ChannelChangeView(
@@ -246,6 +263,33 @@ public class CrmContactService {
                     c.getCreationTime(), c.getVersion()));
         }
         return out;
+    }
+
+    private Map<String, Ref> companyRefs(String ws, List<CrmContact> list) {
+        Set<String> ids = new HashSet<>();
+        list.forEach(c -> {
+            if (c.getCompanyId() != null) ids.add(c.getCompanyId());
+        });
+        if (ids.isEmpty()) return new HashMap<>();
+        Query q = new Query(Criteria.where("workspaceId").is(ws).and("_id").in(ids));
+        q.fields().include("name");
+        Map<String, Ref> out = new HashMap<>();
+        for (org.bson.Document d : mongo.find(q, org.bson.Document.class, CompanyCounters.COMPANIES)) {
+            String id = d.get("_id").toString();
+            out.put(id, new Ref(id, d.getString("name")));
+        }
+        return out;
+    }
+
+    /** The CRM contacts linked to the company that the caller may see, newest first (at most {@value #MAX_SIZE}). */
+    public List<CrmContactView> linkedTo(CrmContext ctx, String companyId) {
+        List<Criteria> all = new ArrayList<>();
+        all.add(Criteria.where("workspaceId").is(ctx.workspaceId()));
+        all.add(Criteria.where("companyId").is(companyId));
+        if (!ctx.pipelines().all()) all.add(ctx.pipelines().criteria("pipelineIds"));
+        return views(ctx, mongo.find(new Query(new Criteria().andOperator(all))
+                .with(Sort.by(Sort.Direction.DESC, "creationTime").and(Sort.by(Sort.Direction.DESC, "_id")))
+                .limit(MAX_SIZE), CrmContact.class));
     }
 
     private static Ref ref(Map<String, PlatformPerson> persons, String userId) {
