@@ -36,6 +36,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Demo chats, only with {@code omnichannel.seed.demo=true}: team "Demo Support" (demo-lead, demo-agent) when missing,
+ * made the owner of the demo number,
  * and six chats with demo contacts on the demo number, 4 to 8 messages each, over the last three days. Skipped when
  * the demo customer, number, users or contacts are missing, or when the number already has a chat. Writes through the
  * repositories and {@link ChatMediaService} only, so no events or pushes fire at startup.
@@ -200,6 +201,11 @@ public class InboxDemoSeeder implements ApplicationRunner {
 
         Map<Staff, User> staff = Map.of(Staff.AGENT, agent, Staff.LEAD, lead);
         Team team = team(customer, brand, staff);
+        if (number.getTeamId() == null) {
+            // the demo number is worked by Demo Support (design §3.1), so demo-agent sees it in the inbox
+            number.setTeamId(team.getId());
+            number = numbers.save(number);
+        }
         byte[] png = imageBytes();
         Instant now = clock.instant();
         for (Script script : SCRIPTS) chat(script, customer, brand, number, team, staff, byName.get(script.contact()), png, now);

@@ -115,12 +115,17 @@ class InboxApiIT extends InboxApiTestBase {
 
     @Test
     void numberOfAnotherWorkspaceIs404() throws Exception {
-        String foreign = inbox() + "/phone-numbers/" + otherNumber.getId();
-
-        send(get(foreign + "/chats"), managerToken, null).andExpect(status().isNotFound());
-        send(get(foreign + "/stream"), managerToken, null).andExpect(status().isNotFound());
-        send(get(foreign + "/settings"), managerToken, null).andExpect(status().isNotFound());
-        send(put(foreign + "/settings"), managerToken, Map.of("mode", "NONE")).andExpect(status().isNotFound());
+        send(get(inbox() + "/chats").param("phoneNumberIds", otherNumber.getId()), managerToken, null)
+                .andExpect(status().isNotFound());
+        send(get(inbox() + "/stream").param("phoneNumberIds", otherNumber.getId()), managerToken, null)
+                .andExpect(status().isNotFound());
+        send(get(inbox() + "/assignees").param("phoneNumberId", otherNumber.getId()), managerToken, null)
+                .andExpect(status().isNotFound());
+        // the per-number list and stream are gone (the path still takes POST for starting a chat)
+        send(get(inbox() + "/phone-numbers/" + number.getId() + "/chats"), managerToken, null)
+                .andExpect(status().isMethodNotAllowed());
+        send(get(inbox() + "/phone-numbers/" + number.getId() + "/stream"), managerToken, null)
+                .andExpect(status().isNotFound());
     }
 
     @Test

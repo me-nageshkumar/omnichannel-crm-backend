@@ -135,17 +135,6 @@ public class InboxController {
                 unread, before, checked(limit));
     }
 
-    @GetMapping("/phone-numbers/{phoneNumberId}/chats")
-    @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
-    public ChatsPage chats(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
-            @PathVariable String phoneNumberId, @RequestParam(required = false) ListScope scope,
-            @RequestParam(defaultValue = "OPEN") StatusFilter status, @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "false") boolean unread, @RequestParam(required = false) Instant before,
-            @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
-        phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
-        ChatStatus wanted = status == StatusFilter.ALL ? null : ChatStatus.valueOf(status.name());
-        return query.chats(me, workspaceId, List.of(phoneNumberId), scope, wanted, q, unread, before, checked(limit));
-    }
 
     /**
      * One live stream per open console: events for the chats the viewer may see on the numbers they selected (all
@@ -179,14 +168,6 @@ public class InboxController {
         return new InboxStreamBroker.Viewer(scope, selected);
     }
 
-    @GetMapping(value = "/phone-numbers/{phoneNumberId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
-    public SseEmitter streamOfNumber(@AuthenticationPrincipal AuthenticatedUser me,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization, @PathVariable String workspaceId,
-            @PathVariable String phoneNumberId) {
-        phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
-        return stream(me, authorization, workspaceId, List.of(phoneNumberId));
-    }
 
     @GetMapping("/settings")
     @PreAuthorize("@access.has(#workspaceId, 'inbox:settings')")

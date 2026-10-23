@@ -191,6 +191,15 @@ class InboxDemoSeederIT {
     }
 
     @Test
+    void numberIsOwnedByDemoSupport() {
+        seedAll();
+        PhoneNumber number = numbers.findAll().stream().filter(n -> DemoSeeder.NUMBER.equals(n.getNumber()))
+                .findFirst().orElseThrow();
+        Team team = supportTeams().get(0);
+        assertThat(number.getTeamId()).isEqualTo(team.getId());
+    }
+
+    @Test
     void secondRunIsNoop() {
         seedAll();
         seeder.run(null);

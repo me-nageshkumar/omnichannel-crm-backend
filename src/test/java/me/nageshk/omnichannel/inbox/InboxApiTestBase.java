@@ -183,8 +183,9 @@ abstract class InboxApiTestBase {
         return "/api/workspaces/" + brand.getId() + "/inbox";
     }
 
+    /** The cross-number list, narrowed to the test number. */
     String chatsUrl() {
-        return inbox() + "/phone-numbers/" + number.getId() + "/chats";
+        return inbox() + "/chats?phoneNumberIds=" + number.getId();
     }
 
     ResultActions send(MockHttpServletRequestBuilder req, String token, Object body) throws Exception {

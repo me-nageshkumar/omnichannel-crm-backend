@@ -78,12 +78,12 @@ class NewChatIT extends InboxApiTestBase {
     }
 
     private ResponseEntity<JsonNode> post(String token, Object body) throws Exception {
-        return post(token, body, chatsUrl());
+        return post(token, body, newChatUrl());
     }
 
-    @Override
-    String chatsUrl() {
-        return "http://localhost:" + port + super.chatsUrl();
+    /** {@code POST /phone-numbers/{pn}/chats}: starting a chat is the one thing still addressed to a number. */
+    String newChatUrl() {
+        return "http://localhost:" + port + inbox() + "/phone-numbers/" + number.getId() + "/chats";
     }
 
     private ObjectNode ready() {
