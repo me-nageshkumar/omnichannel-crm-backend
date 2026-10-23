@@ -13,7 +13,6 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.WildcardIndexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
@@ -26,6 +25,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 @CompoundIndex(name = "ws_company", def = "{'workspaceId': 1, 'companyId': 1}")
 @CompoundIndex(name = "ws_owner", def = "{'workspaceId': 1, 'ownerId': 1}")
 @CompoundIndex(name = "ws_lifecycle", def = "{'workspaceId': 1, 'lifecycleStatus': 1}")
+@CompoundIndex(name = "ws_customFields", def = "{'workspaceId': 1, 'customFields.$**': 1}")
 @Getter
 @Setter
 public class CrmContact {
@@ -49,7 +49,6 @@ public class CrmContact {
     private String teamId;
     private String lifecycleStatus;
     private String source;
-    @WildcardIndexed
     private Map<String, Object> customFields = new LinkedHashMap<>();
     /** Pipelines of all the contact's deals, any status. */
     private List<String> pipelineIds = new ArrayList<>();
