@@ -25,6 +25,9 @@ import tools.jackson.databind.JsonNode;
 
 class CrmPipelinesApiIT extends CrmTestBase {
 
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    me.nageshk.omnichannel.crm.pipeline.DealPlacement placement;
+
     private JsonNode list() throws Exception {
         return json(send(get(crm() + "/pipelines"), managerToken, null).andExpect(status().isOk()));
     }
@@ -198,5 +201,53 @@ class CrmPipelinesApiIT extends CrmTestBase {
         send(get(crm() + "/pipelines"), agentToken, null).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         String id = list().get(0).get("id").asText();
         send(get(crm() + "/pipelines/" + id), agentToken, null).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void dealsAreRelocatedBeforeTheLaneIsRemoved() throws Exception {
+        enableCrm();
+        JsonNode sales = list().get(0);
+        String pid = sales.get("id").asText();
+        String removed = sales.get("stages").get(1).get("id").asText();
+        String target = sales.get("stages").get(0).get("id").asText();
+        org.mockito.Mockito.when(placement.countInStage(brand.getId(), pid, removed)).thenReturn(2L);
+        List<Boolean> laneStillThere = new ArrayList<>();
+        org.mockito.Mockito.doAnswer(inv -> {
+            CrmPipeline p = mongo.findById(pid, CrmPipeline.class);
+            laneStillThere.add(p.getStages().stream().anyMatch(s -> s.getId().equals(removed)));
+            return null;
+        }).when(placement).relocateStage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(pid),
+                org.mockito.ArgumentMatchers.eq(removed), org.mockito.ArgumentMatchers.eq(target));
+        List<Map<String, Object>> stages = new ArrayList<>();
+        for (JsonNode s : sales.get("stages")) {
+            Map<String, Object> m = new LinkedHashMap<>(mapper.convertValue(s,
+                    new tools.jackson.core.type.TypeReference<LinkedHashMap<String, Object>>() {}));
+            if (s.get("id").asText().equals(removed)) m.put("moveToStageId", target);
+            stages.add(m);
+        }
+        JsonNode v = json(send(put(crm() + "/pipelines/" + pid + "/stages"), managerToken,
+                Map.of("version", sales.get("version").asLong(), "stages", stages)).andExpect(status().isOk()));
+        assertThat(laneStillThere).containsExactly(true);
+        assertThat(v.get("stages")).hasSize(6);
+    }
+
+    @Test
+    void changingDefaultThroughSettingsMovesTheFlag() throws Exception {
+        enableCrm();
+        JsonNode sales = list().get(0);
+        JsonNode second = create("Second", null);
+        JsonNode settings = json(send(get(crm() + "/settings"), managerToken, null).andExpect(status().isOk()));
+        Map<String, Object> body = mapper.convertValue(settings,
+                new tools.jackson.core.type.TypeReference<LinkedHashMap<String, Object>>() {});
+        body.put("defaultPipelineId", second.get("id").asText());
+        JsonNode v = json(send(put(crm() + "/settings"), managerToken, body).andExpect(status().isOk()));
+        assertThat(v.get("defaultPipelineId").asText()).isEqualTo(second.get("id").asText());
+        assertThat(mongo.findById(second.get("id").asText(), CrmPipeline.class).getIsDefault()).isTrue();
+        assertThat(mongo.findById(sales.get("id").asText(), CrmPipeline.class).getIsDefault()).isFalse();
+        // null means unchanged
+        body.put("version", v.get("version").asLong());
+        body.put("defaultPipelineId", null);
+        JsonNode v2 = json(send(put(crm() + "/settings"), managerToken, body).andExpect(status().isOk()));
+        assertThat(v2.get("defaultPipelineId").asText()).isEqualTo(second.get("id").asText());
     }
 }

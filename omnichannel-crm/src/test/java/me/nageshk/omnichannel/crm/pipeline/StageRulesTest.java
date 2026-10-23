@@ -72,4 +72,14 @@ class StageRulesTest {
         assertThat(plan.stages()).extracting(CrmStage::getPosition).containsExactly(1024.0, 2048.0, 3072.0);
         assertThat(plan.stages()).extracting(CrmStage::getProbability).containsExactly(0, 100, 0);
     }
+
+    @Test
+    void moveTargetMustBeAnExistingKeptStage() {
+        List<CrmStage> existing = List.of(stored("a", "A", StageType.OPEN), stored("b", "B", StageType.OPEN));
+        assertThatThrownBy(() -> StageRules.validate(List.of(lane("a", "A", StageType.OPEN),
+                lane(null, "New", StageType.OPEN), new StageRequest("b", null, null, null, null, null, "zzz")),
+                existing, id -> 1))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.fields()).containsKey("stages.b.moveToStageId"));
+    }
 }

@@ -82,7 +82,8 @@ public final class StageRules {
         Set<String> keptIds = new HashSet<>();
         kept.forEach(s -> keptIds.add(s.getId()));
         removalTargets.forEach((from, to) -> {
-            if (!keptIds.contains(to)) errors.put("stages." + from + ".moveToStageId", "must be a kept stage");
+            if (!keptIds.contains(to) || !stored.containsKey(to))
+                errors.put("stages." + from + ".moveToStageId", "must be an existing stage that is kept");
         });
         if (!errors.isEmpty()) throw new ValidationException(errors);
 

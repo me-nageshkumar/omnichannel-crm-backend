@@ -127,7 +127,6 @@ public class CrmSettingsService {
 
         Update update = new Update()
                 .set("defaultCurrency", req.defaultCurrency())
-                .set("defaultPipelineId", req.defaultPipelineId())
                 .set("dealRottingDays", req.dealRottingDays())
                 .set("allowChannelMove", req.allowChannelMove())
                 .set("timelineShowsWhatsappMessages", req.timelineShowsWhatsappMessages())

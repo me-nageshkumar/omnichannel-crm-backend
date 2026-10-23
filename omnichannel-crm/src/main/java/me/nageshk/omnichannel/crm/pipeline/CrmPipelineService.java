@@ -177,9 +177,9 @@ public class CrmPipelineService {
         if (!version.equals(current.getVersion())) throw versionConflict();
         StageRules.Plan plan = StageRules.validate(requested, current.getStages(),
                 stageId -> deals.countInStage(ctx.workspaceId(), id, stageId));
-        CrmPipeline saved = guarded(ctx, id, version, new Update().set("stages", plan.stages()));
+        // deals leave a removed lane before the lane goes, so a failed relocation can simply be retried
         plan.moves().forEach((from, to) -> deals.relocateStage(ctx, id, from, to));
-        return saved;
+        return guarded(ctx, id, version, new Update().set("stages", plan.stages()));
     }
 
     public void delete(CrmContext ctx, String id, String moveDealsToPipelineId) {
@@ -215,6 +215,13 @@ public class CrmPipelineService {
             }
             settings.setDefaultPipeline(ctx.workspaceId(), next.map(CrmPipeline::getId).orElse(null), ctx.userId());
         }
+    }
+
+    /** Makes an accessible, active pipeline the only default and points the settings at it. */
+    public void makeDefault(CrmContext ctx, String id) {
+        ctx.require("crm:settings");
+        if (!get(ctx, id).isActive()) throw new ValidationException("defaultPipelineId", "must be an active pipeline");
+        promote(ctx, id);
     }
 
     /** Makes {@code id} the only default and points the settings at it. */
