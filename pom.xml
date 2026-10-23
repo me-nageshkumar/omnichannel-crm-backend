@@ -18,7 +18,7 @@
   <name>omnichannel-crm-backend</name>
   <description>Spring Boot backend for the Omnichannel CRM</description>
 
-  <!-- Each module depends only on the one before it. -->
+  <!-- Modules are listed in build order; each depends only on modules above it (crm: common + security; service and app: see their poms). -->
   <modules>
     <module>omnichannel-common</module>
     <module>omnichannel-db</module>

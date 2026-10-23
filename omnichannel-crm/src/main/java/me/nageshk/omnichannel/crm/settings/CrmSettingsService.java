@@ -107,6 +107,16 @@ public class CrmSettingsService {
         return s;
     }
 
+    /** Switches the brand's CRM on without limits for a non-user caller such as the demo seeder; no audit row. */
+    public CrmSettings enableForSystem(String workspaceId, String customerId) {
+        CrmSettings s = getOrCreate(workspaceId, customerId, "system");
+        s.setEnabled(true);
+        s.setMaxPipelines(null);
+        s.setMaxCustomFields(null);
+        s.setLastModifiedBy("system");
+        return repository.save(s);
+    }
+
     /**
      * Replaces the editable settings. 400 VALIDATION on a rule break; 404 if the settings are gone; 409
      * VERSION_CONFLICT when {@code version} is not the stored one.

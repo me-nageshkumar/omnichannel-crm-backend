@@ -22,7 +22,7 @@ This repo continues the history of `whatsapp-backend`, which it replaces.
 
 ## Modules
 
-A Maven multi-module build; each module depends only on the ones above it in this list, and its
+A Maven multi-module build; each module depends only on modules above it in this list (see each pom for which), and its
 packages start with its own name (`me.nageshk.omnichannel.<module>.<feature>`, e.g. `db.contact`,
 `service.contact`, `app.contact`):
 
@@ -31,6 +31,7 @@ packages start with its own name (`me.nageshk.omnichannel.<module>.<feature>`, e
 | `omnichannel-common` | API exceptions, `OmnichannelProperties`, the clock |
 | `omnichannel-db` | MongoDB documents and repositories, persistence-only helpers, collection and data migrations |
 | `omnichannel-security` | Spring Security setup, users, login (password, two-factor, JWT, device keys), roles and authorities |
+| `omnichannel-crm` | The CRM, a vertical module (`crm.*`): depends on common and security only; it reads and writes platform data through the `crm.platform` ports, which `omnichannel-app` implements in `app.crm`. See [CRM](#crm) |
 | `omnichannel-service` | Business services, listeners, schedulers, demo data, the page scripts served to the extension |
 | `omnichannel-app` | `OmnichannelApplication` (root package, so scanning covers every module), REST controllers, the extension's WebSocket bridge, `application.yml`; tests that start Spring live here |
 
@@ -50,7 +51,7 @@ and never overwritten afterwards (roles are seeded first, see [Roles and access]
 | User | Variables | Notes |
 |---|---|---|
 | Super admin (role `SUPER_ADMIN`) | `OMNICHANNEL_SUPER_ADMIN_PASSWORD` (bcrypt hash, required until one exists), optional `_USERNAME` (default `nageshk`), `_NAME`, `_EMAIL`, `_MOBILE` | Seeded with two-factor off; enable it later from the console Profile page or `/api/users/me/two-factor/*` |
-| Demo data | `OMNICHANNEL_SEED_DEMO=true` | Off by default. Adds customer "Demo Retail" (owner `demo-admin`), brands "Demo Fashion" and "Demo Electronics", `demo-manager` / `demo-lead` / `demo-agent` in Demo Fashion, the number 919928088743 and (see [Contacts](#contacts)) sample contacts there. Temporary passwords are logged once at WARN and must be changed at first login. Skipped when the customer exists |
+| Demo data | `OMNICHANNEL_SEED_DEMO=true` | Off by default. Adds customer "Demo Retail" (owner `demo-admin`), brands "Demo Fashion" and "Demo Electronics", `demo-manager` / `demo-lead` / `demo-agent` in Demo Fashion, the number 919928088743 (see [Contacts](#contacts)) sample contacts there and (see [CRM](#crm)) sample CRM records. Temporary passwords are logged once at WARN and must be changed at first login. Skipped when the customer exists |
 
 ```bash
 # bcrypt hash for a password (no {bcrypt} prefix)
@@ -317,6 +318,55 @@ A brand's people, in `contacts` (one per brand and WhatsApp person; everything i
 Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, `GET|PUT|DELETE
 /{id}`, `POST|DELETE /{id}/labels/{labelId}`, `GET|POST /{id}/notes`, `PUT|DELETE /{id}/notes/{noteId}`),
 `contact-labels`, `contact-attributes` and `contact-filters` (`GET`, `POST`, `PUT|DELETE /{id}`).
+
+## CRM
+
+A per-brand CRM in the vertical module `omnichannel-crm` (package `me.nageshk.omnichannel.crm`). It keeps its data in
+`crm*` collections (`crmSettings`, `crmPipelines`, `crmContacts`, `crmCompanies`, `crmDeals`, `crmActivities`,
+`crmPipelineAccess`), every index of which leads with `workspaceId`; it declares indexes only on its own documents
+(`CrmIndexIsolationIT` checks that nothing else changes). Brands, numbers, people, platform contacts and chats come
+through the ports in `crm.platform`.
+
+- **Switching it on:** per brand, by a platform user with `crm:enable`:
+  `PUT /api/customers/{c}/workspaces/{ws}/crm` with `{enabled, maxPipelines|null, maxCustomFields|null}` (null =
+  unlimited; `GET` reads it). While off, brand endpoints answer 402 `CRM_NOT_ENABLED` (`GET /status` still answers,
+  with `enabled=false`). The first use after switching on creates the default pipeline "Sales" (New, Contacted,
+  Qualified, Proposal, Negotiation, Won, Lost).
+- **Pipeline access:** users with `crm:view-all` see every pipeline; others see only the pipelines assigned to them
+  (`GET|PUT /users/{userId}/pipelines`, `{pipelineIds}`; assigning needs `crm:settings`). `GET /status` returns the
+  caller's `pipelineAccess` (`"ALL"` or ids), `authorities` and the brand's `phones` with `canChat`.
+
+| Authority | Level | Allows | Default roles |
+|---|---|---|---|
+| `crm:view` | BRAND | Open the CRM and see records in accessible pipelines | Customer Admin, Workspace Manager, Agent |
+| `crm:view-all` | BRAND | See every pipeline without being assigned | Customer Admin, Workspace Manager |
+| `crm:edit` | BRAND | Create and edit contacts, companies, deals; capture, move, close, log | Customer Admin, Workspace Manager, Agent |
+| `crm:delete` | BRAND | Delete companies and deals (with `crm:edit`) | Customer Admin, Workspace Manager |
+| `crm:settings` | BRAND | Settings, pipelines, stages, picklists; assign pipelines; move a channel | Customer Admin, Workspace Manager |
+| `crm:export` | BRAND | Export records to CSV | Customer Admin, Workspace Manager |
+| `crm:enable` | PLATFORM | Switch the CRM on or off for a brand and set limits | Account Manager |
+
+Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601 instants (`expectedCloseDate` is
+`yyyy-MM-dd`), pages are `{items, total, page}`, errors are `{code, message, ...}` (validation: `{code:"VALIDATION", message, fields}`).
+
+| Call | Purpose |
+|---|---|
+| `GET /status` | Enabled, limits, phones, pipeline access, authorities |
+| `GET\|PUT /settings` | Currency, default pipeline, rotting days, channel-move and timeline switches, picklists (`version` on PUT) |
+| `GET /pipelines`, `GET\|PUT /pipelines/{id}`, `POST /pipelines`, `PUT /pipelines/{id}/stages`, `DELETE /pipelines/{id}?moveDealsToPipelineId=` | Pipelines and their stages (409 `STAGE_HAS_DEALS`, `PIPELINE_HAS_DEALS`) |
+| `GET\|PUT /users/{userId}/pipelines` | Pipeline access per user |
+| `POST /contacts/search`, `GET\|PUT /contacts/{id}` | CRM contacts (one per platform contact and number) |
+| `POST /contacts/capture`, `POST /contacts/create` | Turn a chat or a phone number into a CRM contact and open deal |
+| `GET /contacts/{id}/communication`, `POST /contacts/{id}/move-channel`, `GET /contacts/by-chat/{chatId}/summary` | Chat link, channel move (409 `CHANNEL_TAKEN`), inbox side panel |
+| `POST /companies/search`, `GET /companies/typeahead?q=`, `GET\|PUT\|DELETE /companies/{id}`, `GET /companies/{id}/summary`, `POST /companies` | Companies (409 `COMPANY_HAS_OPEN_DEALS`) |
+| `GET /deals/board`, `POST /deals/search`, `GET\|PUT\|DELETE /deals/{id}`, `POST /deals` | Kanban board, deal list, deal CRUD |
+| `POST /deals/{id}/move`, `POST /deals/{id}/close` | Move between lanes (`beforeDealId`/`afterDealId`), close WON or LOST |
+| `GET /activities?targetType=&targetId=`, `POST /activities/log` | Timeline of a record; log a CALL, MEETING or EMAIL |
+
+**Demo data:** with `OMNICHANNEL_SEED_DEMO=true`, `CrmDemoSeeder` (after the other demo seeders) switches the CRM on
+for "Demo Fashion" and adds 3 companies, 8 CRM contacts from the demo contacts on the demo number, 10 deals across
+the Sales lanes (one won, one lost, one rotting) and two logged calls, and gives `demo-agent` the Sales pipeline. It
+runs through the normal services as a system actor, and is skipped when the brand already has CRM settings.
 
 ## Message templates
 
