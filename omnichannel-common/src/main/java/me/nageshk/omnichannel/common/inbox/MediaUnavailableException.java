@@ -1,7 +1,6 @@
 package me.nageshk.omnichannel.common.inbox;
 
 import me.nageshk.omnichannel.common.rpc.RpcException;
-import me.nageshk.omnichannel.service.inbox.ChatMediaService;
 
 /** The phone no longer has the media of a message (or sent something unusable), or it is too large to fetch: 410. */
 public class MediaUnavailableException extends RuntimeException {
@@ -19,7 +18,7 @@ public class MediaUnavailableException extends RuntimeException {
         super(message);
     }
 
-    /** The file is over {@link ChatMediaService#MAX_SIZE}, so fetching it would only get the device disconnected. */
+    /** The file is over {@code ChatMediaService.MAX_SIZE}, so fetching it would only get the device disconnected. */
     public static MediaUnavailableException tooLarge() {
         return new MediaUnavailableException(TOO_LARGE_MESSAGE);
     }
