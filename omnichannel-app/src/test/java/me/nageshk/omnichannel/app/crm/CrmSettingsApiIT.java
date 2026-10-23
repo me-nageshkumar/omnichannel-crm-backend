@@ -136,4 +136,15 @@ class CrmSettingsApiIT extends CrmTestBase {
                 .andExpect(jsonPath("$.fields.defaultCurrency").exists())
                 .andExpect(jsonPath("$.fields.defaultPipelineId").exists());
     }
+
+    @Test
+    void nullRottingDaysRoundTripsAsNever() throws Exception {
+        Map<String, Object> body = editable();
+        body.put("dealRottingDays", null);
+        JsonNode v = json(send(put(crm() + "/settings"), managerToken, body).andExpect(status().isOk()));
+        assertThat(v.get("dealRottingDays").isNull()).isTrue();
+        assertThat(read().get("dealRottingDays").isNull()).isTrue();
+        CrmSettings stored = mongo.findOne(new Query(Criteria.where("workspaceId").is(brand.getId())), CrmSettings.class);
+        assertThat(stored.getDealRottingDays()).isNull();
+    }
 }

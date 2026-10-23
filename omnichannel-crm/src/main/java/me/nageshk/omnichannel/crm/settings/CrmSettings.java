@@ -31,7 +31,8 @@ public class CrmSettings {
     private Integer maxCustomFields;
     private String defaultCurrency;
     private String defaultPipelineId;
-    private int dealRottingDays;
+    /** Null = deals never rot. */
+    private Integer dealRottingDays;
     private boolean allowChannelMove;
     private boolean timelineShowsWhatsappMessages;
     private List<PicklistItem> lifecycleStatuses = new ArrayList<>();
