@@ -53,7 +53,10 @@ public class CrmAccess {
 
     /**
      * The context of the system actor (user id {@code "system"}) in a brand whose CRM is on: every brand-level
-     * {@code crm:*} authority, all pipelines, all of the brand's numbers chattable. For seeders and jobs.
+     * {@code crm:*} authority, all pipelines, all of the brand's numbers chattable.
+     *
+     * <p>Seeders and jobs only: it bypasses the caller's authorities and pipeline access, so it must never be built
+     * for a request.
      */
     public CrmContext forSystem(String workspaceId, String customerId) {
         CrmSettings s = settings.find(workspaceId).filter(CrmSettings::isEnabled).orElseThrow(CrmErrors::notEnabled);

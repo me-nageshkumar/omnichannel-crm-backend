@@ -246,27 +246,29 @@ JSON truth for `2026-10-23-crm-a-console.md`. All brand paths are under `/api/wo
 |---|---|---|
 | `GET /status` | — | `{enabled, limits:{maxPipelines, maxCustomFields}, phones:[{phoneNumberId, number, label, canChat}], pipelineAccess:"ALL"\|string[], authorities:string[], attachmentsEnabled:true}` |
 | `GET\|PUT /api/customers/{c}/workspaces/{ws}/crm` | `{enabled, maxPipelines\|null, maxCustomFields\|null}` | same |
-| `GET\|PUT /settings` | `{defaultCurrency, defaultPipelineId, dealRottingDays, allowChannelMove, timelineShowsWhatsappMessages, lifecycleStatuses, dealSources, taskTypes, lostReasons, industries, version}` (lists of `{key,label,color,position,active,isDefault}`) | same |
+| `GET\|PUT /settings` | `{defaultCurrency, defaultPipelineId, dealRottingDays, allowChannelMove, timelineShowsWhatsappMessages, lifecycleStatuses, dealSources, taskTypes, lostReasons, industries, version}` (lists of at most 100 `{key,label,color,position,active,isDefault}`; `label` ≤ 60, `color` `#rrggbb` or null) | same |
 | `GET /pipelines`, `GET /pipelines/{id}` | — | `Pipeline = {id, name, isDefault, active, rottingDays, stages:[{id,name,color,position,probability,type:"OPEN"\|"WON"\|"LOST",wipLimit}], version}` |
-| `POST /pipelines`, `PUT /pipelines/{id}` | `{name, active?, isDefault?, rottingDays?, stages?}` (create may carry stages; default: the Sales lanes) | `Pipeline` |
-| `PUT /pipelines/{id}/stages` | `{version, stages:[{id?, name, color?, probability, type, wipLimit?, moveToStageId?}]}` | `Pipeline`; 409 `STAGE_HAS_DEALS {stageId, count}` / `STAGE_TYPE_HAS_DEALS` |
-| `DELETE /pipelines/{id}?moveDealsToPipelineId=` | — | 204; 409 `PIPELINE_HAS_DEALS {count}` |
+| `POST /pipelines`, `PUT /pipelines/{id}` | `{name, active?, isDefault?, rottingDays?, stages?}` (create may carry stages; default: the Sales lanes); PUT also needs `version` (400 without it, 409 `VERSION_CONFLICT` when stale) and ignores `stages`. `rottingDays`: 1–365; on PUT absent or `null` keeps the stored value and `0` clears it (no rotting), on create absent, `null` or `0` = none | `Pipeline` |
+| `PUT /pipelines/{id}/stages` | `{version, stages:[{id?, name, color?, probability, type, wipLimit?, moveToStageId?}]}` (at most 30 stages; `name` ≤ 60; `color` `#rrggbb` or null) | `Pipeline`; 409 `STAGE_HAS_DEALS {stageId, count}` / `STAGE_TYPE_HAS_DEALS` |
+| `DELETE /pipelines/{id}?moveDealsToPipelineId=` | — | 204; 409 `PIPELINE_HAS_DEALS {count}`. Moved OPEN deals go to the target's first OPEN stage; WON/LOST deals to its first WON/LOST stage, keeping `closedAt` and `lostReason` (first OPEN stage when it has none of that type) |
 | `GET\|PUT /users/{userId}/pipelines` | `{pipelineIds}` | `{userId, pipelineIds}` |
-| `POST /contacts/search` | `{q?, ownerId?, lifecycleStatus?, companyId?, pipelineId?, sort?: "lastActivityAt,desc", page, size}` | page of `CrmContact` (Task 8 view) |
+| `POST /contacts/search` | `{q?, ownerId?, lifecycleStatus?, companyId?, pipelineId?, sort?: "lastActivityAt,desc", page, size}` (sort fields `lastActivityAt`, `creationTime`, `firstName`) | page of `CrmContact` (Task 8 view) |
 | `GET /contacts/{id}`, `PUT /contacts/{id}` | `{firstName?, lastName?, email?, jobTitle?, companyId?, ownerId?, lifecycleStatus?, source?, version}` | `CrmContact` |
 | `POST /contacts/capture` | `{chatId, pipelineId?, dealTitle?}` | `{contact, deal\|null, createdContact, createdDeal}` |
 | `POST /contacts/create` | `{phone, phoneNumberId, firstName?, lastName?, pipelineId, dealTitle?}` | same |
 | `GET /contacts/{id}/communication` | `?phoneNumberId=` optional | `{phoneNumberId, number, phone, chatId\|null, canChat}` |
 | `POST /contacts/{id}/move-channel` | `{toPhoneNumberId, reason?, version}` | `CrmContact`; 409 `CHANNEL_TAKEN` |
 | `GET /contacts/by-chat/{chatId}/summary` | — | `{chatId, canCapture, captureBlockedReason, contact\|null, openDeals:Deal[], nextTask:null}` |
-| `POST /companies/search`, `GET /companies/typeahead?q=`, `GET /companies/{id}`, `GET /companies/{id}/summary` | `{q?, ownerId?, industry?, sort?, page, size}` | `Company = {id, name, domain, website, industry, size, annualRevenue, phone, email, address{line1,city,state,postalCode,country}, description, owner:Ref\|null, labelIds, customFields, contactCount, openDealAmount, version}`; typeahead `Ref[]`; summary `{company, contacts, openDeals, contactCount, openDealAmount}` |
+| `POST /companies/search`, `GET /companies/typeahead?q=`, `GET /companies/{id}`, `GET /companies/{id}/summary` | `{q?, ownerId?, industry?, sort?: "name,asc", page, size}` (sort fields `name`, `creationTime`, `lastActivityAt`) | `Company = {id, name, domain, website, industry, size, annualRevenue, phone, email, address{line1,city,state,postalCode,country}, description, owner:Ref\|null, labelIds, customFields, contactCount, openDealAmount, version}` — `openDealAmount` sums the OPEN deals of the caller's pipelines (all of them for `crm:view-all`); typeahead `Ref[]`; summary `{company, contacts, openDeals, contactCount, openDealAmount}` |
 | `POST /companies`, `PUT /companies/{id}`, `DELETE /companies/{id}` | company fields (+`version` on PUT) | `Company` / 204; 409 `COMPANY_HAS_OPEN_DEALS` |
 | `GET /deals/board` | `?pipelineId=&perStageLimit=25&ownerId=&q=` | `{pipelineId, lanes:[{stage, total, sumAmount, deals:Deal[]}]}` |
-| `POST /deals/search` | `{pipelineId?, stageId?, status?, ownerId?, companyId?, crmContactId?, q?, sort?, page, size}` | page of `Deal` (Task 10 view) |
+| `POST /deals/search` | `{pipelineId?, stageId?, status?, ownerId?, companyId?, crmContactId?, q?, sort?: "creationTime,desc", page, size}` (sort fields `creationTime`, `lastActivityAt`, `amount`, `expectedCloseDate`, `title`, `position`, `closedAt`, `stageEnteredAt`) | page of `Deal` (Task 10 view) |
 | `GET /deals/{id}`, `POST /deals`, `PUT /deals/{id}`, `DELETE /deals/{id}` | `{title, pipelineId, stageId?, amount?, currency?, probability?, expectedCloseDate?, companyId?, primaryCrmContactId, crmContactIds?, ownerId?, source?, labelIds?, version (PUT)}` | `Deal` / 204 |
-| `POST /deals/{id}/move` | `{stageId, beforeDealId?, afterDealId?}` | `Deal` |
-| `POST /deals/{id}/close` | `{outcome:"WON"\|"LOST", lostReason?}` | `Deal` |
+| `POST /deals/{id}/move` | `{stageId, beforeDealId?, afterDealId?}` | `Deal`; 409 `VERSION_CONFLICT` when the deal's pipeline, stage or status changed while the move ran (reload and retry) |
+| `POST /deals/{id}/close` | `{outcome:"WON"\|"LOST", lostReason?}` (LOST without a reason keeps an already LOST deal's reason) | `Deal`; 409 `VERSION_CONFLICT` as for move |
 | `GET /activities` | `?targetType=&targetId=&page=&size=` | page of `{id, type, target, summary, payload, actor:Ref\|null, actorType, happenedAt}` (`type` may be `LEGACY_NOTE`) |
 | `POST /activities/log` | `{target:{type,id}, type:"CALL"\|"MEETING"\|"EMAIL", summary, happenedAt?}` | activity |
 
 Errors: `{code, message, ...extra}`; validation `{code:"VALIDATION", message, fields}`.
+
+All three searches take `sort` as `"field"` or `"field,asc|desc"`; a separate `dir` (`asc`/`desc`) is still accepted and wins over the suffix. `customFields` keys (deals, companies) must be 1–40 characters without `$` or `.` (400 `VALIDATION` `fields.customFields`); full validation comes in phase B.

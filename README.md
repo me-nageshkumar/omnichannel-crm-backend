@@ -41,8 +41,8 @@ the type; `ClassAliasRenames` rewrites those on start.
 
 ## Run
 
-Needs MongoDB (default `mongodb://localhost:27017/omnichannel_crm`, override with
-`OMNICHANNEL_MONGODB_URI`). Collection and GridFS bucket names are camelCase (`phoneNumbers`,
+Needs MongoDB 7.0 or later (the CRM's compound wildcard indexes on `customFields` need 7.0; default
+`mongodb://localhost:27017/omnichannel_crm`, override with `OMNICHANNEL_MONGODB_URI`). Collection and GridFS bucket names are camelCase (`phoneNumbers`,
 `waWebChats`, `chatMedia.files`); a database still on the old snake_case names is renamed on start by
 `CollectionRenames`, which keeps documents and indexes and never overwrites a collection that holds documents.
 Users live in the `users` collection; the Super Admin is seeded on first start
@@ -361,8 +361,13 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 | `GET /contacts/{id}/communication`, `POST /contacts/{id}/move-channel`, `GET /contacts/by-chat/{chatId}/summary` | Chat link, channel move (409 `CHANNEL_TAKEN`), inbox side panel |
 | `POST /companies/search`, `GET /companies/typeahead?q=`, `GET\|PUT\|DELETE /companies/{id}`, `GET /companies/{id}/summary`, `POST /companies` | Companies (409 `COMPANY_HAS_OPEN_DEALS`) |
 | `GET /deals/board`, `POST /deals/search`, `GET\|PUT\|DELETE /deals/{id}`, `POST /deals` | Kanban board, deal list, deal CRUD |
-| `POST /deals/{id}/move`, `POST /deals/{id}/close` | Move between lanes (`beforeDealId`/`afterDealId`), close WON or LOST |
+| `POST /deals/{id}/move`, `POST /deals/{id}/close` | Move between lanes (`beforeDealId`/`afterDealId`), close WON or LOST (409 `VERSION_CONFLICT` when the deal moved meanwhile) |
 | `GET /activities?targetType=&targetId=`, `POST /activities/log` | Timeline of a record; log a CALL, MEETING or EMAIL |
+
+Searches take `sort` as `"field"` or `"field,asc|desc"` (a separate `dir` wins). A restricted user's company
+`openDealAmount` counts only the deals of their pipelines. Lane positions are changed under a per-lane lock held in
+the JVM (`LaneLocks`): enough for the single app instance; running the CRM on several instances needs a shared
+(Mongo) lease behind that interface.
 
 **Demo data:** with `OMNICHANNEL_SEED_DEMO=true`, `CrmDemoSeeder` (after the other demo seeders) switches the CRM on
 for "Demo Fashion" and adds 3 companies, 8 CRM contacts from the demo contacts on the demo number, 10 deals across
