@@ -1,0 +1,183 @@
+package me.nageshk.omnichannel.security.user;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.common.user.InvalidOtpException;
+import me.nageshk.omnichannel.common.user.TwoFactorStateException;
+import me.nageshk.omnichannel.db.access.RoleLevel;
+import me.nageshk.omnichannel.db.enablement.Disabled;
+import me.nageshk.omnichannel.db.tenant.CustomerRepository;
+import me.nageshk.omnichannel.db.user.Availability;
+import me.nageshk.omnichannel.db.user.TwoFactor;
+import me.nageshk.omnichannel.db.user.User;
+import me.nageshk.omnichannel.db.user.UserRepository;
+import me.nageshk.omnichannel.security.access.AccessService;
+import me.nageshk.omnichannel.security.access.BuiltInRoles;
+import me.nageshk.omnichannel.security.access.RoleCache;
+import me.nageshk.omnichannel.security.auth.AccountLockedException;
+import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.security.auth.LoginAttemptService;
+import me.nageshk.omnichannel.security.auth.TotpService;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+/** Self-service account operations for the logged-in user. */
+@Service
+public class UserService {
+
+    public record TwoFactorSetup(String secret, String qrCodeDataUri, String issuer, String username) {}
+
+    /** The caller's own profile; never carries the password, token version or TOTP secret. */
+    public record CurrentUser(
+            String id,
+            String name,
+            String username,
+            String email,
+            String mobileNumber,
+            boolean twoFactorEnabled,
+            boolean superAdmin,
+            CustomerRef customer,
+            RoleRef role,
+            Set<String> authorities,
+            List<WorkspaceAccess> workspaces,
+            boolean mustChangePassword,
+            Availability availability) {}
+
+    public record CustomerRef(String id, String name) {}
+
+    public record RoleRef(String id, String name) {}
+
+    /** A workspace the user can act in; {@code role} is null when access comes from the COMPANY role. */
+    public record WorkspaceAccess(String id, String name, RoleRef role, Set<String> authorities, Disabled disabled) {}
+
+    private final UserRepository users;
+    private final AccessService access;
+    private final RoleCache roles;
+    private final CustomerRepository customers;
+    private final TotpService totp;
+    private final LoginAttemptService attempts;
+    private final ApplicationEventPublisher events;
+    private final Clock clock;
+
+    public UserService(UserRepository users, AccessService access, RoleCache roles, CustomerRepository customers,
+            TotpService totp, LoginAttemptService attempts, ApplicationEventPublisher events, Clock clock) {
+        this.events = events;
+        this.clock = clock;
+        this.users = users;
+        this.access = access;
+        this.roles = roles;
+        this.customers = customers;
+        this.totp = totp;
+        this.attempts = attempts;
+    }
+
+    public CurrentUser currentUser(String username) {
+        User u = require(username);
+        AuthenticatedUser principal = access.load(u);
+        Set<String> authorities = new TreeSet<>(principal.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(code -> !BuiltInRoles.SUPER_ADMIN.equals(code))
+                .collect(Collectors.toSet()));
+        CustomerRef customer = u.getCustomerId() == null ? null
+                : customers.findById(u.getCustomerId()).map(c -> new CustomerRef(c.getId(), c.getName())).orElse(null);
+        boolean companyWide = roleRef(u.getRoleId(), RoleLevel.COMPANY) != null;
+        List<WorkspaceAccess> workspaces = access.workspacesOf(principal).stream()
+                .map(w -> new WorkspaceAccess(
+                        w.getId(),
+                        w.getName(),
+                        companyWide ? null : workspaceRole(u, w.getId()),
+                        new TreeSet<>(access.inWorkspace(principal, w.getId())),
+                        w.getDisabled()))
+                .toList();
+        return new CurrentUser(
+                u.getId(), u.getName(), u.getUsername(), u.getEmail(), u.getMobileNumber(),
+                u.getTwoFactor().enabled(),
+                principal.superAdmin(),
+                customer,
+                roleRef(u.getRoleId(), null),
+                authorities,
+                workspaces,
+                u.isMustChangePassword(),
+                u.getAvailability() == null ? new Availability(Availability.Status.AVAILABLE, null) : u.getAvailability());
+    }
+
+    /** The user's own Available / Away switch; publishes {@link UserEvents.AvailabilityChanged} on a real change. */
+    public CurrentUser setAvailability(String username, Availability.Status status) {
+        if (status == null) throw new ValidationException("status", "required");
+        User user = require(username);
+        Availability.Status previous = user.availabilityStatus();
+        user.setAvailability(new Availability(status, Instant.now(clock)));
+        users.save(user);
+        if (previous != status) events.publishEvent(new UserEvents.AvailabilityChanged(user, previous));
+        return currentUser(username);
+    }
+
+    /** A fresh secret and QR code; nothing is stored until {@link #confirmTwoFactor}. */
+    public TwoFactorSetup initiateTwoFactor(String username) {
+        User user = require(username);
+        if (user.getTwoFactor().enabled()) {
+            throw new TwoFactorStateException("two-factor authentication is already enabled");
+        }
+        String secret = totp.generateSecret();
+        return new TwoFactorSetup(secret, totp.qrCodeDataUri(secret, username), totp.issuer(), username);
+    }
+
+    public void confirmTwoFactor(String username, String secret, String otp) {
+        User user = require(username);
+        if (user.getTwoFactor().enabled()) {
+            throw new TwoFactorStateException("two-factor authentication is already enabled");
+        }
+        verifyWithLockout(username, secret, otp);
+        user.setTwoFactor(TwoFactor.enabledWith(secret));
+        users.save(user);
+    }
+
+    public void disableTwoFactor(String username, String otp) {
+        User user = require(username);
+        if (!user.getTwoFactor().enabled()) {
+            throw new TwoFactorStateException("two-factor authentication is already disabled");
+        }
+        verifyWithLockout(username, user.getTwoFactor().totpSecret(), otp);
+        user.setTwoFactor(TwoFactor.disabled());
+        users.save(user);
+    }
+
+    private void verifyWithLockout(String username, String secret, String otp) {
+        if (attempts.isOtpBlocked(username)) {
+            throw new AccountLockedException("too many failed OTP attempts", attempts.otpBlockRemainingSeconds(username));
+        }
+        if (!totp.verify(secret, otp)) {
+            attempts.recordFailedOtp(username);
+            throw new InvalidOtpException();
+        }
+        attempts.clearOtp(username);
+    }
+
+    private RoleRef workspaceRole(User u, String workspaceId) {
+        return u.getWorkspaceRoles().stream()
+                .filter(wr -> workspaceId.equals(wr.workspaceId()))
+                .findFirst()
+                .map(wr -> roleRef(wr.roleId(), RoleLevel.BRAND))
+                .orElse(null);
+    }
+
+    /** The role as a reference, or null if the id is unset, unknown, or (when given) not at {@code level}. */
+    private RoleRef roleRef(String roleId, RoleLevel level) {
+        return roles.byId(roleId)
+                .filter(r -> level == null || r.getLevel() == level)
+                .map(r -> new RoleRef(r.getId(), r.getName()))
+                .orElse(null);
+    }
+
+    private User require(String username) {
+        return users.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("no user '" + username + "'"));
+    }
+}

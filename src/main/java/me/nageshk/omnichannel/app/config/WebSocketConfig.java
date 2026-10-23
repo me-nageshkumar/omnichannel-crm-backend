@@ -1,0 +1,28 @@
+package me.nageshk.omnichannel.app.config;
+
+import me.nageshk.omnichannel.app.ws.BridgeWebSocketHandler;
+import me.nageshk.omnichannel.common.config.OmnichannelProperties;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.socket.config.annotation.EnableWebSocket;
+import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+
+@Configuration
+@EnableWebSocket
+public class WebSocketConfig implements WebSocketConfigurer {
+
+    private final BridgeWebSocketHandler handler;
+    private final OmnichannelProperties props;
+
+    public WebSocketConfig(BridgeWebSocketHandler handler, OmnichannelProperties props) {
+        this.handler = handler;
+        this.props = props;
+    }
+
+    @Override
+    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        // Hardening (post-PoC roadmap): pin to chrome-extension://<published extension id>
+        registry.addHandler(handler, "/ws")
+                .setAllowedOriginPatterns(props.ws().allowedOrigins().split("\\s*,\\s*"));
+    }
+}
