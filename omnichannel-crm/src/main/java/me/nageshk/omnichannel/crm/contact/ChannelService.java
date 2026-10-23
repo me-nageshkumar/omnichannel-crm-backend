@@ -114,6 +114,7 @@ public class ChannelService {
         Set<String> unlinked = keepDealsOnOneChannel(ctx.workspaceId(), id, target);
         unlinked.add(id);
         unlinked.forEach(c -> counters.recompute(ctx.workspaceId(), c));
+        rePointFollowUps(ctx.workspaceId(), id, target.id());
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("from", from);
         payload.put("to", target.id());
@@ -122,6 +123,29 @@ public class ChannelService {
                 target.id(), "Moved to " + target.number(), payload);
         return contactService.view(ctx, saved);
     }
+
+    /**
+     * Tasks and notes carry their target's channel: those on the contact and on its own deals move with it. By
+     * collection name (Ruling B4: the task and note services depend on this package).
+     */
+    private void rePointFollowUps(String ws, String id, String phoneNumberId) {
+        Query own = new Query(Criteria.where("workspaceId").is(ws).and("primaryCrmContactId").is(id));
+        own.fields().include("_id");
+        List<String> dealIds = mongo.find(own, Document.class, ContactCounters.DEALS).stream()
+                .map(d -> String.valueOf(d.get("_id"))).toList();
+        Criteria onContact = new Criteria().andOperator(Criteria.where("target.type").is(TargetType.CONTACT.name()),
+                Criteria.where("target.id").is(id));
+        Criteria onDeals = new Criteria().andOperator(Criteria.where("target.type").is(TargetType.DEAL.name()),
+                Criteria.where("target.id").in(dealIds));
+        Query q = new Query(new Criteria().andOperator(Criteria.where("workspaceId").is(ws),
+                new Criteria().orOperator(onContact, onDeals)));
+        for (String collection : FOLLOW_UPS) {
+            mongo.updateMulti(q, new Update().set("phoneNumberId", phoneNumberId), collection);
+        }
+    }
+
+    /** Collections of records that hang off a contact, company or deal and copy its channel. */
+    public static final List<String> FOLLOW_UPS = List.of("crmTasks", "crmNotes");
 
     /**
      * Linked contacts share the primary's channel (spec 4.4, 6.2). The contact's own deals follow it to the new

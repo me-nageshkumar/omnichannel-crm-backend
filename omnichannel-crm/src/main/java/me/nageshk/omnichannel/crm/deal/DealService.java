@@ -30,6 +30,7 @@ import me.nageshk.omnichannel.crm.common.Ref;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.company.CompanyCounters;
 import me.nageshk.omnichannel.crm.contact.Channel;
+import me.nageshk.omnichannel.crm.contact.ChannelService;
 import me.nageshk.omnichannel.crm.contact.CrmContact;
 import me.nageshk.omnichannel.crm.contact.CrmContactService;
 import me.nageshk.omnichannel.crm.deal.dto.CloseRequest;
@@ -102,7 +103,7 @@ public class DealService {
     }
 
     /** @throws NotFoundException when missing, of another brand, or in a pipeline outside the caller's access */
-    CrmDeal load(CrmContext ctx, String id) {
+    public CrmDeal load(CrmContext ctx, String id) {
         CrmDeal d = repository.findByIdAndWorkspaceId(id, ctx.workspaceId()).orElse(null);
         if (d == null || !ctx.pipelines().allows(d.getPipelineId())) throw new NotFoundException("Deal not found");
         return d;
@@ -596,6 +597,10 @@ public class DealService {
         long removed = mongo.remove(new Query(Criteria.where("_id").is(id).and("workspaceId").is(ctx.workspaceId())),
                 CrmDeal.class).getDeletedCount();
         if (removed == 0) throw new NotFoundException("Deal not found");
+        // its tasks and notes go with it (Ruling B4: by collection name)
+        Query followUps = new Query(Criteria.where("workspaceId").is(ctx.workspaceId())
+                .and("target.type").is(TargetType.DEAL.name()).and("target.id").is(id));
+        for (String collection : ChannelService.FOLLOW_UPS) mongo.remove(followUps, collection);
         placement.recompute(ctx.workspaceId(), Placement.contactsOf(deal),
                 deal.getCompanyId() == null ? List.of() : List.of(deal.getCompanyId()));
     }

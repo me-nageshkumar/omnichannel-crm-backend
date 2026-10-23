@@ -26,6 +26,7 @@ import me.nageshk.omnichannel.crm.company.dto.CompanyRequest;
 import me.nageshk.omnichannel.crm.company.dto.CompanySearchRequest;
 import me.nageshk.omnichannel.crm.company.dto.CompanySummaryView;
 import me.nageshk.omnichannel.crm.company.dto.CompanyView;
+import me.nageshk.omnichannel.crm.contact.ChannelService;
 import me.nageshk.omnichannel.crm.contact.CrmContactService;
 import me.nageshk.omnichannel.crm.deal.DealService;
 import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
@@ -194,6 +195,10 @@ public class CrmCompanyService {
         mongo.updateMulti(new Query(Criteria.where("workspaceId").is(ws).and("companyId").is(id)),
                 new Update().unset("companyId"), CompanyCounters.CONTACTS);
         mongo.remove(new Query(Criteria.where("_id").is(id).and("workspaceId").is(ws)), CrmCompany.class);
+        // its tasks and notes go with it (Ruling B4: by collection name)
+        Query followUps = new Query(Criteria.where("workspaceId").is(ws).and("target.type")
+                .is(TargetType.COMPANY.name()).and("target.id").is(id));
+        for (String collection : ChannelService.FOLLOW_UPS) mongo.remove(followUps, collection);
     }
 
     static RuntimeException versionConflict() {

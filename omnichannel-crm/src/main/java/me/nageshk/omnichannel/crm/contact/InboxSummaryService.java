@@ -10,6 +10,8 @@ import me.nageshk.omnichannel.crm.deal.dto.DealSearchRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealView;
 import me.nageshk.omnichannel.crm.platform.ChatDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformChat;
+import me.nageshk.omnichannel.crm.task.TaskService;
+import me.nageshk.omnichannel.crm.task.dto.TaskView;
 import org.springframework.stereotype.Service;
 
 /** The inbox panel's view of a chat: may the caller capture it, and what the CRM knows of its contact. */
@@ -20,8 +22,11 @@ public class InboxSummaryService {
     private final CaptureService capture;
     private final CrmContactService contacts;
     private final DealService deals;
+    private final TaskService tasks;
 
-    InboxSummaryService(ChatDirectory chats, CaptureService capture, CrmContactService contacts, DealService deals) {
+    InboxSummaryService(ChatDirectory chats, CaptureService capture, CrmContactService contacts, DealService deals,
+            TaskService tasks) {
+        this.tasks = tasks;
         this.chats = chats;
         this.capture = capture;
         this.contacts = contacts;
@@ -38,11 +43,13 @@ public class InboxSummaryService {
         CrmContact contact = contacts.findVisible(ctx, chat.contactId(), chat.phoneNumberId()).orElse(null);
         CrmContactView view = null;
         List<DealView> open = List.of();
+        TaskView next = null;
         if (contact != null) {
             view = contacts.view(ctx, contact);
             open = deals.search(ctx, new DealSearchRequest(null, null, "OPEN", null, null, contact.getId(), null, null,
                     null, 0, 200)).items();
+            next = tasks.nextFor(ctx, contact.getId(), open.stream().map(DealView::id).toList());
         }
-        return new InboxSummaryView(chat.id(), blocked == null, blocked, view, open, null);
+        return new InboxSummaryView(chat.id(), blocked == null, blocked, view, open, next);
     }
 }
