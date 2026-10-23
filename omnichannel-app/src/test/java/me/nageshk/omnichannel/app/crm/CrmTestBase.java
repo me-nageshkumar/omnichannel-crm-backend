@@ -184,6 +184,18 @@ public abstract class CrmTestBase {
         }
     }
 
+    /** Assigns the pipelines to the user (replacing any earlier assignment), as {@code manager}. */
+    void assignPipelines(User u, String... pipelineIds) {
+        try {
+            send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
+                    crm() + "/users/" + u.getId() + "/pipelines"), managerToken,
+                    java.util.Map.of("pipelineIds", List.of(pipelineIds)))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     String crm() {
         return "/api/workspaces/" + brand.getId() + "/crm";
     }

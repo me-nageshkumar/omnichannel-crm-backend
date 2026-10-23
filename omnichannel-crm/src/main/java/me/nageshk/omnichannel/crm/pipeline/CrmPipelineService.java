@@ -9,6 +9,7 @@ import java.util.UUID;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.crm.access.CrmContext;
+import me.nageshk.omnichannel.crm.access.PipelineAccessService;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.pipeline.dto.PipelineRequest;
 import me.nageshk.omnichannel.crm.pipeline.dto.StageRequest;
@@ -33,9 +34,11 @@ public class CrmPipelineService {
     private final MongoTemplate mongo;
     private final CrmSettingsService settings;
     private final DealPlacement deals;
+    private final PipelineAccessService access;
 
     CrmPipelineService(CrmPipelineRepository repository, MongoTemplate mongo, CrmSettingsService settings,
-            DealPlacement deals) {
+            DealPlacement deals, PipelineAccessService access) {
+        this.access = access;
         this.repository = repository;
         this.mongo = mongo;
         this.settings = settings;
@@ -201,7 +204,7 @@ public class CrmPipelineService {
         }
         if (held > 0) deals.relocatePipeline(ctx, id, moveDealsToPipelineId);
         mongo.remove(new Query(inBrand(ctx.workspaceId()).and("_id").is(id)), CrmPipeline.class);
-        // Task 6 also removes the id from every user's pipeline assignment here.
+        access.removePipeline(ctx.workspaceId(), id);
         boolean wasDefault = Boolean.TRUE.equals(pipeline.getIsDefault());
         if (wasDefault || id.equals(ctx.settings().getDefaultPipelineId())) {
             List<CrmPipeline> rest = oldestFirst(ctx.workspaceId());
