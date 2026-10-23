@@ -34,8 +34,9 @@ packages start with its own name (`me.nageshk.omnichannel.<module>.<feature>`, e
 | `omnichannel-service` | Business services, listeners, schedulers, demo data, the page scripts served to the extension |
 | `omnichannel-app` | `OmnichannelApplication` (root package, so scanning covers every module), REST controllers, the extension's WebSocket bridge, `application.yml`; tests that start Spring live here |
 
-Stored documents carry their class name in `_class`; `ClassAliasRenames` rewrites names from before
-the split (`me.nageshk.omnichannel.contact.Contact`) on start.
+Stored documents carry their class name in `_class`. Names from before the split
+(`me.nageshk.omnichannel.contact.Contact`) still load, except inside advanced-filter rule trees, where the name picks
+the type; `ClassAliasRenames` rewrites those on start.
 
 ## Run
 

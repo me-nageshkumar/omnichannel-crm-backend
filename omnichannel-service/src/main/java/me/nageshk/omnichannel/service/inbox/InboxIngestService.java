@@ -314,7 +314,7 @@ public class InboxIngestService {
     }
 
     /** A label for body-less or non-text types, else the first 120 characters of the body (the caption). */
-    public static String preview(String type, String body, String filename) {
+    static String preview(String type, String body, String filename) {
         if (!labelFirst(type) && body != null && !body.isBlank()) {
             if (body.codePointCount(0, body.length()) <= PREVIEW_LENGTH) return body;
             return body.substring(0, body.offsetByCodePoints(0, PREVIEW_LENGTH));

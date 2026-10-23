@@ -7,7 +7,7 @@ import java.time.ZoneId;
 import me.nageshk.omnichannel.db.campaign.CampaignSettings;
 
 /** The arithmetic of warm-up, caps, gaps and the sending window; pure, so it needs no database. */
-public final class SenderPolicy {
+final class SenderPolicy {
 
     static final int ACTIVE_FROM_DAY = 31;
 
@@ -15,11 +15,11 @@ public final class SenderPolicy {
     }
 
     /** The sender's age in sending days, counting today. */
-    public static int ageDay(int sendingDays, LocalDate lastSendingDay, LocalDate today) {
+    static int ageDay(int sendingDays, LocalDate lastSendingDay, LocalDate today) {
         return sendingDays - (today.equals(lastSendingDay) ? 1 : 0) + 1;
     }
 
-    public static int cap(int ageDay, boolean lowReplyRate, CampaignSettings s) {
+    static int cap(int ageDay, boolean lowReplyRate, CampaignSettings s) {
         int base;
         if (ageDay >= ACTIVE_FROM_DAY) {
             base = lowReplyRate ? s.getMatureCap() : s.getHealthyCap();
@@ -31,7 +31,7 @@ public final class SenderPolicy {
         return lowReplyRate ? Math.max(1, base / 2) : base;
     }
 
-    public static int gapSeconds(boolean skip, boolean halfPace, CampaignSettings s, PacingRandom r) {
+    static int gapSeconds(boolean skip, boolean halfPace, CampaignSettings s, PacingRandom r) {
         int min = skip ? s.getSkipGapMinSeconds() : s.getGapMinSeconds();
         int max = skip ? s.getSkipGapMaxSeconds() : s.getGapMaxSeconds();
         int factor = halfPace ? 2 : 1;
@@ -42,21 +42,21 @@ public final class SenderPolicy {
         return ZoneId.of(s.getTimezone());
     }
 
-    public static LocalDate today(CampaignSettings s, Instant now) {
+    static LocalDate today(CampaignSettings s, Instant now) {
         return now.atZone(zone(s)).toLocalDate();
     }
 
     /** The next local midnight. */
-    public static Instant endOfDay(CampaignSettings s, Instant now) {
+    static Instant endOfDay(CampaignSettings s, Instant now) {
         return today(s, now).plusDays(1).atStartOfDay(zone(s)).toInstant();
     }
 
     /** The last local midnight. */
-    public static Instant startOfDay(CampaignSettings s, Instant now) {
+    static Instant startOfDay(CampaignSettings s, Instant now) {
         return today(s, now).atStartOfDay(zone(s)).toInstant();
     }
 
-    public static boolean inWindow(CampaignSettings s, Instant now) {
+    static boolean inWindow(CampaignSettings s, Instant now) {
         var local = now.atZone(zone(s));
         if (!s.getWorkingDays().contains(local.getDayOfWeek())) return false;
         LocalTime time = local.toLocalTime();
@@ -64,7 +64,7 @@ public final class SenderPolicy {
     }
 
     /** When sending starts on {@code day}: the window opens, plus the sender's random offset. */
-    public static Instant dayStartsAt(CampaignSettings s, LocalDate day, int offsetMinutes) {
+    static Instant dayStartsAt(CampaignSettings s, LocalDate day, int offsetMinutes) {
         return day.atTime(LocalTime.parse(s.getStartTime())).plusMinutes(offsetMinutes).atZone(zone(s)).toInstant();
     }
 }

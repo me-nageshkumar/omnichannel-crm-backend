@@ -44,31 +44,35 @@ class ClassAliasRenamesIT {
                 .append("_class", OLD + "contact.advanced.Rule");
     }
 
+    private ObjectId insertAdvancedFilter(Document rules) {
+        ObjectId id = new ObjectId();
+        mongo.getCollection("contactFilters").insertOne(new Document("_id", id).append("workspaceId", "w1")
+                .append("name", "Old " + id).append("nameKey", "old " + id).append("kind", "ADVANCED")
+                .append("rules", rules).append("_class", OLD + "contact.ContactFilter"));
+        return id;
+    }
+
     @Test
-    void rewritesTopLevelHintsFromTheOldPackage() {
+    void leavesTopLevelHintsAloneBecauseTheyStillLoad() {
         ObjectId id = new ObjectId();
         mongo.getCollection("contactNotes").insertOne(new Document("_id", id).append("workspaceId", "w1")
                 .append("text", "hello").append("_class", OLD + "contact.ContactNote"));
 
-        aliases.migrate();
+        assertThat(aliases.migrate()).isZero();
 
-        assertThat(storedClass("contactNotes", id)).isEqualTo(ContactNote.class.getName());
+        assertThat(storedClass("contactNotes", id)).isEqualTo(OLD + "contact.ContactNote");
+        assertThat(mongo.findById(id, ContactNote.class).getText()).isEqualTo("hello");
     }
 
     @Test
     void rewritesTheRuleTreeOfAnAdvancedFilterSoItLoads() {
-        ObjectId id = new ObjectId();
         Document nested = new Document("combinator", "or").append("not", false)
                 .append("rules", List.of(rule("name", "b"))).append("_class", OLD + "contact.advanced.RuleGroup");
-        mongo.getCollection("contactFilters").insertOne(new Document("_id", id).append("workspaceId", "w1")
-                .append("name", "Old").append("nameKey", "old").append("kind", "ADVANCED")
-                .append("rules", new Document("combinator", "and").append("not", false)
-                        .append("rules", List.of(rule("name", "a"), nested)))
-                .append("_class", OLD + "contact.ContactFilter"));
+        ObjectId id = insertAdvancedFilter(new Document("combinator", "and").append("not", false)
+                .append("rules", List.of(rule("name", "a"), nested)));
 
-        aliases.migrate();
+        assertThat(aliases.migrate()).isEqualTo(1);
 
-        assertThat(storedClass("contactFilters", id)).isEqualTo(ContactFilter.class.getName());
         RuleGroup rules = filters.findById(id.toHexString()).orElseThrow().getRules();
         assertThat(rules.rules()).hasSize(2);
         assertThat(rules.rules().get(0)).isEqualTo(new Rule("name", "equals", "a"));
@@ -79,24 +83,27 @@ class ClassAliasRenamesIT {
 
     @Test
     void aSecondRunChangesNothing() {
-        mongo.getCollection("contactNotes").insertOne(new Document("_id", new ObjectId()).append("workspaceId", "w1")
-                .append("text", "hello").append("_class", OLD + "contact.ContactNote"));
+        insertAdvancedFilter(new Document("combinator", "and").append("not", false)
+                .append("rules", List.of(rule("name", "a"))));
 
         assertThat(aliases.migrate()).isEqualTo(1);
         assertThat(aliases.migrate()).isZero();
     }
 
     @Test
-    void leavesCurrentAndForeignHintsAlone() {
-        ObjectId current = new ObjectId();
-        ObjectId foreign = new ObjectId();
-        mongo.getCollection("contactNotes").insertMany(List.of(
-                new Document("_id", current).append("workspaceId", "w1").append("_class", ContactNote.class.getName()),
-                new Document("_id", foreign).append("workspaceId", "w1").append("_class", "com.example.Note")));
+    void leavesCurrentAndForeignNestedHintsAlone() {
+        ObjectId id = insertAdvancedFilter(new Document("combinator", "and").append("not", false)
+                .append("rules", List.of(
+                        new Document("field", "name").append("operator", "equals").append("value", "a")
+                                .append("_class", Rule.class.getName()),
+                        new Document("field", "name").append("operator", "equals").append("value", "b")
+                                .append("_class", "com.example.Rule"))));
 
         assertThat(aliases.migrate()).isZero();
 
-        assertThat(storedClass("contactNotes", current)).isEqualTo(ContactNote.class.getName());
-        assertThat(storedClass("contactNotes", foreign)).isEqualTo("com.example.Note");
+        List<Document> stored = mongo.getCollection("contactFilters").find(new Document("_id", id)).first()
+                .get("rules", Document.class).getList("rules", Document.class);
+        assertThat(stored).extracting(d -> d.getString("_class"))
+                .containsExactly(Rule.class.getName(), "com.example.Rule");
     }
 }

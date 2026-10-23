@@ -6,25 +6,26 @@ import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.mapping.MongoPersistentEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ClassUtils;
 
 /**
  * Rewrites the {@code _class} type hints stored before the code moved into modules, from the old package
- * ({@code me.nageshk.omnichannel.contact.Contact}) to the current one ({@code me.nageshk.omnichannel.db.contact.Contact}).
+ * ({@code me.nageshk.omnichannel.contact.advanced.Rule}) to the current one
+ * ({@code me.nageshk.omnichannel.db.contact.advanced.Rule}), in fields whose values are typed only by their hint.
  *
- * <p>A stale hint on a document is harmless (Spring Data falls back to the declared type), but the members of an
- * advanced filter's rule tree are typed only by their hint, so such a filter no longer loads until its tree is
- * rewritten. Run by {@link CollectionRenames} after the collection renames, before the web server, the schedulers and
- * the seeders start. Hints already current, or naming no class of this application, are left alone.
+ * <p>Only such polymorphic fields are rewritten: an advanced filter's rule tree no longer loads until its members carry
+ * current hints. Every other stale hint, on a document or a concrete nested value, is left as stored, since Spring Data
+ * falls back to the declared type; rewriting them would mean scanning every collection on every start. Run by
+ * {@link CollectionRenames} after the collection renames, before the web server, the schedulers and the seeders start.
+ * Hints already current, or naming no class of this application, are left alone.
  */
 @Slf4j
 @Component
 public class ClassAliasRenames {
 
     private static final String BASE = "me.nageshk.omnichannel.";
-    /** Every persistent class lives in the db module, so its old name is its current one without this segment. */
+    /** Every persistent class lives in the db module, so its current name is its old one with this segment added. */
     private static final String MODULE = "db.";
     /** Collection → field holding values whose subtype is known only from their hint. */
     private static final Map<String, String> POLYMORPHIC = Map.of("contactFilters", "rules");
@@ -38,17 +39,6 @@ public class ClassAliasRenames {
     /** Returns how many documents changed. */
     public long migrate() {
         long changed = 0;
-        for (MongoPersistentEntity<?> entity : mongo.getConverter().getMappingContext().getPersistentEntities()) {
-            if (!entity.isAnnotationPresent(org.springframework.data.mongodb.core.mapping.Document.class)) continue;
-            String current = entity.getType().getName();
-            String old = oldName(current);
-            if (old == null) continue;
-            long n = mongo.getCollection(entity.getCollection())
-                    .updateMany(new Document("_class", old), new Document("$set", new Document("_class", current)))
-                    .getModifiedCount();
-            if (n > 0) log.info("updated the type hint of {} documents in {} to {}", n, entity.getCollection(), current);
-            changed += n;
-        }
         for (var e : POLYMORPHIC.entrySet()) {
             changed += rewriteNested(e.getKey(), e.getValue());
         }
@@ -85,11 +75,6 @@ public class ClassAliasRenames {
             for (Object child : list) changed |= rewrite(child);
         }
         return changed;
-    }
-
-    /** The old name of a class in the db module, or null for a class outside it. */
-    private static String oldName(String current) {
-        return current.startsWith(BASE + MODULE) ? BASE + current.substring((BASE + MODULE).length()) : null;
     }
 
     /** The current name for an old hint, when the hint is old and the class exists under the db module. */

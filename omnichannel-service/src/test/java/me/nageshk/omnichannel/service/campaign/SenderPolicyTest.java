@@ -1,17 +1,27 @@
-package me.nageshk.omnichannel.app.campaign;
+package me.nageshk.omnichannel.service.campaign;
 
-import static me.nageshk.omnichannel.app.campaign.CampaignTestBase.WED_11_IST;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Map;
 import me.nageshk.omnichannel.db.campaign.CampaignSettings;
-import me.nageshk.omnichannel.service.campaign.CampaignSettingsService;
-import me.nageshk.omnichannel.service.campaign.SenderPolicy;
 import org.junit.jupiter.api.Test;
 
 class SenderPolicyTest {
+
+    /** Wednesday 11:00 in Asia/Kolkata, as in the campaign ITs. */
+    private static final Instant WED_11_IST = Instant.parse("2026-10-21T05:30:00Z");
+
+    /** Picks either bound of every range. */
+    private static final class FixedRandom extends PacingRandom {
+        boolean max = false;
+
+        @Override
+        public int seconds(int minInclusive, int maxInclusive) {
+            return max ? maxInclusive : minInclusive;
+        }
+    }
 
     private final CampaignSettings s = CampaignSettingsService.defaults("ws");
 
