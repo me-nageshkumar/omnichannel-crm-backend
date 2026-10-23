@@ -134,6 +134,34 @@ class CrmPipelinesApiIT extends CrmTestBase {
     }
 
     @Test
+    void updateKeepsAbsentRottingDaysAndZeroClearsThem() throws Exception {
+        enableCrm();
+        JsonNode p = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Rotting", "rottingDays", 10))
+                .andExpect(status().is2xxSuccessful()));
+        String id = p.get("id").asText();
+        assertThat(p.get("rottingDays").asInt()).isEqualTo(10);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", "Renamed");
+        send(put(crm() + "/pipelines/" + id), managerToken, body)
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.version").exists());
+        body.put("version", p.get("version").asLong());
+        JsonNode renamed = json(send(put(crm() + "/pipelines/" + id), managerToken, body).andExpect(status().isOk()));
+        assertThat(renamed.get("rottingDays").asInt()).isEqualTo(10);
+        body.put("version", renamed.get("version").asLong());
+        body.put("rottingDays", null);
+        JsonNode nulled = json(send(put(crm() + "/pipelines/" + id), managerToken, body).andExpect(status().isOk()));
+        assertThat(nulled.get("rottingDays").asInt()).isEqualTo(10);
+        body.put("version", nulled.get("version").asLong());
+        body.put("rottingDays", 0);
+        JsonNode cleared = json(send(put(crm() + "/pipelines/" + id), managerToken, body).andExpect(status().isOk()));
+        assertThat(cleared.get("rottingDays").isNull()).isTrue();
+        body.put("version", cleared.get("version").asLong());
+        body.put("rottingDays", 366);
+        send(put(crm() + "/pipelines/" + id), managerToken, body)
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.rottingDays").exists());
+    }
+
+    @Test
     void deactivatingTheDefaultIs400() throws Exception {
         enableCrm();
         JsonNode sales = list().get(0);

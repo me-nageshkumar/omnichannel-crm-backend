@@ -33,6 +33,7 @@ public class CrmPipelineService {
 
     /** The seeded pipeline's _id is derived from the brand, so two first requests racing collide and exactly one insert wins. */
     private static final String SEED_ID_PREFIX = "seed-sales-";
+    private static final String ROTTING_RULE = "must be between 1 and 365, or 0 for none";
 
     private final CrmPipelineRepository repository;
     private final MongoTemplate mongo;
@@ -147,7 +148,7 @@ public class CrmPipelineService {
         CrmPipeline p = base(ctx.workspaceId(), ctx.customerId(), ctx.userId());
         p.setName(name);
         p.setActive(active);
-        p.setRottingDays(req.rottingDays());
+        p.setRottingDays(req.rottingDays() == null || req.rottingDays() == 0 ? null : req.rottingDays());
         p.setStages(lanes);
         p.setIsDefault(makeDefault);
         CrmPipeline saved = repository.insert(p);
@@ -163,8 +164,8 @@ public class CrmPipelineService {
         if (req.version() == null) errors.put("version", "is required");
         if (req.name() == null || req.name().isBlank()) errors.put("name", "must not be blank");
         else if (req.name().trim().length() > 100) errors.put("name", "must be at most 100 characters");
-        if (req.rottingDays() != null && (req.rottingDays() < 1 || req.rottingDays() > 365))
-            errors.put("rottingDays", "must be between 1 and 365");
+        if (req.rottingDays() != null && (req.rottingDays() < 0 || req.rottingDays() > 365))
+            errors.put("rottingDays", ROTTING_RULE);
         boolean wasDefault = Boolean.TRUE.equals(current.getIsDefault());
         boolean active = req.active() == null ? current.isActive() : req.active();
         boolean isDefault = req.isDefault() == null ? wasDefault : req.isDefault();
@@ -174,8 +175,12 @@ public class CrmPipelineService {
                     : "an inactive pipeline cannot be the default");
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
-        Update u = new Update().set("name", req.name().trim()).set("active", active)
-                .set("rottingDays", req.rottingDays()).set("isDefault", isDefault);
+        Update u = new Update().set("name", req.name().trim()).set("active", active).set("isDefault", isDefault);
+        // absent (or null) keeps the stored value; 0 switches rotting off for this pipeline
+        if (req.rottingDays() != null) {
+            if (req.rottingDays() == 0) u.unset("rottingDays");
+            else u.set("rottingDays", req.rottingDays());
+        }
         CrmPipeline saved = guarded(ctx, id, req.version(), u);
         if (isDefault && !wasDefault) promote(ctx, id);
         changed(ctx, id, "Updated pipeline " + saved.getName());
@@ -222,7 +227,7 @@ public class CrmPipelineService {
             Optional<CrmPipeline> next = rest.stream().filter(CrmPipeline::isActive).findFirst()
                     .or(() -> rest.stream().findFirst());
             if (next.isPresent()) {
-                mongo.updateFirst(new Query(Criteria.where("_id").is(next.get().getId())),
+                mongo.updateFirst(new Query(inBrand(ctx.workspaceId()).and("_id").is(next.get().getId())),
                         new Update().set("isDefault", true).set("lastModifiedBy", ctx.userId())
                                 .set("lastUpdateTime", Instant.now()).inc("version", 1),
                         CrmPipeline.class);
@@ -252,7 +257,8 @@ public class CrmPipelineService {
                 new Update().set("isDefault", false).set("lastModifiedBy", ctx.userId())
                         .set("lastUpdateTime", Instant.now()).inc("version", 1),
                 CrmPipeline.class);
-        mongo.updateFirst(new Query(Criteria.where("_id").is(id)), new Update().set("isDefault", true), CrmPipeline.class);
+        mongo.updateFirst(new Query(inBrand(ctx.workspaceId()).and("_id").is(id)), new Update().set("isDefault", true),
+                CrmPipeline.class);
         settings.setDefaultPipeline(ctx.workspaceId(), id, ctx.userId());
     }
 
@@ -262,7 +268,8 @@ public class CrmPipelineService {
                 new Query(inBrand(ctx.workspaceId()).and("_id").is(id).and("version").is(version)), update,
                 FindAndModifyOptions.options().returnNew(true), CrmPipeline.class);
         if (saved != null) return saved;
-        if (!repository.existsById(id)) throw new NotFoundException("Pipeline not found");
+        if (!mongo.exists(new Query(inBrand(ctx.workspaceId()).and("_id").is(id)), CrmPipeline.class))
+            throw new NotFoundException("Pipeline not found");
         throw versionConflict();
     }
 
@@ -285,6 +292,6 @@ public class CrmPipelineService {
     }
 
     private static void validateRotting(Integer days) {
-        if (days != null && (days < 1 || days > 365)) throw new ValidationException("rottingDays", "must be between 1 and 365");
+        if (days != null && (days < 0 || days > 365)) throw new ValidationException("rottingDays", ROTTING_RULE);
     }
 }

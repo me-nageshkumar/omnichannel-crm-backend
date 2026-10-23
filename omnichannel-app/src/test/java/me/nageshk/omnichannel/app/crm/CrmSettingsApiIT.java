@@ -118,6 +118,37 @@ class CrmSettingsApiIT extends CrmTestBase {
     }
 
     @Test
+    void picklistLabelColourAndSizeChecked() throws Exception {
+        Map<String, Object> body = editable();
+        List<Map<String, Object>> ind = list(body, "industries");
+        ind.add(new LinkedHashMap<>(Map.of("key", "a", "label", "x".repeat(61), "position", 1, "active", true,
+                "isDefault", false)));
+        ind.add(new LinkedHashMap<>(Map.of("key", "b", "label", "B", "color", "red", "position", 2, "active", true,
+                "isDefault", false)));
+        send(put(crm() + "/settings"), managerToken, body).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION"))
+                .andExpect(jsonPath("$.fields['industries[0].label']").exists())
+                .andExpect(jsonPath("$.fields['industries[1].color']").exists());
+        Map<String, Object> many = editable();
+        List<Map<String, Object>> big = list(many, "industries");
+        for (int i = 0; i < 101; i++) {
+            big.add(new LinkedHashMap<>(Map.of("key", "k" + i, "label", "K" + i, "position", i, "active", true,
+                    "isDefault", false)));
+        }
+        send(put(crm() + "/settings"), managerToken, many).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.industries").exists());
+        // a six-digit colour or none is fine
+        Map<String, Object> fine = editable();
+        Map<String, Object> noColour = new LinkedHashMap<>(Map.of("key", "c", "label", "C", "position", 1,
+                "active", true, "isDefault", false));
+        noColour.put("color", null);
+        list(fine, "industries").add(noColour);
+        list(fine, "industries").add(new LinkedHashMap<>(Map.of("key", "d", "label", "D", "color", "#A0b1C2",
+                "position", 2, "active", true, "isDefault", false)));
+        send(put(crm() + "/settings"), managerToken, fine).andExpect(status().isOk());
+    }
+
+    @Test
     void agentCannotUpdate() throws Exception {
         Map<String, Object> body = editable();
         send(put(crm() + "/settings"), agentToken, body).andExpect(status().isForbidden());

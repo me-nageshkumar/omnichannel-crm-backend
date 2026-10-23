@@ -19,6 +19,8 @@ public final class StageRules {
 
     static final double POSITION_GAP = 1024.0;
     static final int MAX_NAME = 60;
+    static final int MAX_STAGES = 30;
+    private static final java.util.regex.Pattern COLOR = java.util.regex.Pattern.compile("^#[0-9a-fA-F]{6}$");
 
     /** The new lanes (positions 1024·n in list order) and, per removed lane that holds deals, where they go. */
     public record Plan(List<CrmStage> stages, Map<String, String> moves) {}
@@ -37,6 +39,7 @@ public final class StageRules {
         if (requested == null || requested.isEmpty()) {
             throw new ValidationException("stages", "needs at least one OPEN stage");
         }
+        if (requested.size() > MAX_STAGES) throw new ValidationException("stages", "at most " + MAX_STAGES + " stages");
         Map<String, CrmStage> stored = new HashMap<>();
         existing.forEach(s -> stored.put(s.getId(), s));
 
@@ -65,6 +68,8 @@ public final class StageRules {
             if (r.probability() != null && (r.probability() < 0 || r.probability() > 100))
                 errors.put(at + ".probability", "must be between 0 and 100");
             if (r.wipLimit() != null && r.wipLimit() < 0) errors.put(at + ".wipLimit", "must be 0 or more");
+            if (r.color() != null && !COLOR.matcher(r.color()).matches())
+                errors.put(at + ".color", "must be #rrggbb or null");
             CrmStage s = new CrmStage();
             s.setId(id ? r.id() : UUID.randomUUID().toString());
             s.setName(name);

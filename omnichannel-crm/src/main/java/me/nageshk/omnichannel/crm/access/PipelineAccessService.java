@@ -13,6 +13,7 @@ import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.access.dto.UserPipelinesView;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -65,8 +66,12 @@ public class PipelineAccessService implements PipelineAccessReader {
                 .set("lastUpdateTime", now).inc("version", 1)
                 .setOnInsert("customerId", ctx.customerId()).setOnInsert("createdBy", ctx.userId())
                 .setOnInsert("creationTime", now);
-        mongo.findAndModify(query(ctx.workspaceId(), userId), update,
-                FindAndModifyOptions.options().upsert(true).returnNew(true), CrmPipelineAccess.class);
+        try {
+            upsert(ctx.workspaceId(), userId, update);
+        } catch (DuplicateKeyException raced) {
+            // two first assignments upserted at once and the other insert won: now it is a plain update
+            upsert(ctx.workspaceId(), userId, update);
+        }
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("userId", userId);
         payload.put("pipelineIds", ids);
@@ -79,6 +84,11 @@ public class PipelineAccessService implements PipelineAccessReader {
     public void removePipeline(String workspaceId, String pipelineId) {
         mongo.updateMulti(new Query(Criteria.where("workspaceId").is(workspaceId).and("pipelineIds").is(pipelineId)),
                 new Update().pull("pipelineIds", pipelineId), CrmPipelineAccess.class);
+    }
+
+    private void upsert(String workspaceId, String userId, Update update) {
+        mongo.findAndModify(query(workspaceId, userId), update,
+                FindAndModifyOptions.options().upsert(true).returnNew(true), CrmPipelineAccess.class);
     }
 
     private void requireBrandUser(CrmContext ctx, String userId) {

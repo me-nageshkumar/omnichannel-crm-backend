@@ -55,6 +55,10 @@ public class CrmSettingsService {
     }
 
     private static final Pattern KEY = Pattern.compile("^[a-z][a-z0-9_]{0,39}$");
+    /** A colour is {@code #rrggbb} or absent. */
+    private static final Pattern COLOR = Pattern.compile("^#[0-9a-fA-F]{6}$");
+    static final int MAX_LABEL = 60;
+    static final int MAX_ITEMS = 100;
 
     public Optional<CrmSettings> find(String workspaceId) {
         return repository.findByWorkspaceId(workspaceId);
@@ -107,7 +111,12 @@ public class CrmSettingsService {
         return s;
     }
 
-    /** Switches the brand's CRM on without limits for a non-user caller such as the demo seeder; no audit row. */
+    /**
+     * Switches the brand's CRM on without limits for a non-user caller such as the demo seeder; no audit row.
+     *
+     * <p>Seeders and jobs only: it skips the {@code crm:enable} check and the audit of {@link #setSwitch}, so it must
+     * never be reachable from a request.
+     */
     public CrmSettings enableForSystem(String workspaceId, String customerId) {
         CrmSettings s = getOrCreate(workspaceId, customerId, "system");
         s.setEnabled(true);
@@ -183,6 +192,7 @@ public class CrmSettingsService {
             errors.put(name, "is required");
             return;
         }
+        if (items.size() > MAX_ITEMS) errors.put(name, "has more than " + MAX_ITEMS + " items");
         Set<String> seen = new HashSet<>();
         int defaults = 0;
         for (int i = 0; i < items.size(); i++) {
@@ -198,9 +208,13 @@ public class CrmSettingsService {
                 errors.put(at + ".key", "is duplicated");
             }
             if (it.label() == null || it.label().isBlank()) errors.put(at + ".label", "must not be blank");
+            else if (it.label().trim().length() > MAX_LABEL)
+                errors.put(at + ".label", "must be at most " + MAX_LABEL + " characters");
+            if (it.color() != null && !COLOR.matcher(it.color()).matches())
+                errors.put(at + ".color", "must be #rrggbb or null");
             if (it.isDefault()) defaults++;
         }
-        if (defaults > 1) errors.put(name, "has more than one default");
+        if (defaults > 1) errors.putIfAbsent(name, "has more than one default");
         for (PicklistItem old : stored) {
             if (!seen.contains(old.key())) {
                 errors.putIfAbsent(name, "may not drop '" + old.key() + "'; deactivate it instead");

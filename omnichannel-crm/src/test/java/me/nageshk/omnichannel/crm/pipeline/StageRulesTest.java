@@ -82,4 +82,26 @@ class StageRulesTest {
                 .isInstanceOfSatisfying(ValidationException.class,
                         e -> assertThat(e.fields()).containsKey("stages.b.moveToStageId"));
     }
+
+    @Test
+    void colourMustBeSixDigitHexOrAbsent() {
+        StageRequest red = new StageRequest(null, "A", "red", null, StageType.OPEN, null, null);
+        StageRequest shortHex = new StageRequest(null, "B", "#fff", null, StageType.OPEN, null, null);
+        assertThatThrownBy(() -> StageRules.validate(List.of(red, shortHex), List.of(), id -> 0))
+                .isInstanceOfSatisfying(ValidationException.class, e -> assertThat(e.fields())
+                        .containsKeys("stages[0].color", "stages[1].color"));
+        StageRules.Plan ok = StageRules.validate(List.of(new StageRequest(null, "A", "#A0b1C2", null, StageType.OPEN,
+                null, null), lane(null, "B", StageType.OPEN)), List.of(), id -> 0);
+        assertThat(ok.stages()).extracting(CrmStage::getColor).containsExactly("#A0b1C2", null);
+    }
+
+    @Test
+    void atMostThirtyLanes() {
+        List<StageRequest> many = new java.util.ArrayList<>();
+        for (int i = 0; i < 31; i++) many.add(lane(null, "L" + i, StageType.OPEN));
+        assertThatThrownBy(() -> StageRules.validate(many, List.of(), id -> 0))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.fields()).containsKey("stages"));
+        assertThat(StageRules.validate(many.subList(0, 30), List.of(), id -> 0).stages()).hasSize(30);
+    }
 }
