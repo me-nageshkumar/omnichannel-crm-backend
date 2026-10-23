@@ -55,6 +55,9 @@ class CrmStatusApiIT extends CrmTestBase {
                 .andExpect(jsonPath("$.code").value("CRM_NOT_ENABLED"));
         send(get(crm() + "/pipelines"), managerToken, null).andExpect(status().isPaymentRequired())
                 .andExpect(jsonPath("$.code").value("CRM_NOT_ENABLED"));
+        send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(crm() + "/contacts/search"),
+                managerToken, Map.of()).andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.code").value("CRM_NOT_ENABLED"));
         send(get(crm() + "/status"), managerToken, null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.enabled").value(false));
     }
