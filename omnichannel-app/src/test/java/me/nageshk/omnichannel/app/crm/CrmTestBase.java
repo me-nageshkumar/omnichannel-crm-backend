@@ -200,6 +200,36 @@ public abstract class CrmTestBase {
         return "/api/workspaces/" + brand.getId() + "/crm";
     }
 
+    /** The id of the seeded default pipeline of {@code brand}. */
+    String salesId() {
+        return "seed-sales-" + brand.getId();
+    }
+
+    /** Captures a fresh chat of the contact on the number as {@code manager}; the capture result. */
+    JsonNode captured(Contact c, PhoneNumber n) throws Exception {
+        WaWebChat chat = chat(c, n, null, null);
+        return json(send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(
+                crm() + "/contacts/capture"), managerToken, java.util.Map.of("chatId", chat.getId()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()));
+    }
+
+    /** Stage ids of the pipeline by name, in lane order (read as {@code manager}). */
+    java.util.Map<String, String> stages(String pipelineId) throws Exception {
+        JsonNode p = json(send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                crm() + "/pipelines/" + pipelineId), managerToken, null)
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()));
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (JsonNode s : p.get("stages")) out.put(s.get("name").asText(), s.get("id").asText());
+        return out;
+    }
+
+    /** {@code POST /crm/deals} as {@code manager}, expecting success. */
+    JsonNode createDeal(java.util.Map<String, Object> body) throws Exception {
+        return json(send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(crm() + "/deals"),
+                managerToken, body)
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()));
+    }
+
     ResultActions send(MockHttpServletRequestBuilder req, String token, Object body) throws Exception {
         if (token != null) req = req.header("Authorization", "Bearer " + token);
         if (body != null) req = req.contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body));

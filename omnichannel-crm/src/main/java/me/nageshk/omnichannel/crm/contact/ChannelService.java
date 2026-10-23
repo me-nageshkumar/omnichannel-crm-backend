@@ -2,9 +2,12 @@ package me.nageshk.omnichannel.crm.contact;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import me.nageshk.omnichannel.common.api.ForbiddenException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
@@ -38,12 +41,14 @@ public class ChannelService {
     private final ChatDirectory chats;
     private final ContactDirectory contactDirectory;
     private final CrmContactService contactService;
+    private final ContactCounters counters;
     private final ActivityLog activities;
     private final Clock clock;
 
     ChannelService(MongoTemplate mongo, ChatDirectory chats, ContactDirectory contactDirectory,
-            CrmContactService contactService, ActivityLog activities, Clock clock) {
+            CrmContactService contactService, ContactCounters counters, ActivityLog activities, Clock clock) {
         this.mongo = mongo;
+        this.counters = counters;
         this.chats = chats;
         this.contactDirectory = contactDirectory;
         this.contactService = contactService;
@@ -106,11 +111,9 @@ public class ChannelService {
             throw taken();
         }
         if (saved == null) throw CrmContactService.versionConflict();
-        // the deals follow the contact (deals are read by collection name until the deal service exists)
-        mongo.updateMulti(new Query(Criteria.where("workspaceId").is(ctx.workspaceId())
-                        .and("primaryCrmContactId").is(id)),
-                new Update().set("channel", new Document("phoneNumberId", target.id()).append("number", target.number())),
-                ContactCounters.DEALS);
+        Set<String> unlinked = keepDealsOnOneChannel(ctx.workspaceId(), id, target);
+        unlinked.add(id);
+        unlinked.forEach(c -> counters.recompute(ctx.workspaceId(), c));
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("from", from);
         payload.put("to", target.id());
@@ -118,6 +121,50 @@ public class ChannelService {
         activities.record(ctx, ActivityType.CHANNEL_CHANGED, new CrmTarget(TargetType.CONTACT, id), List.of(), null,
                 target.id(), "Moved to " + target.number(), payload);
         return contactService.view(ctx, saved);
+    }
+
+    /**
+     * Linked contacts share the primary's channel (spec 4.4, 6.2). The contact's own deals follow it to the new
+     * number and drop linked contacts that stay behind; deals of others where it is only linked drop it. No
+     * activity is recorded for the unlinking. Returns the contacts that lost a deal.
+     */
+    private Set<String> keepDealsOnOneChannel(String ws, String id, PlatformNumber target) {
+        Set<String> unlinked = new HashSet<>();
+        mongo.updateMulti(new Query(Criteria.where("workspaceId").is(ws).and("crmContactIds").is(id)
+                        .and("primaryCrmContactId").ne(id)),
+                new Update().pull("crmContactIds", id), ContactCounters.DEALS);
+        Query own = new Query(Criteria.where("workspaceId").is(ws).and("primaryCrmContactId").is(id));
+        own.fields().include("crmContactIds");
+        List<Document> deals = mongo.find(own, Document.class, ContactCounters.DEALS);
+        Set<String> others = new HashSet<>();
+        deals.forEach(d -> linkedOf(d).stream().filter(x -> !x.equals(id)).forEach(others::add));
+        Set<String> onTarget = new HashSet<>();
+        if (!others.isEmpty()) {
+            Query q = new Query(Criteria.where("workspaceId").is(ws).and("_id").in(others)
+                    .and("channel.phoneNumberId").is(target.id()));
+            q.fields().include("_id");
+            mongo.find(q, CrmContact.class).forEach(c -> onTarget.add(c.getId()));
+        }
+        Document channel = new Document("phoneNumberId", target.id()).append("number", target.number());
+        for (Document d : deals) {
+            List<String> keep = new ArrayList<>();
+            keep.add(id);
+            for (String x : linkedOf(d)) {
+                if (x.equals(id)) continue;
+                if (onTarget.contains(x)) keep.add(x);
+                else unlinked.add(x);
+            }
+            mongo.updateFirst(new Query(Criteria.where("_id").is(d.get("_id")).and("workspaceId").is(ws)),
+                    new Update().set("channel", channel).set("crmContactIds", keep), ContactCounters.DEALS);
+        }
+        return unlinked;
+    }
+
+    private static List<String> linkedOf(Document deal) {
+        Object ids = deal.get("crmContactIds");
+        List<String> out = new ArrayList<>();
+        if (ids instanceof List<?> l) l.stream().filter(java.util.Objects::nonNull).forEach(x -> out.add(x.toString()));
+        return out;
     }
 
     private static RuntimeException taken() {

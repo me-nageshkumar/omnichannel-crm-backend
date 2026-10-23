@@ -45,6 +45,9 @@ class CaptureApiIT extends CrmTestBase {
         JsonNode v = json(send(post(crm() + "/contacts/capture"), agentToken, capture(chat, sales))
                 .andExpect(status().isOk()));
         assertThat(v.get("createdContact").asBoolean()).isTrue();
+        assertThat(v.get("createdDeal").asBoolean()).isTrue();
+        assertThat(v.get("deal").get("pipelineId").asText()).isEqualTo(sales);
+        assertThat(v.get("deal").get("owner").get("id").asText()).isEqualTo(agent.getId());
         JsonNode k = v.get("contact");
         assertThat(k.get("contactId").asText()).isEqualTo(c.getId());
         assertThat(k.get("channel").get("phoneNumberId").asText()).isEqualTo(number.getId());
@@ -106,8 +109,12 @@ class CaptureApiIT extends CrmTestBase {
         JsonNode first = json(send(post(crm() + "/contacts/capture"), agentToken, capture(chat, sales)));
         JsonNode second = json(send(post(crm() + "/contacts/capture"), agentToken, capture(chat, sales))
                 .andExpect(status().isOk()));
+        assertThat(first.get("createdDeal").asBoolean()).isTrue();
         assertThat(second.get("createdContact").asBoolean()).isFalse();
+        assertThat(second.get("createdDeal").asBoolean()).isFalse();
+        assertThat(second.get("deal").get("id").asText()).isEqualTo(first.get("deal").get("id").asText());
         assertThat(second.get("contact").get("id").asText()).isEqualTo(first.get("contact").get("id").asText());
+        assertThat(mongo.count(new Query(Criteria.where("workspaceId").is(brand.getId())), "crmDeals")).isEqualTo(1);
         assertThat(stored()).isEqualTo(1);
     }
 
@@ -142,6 +149,8 @@ class CaptureApiIT extends CrmTestBase {
                 "firstName", "Bob", "lastName", "Builder", "pipelineId", sales);
         JsonNode v = json(send(post(crm() + "/contacts/create"), agentToken, body).andExpect(status().isOk()));
         assertThat(v.get("createdContact").asBoolean()).isTrue();
+        assertThat(v.get("createdDeal").asBoolean()).isTrue();
+        assertThat(v.get("deal").get("title").asText()).isEqualTo("Bob Builder deal");
         JsonNode k = v.get("contact");
         assertThat(k.get("origin").get("kind").asText()).isEqualTo("MANUAL");
         assertThat(k.get("name").asText()).isEqualTo("Bob Builder");
@@ -152,6 +161,8 @@ class CaptureApiIT extends CrmTestBase {
         // the same phone on the same number is the same CRM contact
         send(post(crm() + "/contacts/create"), agentToken, body).andExpect(status().isOk())
                 .andExpect(jsonPath("$.createdContact").value(false))
+                .andExpect(jsonPath("$.createdDeal").value(false))
+                .andExpect(jsonPath("$.deal.id").value(v.get("deal").get("id").asText()))
                 .andExpect(jsonPath("$.contact.id").value(k.get("id").asText()));
     }
 

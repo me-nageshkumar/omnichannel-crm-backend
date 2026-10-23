@@ -299,7 +299,7 @@ public class CrmContactService {
     }
 
     /** "first last" if set, else the live brand contact's name, else the snapshot, else the phone. */
-    static String name(CrmContact c, PlatformContact live) {
+    public static String name(CrmContact c, PlatformContact live) {
         String own = ((c.getFirstName() == null ? "" : c.getFirstName()) + " "
                 + (c.getLastName() == null ? "" : c.getLastName())).trim();
         if (!own.isEmpty()) return own;

@@ -27,6 +27,7 @@ import me.nageshk.omnichannel.crm.company.dto.CompanySearchRequest;
 import me.nageshk.omnichannel.crm.company.dto.CompanySummaryView;
 import me.nageshk.omnichannel.crm.company.dto.CompanyView;
 import me.nageshk.omnichannel.crm.contact.CrmContactService;
+import me.nageshk.omnichannel.crm.deal.DealService;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformPerson;
 import org.bson.types.Decimal128;
@@ -49,13 +50,15 @@ public class CrmCompanyService {
     private final MongoTemplate mongo;
     private final PeopleDirectory people;
     private final CrmContactService contacts;
+    private final DealService deals;
     private final CompanyCounters counters;
     private final ActivityLog activities;
     private final Clock clock;
 
-    CrmCompanyService(MongoTemplate mongo, PeopleDirectory people, CrmContactService contacts,
+    CrmCompanyService(MongoTemplate mongo, PeopleDirectory people, CrmContactService contacts, DealService deals,
             CompanyCounters counters, ActivityLog activities, Clock clock) {
         this.mongo = mongo;
+        this.deals = deals;
         this.people = people;
         this.contacts = contacts;
         this.counters = counters;
@@ -120,8 +123,8 @@ public class CrmCompanyService {
     public CompanySummaryView summary(CrmContext ctx, String id) {
         CrmCompany c = load(ctx, id);
         BigDecimal amount = counters.openAmount(ctx.workspaceId(), id, ctx.pipelines());
-        return new CompanySummaryView(views(List.of(c)).get(0), contacts.linkedTo(ctx, id), c.getContactCount(),
-                amount);
+        return new CompanySummaryView(views(List.of(c)).get(0), contacts.linkedTo(ctx, id),
+                deals.openDealsOfCompany(ctx, id), c.getContactCount(), amount);
     }
 
     public CompanyView create(CrmContext ctx, CompanyRequest req) {

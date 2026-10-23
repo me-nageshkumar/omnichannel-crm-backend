@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import me.nageshk.omnichannel.db.user.User;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 
@@ -114,8 +113,13 @@ class CrmPipelineAccessApiIT extends CrmTestBase {
     }
 
     @Test
-    @Disabled("Task 10")
     void removingAccessHidesDealsImmediately() throws Exception {
-        // Task 10: agent sees a deal; manager removes the assignment; agent's GET /deals/{id} and board -> 404.
+        String dealId = captured(contact("Alice", "919811111111"), number).get("deal").get("id").asString();
+        assignPipelines(agent, salesId);
+        send(get(crm() + "/deals/" + dealId), agentToken, null).andExpect(status().isOk());
+        send(get(crm() + "/deals/board?pipelineId=" + salesId), agentToken, null).andExpect(status().isOk());
+        send(put(url(agent)), managerToken, Map.of("pipelineIds", List.of())).andExpect(status().isOk());
+        send(get(crm() + "/deals/" + dealId), agentToken, null).andExpect(status().isNotFound());
+        send(get(crm() + "/deals/board?pipelineId=" + salesId), agentToken, null).andExpect(status().isNotFound());
     }
 }

@@ -18,6 +18,8 @@ import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureResult;
 import me.nageshk.omnichannel.crm.contact.dto.CreateRequest;
+import me.nageshk.omnichannel.crm.deal.CaptureDeal;
+import me.nageshk.omnichannel.crm.deal.DealService;
 import me.nageshk.omnichannel.crm.platform.ChatDirectory;
 import me.nageshk.omnichannel.crm.platform.ContactDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
@@ -40,12 +42,14 @@ public class CaptureService {
     private final PeopleDirectory people;
     private final PipelineIds pipelineIds;
     private final CrmContactService contactService;
+    private final DealService deals;
     private final ActivityLog activities;
     private final Clock clock;
 
     CaptureService(MongoTemplate mongo, ChatDirectory chats, ContactDirectory contactDirectory,
-            PeopleDirectory people, PipelineIds pipelineIds, CrmContactService contactService,
+            PeopleDirectory people, PipelineIds pipelineIds, CrmContactService contactService, DealService deals,
             ActivityLog activities, Clock clock) {
+        this.deals = deals;
         this.mongo = mongo;
         this.chats = chats;
         this.contactDirectory = contactDirectory;
@@ -60,6 +64,7 @@ public class CaptureService {
         ctx.require("crm:edit");
         requireAnyPipeline(ctx);
         if (req.chatId() == null || req.chatId().isBlank()) throw new ValidationException("chatId", "is required");
+        clean(req.dealTitle(), "dealTitle");
         PlatformChat chat = chats.find(ctx.workspaceId(), req.chatId())
                 .orElseThrow(() -> new NotFoundException("Chat not found"));
         if (!ctx.viewAll() && !assignedToMe(ctx, chat)) {
@@ -82,6 +87,7 @@ public class CaptureService {
         PlatformNumber channel = numberOf(ctx, req.phoneNumberId());
         String pipelineId = resolvePipeline(ctx, req.pipelineId());
         if (req.phone() == null || req.phone().isBlank()) throw new ValidationException("phone", "is required");
+        clean(req.dealTitle(), "dealTitle");
         String first = clean(req.firstName(), "firstName");
         String last = clean(req.lastName(), "lastName");
         String name = ((first == null ? "" : first) + " " + (last == null ? "" : last)).trim();
@@ -128,12 +134,13 @@ public class CaptureService {
                 created = false;
             }
         }
-        createDealForCapture(ctx, found, pipelineId, dealTitle);
-        return new CaptureResult(contactService.view(ctx, found), created);
+        CaptureDeal deal = deals.createForCapture(ctx, found, pipelineId, dealTitle);
+        // read again: the deal has changed the contact's counters and pipelines
+        CrmContact fresh = mongo.findOne(new Query(Criteria.where("_id").is(found.getId()).and("workspaceId").is(ws)),
+                CrmContact.class);
+        return new CaptureResult(contactService.view(ctx, fresh == null ? found : fresh), deal.deal(), created,
+                deal.created());
     }
-
-    /** Task 10: DealService.createForCapture(ctx, contact, pipelineId, dealTitle) goes here. */
-    private void createDealForCapture(CrmContext ctx, CrmContact contact, String pipelineId, String dealTitle) {}
 
     private static void requireAnyPipeline(CrmContext ctx) {
         if (!ctx.viewAll() && ctx.pipelines().pipelineIds().isEmpty()) {

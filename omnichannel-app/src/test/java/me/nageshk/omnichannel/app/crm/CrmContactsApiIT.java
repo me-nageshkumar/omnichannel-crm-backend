@@ -19,7 +19,6 @@ import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import org.bson.Document;
 import org.bson.types.Decimal128;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -43,9 +42,20 @@ class CrmContactsApiIT extends CrmTestBase {
     }
 
     private String captureAs(Contact c, me.nageshk.omnichannel.db.phone.PhoneNumber n) throws Exception {
+        return captureAs(c, n, sales);
+    }
+
+    private String captureAs(Contact c, me.nageshk.omnichannel.db.phone.PhoneNumber n, String pipelineId)
+            throws Exception {
         WaWebChat chat = chat(c, n, null, null);
-        return json(send(post(crm() + "/contacts/capture"), managerToken, Map.of("chatId", chat.getId())))
-                .get("contact").get("id").asText();
+        return json(send(post(crm() + "/contacts/capture"), managerToken,
+                Map.of("chatId", chat.getId(), "pipelineId", pipelineId))).get("contact").get("id").asText();
+    }
+
+    /** Removes the deals capture made, leaving Alice without deals (as the raw-deal tests expect). */
+    private void dropCaptureDeals() {
+        mongo.remove(new Query(Criteria.where("workspaceId").is(brand.getId())), "crmDeals");
+        counters.recompute(brand.getId(), aliceId);
     }
 
     private JsonNode fetch(String id) throws Exception {
@@ -91,11 +101,10 @@ class CrmContactsApiIT extends CrmTestBase {
     }
 
     @Test
-    @Disabled("Task 10")
     void restrictedSearchSeesOnlyContactsInTheirPipelines() throws Exception {
-        String bobId = captureAs(contact("Bob Marley", "919833333333"), number2);
         JsonNode second = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second")));
         String p2 = second.get("id").asText();
+        String bobId = captureAs(contact("Bob Marley", "919833333333"), number2, p2);
         assignPipelines(agent, sales);
         // deals through the Task 10 endpoint: Alice in Sales, Bob in Second
         send(post(crm() + "/deals"), managerToken, Map.of("title", "A", "pipelineId", sales,
@@ -110,6 +119,7 @@ class CrmContactsApiIT extends CrmTestBase {
 
     @Test
     void restrictedUserSeesNoContactsWithoutDealsAndDetailIs404() throws Exception {
+        dropCaptureDeals();
         assignPipelines(agent, sales);
         assertThat(search(Map.of(), agentToken).get("total").asLong()).isZero();
         send(get(crm() + "/contacts/" + aliceId), agentToken, null).andExpect(status().isNotFound());
@@ -209,6 +219,7 @@ class CrmContactsApiIT extends CrmTestBase {
 
     @Test
     void countersRecomputeFromDeals() throws Exception {
+        dropCaptureDeals();
         rawDeal(aliceId, sales, "OPEN", "100.50");
         rawDeal(aliceId, sales, "OPEN", "20");
         rawDeal(aliceId, "p2", "WON", "999");
@@ -229,8 +240,8 @@ class CrmContactsApiIT extends CrmTestBase {
     }
 
     @Test
-    @Disabled("Task 10")
     void countersForRestrictedUserCountOnlyAccessibleDeals() throws Exception {
+        dropCaptureDeals();
         JsonNode second = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second")));
         String p2 = second.get("id").asText();
         assignPipelines(agent, sales);
@@ -248,6 +259,7 @@ class CrmContactsApiIT extends CrmTestBase {
 
     @Test
     void restrictedViewRecomputesCountersFromAccessibleDealsOnly() throws Exception {
+        dropCaptureDeals();
         assignPipelines(agent, sales);
         rawDeal(aliceId, sales, "OPEN", "10");
         rawDeal(aliceId, "other-pipeline", "OPEN", "90");

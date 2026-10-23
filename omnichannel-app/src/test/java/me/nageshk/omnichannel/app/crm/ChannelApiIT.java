@@ -97,6 +97,34 @@ class ChannelApiIT extends CrmTestBase {
     }
 
     @Test
+    void movedContactLeavesDealsOnItsOldChannel() throws Exception {
+        String bobId = captured(contact("Bob", "919833333333"), number).get("contact").get("id").asText();
+        String daveId = captured(contact("Dave", "919844444444"), number).get("contact").get("id").asText();
+        // Bob's deal links Alice; Alice's deal links Dave — all on number
+        String bobsDeal = createDeal(Map.of("title", "Bob's", "pipelineId", salesId(), "primaryCrmContactId", bobId,
+                "crmContactIds", List.of(crmId))).get("id").asText();
+        String alicesDeal = createDeal(Map.of("title", "Alice's", "pipelineId", salesId(),
+                "primaryCrmContactId", crmId, "crmContactIds", List.of(daveId))).get("id").asText();
+        assertThat(json(send(get(crm() + "/contacts/" + daveId), managerToken, null)).get("openDealCount").asInt())
+                .isEqualTo(2);
+        long version = json(send(get(crm() + "/contacts/" + crmId), managerToken, null)).get("version").asLong();
+        send(post(crm() + "/contacts/" + crmId + "/move-channel"), managerToken,
+                Map.of("toPhoneNumberId", number2.getId(), "version", version)).andExpect(status().isOk());
+        // Alice drops out of Bob's deal (it stays on number) ...
+        JsonNode bobs = json(send(get(crm() + "/deals/" + bobsDeal), managerToken, null).andExpect(status().isOk()));
+        assertThat(bobs.get("crmContactIds")).extracting(JsonNode::asText).containsExactly(bobId);
+        assertThat(bobs.get("channel").get("phoneNumberId").asText()).isEqualTo(number.getId());
+        // ... and her own deal follows her to number2 without Dave, who stays on number
+        JsonNode alices = json(send(get(crm() + "/deals/" + alicesDeal), managerToken, null));
+        assertThat(alices.get("channel").get("phoneNumberId").asText()).isEqualTo(number2.getId());
+        assertThat(alices.get("crmContactIds")).extracting(JsonNode::asText).containsExactly(crmId);
+        assertThat(json(send(get(crm() + "/contacts/" + daveId), managerToken, null)).get("openDealCount").asInt())
+                .isEqualTo(1);
+        assertThat(json(send(get(crm() + "/contacts/" + crmId), managerToken, null)).get("openDealCount").asInt())
+                .isEqualTo(2);
+    }
+
+    @Test
     void moveToNumberWithExistingCrmContactIs409Taken() throws Exception {
         WaWebChat other2 = chat(alice, number2, null, null);
         send(post(crm() + "/contacts/capture"), managerToken, Map.of("chatId", other2.getId()))
