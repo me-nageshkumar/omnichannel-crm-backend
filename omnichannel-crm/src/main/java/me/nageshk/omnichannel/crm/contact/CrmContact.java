@@ -13,6 +13,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.WildcardIndexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
@@ -48,6 +49,7 @@ public class CrmContact {
     private String teamId;
     private String lifecycleStatus;
     private String source;
+    @WildcardIndexed
     private Map<String, Object> customFields = new LinkedHashMap<>();
     /** Pipelines of all the contact's deals, any status. */
     private List<String> pipelineIds = new ArrayList<>();
