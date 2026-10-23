@@ -23,6 +23,7 @@
     <module>omnichannel-common</module>
     <module>omnichannel-db</module>
     <module>omnichannel-security</module>
+    <module>omnichannel-crm</module>
     <module>omnichannel-service</module>
     <module>omnichannel-app</module>
   </modules>
@@ -52,6 +53,11 @@
       <dependency>
         <groupId>me.nageshk</groupId>
         <artifactId>omnichannel-security</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>me.nageshk</groupId>
+        <artifactId>omnichannel-crm</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

@@ -13,7 +13,26 @@ class AuthorityTest {
     @Test
     void codesAreUnique() {
         Set<String> codes = Arrays.stream(Authority.values()).map(Authority::code).collect(Collectors.toSet());
-        assertThat(codes).hasSize(Authority.values().length).hasSize(36);
+        assertThat(codes).hasSize(Authority.values().length).hasSize(43);
+    }
+
+    @Test
+    void crmAuthoritiesHaveSpecLevelsAndDefaults() {
+        assertThat(Authority.CRM_ENABLE.code()).isEqualTo("crm:enable");
+        assertThat(Authority.CRM_ENABLE.level()).isEqualTo(me.nageshk.omnichannel.db.access.RoleLevel.PLATFORM);
+        assertThat(Authority.CRM_ENABLE.defaultRoles()).containsExactlyInAnyOrder(BuiltInRoles.ACCOUNT_MANAGER);
+        for (Authority a : new Authority[] {Authority.CRM_VIEW, Authority.CRM_EDIT}) {
+            assertThat(a.level()).isEqualTo(me.nageshk.omnichannel.db.access.RoleLevel.BRAND);
+            assertThat(a.defaultRoles()).containsExactlyInAnyOrder(
+                    BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER, BuiltInRoles.AGENT);
+        }
+        for (Authority a : new Authority[] {Authority.CRM_VIEW_ALL, Authority.CRM_DELETE,
+                Authority.CRM_SETTINGS, Authority.CRM_EXPORT}) {
+            assertThat(a.level()).isEqualTo(me.nageshk.omnichannel.db.access.RoleLevel.BRAND);
+            assertThat(a.defaultRoles()).containsExactlyInAnyOrder(
+                    BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER);
+        }
+        assertThat(Authority.CRM_VIEW_ALL.group()).isEqualTo("crm");
     }
 
     @Test

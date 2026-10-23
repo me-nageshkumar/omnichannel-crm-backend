@@ -37,7 +37,7 @@ class AssignmentPolicyTest {
         customerAdmin = defaultRole(CUSTOMER_ADMIN);
         workspaceManager = defaultRole(WORKSPACE_MANAGER);
         senior = role("SENIOR", RoleLevel.BRAND, Set.of("user:view", "contact:view", "contact:annotate", "template:view",
-                "inbox:view", "inbox:view-queue", "inbox:send", "campaign:view"));
+                "inbox:view", "inbox:view-queue", "inbox:send", "campaign:view", "crm:view", "crm:edit"));
         agent = defaultRole(AGENT);
         all = List.of(superAdmin, accountManager, device, customerAdmin, workspaceManager, senior, agent);
     }
@@ -71,7 +71,7 @@ class AssignmentPolicyTest {
     @Test
     void seniorWithUserManageGivesAgentButNotSenior() {
         senior.setAuthorities(Set.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view",
-                "inbox:view", "inbox:view-queue", "inbox:send", "campaign:view"));
+                "inbox:view", "inbox:view-queue", "inbox:send", "campaign:view", "crm:view", "crm:edit"));
         Actor tl = brandUser(ACME, Map.of(A, senior));
         assertThat(policy.assignableBrandRoles(tl, A, all)).containsExactly(agent);
     }
