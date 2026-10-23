@@ -1605,6 +1605,30 @@
         return msg ? normalizeMessageModel(window.WWebJS.getMessageModel(msg)) : null;
       }
     );
+    methods.set("getNumberId", async ({ phone } = {}) => {
+      if (typeof window.WWebJS === "undefined") {
+        throw codedError(
+          ErrorCodes.WHATSAPP_NOT_READY,
+          "WWebJS helpers are not loaded yet"
+        );
+      }
+      if (typeof phone !== "string" || phone === "") {
+        throw codedError(
+          ErrorCodes.PAGE_ERROR,
+          "phone must be a non-empty string"
+        );
+      }
+      const id = phone.endsWith("@c.us") ? phone : `${phone}@c.us`;
+      const wid = window.require("WAWebWidFactory").createWid(id);
+      const result = await window.require("WAWebQueryExistsJob").queryWidExists(wid);
+      if (!result || result.wid === void 0) return null;
+      let lid = null;
+      try {
+        lid = window.require("WAWebApiContact").getCurrentLid(result.wid)?._serialized ?? null;
+      } catch {
+      }
+      return { phone: result.wid._serialized, lid };
+    });
     methods.set("downloadMedia", async ({ messageId } = {}) => {
       if (typeof window.WWebJS === "undefined") {
         throw codedError(
@@ -1693,7 +1717,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "bfba9e6c0911" : "dev";
+  var BUILD = true ? "5579b1509e4e" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
