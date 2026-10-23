@@ -177,6 +177,7 @@ public class TimelineService {
         String targetId = req.target().id().trim();
         String pipelineId = null;
         String phoneNumberId = null;
+        List<CrmTarget> related = new ArrayList<>();
         switch (targetType) {
             case CONTACT -> {
                 CrmContact c = contacts.load(ctx, targetId);
@@ -187,11 +188,20 @@ public class TimelineService {
                 DealView d = deals.get(ctx, targetId);
                 pipelineId = d.pipelineId();
                 phoneNumberId = d.channel() == null ? null : d.channel().phoneNumberId();
+                // like the deal's other entries: its contacts' and company's timelines show it, their
+                // lastActivityAt follows
+                Set<String> contactIds = new LinkedHashSet<>();
+                if (d.primaryContact() != null && d.primaryContact().id() != null)
+                    contactIds.add(d.primaryContact().id());
+                if (d.crmContactIds() != null) contactIds.addAll(d.crmContactIds());
+                contactIds.forEach(c -> related.add(new CrmTarget(TargetType.CONTACT, c)));
+                if (d.company() != null && d.company().id() != null)
+                    related.add(new CrmTarget(TargetType.COMPANY, d.company().id()));
             }
         }
         Map<String, Object> payload = new LinkedHashMap<>();
         if (at != null) payload.put("happenedAt", at);
-        CrmActivity saved = log.record(ctx, type, new CrmTarget(targetType, targetId), List.of(), pipelineId,
+        CrmActivity saved = log.record(ctx, type, new CrmTarget(targetType, targetId), related, pipelineId,
                 phoneNumberId, summary, payload);
         Map<String, PlatformPerson> me = people.people(List.of(ctx.userId()));
         return view(saved, me);

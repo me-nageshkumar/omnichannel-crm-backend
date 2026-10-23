@@ -39,12 +39,14 @@ import org.springframework.stereotype.Component;
  * Where deals sit: lane positions (spec 5.4), the rules of entering a stage (status from its type, {@code closedAt}
  * on closing and cleared with {@code lostReason} on reopening, the stage's probability unless overridden), the
  * activities a move records and the derived counters it refreshes. Shared by the deal service and the pipeline
- * relocation.
+ * relocation. The position methods ({@link #appendPosition}, {@link #slot}, {@link #place}, {@link #settle},
+ * {@link #respace}) must run under the {@link LaneLocks} of every lane they touch.
  */
 @Component
 class Placement {
 
     static final String DEALS = "crmDeals";
+    private static final String ACTIVITIES = "crmActivities";
     private static final int RESPACE_ATTEMPTS = 3;
 
     private final MongoTemplate mongo;
@@ -127,7 +129,8 @@ class Placement {
             List<Double> positions = Positions.respaced(ids.size());
             BulkOperations bulk = mongo.bulkOps(BulkOperations.BulkMode.UNORDERED, DEALS);
             for (int i = 0; i < ids.size(); i++) {
-                bulk.updateOne(new Query(Criteria.where("_id").is(ids.get(i)).and("workspaceId").is(ws)),
+                // only while the card is still in the lane: a card that left keeps the position it got there
+                bulk.updateOne(new Query(lane(ws, pipelineId, stageId).and("_id").is(ids.get(i))),
                         new Update().set("position", positions.get(i)));
             }
             bulk.execute();
@@ -219,26 +222,44 @@ class Placement {
     }
 
     /**
-     * Puts the deal into {@code target} of {@code to} at {@code position} with {@link #enter}'s rules (one
-     * conditional update on {@code _id, workspaceId}), records the move and re-spaces the lane if two cards collide.
-     * A LOST {@code outcome} stores {@code lostReason}. Counters are left to the caller.
+     * Puts the deal into {@code target} of {@code to} at {@code position} with {@link #enter}'s rules, records the
+     * move and re-spaces the lane if two cards collide. A LOST {@code outcome} stores {@code lostReason}; without one
+     * a deal entering LOST has none and an already LOST deal keeps its reason. Counters are left to the caller.
      *
      * @throws NotFoundException when the deal is gone
+     * @throws me.nageshk.omnichannel.common.api.CodedException 409 VERSION_CONFLICT when its pipeline, stage or
+     *     status changed since {@code deal} was read
      */
     CrmDeal place(CrmContext ctx, CrmDeal deal, CrmPipeline from, CrmPipeline to, CrmStage target, double position,
             DealStatus outcome, String lostReason, String why) {
+        CrmDeal saved = tryPlace(ctx, deal, from, to, target, position, outcome, lostReason, why);
+        if (saved != null) return saved;
+        if (mongo.exists(new Query(Criteria.where("_id").is(deal.getId()).and("workspaceId").is(ctx.workspaceId())),
+                DEALS)) throw DealService.versionConflict();
+        throw new NotFoundException("Deal not found");
+    }
+
+    /**
+     * {@link #place} as one update conditional on the deal still sitting where {@code deal} was read (pipeline,
+     * stage and status), so it never undoes a concurrent move or touches a deal the caller no longer sees.
+     *
+     * @return the saved deal, or null when that condition (or the deal) is gone
+     */
+    CrmDeal tryPlace(CrmContext ctx, CrmDeal deal, CrmPipeline from, CrmPipeline to, CrmStage target,
+            double position, DealStatus outcome, String lostReason, String why) {
         Instant now = Instant.now(clock);
         Update u = new Update();
         enter(u, deal, to.getId(), target, position, deal.isProbabilityOverridden(), now);
         if (outcome == DealStatus.LOST && statusOf(target) == DealStatus.LOST) {
-            if (lostReason == null) u.unset("lostReason");
-            else u.set("lostReason", lostReason);
+            if (lostReason != null) u.set("lostReason", lostReason);
+            else if (deal.getStatus() != DealStatus.LOST) u.unset("lostReason");
         }
         u.set("lastModifiedBy", ctx.userId()).set("lastUpdateTime", now).inc("version", 1);
-        CrmDeal saved = mongo.findAndModify(
-                new Query(Criteria.where("_id").is(deal.getId()).and("workspaceId").is(ctx.workspaceId())), u,
+        CrmDeal saved = mongo.findAndModify(new Query(Criteria.where("_id").is(deal.getId())
+                .and("workspaceId").is(ctx.workspaceId()).and("pipelineId").is(deal.getPipelineId())
+                .and("stageId").is(deal.getStageId()).and("status").is(deal.getStatus())), u,
                 FindAndModifyOptions.options().returnNew(true), CrmDeal.class);
-        if (saved == null) throw new NotFoundException("Deal not found");
+        if (saved == null) return null;
         recordMove(ctx, deal, saved, from, to, why);
         settle(ctx.workspaceId(), saved.getPipelineId(), saved.getStageId(), saved.getId(), saved.getPosition());
         return saved;
@@ -269,7 +290,12 @@ class Placement {
             activities.record(ctx, ActivityType.STAGE_CHANGED, target(saved), related(saved), saved.getPipelineId(),
                     phoneOf(saved), why == null ? summary : summary + " " + why, payload);
         }
-        if (saved.getStatus() != before.getStatus() && saved.getStatus() != DealStatus.OPEN) {
+        if (saved.getStatus() != before.getStatus()) recordOutcome(ctx, saved);
+    }
+
+    /** {@code DEAL_WON}/{@code DEAL_LOST} for a deal that is (now) closed; nothing for an OPEN one. */
+    void recordOutcome(CrmContext ctx, CrmDeal saved) {
+        if (saved.getStatus() != DealStatus.OPEN) {
             boolean won = saved.getStatus() == DealStatus.WON;
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("stageId", saved.getStageId());
@@ -281,6 +307,17 @@ class Placement {
                     won ? "Deal won" : "Deal lost" + (saved.getLostReason() == null ? "" : ": " + saved.getLostReason()),
                     payload);
         }
+    }
+
+    /**
+     * Re-tags the deals' activities with the pipeline they now sit in, so restricted users' timelines follow the
+     * deal (an entry of a deal moved into a hidden pipeline is hidden too).
+     */
+    void retag(String ws, Collection<String> dealIds, String pipelineId) {
+        if (dealIds.isEmpty()) return;
+        mongo.updateMulti(new Query(Criteria.where("workspaceId").is(ws).and("target.type")
+                .is(TargetType.DEAL.name()).and("target.id").in(dealIds)), new Update().set("pipelineId", pipelineId),
+                ACTIVITIES);
     }
 
     // --- derived values --------------------------------------------------------------------------------

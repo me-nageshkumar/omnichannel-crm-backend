@@ -1,8 +1,11 @@
 package me.nageshk.omnichannel.app.crm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,15 +19,28 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import me.nageshk.omnichannel.common.api.CodedException;
+import me.nageshk.omnichannel.common.api.NotFoundException;
+import me.nageshk.omnichannel.crm.access.CrmAccess;
+import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.activity.ActivityType;
 import me.nageshk.omnichannel.crm.activity.CrmActivity;
+import me.nageshk.omnichannel.crm.deal.CrmDeal;
+import me.nageshk.omnichannel.crm.deal.PlacementProbe;
+import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import tools.jackson.databind.JsonNode;
 
 class BoardApiIT extends CrmTestBase {
+
+    @Autowired ApplicationContext app;
+    @Autowired CrmAccess crmAccess;
 
     String sales;
     Map<String, String> lanes;
@@ -170,7 +186,8 @@ class BoardApiIT extends CrmTestBase {
         for (int i = 1; i < p.size(); i++) assertThat(p.get(i) - p.get(i - 1)).isGreaterThanOrEqualTo(1e-6);
     }
 
-    @Test
+    /** Racy by nature: repeated so a lane re-space that interleaves with another would show. */
+    @RepeatedTest(5)
     void concurrentMovesIntoOneGapAllLand() throws Exception {
         String last = deal("Last", null);
         List<String> movers = new ArrayList<>();
@@ -257,5 +274,30 @@ class BoardApiIT extends CrmTestBase {
         send(get(crm() + "/deals/board?pipelineId=nope"), managerToken, null).andExpect(status().isNotFound());
         send(get("/api/workspaces/" + other.getId() + "/crm/deals/board?pipelineId=" + sales), managerToken, null)
                 .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void placingADealReadBeforeAConcurrentChangeIsAConflict() throws Exception {
+        String second = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
+                .andExpect(status().is2xxSuccessful())).get("id").asText();
+        CrmPipeline salesPipeline = mongo.findById(sales, CrmPipeline.class);
+        CrmDeal asRead = mongo.findById(capturedDeal, CrmDeal.class);
+        CrmContext ctx = crmAccess.resolve(auth(manager), brand.getId());
+        // meanwhile the deal moves to another pipeline
+        long v = asRead.getVersion();
+        send(put(crm() + "/deals/" + capturedDeal), managerToken, Map.of("version", v, "pipelineId", second))
+                .andExpect(status().isOk());
+        assertThatThrownBy(() -> PlacementProbe.place(app, ctx, asRead, salesPipeline, lanes.get("Contacted")))
+                .isInstanceOfSatisfying(CodedException.class, e -> {
+                    assertThat(e.code()).isEqualTo("VERSION_CONFLICT");
+                    assertThat(e.status().value()).isEqualTo(409);
+                });
+        CrmDeal now = mongo.findById(capturedDeal, CrmDeal.class);
+        assertThat(now.getPipelineId()).isEqualTo(second);
+        assertThat(now.getVersion()).isEqualTo(v + 1);
+        // and once it is gone, 404
+        send(delete(crm() + "/deals/" + capturedDeal), managerToken, null).andExpect(status().isNoContent());
+        assertThatThrownBy(() -> PlacementProbe.place(app, ctx, asRead, salesPipeline, lanes.get("Contacted")))
+                .isInstanceOf(NotFoundException.class);
     }
 }

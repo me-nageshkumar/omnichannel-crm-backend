@@ -12,6 +12,9 @@ public interface DealPlacement {
     /** Moves every deal in {@code fromStageId} to {@code toStageId} of the same pipeline. */
     void relocateStage(CrmContext ctx, String pipelineId, String fromStageId, String toStageId);
 
-    /** Moves every deal of one pipeline to the first OPEN stage of another. */
+    /**
+     * Moves every deal of one pipeline into another: OPEN deals to its first OPEN stage, WON and LOST deals to its
+     * first WON or LOST stage (staying closed; the first OPEN stage when it has none of that type).
+     */
     void relocatePipeline(CrmContext ctx, String fromPipelineId, String toPipelineId);
 }

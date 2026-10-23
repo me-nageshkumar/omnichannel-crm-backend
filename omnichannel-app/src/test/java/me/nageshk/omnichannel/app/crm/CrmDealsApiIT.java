@@ -9,21 +9,33 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import me.nageshk.omnichannel.crm.activity.ActivityType;
 import me.nageshk.omnichannel.crm.activity.CrmActivity;
+import me.nageshk.omnichannel.db.access.Role;
+import me.nageshk.omnichannel.db.access.RoleLevel;
+import me.nageshk.omnichannel.db.access.RoleRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
+import me.nageshk.omnichannel.db.user.User;
+import me.nageshk.omnichannel.db.user.WorkspaceRole;
+import me.nageshk.omnichannel.security.access.RoleCache;
 import org.bson.Document;
 import org.bson.types.Decimal128;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import tools.jackson.databind.JsonNode;
 
 class CrmDealsApiIT extends CrmTestBase {
+
+    @Autowired RoleRepository roles;
+    @Autowired RoleCache roleCache;
 
     String sales;
     Map<String, String> lanes;
@@ -383,21 +395,148 @@ class CrmDealsApiIT extends CrmTestBase {
                 "stageId", secondLanes.get("Won")));
         assertThat(d.get("status").asText()).isEqualTo("WON");
         assertThat(d.get("closedAt").isNull()).isFalse();
+        String lostId = createDeal(body("title", "L", "pipelineId", second, "primaryCrmContactId", aliceId))
+                .get("id").asText();
+        JsonNode lost = json(send(post(crm() + "/deals/" + lostId + "/close"), managerToken,
+                Map.of("outcome", "LOST", "lostReason", "price")).andExpect(status().isOk()));
+        String openId = createDeal(body("title", "O", "pipelineId", second, "primaryCrmContactId", aliceId,
+                "stageId", secondLanes.get("Contacted"))).get("id").asText();
         assertThat(mongo.findOne(new Query(Criteria.where("_id").is(aliceId)), Document.class, "crmContacts")
                 .getList("pipelineIds", String.class)).containsExactlyInAnyOrder(sales, second);
         send(delete(crm() + "/pipelines/" + second), managerToken, null)
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PIPELINE_HAS_DEALS"))
-                .andExpect(jsonPath("$.count").value("1"));
+                .andExpect(jsonPath("$.count").value("3"));
         send(delete(crm() + "/pipelines/" + second + "?moveDealsToPipelineId=" + sales), managerToken, null)
                 .andExpect(status().isNoContent());
-        JsonNode moved = deal(d.get("id").asText());
-        assertThat(moved.get("pipelineId").asText()).isEqualTo(sales);
-        assertThat(moved.get("stageId").asText()).isEqualTo(lanes.get("New"));
-        assertThat(moved.get("status").asText()).isEqualTo("OPEN");
-        assertThat(moved.get("closedAt").isNull()).isTrue();
-        assertThat(moved.get("position").asDouble()).isGreaterThan(deal(aliceDeal).get("position").asDouble());
+        // closed deals stay closed: WON to the first WON lane, LOST to the first LOST lane, both keep closedAt
+        JsonNode won = deal(d.get("id").asText());
+        assertThat(won.get("pipelineId").asText()).isEqualTo(sales);
+        assertThat(won.get("stageId").asText()).isEqualTo(lanes.get("Won"));
+        assertThat(won.get("status").asText()).isEqualTo("WON");
+        assertThat(won.get("closedAt").asText()).isEqualTo(d.get("closedAt").asText());
+        JsonNode stillLost = deal(lostId);
+        assertThat(stillLost.get("stageId").asText()).isEqualTo(lanes.get("Lost"));
+        assertThat(stillLost.get("status").asText()).isEqualTo("LOST");
+        assertThat(stillLost.get("lostReason").asText()).isEqualTo("price");
+        assertThat(stillLost.get("closedAt").asText()).isEqualTo(lost.get("closedAt").asText());
+        JsonNode open = deal(openId);
+        assertThat(open.get("stageId").asText()).isEqualTo(lanes.get("New"));
+        assertThat(open.get("status").asText()).isEqualTo("OPEN");
+        assertThat(open.get("position").asDouble()).isGreaterThan(deal(aliceDeal).get("position").asDouble());
+        assertThat(activities(ActivityType.DEAL_WON, d.get("id").asText())).isEqualTo(1);
         assertThat(mongo.findOne(new Query(Criteria.where("_id").is(aliceId)), Document.class, "crmContacts")
                 .getList("pipelineIds", String.class)).containsExactly(sales);
+
+        // a target without a WON lane takes the deal into its first OPEN lane (reopened)
+        String third = pipeline("Third");
+        String wonThere = createDeal(body("title", "W", "pipelineId", third, "primaryCrmContactId", aliceId,
+                "stageId", stages(third).get("Won"))).get("id").asText();
+        String plain = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Plain",
+                "stages", List.of(Map.of("name", "Only", "type", "OPEN"))))
+                .andExpect(status().is2xxSuccessful())).get("id").asText();
+        send(delete(crm() + "/pipelines/" + third + "?moveDealsToPipelineId=" + plain), managerToken, null)
+                .andExpect(status().isNoContent());
+        JsonNode reopened = json(send(get(crm() + "/deals/" + wonThere), managerToken, null));
+        assertThat(reopened.get("stageId").asText()).isEqualTo(stages(plain).get("Only"));
+        assertThat(reopened.get("status").asText()).isEqualTo("OPEN");
+        assertThat(reopened.get("closedAt").isNull()).isTrue();
+    }
+
+    @Test
+    void closingLostAgainWithoutAReasonKeepsTheReason() throws Exception {
+        send(post(crm() + "/deals/" + aliceDeal + "/close"), managerToken,
+                Map.of("outcome", "LOST", "lostReason", "price")).andExpect(status().isOk());
+        JsonNode again = json(send(post(crm() + "/deals/" + aliceDeal + "/close"), managerToken,
+                Map.of("outcome", "LOST")).andExpect(status().isOk()));
+        assertThat(again.get("status").asText()).isEqualTo("LOST");
+        assertThat(again.get("lostReason").asText()).isEqualTo("price");
+        // entering LOST from OPEN without a reason stores none
+        String other = createDeal(body("title", "B", "pipelineId", sales, "primaryCrmContactId", aliceId))
+                .get("id").asText();
+        JsonNode plain = json(send(post(crm() + "/deals/" + other + "/close"), managerToken,
+                Map.of("outcome", "LOST")).andExpect(status().isOk()));
+        assertThat(plain.get("lostReason").isNull()).isTrue();
+    }
+
+    @Test
+    void createInAClosedStageRecordsTheOutcome() throws Exception {
+        String won = createDeal(body("title", "W", "pipelineId", sales, "primaryCrmContactId", aliceId,
+                "stageId", lanes.get("Won"), "amount", 10)).get("id").asText();
+        String lost = createDeal(body("title", "L", "pipelineId", sales, "primaryCrmContactId", aliceId,
+                "stageId", lanes.get("Lost"))).get("id").asText();
+        assertThat(activities(ActivityType.RECORD_CREATED, won)).isEqualTo(1);
+        assertThat(activities(ActivityType.DEAL_WON, won)).isEqualTo(1);
+        assertThat(activities(ActivityType.DEAL_LOST, lost)).isEqualTo(1);
+        assertThat(activities(ActivityType.DEAL_WON, aliceDeal) + activities(ActivityType.DEAL_LOST, aliceDeal))
+                .isZero();
+    }
+
+    @Test
+    void restrictedUserGets404OnDealsOfHiddenPipelines() throws Exception {
+        String second = pipeline("Second");
+        String hidden = createDeal(body("title", "Hidden", "pipelineId", second, "primaryCrmContactId", aliceId))
+                .get("id").asText();
+        assignPipelines(agent, sales);
+        send(post(crm() + "/deals/" + hidden + "/move"), agentToken, Map.of("stageId", stages(second).get("Won")))
+                .andExpect(status().isNotFound());
+        send(post(crm() + "/deals/" + hidden + "/close"), agentToken, Map.of("outcome", "WON"))
+                .andExpect(status().isNotFound());
+        // deleting needs crm:delete, which agents lack: a custom role that has it but not crm:view-all
+        Role deleter = new Role();
+        deleter.setName("CRM Deleter");
+        deleter.setLevel(RoleLevel.BRAND);
+        deleter.setAuthorities(new HashSet<>(Set.of("crm:view", "crm:edit", "crm:delete")));
+        deleter = roles.save(deleter);
+        roleCache.evictAll();
+        User cleaner = testUsers.createInCustomer(acme.getId(), "cleaner", null,
+                List.of(new WorkspaceRole(brand.getId(), deleter.getId())));
+        assignPipelines(cleaner, sales);
+        String token = testUsers.accessToken(cleaner);
+        send(delete(crm() + "/deals/" + hidden), token, null).andExpect(status().isNotFound());
+        JsonNode untouched = deal(hidden);
+        assertThat(untouched.get("status").asText()).isEqualTo("OPEN");
+        assertThat(untouched.get("version").asLong()).isZero();
+        // the same user may delete a deal it can see
+        send(delete(crm() + "/deals/" + aliceDeal), token, null).andExpect(status().isNoContent());
+    }
+
+    @Test
+    void partialAccessSearchSeesOnlyAccessiblePipelines() throws Exception {
+        String second = pipeline("Second");
+        WaWebChat bobChat = chat(contact("Bob", "919822222222"), number, null, null);
+        JsonNode bob = json(send(post(crm() + "/contacts/capture"), managerToken,
+                Map.of("chatId", bobChat.getId(), "pipelineId", second)).andExpect(status().isOk()));
+        createDeal(body("title", "Alice in Second", "pipelineId", second, "primaryCrmContactId", aliceId));
+        assignPipelines(agent, sales);
+        JsonNode deals = json(send(post(crm() + "/deals/search"), agentToken, Map.of()).andExpect(status().isOk()));
+        assertThat(deals.get("total").asLong()).isEqualTo(1);
+        assertThat(deals.get("items").get(0).get("id").asText()).isEqualTo(aliceDeal);
+        JsonNode bySecond = json(send(post(crm() + "/deals/search"), agentToken, Map.of("pipelineId", second))
+                .andExpect(status().isOk()));
+        assertThat(bySecond.get("total").asLong()).isZero();
+        JsonNode contacts = json(send(post(crm() + "/contacts/search"), agentToken, Map.of())
+                .andExpect(status().isOk()));
+        assertThat(contacts.get("items")).extracting(c -> c.get("id").asText()).containsExactly(aliceId);
+        assertThat(contacts.get("items")).extracting(c -> c.get("id").asText())
+                .doesNotContain(bob.get("contact").get("id").asText());
+        // the manager sees all three deals
+        assertThat(json(send(post(crm() + "/deals/search"), managerToken, Map.of())).get("total").asLong())
+                .isEqualTo(3);
+    }
+
+    @Test
+    void customFieldKeysAreChecked() throws Exception {
+        for (String bad : List.of("a.b", "$set", "k".repeat(41))) {
+            send(post(crm() + "/deals"), managerToken, body("title", "X", "pipelineId", sales,
+                    "primaryCrmContactId", aliceId, "customFields", Map.of(bad, 1)))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION"))
+                    .andExpect(jsonPath("$.fields.customFields").exists());
+            send(put(crm() + "/deals/" + aliceDeal), managerToken, body("version", 0, "customFields", Map.of(bad, 1)))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.customFields").exists());
+        }
+        JsonNode ok = createDeal(body("title", "X", "pipelineId", sales, "primaryCrmContactId", aliceId,
+                "customFields", Map.of("budget_" + "k".repeat(33), 5)));
+        assertThat(ok.get("customFields").size()).isEqualTo(1);
     }
 
     @Test

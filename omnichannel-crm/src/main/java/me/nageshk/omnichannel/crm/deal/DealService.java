@@ -15,7 +15,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Pattern;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
@@ -25,6 +24,8 @@ import me.nageshk.omnichannel.crm.activity.ActivityType;
 import me.nageshk.omnichannel.crm.activity.FieldDiff;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.common.CrmPage;
+import me.nageshk.omnichannel.crm.common.CrmSort;
+import me.nageshk.omnichannel.crm.common.CustomFields;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
 import me.nageshk.omnichannel.crm.common.Ref;
 import me.nageshk.omnichannel.crm.company.CompanyCounters;
@@ -73,11 +74,13 @@ public class DealService {
     private final PeopleDirectory people;
     private final Placement placement;
     private final ActivityLog activities;
+    private final LaneLocks lanes;
     private final Clock clock;
 
     DealService(MongoTemplate mongo, CrmDealRepository repository, CrmContactService contacts,
             CrmPipelineService pipelines, ContactDirectory contactDirectory, PeopleDirectory people,
-            Placement placement, ActivityLog activities, Clock clock) {
+            Placement placement, ActivityLog activities, LaneLocks lanes, Clock clock) {
+        this.lanes = lanes;
         this.mongo = mongo;
         this.repository = repository;
         this.contacts = contacts;
@@ -108,16 +111,8 @@ public class DealService {
         Map<String, String> errors = new LinkedHashMap<>();
         if (page < 0) errors.put("page", "must not be negative");
         if (size < 1) errors.put("size", "must be at least 1");
-        String sort = present(req.sort()) ? req.sort().trim() : "creationTime";
-        String dir = present(req.dir()) ? req.dir().trim().toLowerCase(Locale.ROOT) : null;
-        int comma = sort.indexOf(',');
-        if (comma >= 0) {
-            if (dir == null) dir = sort.substring(comma + 1).trim().toLowerCase(Locale.ROOT);
-            sort = sort.substring(0, comma).trim();
-        }
-        if (!SORTS.contains(sort)) errors.put("sort", "must be one of " + String.join(", ", new TreeSet<>(SORTS)));
-        if (dir == null) dir = sort.equals("position") || sort.equals("title") ? "asc" : "desc";
-        if (!dir.equals("asc") && !dir.equals("desc")) errors.put("dir", "must be asc or desc");
+        CrmSort sorting = CrmSort.parse(req.sort(), req.dir(), SORTS, "creationTime",
+                f -> f.equals("position") || f.equals("title") ? "asc" : "desc", errors);
         DealStatus status = null;
         if (present(req.status())) {
             try {
@@ -142,9 +137,9 @@ public class DealService {
         if (text != null) all.add(text);
         Criteria filter = new Criteria().andOperator(all);
         long total = mongo.count(new Query(filter), CrmDeal.class);
-        Sort.Direction direction = dir.equals("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+        String sort = sorting.field();
         // a lane's load-more must continue the board's order exactly: position, then id ascending
-        Sort order = Sort.by(direction, sort).and(Sort.by(sort.equals("position") ? Sort.Direction.ASC
+        Sort order = Sort.by(sorting.direction(), sort).and(Sort.by(sort.equals("position") ? Sort.Direction.ASC
                 : Sort.Direction.DESC, "_id"));
         List<CrmDeal> found = mongo.find(new Query(filter).with(order).skip((long) page * size).limit(size),
                 CrmDeal.class);
@@ -192,8 +187,7 @@ public class DealService {
         d.setTitle(t);
         d.setOwnerId(contact.getOwnerId() != null ? contact.getOwnerId() : ctx.userId());
         d.setTeamId(contact.getTeamId());
-        d.setPosition(placement.appendPosition(ctx.workspaceId(), pipelineId, stage.getId(), null));
-        CrmDeal saved = mongo.insert(d);
+        CrmDeal saved = appended(ctx, d);
         CrmDeal winner = firstOpen(ctx.workspaceId(), contact.getId(), pipelineId);
         if (winner != null && !winner.getId().equals(saved.getId())) {
             mongo.remove(new Query(Criteria.where("_id").is(saved.getId()).and("workspaceId").is(ctx.workspaceId())),
@@ -227,6 +221,7 @@ public class DealService {
         String teamId = text(req.teamId(), null, "teamId", 64, errors);
         String source = pick(text(req.source(), null, "source", 64, errors), null, "source",
                 ctx.settings().getDealSources(), errors);
+        CustomFields.check(req.customFields(), errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
         CrmContact primary = contacts.load(ctx, req.primaryCrmContactId().trim());
@@ -259,8 +254,7 @@ public class DealService {
         if (source != null) d.setSource(source);
         d.setLabelIds(labels(req.labelIds(), List.of()));
         d.setCustomFields(req.customFields() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(req.customFields()));
-        d.setPosition(placement.appendPosition(ctx.workspaceId(), pipeline.getId(), stage.getId(), null));
-        CrmDeal saved = mongo.insert(d);
+        CrmDeal saved = appended(ctx, d);
         afterCreate(ctx, saved, "Deal created");
         return view(ctx, reload(ctx, saved.getId()));
     }
@@ -291,6 +285,15 @@ public class DealService {
         return d;
     }
 
+    /** Inserts the new deal after the last card of its lane, under the lane's lock. */
+    private CrmDeal appended(CrmContext ctx, CrmDeal d) {
+        return lanes.withLane(ctx.workspaceId(), d.getPipelineId(), d.getStageId(), () -> {
+            d.setPosition(placement.appendPosition(ctx.workspaceId(), d.getPipelineId(), d.getStageId(), null));
+            return mongo.insert(d);
+        });
+    }
+
+    /** {@code RECORD_CREATED}, plus {@code DEAL_WON}/{@code DEAL_LOST} for a deal created closed; counters. */
     private void afterCreate(CrmContext ctx, CrmDeal saved, String summary) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("stageId", saved.getStageId());
@@ -298,6 +301,7 @@ public class DealService {
         payload.put("currency", saved.getCurrency());
         activities.record(ctx, ActivityType.RECORD_CREATED, Placement.target(saved), Placement.related(saved),
                 saved.getPipelineId(), Placement.phoneOf(saved), summary, payload);
+        placement.recordOutcome(ctx, saved);
         placement.recompute(ctx.workspaceId(), Placement.contactsOf(saved),
                 saved.getCompanyId() == null ? List.of() : List.of(saved.getCompanyId()));
     }
@@ -326,6 +330,7 @@ public class DealService {
             errors.put("stageId", "cannot change here; move the deal instead");
         if (req.primaryCrmContactId() != null && !present(req.primaryCrmContactId()))
             errors.put("primaryCrmContactId", "must not be blank");
+        CustomFields.check(req.customFields(), errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
         CrmPipeline from = pipelines.get(ctx, current.getPipelineId());
@@ -385,13 +390,24 @@ public class DealService {
         if (primary != null) {
             u.set("contactSnapshot", new ContactSnapshot(displayName(ctx, primary), primary.getPhone()));
         }
+        Query guarded = new Query(Criteria.where("_id").is(id).and("workspaceId").is(ctx.workspaceId())
+                .and("version").is(req.version()));
+        CrmDeal saved;
         if (pipelineChange) {
-            Placement.enter(u, current, to.getId(), target, placement.appendPosition(ctx.workspaceId(), to.getId(),
-                    target.getId(), id), overridden, at);
+            CrmStage into = target;
+            CrmPipeline toPipeline = to;
+            boolean keepProbability = overridden;
+            // leaving one lane for another: both lanes' positions are settled under their locks
+            saved = lanes.withLanes(ctx.workspaceId(), List.of(new LaneLocks.Lane(current.getPipelineId(),
+                    current.getStageId()), new LaneLocks.Lane(to.getId(), target.getId())), () -> {
+                        Placement.enter(u, current, toPipeline.getId(), into, placement.appendPosition(
+                                ctx.workspaceId(), toPipeline.getId(), into.getId(), id), keepProbability, at);
+                        return mongo.findAndModify(guarded, u, FindAndModifyOptions.options().returnNew(true),
+                                CrmDeal.class);
+                    });
+        } else {
+            saved = mongo.findAndModify(guarded, u, FindAndModifyOptions.options().returnNew(true), CrmDeal.class);
         }
-        CrmDeal saved = mongo.findAndModify(new Query(Criteria.where("_id").is(id).and("workspaceId")
-                .is(ctx.workspaceId()).and("version").is(req.version())), u,
-                FindAndModifyOptions.options().returnNew(true), CrmDeal.class);
         if (saved == null) {
             if (mongo.exists(new Query(Criteria.where("_id").is(id).and("workspaceId").is(ctx.workspaceId())),
                     CrmDeal.class)) throw versionConflict();
@@ -410,7 +426,10 @@ public class DealService {
                     "Changed " + String.join(", ", diffs.stream().map(FieldDiff::field).toList()),
                     new LinkedHashMap<>(Map.of("changes", changes)));
         }
-        if (pipelineChange) placement.recordMove(ctx, current, saved, from, to, null);
+        if (pipelineChange) {
+            placement.recordMove(ctx, current, saved, from, to, null);
+            placement.retag(ctx.workspaceId(), List.of(id), saved.getPipelineId());
+        }
         Set<String> touched = new LinkedHashSet<>(before);
         touched.addAll(Placement.contactsOf(saved));
         List<String> companies = new ArrayList<>();
@@ -502,10 +521,15 @@ public class DealService {
         CrmPipeline pipeline = pipelines.get(ctx, deal.getPipelineId());
         CrmStage target = Placement.stage(pipeline, req.stageId().trim())
                 .orElseThrow(() -> new ValidationException("stageId", "is not a stage of the deal's pipeline"));
-        String before = neighbour(ctx, deal, target, req.beforeDealId(), "beforeDealId");
-        String after = neighbour(ctx, deal, target, req.afterDealId(), "afterDealId");
-        double position = placement.slot(ctx.workspaceId(), pipeline.getId(), target.getId(), id, before, after);
-        CrmDeal saved = placement.place(ctx, deal, pipeline, pipeline, target, position, null, null, null);
+        // slot, write and settle under the locks of the lane it leaves and the lane it enters
+        CrmDeal saved = lanes.withLanes(ctx.workspaceId(), List.of(new LaneLocks.Lane(deal.getPipelineId(),
+                deal.getStageId()), new LaneLocks.Lane(pipeline.getId(), target.getId())), () -> {
+                    String before = neighbour(ctx, deal, target, req.beforeDealId(), "beforeDealId");
+                    String after = neighbour(ctx, deal, target, req.afterDealId(), "afterDealId");
+                    double position = placement.slot(ctx.workspaceId(), pipeline.getId(), target.getId(), id,
+                            before, after);
+                    return placement.place(ctx, deal, pipeline, pipeline, target, position, null, null, null);
+                });
         placement.recompute(ctx.workspaceId(), Placement.contactsOf(saved),
                 saved.getCompanyId() == null ? List.of() : List.of(saved.getCompanyId()));
         return view(ctx, reload(ctx, id));
@@ -546,9 +570,14 @@ public class DealService {
         StageType type = outcome == DealStatus.WON ? StageType.WON : StageType.LOST;
         CrmStage target = Placement.first(pipeline, type)
                 .orElseThrow(() -> new ValidationException("outcome", "the pipeline has no " + type + " stage"));
-        double position = target.getId().equals(deal.getStageId()) ? deal.getPosition()
-                : placement.appendPosition(ctx.workspaceId(), pipeline.getId(), target.getId(), id);
-        CrmDeal saved = placement.place(ctx, deal, pipeline, pipeline, target, position, outcome, lostReason, null);
+        DealStatus closing = outcome;
+        String reason = lostReason;
+        CrmDeal saved = lanes.withLanes(ctx.workspaceId(), List.of(new LaneLocks.Lane(deal.getPipelineId(),
+                deal.getStageId()), new LaneLocks.Lane(pipeline.getId(), target.getId())), () -> {
+                    double position = target.getId().equals(deal.getStageId()) ? deal.getPosition()
+                            : placement.appendPosition(ctx.workspaceId(), pipeline.getId(), target.getId(), id);
+                    return placement.place(ctx, deal, pipeline, pipeline, target, position, closing, reason, null);
+                });
         placement.recompute(ctx.workspaceId(), Placement.contactsOf(saved),
                 saved.getCompanyId() == null ? List.of() : List.of(saved.getCompanyId()));
         return view(ctx, reload(ctx, id));

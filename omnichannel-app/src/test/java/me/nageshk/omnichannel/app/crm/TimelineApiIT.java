@@ -1,8 +1,10 @@
 package me.nageshk.omnichannel.app.crm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,9 +22,12 @@ import me.nageshk.omnichannel.db.contact.ContactNote;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.WorkspaceRole;
 import me.nageshk.omnichannel.security.access.RoleCache;
+import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import tools.jackson.databind.JsonNode;
 
 class TimelineApiIT extends CrmTestBase {
@@ -140,6 +145,65 @@ class TimelineApiIT extends CrmTestBase {
                 .andExpect(status().isNotFound());
         send(post(crm() + "/activities/log"), agentToken, log("DEAL", hiddenDeal, "CALL", "nope"))
                 .andExpect(status().isNotFound());
+    }
+
+    private List<String> targetsSeenBy(String token, String crmContactId) throws Exception {
+        return timeline(token, "CONTACT", crmContactId).get("items").valueStream()
+                .filter(i -> i.get("target") != null && !i.get("target").isNull())
+                .map(i -> i.get("target").get("id").asText()).toList();
+    }
+
+    private long version(String dealId) throws Exception {
+        return json(send(get(crm() + "/deals/" + dealId), managerToken, null)).get("version").asLong();
+    }
+
+    @Test
+    void entriesOfADealFollowItIntoAHiddenPipeline() throws Exception {
+        // Alice stays visible to the Sales agent through her captured Sales deal
+        String crmId = captured(contact("Alice", "919811111111"), number).get("contact").get("id").asText();
+        String hidden = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Hidden"))
+                .andExpect(status().is2xxSuccessful())).get("id").asText();
+        String shared = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Shared"))
+                .andExpect(status().is2xxSuccessful())).get("id").asText();
+        String moved = createDeal(body("title", "Moves", "pipelineId", sales, "primaryCrmContactId", crmId))
+                .get("id").asText();
+        String relocated = createDeal(body("title", "Relocated", "pipelineId", shared, "primaryCrmContactId", crmId))
+                .get("id").asText();
+        send(put(crm() + "/deals/" + moved), managerToken, body("version", version(moved), "amount", 42))
+                .andExpect(status().isOk());
+        send(put(crm() + "/deals/" + relocated), managerToken, body("version", version(relocated), "amount", 7))
+                .andExpect(status().isOk());
+        assignPipelines(agent, sales, shared);
+        assertThat(targetsSeenBy(agentToken, crmId)).contains(moved, relocated);
+
+        // the manager moves one deal to the hidden pipeline and deletes the other's pipeline into it
+        send(put(crm() + "/deals/" + moved), managerToken, body("version", version(moved), "pipelineId", hidden))
+                .andExpect(status().isOk());
+        send(delete(crm() + "/pipelines/" + shared + "?moveDealsToPipelineId=" + hidden), managerToken, null)
+                .andExpect(status().isNoContent());
+        List<String> seen = targetsSeenBy(agentToken, crmId);
+        assertThat(seen).isNotEmpty().doesNotContain(moved, relocated);
+        assertThat(targetsSeenBy(managerToken, crmId)).contains(moved, relocated);
+        assertThat(mongo.count(new Query(Criteria.where("target.id").in(moved, relocated)
+                .and("pipelineId").ne(hidden)), "crmActivities")).isZero();
+    }
+
+    @Test
+    void loggingOnADealRaisesItsContactsLastActivity() throws Exception {
+        String crmId = captured(contact("Alice", "919811111111"), number).get("contact").get("id").asText();
+        String dealId = createDeal(body("title", "Big", "pipelineId", sales, "primaryCrmContactId", crmId))
+                .get("id").asText();
+        Instant before = Instant.parse(json(send(get(crm() + "/contacts/" + crmId), managerToken, null))
+                .get("lastActivityAt").asText());
+        Thread.sleep(5);
+        JsonNode logged = json(send(post(crm() + "/activities/log"), managerToken,
+                log("DEAL", dealId, "CALL", "Spoke")).andExpect(status().isOk()));
+        Instant after = Instant.parse(json(send(get(crm() + "/contacts/" + crmId), managerToken, null))
+                .get("lastActivityAt").asText());
+        assertThat(after).isAfter(before);
+        assertThat(mongo.findOne(new Query(Criteria.where("_id").is(logged.get("id").asText())), Document.class,
+                "crmActivities").getList("relatedTargets", Document.class))
+                .extracting(t -> t.getString("id")).contains(crmId);
     }
 
     @Test
