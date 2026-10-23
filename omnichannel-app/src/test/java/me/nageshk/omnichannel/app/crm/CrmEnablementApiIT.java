@@ -40,6 +40,11 @@ class CrmEnablementApiIT extends CrmTestBase {
         assertThat(v.get("enabled").asBoolean()).isTrue();
         assertThat(v.get("maxPipelines").asInt()).isEqualTo(3);
         assertThat(v.get("maxCustomFields").asInt()).isEqualTo(20);
+        me.nageshk.omnichannel.crm.settings.CrmSettings stored = mongo.findOne(
+                new Query(Criteria.where("workspaceId").is(brand.getId())),
+                me.nageshk.omnichannel.crm.settings.CrmSettings.class);
+        assertThat(stored.getCreatedBy()).isEqualTo(staff.getId());
+        assertThat(stored.getLastModifiedBy()).isEqualTo(staff.getId());
         JsonNode g = json(send(get(url()), staffToken, null).andExpect(status().isOk()));
         assertThat(g.get("enabled").asBoolean()).isTrue();
         assertThat(g.get("maxPipelines").asInt()).isEqualTo(3);

@@ -30,11 +30,14 @@ public class CrmSettingsService {
         return repository.findByWorkspaceId(workspaceId);
     }
 
-    /** The brand's settings, created with the reference defaults on first use; safe against concurrent creation. */
-    public CrmSettings getOrCreate(String workspaceId, String customerId) {
+    /** The brand's settings, created with the reference defaults on first use by {@code byUserId} ("system" for non-user callers); safe against concurrent creation. */
+    public CrmSettings getOrCreate(String workspaceId, String customerId, String byUserId) {
         return repository.findByWorkspaceId(workspaceId).orElseGet(() -> {
             try {
-                return repository.insert(CrmDefaults.newSettings(workspaceId, customerId));
+                CrmSettings fresh = CrmDefaults.newSettings(workspaceId, customerId);
+                fresh.setCreatedBy(byUserId);
+                fresh.setLastModifiedBy(byUserId);
+                return repository.insert(fresh);
             } catch (DuplicateKeyException e) {
                 return repository.findByWorkspaceId(workspaceId).orElseThrow(() -> e);
             }
@@ -55,7 +58,7 @@ public class CrmSettingsService {
         if (req.maxCustomFields() != null && req.maxCustomFields() < 1)
             errors.put("maxCustomFields", "must be at least 1");
         if (!errors.isEmpty()) throw new ValidationException(errors);
-        CrmSettings s = getOrCreate(workspaceId, customerId);
+        CrmSettings s = getOrCreate(workspaceId, customerId, by.userId());
         boolean before = s.isEnabled();
         s.setEnabled(req.enabled());
         s.setMaxPipelines(req.maxPipelines());
