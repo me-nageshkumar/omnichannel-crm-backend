@@ -19,7 +19,6 @@ import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import org.bson.Document;
 import org.bson.types.Decimal128;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -190,7 +189,6 @@ class CrmCompaniesApiIT extends CrmTestBase {
     }
 
     @Test
-    @Disabled("Task 10")
     void deleteWithOpenDealsIs409() throws Exception {
         String id = create("Acme Corp", Map.of()).get("id").asText();
         link(aliceId, id);
@@ -225,7 +223,6 @@ class CrmCompaniesApiIT extends CrmTestBase {
     }
 
     @Test
-    @Disabled("Task 10")
     void restrictedSummaryHidesInaccessibleDeals() throws Exception {
         String id = create("Acme Corp", Map.of()).get("id").asText();
         link(aliceId, id);
