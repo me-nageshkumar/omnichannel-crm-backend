@@ -13,12 +13,29 @@ Sibling checkouts in one directory:
 <workspace>/
   whatsapp-web.js/           # upstream https://github.com/wwebjs/whatsapp-web.js
   whatsapp-web-extension/    # the Chrome extension; its `npm run build` writes
-                             # src/main/resources/wabridge/scripts/ in this repo
+                             # omnichannel-service/src/main/resources/wabridge/scripts/ in this repo
   omnichannel-crm-frontend/  # the browser console (React + PatternFly)
-  omnichannel-crm-backend/   # this repo (Java 21, Spring Boot 3.5, package me.nageshk.omnichannel)
+  omnichannel-crm-backend/   # this repo (Java 21, Spring Boot 4.1, package me.nageshk.omnichannel)
 ```
 
 This repo continues the history of `whatsapp-backend`, which it replaces.
+
+## Modules
+
+A Maven multi-module build; each module depends only on the ones above it in this list, and its
+packages start with its own name (`me.nageshk.omnichannel.<module>.<feature>`, e.g. `db.contact`,
+`service.contact`, `app.contact`):
+
+| Module | Holds |
+|---|---|
+| `omnichannel-common` | API exceptions, `OmnichannelProperties`, the clock |
+| `omnichannel-db` | MongoDB documents and repositories, persistence-only helpers, collection and data migrations |
+| `omnichannel-security` | Spring Security setup, users, login (password, two-factor, JWT, device keys), roles and authorities |
+| `omnichannel-service` | Business services, listeners, schedulers, demo data, the page scripts served to the extension |
+| `omnichannel-app` | `OmnichannelApplication` (root package, so scanning covers every module), REST controllers, the extension's WebSocket bridge, `application.yml`; tests that start Spring live here |
+
+Stored documents carry their class name in `_class`; `ClassAliasRenames` rewrites names from before
+the split (`me.nageshk.omnichannel.contact.Contact`) on start.
 
 ## Run
 
@@ -40,7 +57,7 @@ htpasswd -bnBC 10 "" 'your-password' | tr -d ':\n'
 
 export OMNICHANNEL_SUPER_ADMIN_PASSWORD='$2a$10$...'
 export OMNICHANNEL_SEED_DEMO=true   # optional
-./mvnw spring-boot:run
+./mvnw -pl omnichannel-app -am spring-boot:run
 ```
 
 Set `OMNICHANNEL_JWT_SECRET` to a random string of at least 32 bytes outside development.
@@ -53,8 +70,8 @@ The browser console lives in the sibling repo `omnichannel-crm-frontend` (React 
 - Development: run this backend, then `npm run start:dev` in the frontend (port 9000; it proxies
   `/api` and `/ws` here).
 - Production, one port: `npm run build` in the frontend, then here
-  `./mvnw -Pwith-frontend package`. The profile copies `../omnichannel-crm-frontend/dist` into the
-  jar's `static/` (override with `-Dfrontend.dist=/path/to/dist`) and fails if `index.html` is
+  `./mvnw -Pwith-frontend package`, which builds `omnichannel-app/target/omnichannel-app-*.jar`. The profile
+  copies `../omnichannel-crm-frontend/dist` into the jar's `static/` (override with `-Dfrontend.dist=/path/to/dist`) and fails if `index.html` is
   missing. Deep links such as `/profile` are answered with `index.html`. Plain builds and tests
   never need the frontend.
 
@@ -238,7 +255,7 @@ the same request. Status shown per number: `DISABLED` (with `disabledBecause` NU
 ## Contacts
 
 A brand's people, in `contacts` (one per brand and WhatsApp person; everything is scoped by
-`workspaceId`, another brand's ids answer 404). Package `me.nageshk.omnichannel.contact`.
+`workspaceId`, another brand's ids answer 404). Packages `*.contact` in each module.
 
 - **Model:** `waId` (`…@c.us` or `…@lid`), `phone` (digits, country code first, or none for a hidden
   number), `name` (the WhatsApp display name until a person edits it: `nameEdited`), `labels` (ids),
@@ -303,7 +320,7 @@ Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, 
 ## Message templates
 
 Reusable messages a brand sends, in `messageTemplates` (everything scoped by `workspaceId`; another
-brand's template, media or contact answers 404). Package `me.nageshk.omnichannel.template`. A name is
+brand's template, media or contact answers 404). Packages `*.template` in each module. A name is
 unique per brand ignoring case, archived templates included.
 
 - **Types:** `TEXT`, `IMAGE`, `VIDEO`, `DOCUMENT`, `AUDIO`, `LOCATION`, `CONTACT_CARD`, `POLL`. Media types
@@ -382,7 +399,7 @@ Error codes: `NO_DEVICE` / `WHATSAPP_NOT_READY` / `TWO_FACTOR_STATE` (409), `CHA
 
 The extension fetches `page.js` from this server on every connect when the hash in the `hello`
 reply differs from its cache. Regenerate the resources with `cd ../whatsapp-web-extension && npm run build` and
-commit `src/main/resources/wabridge/scripts/`; the server refuses to start if the manifest
+commit `omnichannel-service/src/main/resources/wabridge/scripts/`; the server refuses to start if the manifest
 hash does not match the file.
 
 ## Event delivery guarantees
