@@ -3,6 +3,8 @@ package me.nageshk.omnichannel.tenant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
+import java.util.Set;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -32,13 +34,15 @@ public class TeamService {
     private final WorkspaceRepository workspaces;
     private final UserAdminService userAdmin;
     private final PhoneNumberRepository phoneNumbers;
+    private final ApplicationEventPublisher events;
 
     public TeamService(TeamRepository teams, WorkspaceRepository workspaces, UserAdminService userAdmin,
-            PhoneNumberRepository phoneNumbers) {
+            PhoneNumberRepository phoneNumbers, ApplicationEventPublisher events) {
         this.teams = teams;
         this.workspaces = workspaces;
         this.userAdmin = userAdmin;
         this.phoneNumbers = phoneNumbers;
+        this.events = events;
     }
 
     /** @throws NotFoundException if the workspace is not the customer's */
@@ -86,9 +90,13 @@ public class TeamService {
         if (members.stream().anyMatch(id -> id == null || !byId.containsKey(id))) {
             throw new NotInWorkspaceException("every member must be a user with access to this workspace");
         }
+        Set<String> removed = new LinkedHashSet<>(t.getMemberIds());
+        members.forEach(removed::remove);
         t.setName(newName);
         t.setMemberIds(new ArrayList<>(members));
-        return resolve(save(t), byId);
+        Team saved = save(t);
+        if (!removed.isEmpty()) events.publishEvent(new TeamEvents.MembersRemoved(saved, Set.copyOf(removed)));
+        return resolve(saved, byId);
     }
 
     private void requireWorkspace(String customerId, String workspaceId) {

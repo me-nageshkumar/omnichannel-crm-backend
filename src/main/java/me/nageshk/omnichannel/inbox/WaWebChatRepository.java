@@ -23,5 +23,7 @@ public interface WaWebChatRepository extends MongoRepository<WaWebChat, String> 
     List<WaWebChat> findByWorkspaceIdAndAssignedTeamIdAndAssignedUserIdIsNullAndStatusOrderByLastMessageAtAsc(
             String workspaceId, String assignedTeamId, ChatStatus status);
 
+    List<WaWebChat> findByPhoneNumberIdAndStatus(String phoneNumberId, ChatStatus status);
+
     void deleteByPhoneNumberId(String phoneNumberId);
 }
