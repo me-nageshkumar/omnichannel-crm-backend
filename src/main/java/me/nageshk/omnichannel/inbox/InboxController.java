@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import me.nageshk.omnichannel.access.AccessService;
@@ -146,17 +147,45 @@ public class InboxController {
         return query.chats(me, workspaceId, List.of(phoneNumberId), scope, wanted, q, unread, before, checked(limit));
     }
 
-    @GetMapping(value = "/phone-numbers/{phoneNumberId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    /**
+     * One live stream per open console: events for the chats the viewer may see on the numbers they selected (all
+     * their visible numbers when none are named). The viewer is re-resolved from the token on every push and ping.
+     */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
-    public SseEmitter stream(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
-            @PathVariable String workspaceId, @PathVariable String phoneNumberId) {
-        phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
+    public SseEmitter stream(@AuthenticationPrincipal AuthenticatedUser me,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization, @PathVariable String workspaceId,
+            @RequestParam(required = false) List<String> phoneNumberIds) {
+        Set<String> requested = phoneNumberIds == null ? Set.of() : Set.copyOf(phoneNumberIds);
+        if (!viewer(me, workspaceId, requested).phoneNumberIds().containsAll(requested)) {
+            throw new NotFoundException("phone number not found");
+        }
         // the stream outlives the request, so the viewer is re-authenticated from the token on every push and ping:
         // a user who is disabled, logged out, demoted or removed from the brand stops receiving at once
         String token = authorization.startsWith(BEARER) ? authorization.substring(BEARER.length()) : authorization;
-        return broker.subscribe(phoneNumberId, () -> authenticator.authenticate(token)
-                .map(user -> scopeService.scopeOf(user, workspaceId))
+        return broker.subscribe(workspaceId, () -> authenticator.authenticate(token)
+                .map(user -> viewer(user, workspaceId, requested))
                 .orElseThrow(() -> new NotFoundException("session ended")));
+    }
+
+    /** The user's scope and the numbers they may see among {@code requested} (all visible ones when it is empty). */
+    private InboxStreamBroker.Viewer viewer(AuthenticatedUser user, String workspaceId, Set<String> requested) {
+        InboxScope scope = scopeService.scopeOf(user, workspaceId);
+        Set<String> visible = scopeService.visibleNumbers(scope, workspaceId).stream().map(v -> v.number().getId())
+                .collect(java.util.stream.Collectors.toSet());
+        if (requested.isEmpty()) return new InboxStreamBroker.Viewer(scope, visible);
+        Set<String> selected = new java.util.HashSet<>(requested);
+        selected.retainAll(visible);
+        return new InboxStreamBroker.Viewer(scope, selected);
+    }
+
+    @GetMapping(value = "/phone-numbers/{phoneNumberId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
+    public SseEmitter streamOfNumber(@AuthenticationPrincipal AuthenticatedUser me,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization, @PathVariable String workspaceId,
+            @PathVariable String phoneNumberId) {
+        phoneNumbers.requireInWorkspace(workspaceId, phoneNumberId);
+        return stream(me, authorization, workspaceId, List.of(phoneNumberId));
     }
 
     @GetMapping("/settings")

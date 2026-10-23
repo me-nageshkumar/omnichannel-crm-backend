@@ -16,6 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 class InboxStreamBrokerTest {
 
     private static final String PN = "pn1";
+    private static final String WS = "ws1";
 
     /** Captures what would have been written to the wire, one string per event. */
     static class RecordingEmitter extends SseEmitter {
@@ -54,10 +55,20 @@ class InboxStreamBrokerTest {
         return new InboxScope(Level.MINE, userId, Set.of(), Set.of());
     }
 
+    /** A viewer who sees only their own chats, on the given numbers (all of them when none are given). */
+    private static InboxStreamBroker.Viewer viewer(String userId, String... numbers) {
+        return new InboxStreamBroker.Viewer(mine(userId), numbers.length == 0 ? Set.of(PN, "pn2") : Set.of(numbers));
+    }
+
     private static WaWebChat chatAssignedTo(String userId) {
+        return chatAssignedTo(userId, PN);
+    }
+
+    private static WaWebChat chatAssignedTo(String userId, String phoneNumberId) {
         WaWebChat c = new WaWebChat();
         c.setId("c1");
-        c.setPhoneNumberId(PN);
+        c.setWorkspaceId(WS);
+        c.setPhoneNumberId(phoneNumberId);
         c.setAssignedUserId(userId);
         return c;
     }
@@ -77,9 +88,9 @@ class InboxStreamBrokerTest {
 
     @Test
     void chatEventCarriesVisibleFalseForReassignedChat() {
-        broker.subscribe(PN, () -> mine("u1"));
+        broker.subscribe(WS, () -> viewer("u1"));
 
-        broker.push(PN, chatAssignedTo("u2"), chatView());
+        broker.push(WS, chatAssignedTo("u2"), chatView());
 
         assertThat(created).hasSize(1);
         assertThat(created.get(0).events).hasSize(1);
@@ -92,27 +103,27 @@ class InboxStreamBrokerTest {
 
     @Test
     void chatEventCarriesVisibleTrueInsideScope() {
-        broker.subscribe(PN, () -> mine("u1"));
+        broker.subscribe(WS, () -> viewer("u1"));
 
-        broker.push(PN, chatAssignedTo("u1"), chatView());
+        broker.push(WS, chatAssignedTo("u1"), chatView());
 
         assertThat(created.get(0).events.get(0)).contains("\"visible\":true");
     }
 
     @Test
     void messageIsNotPushedOutsideScope() {
-        broker.subscribe(PN, () -> mine("u1"));
+        broker.subscribe(WS, () -> viewer("u1"));
 
-        broker.pushMessage(PN, chatAssignedTo("u2"), messageView());
+        broker.pushMessage(WS, chatAssignedTo("u2"), messageView());
 
         assertThat(created.get(0).events).isEmpty();
     }
 
     @Test
     void messagePushedInsideScope() {
-        broker.subscribe(PN, () -> mine("u1"));
+        broker.subscribe(WS, () -> viewer("u1"));
 
-        broker.pushMessage(PN, chatAssignedTo("u1"), messageView());
+        broker.pushMessage(WS, chatAssignedTo("u1"), messageView());
 
         assertThat(created.get(0).events).hasSize(1);
         String event = created.get(0).events.get(0);
@@ -122,10 +133,10 @@ class InboxStreamBrokerTest {
 
     @Test
     void actionPushedOnlyInsideScope() {
-        broker.subscribe(PN, () -> mine("u1"));
-        broker.subscribe(PN, () -> mine("u2"));
+        broker.subscribe(WS, () -> viewer("u1"));
+        broker.subscribe(WS, () -> viewer("u2"));
 
-        broker.pushAction(PN, chatAssignedTo("u1"), actionView());
+        broker.pushAction(WS, chatAssignedTo("u1"), actionView());
 
         assertThat(created.get(0).events).hasSize(1);
         assertThat(created.get(0).events.get(0)).startsWith("event:action\ndata:")
@@ -134,55 +145,76 @@ class InboxStreamBrokerTest {
     }
 
     @Test
-    void pushOnlyReachesSubscribersOfThatNumber() {
-        broker.subscribe(PN, () -> mine("u1"));
-        broker.subscribe("pn2", () -> mine("u1"));
+    void pushOnlyReachesSubscribersOfThatWorkspace() {
+        broker.subscribe(WS, () -> viewer("u1"));
+        broker.subscribe("ws2", () -> viewer("u1"));
 
-        broker.push(PN, chatAssignedTo("u1"), chatView());
+        broker.push(WS, chatAssignedTo("u1"), chatView());
 
         assertThat(created.get(0).events).hasSize(1);
         assertThat(created.get(1).events).isEmpty();
     }
 
     @Test
+    void deliversOnlyForSelectedNumbers() {
+        broker.subscribe(WS, () -> viewer("u1", PN));
+        broker.subscribe(WS, () -> viewer("u1", "pn2"));
+        broker.push(WS, chatAssignedTo("u1", PN), chatView());
+        broker.pushMessage(WS, chatAssignedTo("u1", PN), messageView());
+        assertThat(created.get(0).events).hasSize(2);
+        assertThat(created.get(1).events).isEmpty();
+        broker.push(WS, chatAssignedTo("u1", "pn2"), chatView());
+        assertThat(created.get(1).events).hasSize(1);
+    }
+
+    @Test
+    void chatLeavingScopeIsAnnouncedInvisibleOnlyWithinSelectedNumbers() {
+        broker.subscribe(WS, () -> viewer("u1", PN));
+        broker.push(WS, chatAssignedTo("u2", PN), chatView());
+        broker.push(WS, chatAssignedTo("u2", "pn2"), chatView());
+        assertThat(created.get(0).events).hasSize(1);
+        assertThat(created.get(0).events.get(0)).contains("\"visible\":false");
+    }
+
+    @Test
     void failedEmitterIsDropped() {
-        broker.subscribe(PN, () -> mine("u1"));
-        broker.subscribe(PN, () -> mine("u1"));
+        broker.subscribe(WS, () -> viewer("u1"));
+        broker.subscribe(WS, () -> viewer("u1"));
         created.get(0).failOnSend = true;
-        assertThat(broker.subscribers(PN)).isEqualTo(2);
+        assertThat(broker.subscribers(WS)).isEqualTo(2);
 
-        broker.push(PN, chatAssignedTo("u1"), chatView());
+        broker.push(WS, chatAssignedTo("u1"), chatView());
 
-        assertThat(broker.subscribers(PN)).isEqualTo(1);
+        assertThat(broker.subscribers(WS)).isEqualTo(1);
         assertThat(created.get(1).events).hasSize(1);
     }
 
     @Test
     void subscriberWhoLostAccessIsCompletedAndDropped() {
-        broker.subscribe(PN, () -> {
+        broker.subscribe(WS, () -> {
             throw new NotFoundException("gone");
         });
 
-        broker.push(PN, chatAssignedTo("u1"), chatView());
+        broker.push(WS, chatAssignedTo("u1"), chatView());
 
         assertThat(created.get(0).completed).isTrue();
         assertThat(created.get(0).events).isEmpty();
-        assertThat(broker.subscribers(PN)).isZero();
+        assertThat(broker.subscribers(WS)).isZero();
     }
 
     @Test
     void pingDropsASubscriberWhoLostAccessWithoutSendingToIt() {
-        broker.subscribe(PN, () -> {
+        broker.subscribe(WS, () -> {
             throw new NotFoundException("gone");
         });
-        broker.subscribe(PN, () -> mine("u1"));
+        broker.subscribe(WS, () -> viewer("u1"));
 
         broker.ping();
 
         assertThat(created.get(0).completed).isTrue();
         assertThat(created.get(0).events).isEmpty();
         assertThat(created.get(1).events).hasSize(1);
-        assertThat(broker.subscribers(PN)).isEqualTo(1);
+        assertThat(broker.subscribers(WS)).isEqualTo(1);
     }
 
     @Test
@@ -191,7 +223,7 @@ class InboxStreamBrokerTest {
         try {
             for (int i = 0; i < 500; i++) {
                 String pn = "race" + i;
-                SseEmitter first = broker.subscribe(pn, () -> mine("u1"));
+                SseEmitter first = broker.subscribe(pn, () -> viewer("u1"));
                 java.util.concurrent.CyclicBarrier barrier = new java.util.concurrent.CyclicBarrier(2);
                 var removal = pool.submit(() -> {
                     barrier.await();
@@ -202,7 +234,7 @@ class InboxStreamBrokerTest {
                 });
                 var subscribe = pool.submit(() -> {
                     barrier.await();
-                    return broker.subscribe(pn, () -> mine("u1"));
+                    return broker.subscribe(pn, () -> viewer("u1"));
                 });
                 removal.get();
                 RecordingEmitter second = (RecordingEmitter) subscribe.get();
@@ -219,8 +251,8 @@ class InboxStreamBrokerTest {
 
     @Test
     void pingReachesAllSubscribers() {
-        broker.subscribe(PN, () -> mine("u1"));
-        broker.subscribe("pn2", () -> mine("u2"));
+        broker.subscribe(WS, () -> viewer("u1"));
+        broker.subscribe("ws2", () -> viewer("u2"));
 
         broker.ping();
 

@@ -15,16 +15,19 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * The live streams of the inbox: one {@link SseEmitter} per open console, grouped by phone number. Visibility is
- * evaluated per subscriber from its {@code scope} supplier on every push and on every keep-alive ping; the supplier
- * re-authenticates the viewer and re-reads their current access, and one that throws (access lost) ends that stream.
+ * Fans inbox events out to the open consoles of a workspace (design §3.7). Each subscriber is a viewer with a scope
+ * and the numbers they are looking at, both re-resolved from their token on every push and ping so a user who is
+ * disabled, logged out, demoted or moved between teams stops receiving at once.
  */
 @Slf4j
 @Component
 public class InboxStreamBroker {
 
-    /** One open stream and the way to compute its viewer's current scope. */
-    record Subscriber(SseEmitter emitter, Supplier<InboxScope> scope) {
+    /** What one open console may see right now: its chat scope and the numbers it has selected (all visible ones). */
+    public record Viewer(InboxScope scope, Set<String> phoneNumberIds) {
+    }
+
+    record Subscriber(SseEmitter emitter, Supplier<Viewer> viewer) {
     }
 
     private final Map<String, Set<Subscriber>> subscribers = new ConcurrentHashMap<>();
@@ -41,66 +44,59 @@ public class InboxStreamBroker {
         this.emitterFactory = emitterFactory;
     }
 
-    /** Opens a stream with no timeout; it removes itself when the client goes away. */
-    public SseEmitter subscribe(String phoneNumberId, Supplier<InboxScope> scope) {
+    public SseEmitter subscribe(String workspaceId, Supplier<Viewer> viewer) {
         SseEmitter emitter = emitterFactory.apply(0L);
-        Subscriber subscriber = new Subscriber(emitter, scope);
+        Subscriber subscriber = new Subscriber(emitter, viewer);
         // compute() is atomic per key, so it cannot interleave with remove() dropping the emptied set
-        subscribers.compute(phoneNumberId, (k, set) -> {
+        subscribers.compute(workspaceId, (k, set) -> {
             Set<Subscriber> target = set == null ? ConcurrentHashMap.newKeySet() : set;
             target.add(subscriber);
             return target;
         });
-        Runnable remove = () -> remove(phoneNumberId, subscriber);
+        Runnable remove = () -> remove(workspaceId, subscriber);
         emitter.onCompletion(remove);
         emitter.onTimeout(remove);
         emitter.onError(e -> remove.run());
         return emitter;
     }
 
-    /**
-     * Sends the chat to every subscriber of the number, flagged {@code visible} per their scope. A subscriber who
-     * may not see the chat gets only its id and phone number id with {@code visible: false} (enough to drop the
-     * row), never its contents.
-     */
-    public void push(String phoneNumberId, WaWebChat chat, ChatView view) {
-        forEach(phoneNumberId, chat, false, (s, visible) -> send(phoneNumberId, s, "chat",
-                Map.of("chat", visible ? view : Map.of("id", chat.getId(), "phoneNumberId", phoneNumberId),
+    /** A chat changed: viewers of its number hear about it, with {@code visible:false} when it left their scope. */
+    public void push(String workspaceId, WaWebChat chat, ChatView view) {
+        forEach(workspaceId, chat, false, (s, visible) -> send(workspaceId, s, "chat",
+                Map.of("chat", visible ? view : Map.of("id", chat.getId(), "phoneNumberId", chat.getPhoneNumberId()),
                         "visible", visible)));
     }
 
-    /** Sends the message only to subscribers who can see the chat. */
-    public void pushMessage(String phoneNumberId, WaWebChat chat, MessageView view) {
-        forEach(phoneNumberId, chat, true, (s, visible) -> send(phoneNumberId, s, "message",
+    public void pushMessage(String workspaceId, WaWebChat chat, MessageView view) {
+        forEach(workspaceId, chat, true, (s, visible) -> send(workspaceId, s, "message",
                 Map.of("chatId", chat.getId(), "message", view)));
     }
 
-    /** Sends the audit entry only to subscribers who can see the chat. */
-    public void pushAction(String phoneNumberId, WaWebChat chat, ActionView view) {
-        forEach(phoneNumberId, chat, true, (s, visible) -> send(phoneNumberId, s, "action",
+    public void pushAction(String workspaceId, WaWebChat chat, ActionView view) {
+        forEach(workspaceId, chat, true, (s, visible) -> send(workspaceId, s, "action",
                 Map.of("chatId", chat.getId(), "action", view)));
     }
 
     @Scheduled(fixedRate = 25_000)
     public void ping() {
-        subscribers.forEach((phoneNumberId, set) -> set.forEach(s -> {
+        subscribers.forEach((workspaceId, set) -> set.forEach(s -> {
             try {
-                s.scope().get();
+                s.viewer().get();
             } catch (RuntimeException e) {
-                log.debug("Inbox stream for {} lost access, closing: {}", phoneNumberId, e.getMessage());
-                drop(phoneNumberId, s);
+                log.debug("Inbox stream in {} lost access, closing: {}", workspaceId, e.getMessage());
+                drop(workspaceId, s);
                 return;
             }
             try {
                 s.emitter().send(SseEmitter.event().comment("ping"));
             } catch (IOException | RuntimeException e) {
-                drop(phoneNumberId, s);
+                drop(workspaceId, s);
             }
         }));
     }
 
-    public int subscribers(String phoneNumberId) {
-        Set<Subscriber> set = subscribers.get(phoneNumberId);
+    public int subscribers(String workspaceId) {
+        Set<Subscriber> set = subscribers.get(workspaceId);
         return set == null ? 0 : set.size();
     }
 
@@ -108,38 +104,42 @@ public class InboxStreamBroker {
         void to(Subscriber subscriber, boolean visible);
     }
 
-    private void forEach(String phoneNumberId, WaWebChat chat, boolean onlyVisible, Delivery delivery) {
-        Set<Subscriber> set = subscribers.get(phoneNumberId);
+    private void forEach(String workspaceId, WaWebChat chat, boolean onlyVisible, Delivery delivery) {
+        Set<Subscriber> set = subscribers.get(workspaceId);
         if (set == null) {
             return;
         }
         for (Subscriber s : set) {
-            boolean visible;
+            Viewer viewer;
             try {
-                visible = s.scope().get().covers(chat);
+                viewer = s.viewer().get();
             } catch (RuntimeException e) {
-                log.debug("Inbox stream for {} lost access, closing: {}", phoneNumberId, e.getMessage());
-                drop(phoneNumberId, s);
+                log.debug("Inbox stream in {} lost access, closing: {}", workspaceId, e.getMessage());
+                drop(workspaceId, s);
                 continue;
             }
+            if (!viewer.phoneNumberIds().contains(chat.getPhoneNumberId())) {
+                continue;
+            }
+            boolean visible = viewer.scope().covers(chat);
             if (visible || !onlyVisible) {
                 delivery.to(s, visible);
             }
         }
     }
 
-    private void send(String phoneNumberId, Subscriber s, String event, Object payload) {
+    private void send(String workspaceId, Subscriber s, String event, Object payload) {
         try {
             s.emitter().send(SseEmitter.event().name(event).data(mapper.writeValueAsString(payload),
                     MediaType.APPLICATION_JSON));
         } catch (IOException | RuntimeException e) {
-            log.debug("Inbox stream send failed for {}, dropping: {}", phoneNumberId, e.toString());
-            drop(phoneNumberId, s);
+            log.debug("Inbox stream send failed in {}, dropping: {}", workspaceId, e.toString());
+            drop(workspaceId, s);
         }
     }
 
-    private void drop(String phoneNumberId, Subscriber s) {
-        remove(phoneNumberId, s);
+    private void drop(String workspaceId, Subscriber s) {
+        remove(workspaceId, s);
         try {
             s.emitter().complete();
         } catch (RuntimeException ignored) {
@@ -147,8 +147,8 @@ public class InboxStreamBroker {
         }
     }
 
-    private void remove(String phoneNumberId, Subscriber s) {
-        subscribers.compute(phoneNumberId, (k, set) -> {
+    private void remove(String workspaceId, Subscriber s) {
+        subscribers.compute(workspaceId, (k, set) -> {
             if (set == null) {
                 return null;
             }

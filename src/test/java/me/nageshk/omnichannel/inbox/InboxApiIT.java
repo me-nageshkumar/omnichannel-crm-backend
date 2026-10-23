@@ -491,7 +491,7 @@ class InboxApiIT extends InboxApiTestBase {
 
     @Test
     void streamIsEventStream() throws Exception {
-        MvcResult result = mvc.perform(get(inbox() + "/phone-numbers/" + number.getId() + "/stream")
+        MvcResult result = mvc.perform(get(inbox() + "/stream").param("phoneNumberIds", number.getId())
                         .header("Authorization", "Bearer " + agentToken).accept(MediaType.TEXT_EVENT_STREAM))
                 .andExpect(request().asyncStarted()).andReturn();
 

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 class InboxPushListenerTest {
 
     private static final String PN = "pn1";
+    private static final String WS = "ws1";
 
     private final InboxStreamBroker broker = mock(InboxStreamBroker.class);
     private final InboxViews views = mock(InboxViews.class);
@@ -33,9 +34,10 @@ class InboxPushListenerTest {
     void setUp() {
         chat.setId("c1");
         chat.setPhoneNumberId(PN);
+        chat.setWorkspaceId(WS);
         message.setId("m1");
         action.setId("a1");
-        when(broker.subscribers(PN)).thenReturn(1);
+        when(broker.subscribers(WS)).thenReturn(1);
         when(views.chat(chat)).thenReturn(chatView);
         when(views.message(message)).thenReturn(messageView);
         when(views.action(action)).thenReturn(actionView);
@@ -45,7 +47,7 @@ class InboxPushListenerTest {
     void messageUpsertedPushesOnlyTheMessageBecauseChatChangedFollowsIt() {
         listener.on(new MessageUpserted(chat, message, true));
 
-        verify(broker).pushMessage(PN, chat, messageView);
+        verify(broker).pushMessage(WS, chat, messageView);
         verify(broker, never()).push(any(), any(), any());
     }
 
@@ -53,19 +55,19 @@ class InboxPushListenerTest {
     void chatChangedPushesChat() {
         listener.on(new ChatChanged(chat));
 
-        verify(broker).push(PN, chat, chatView);
+        verify(broker).push(WS, chat, chatView);
     }
 
     @Test
     void actionRecordedPushesAction() {
         listener.on(new ActionRecorded(chat, action));
 
-        verify(broker).pushAction(PN, chat, actionView);
+        verify(broker).pushAction(WS, chat, actionView);
     }
 
     @Test
     void noSubscribersBuildsNoViews() {
-        when(broker.subscribers(PN)).thenReturn(0);
+        when(broker.subscribers(WS)).thenReturn(0);
 
         listener.on(new MessageUpserted(chat, message, true));
         listener.on(new ChatChanged(chat));

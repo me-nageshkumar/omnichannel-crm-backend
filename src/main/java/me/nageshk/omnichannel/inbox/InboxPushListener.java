@@ -24,12 +24,12 @@ public class InboxPushListener {
     public void on(MessageUpserted event) {
         try {
             WaWebChat chat = event.chat();
-            if (broker.subscribers(chat.getPhoneNumberId()) == 0) {
+            if (broker.subscribers(chat.getWorkspaceId()) == 0) {
                 return;
             }
             // no chat push here: every publisher follows MessageUpserted with ChatChanged, or (the media cache) leaves
             // the chat summary as it was
-            broker.pushMessage(chat.getPhoneNumberId(), chat, views.message(event.message()));
+            broker.pushMessage(chat.getWorkspaceId(), chat, views.message(event.message()));
         } catch (RuntimeException e) {
             log.warn("Could not push message {} to the inbox stream", event.message().getId(), e);
         }
@@ -39,10 +39,10 @@ public class InboxPushListener {
     public void on(ChatChanged event) {
         try {
             WaWebChat chat = event.chat();
-            if (broker.subscribers(chat.getPhoneNumberId()) == 0) {
+            if (broker.subscribers(chat.getWorkspaceId()) == 0) {
                 return;
             }
-            broker.push(chat.getPhoneNumberId(), chat, views.chat(chat));
+            broker.push(chat.getWorkspaceId(), chat, views.chat(chat));
         } catch (RuntimeException e) {
             log.warn("Could not push chat {} to the inbox stream", event.chat().getId(), e);
         }
@@ -52,10 +52,10 @@ public class InboxPushListener {
     public void on(ActionRecorded event) {
         try {
             WaWebChat chat = event.chat();
-            if (broker.subscribers(chat.getPhoneNumberId()) == 0) {
+            if (broker.subscribers(chat.getWorkspaceId()) == 0) {
                 return;
             }
-            broker.pushAction(chat.getPhoneNumberId(), chat, views.action(event.action()));
+            broker.pushAction(chat.getWorkspaceId(), chat, views.action(event.action()));
         } catch (RuntimeException e) {
             log.warn("Could not push action {} to the inbox stream", event.action().getId(), e);
         }
