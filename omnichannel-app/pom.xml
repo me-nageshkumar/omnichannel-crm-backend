@@ -26,6 +26,10 @@
       <artifactId>omnichannel-service</artifactId>
     </dependency>
     <dependency>
+      <groupId>me.nageshk</groupId>
+      <artifactId>omnichannel-crm</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webmvc</artifactId>
     </dependency>

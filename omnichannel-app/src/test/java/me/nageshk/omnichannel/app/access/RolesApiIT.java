@@ -240,7 +240,7 @@ class RolesApiIT {
     @Test
     void previewReportsSeniorRoleLosingAgent() {
         create("SENIOR", "BRAND", List.of("user:view", "user:manage", "contact:view", "contact:annotate", "template:view",
-                "inbox:view", "inbox:view-queue", "inbox:send", "campaign:view"));
+                "inbox:view", "inbox:view-queue", "inbox:send", "campaign:view", "crm:view", "crm:edit"));
         ResponseEntity<JsonNode> res = call(HttpMethod.POST, "/api/roles/" + idOf("AGENT") + "/preview",
                 Map.of("authorities", List.of("contact:view", "contact:annotate", "team:manage")));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);

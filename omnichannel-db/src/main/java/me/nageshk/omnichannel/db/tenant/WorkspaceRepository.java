@@ -9,4 +9,6 @@ public interface WorkspaceRepository extends MongoRepository<Workspace, String> 
     List<Workspace> findByCustomerIdOrderByName(String customerId);
 
     Optional<Workspace> findByIdAndCustomerId(String id, String customerId);
+
+    Optional<Workspace> findFirstByCustomerIdAndName(String customerId, String name);
 }

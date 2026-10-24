@@ -9,6 +9,10 @@ omnichannel:
   # tests drive CampaignRunner.tick() themselves
   campaign:
     auto-tick: false
+  crm:
+    jobs:
+      # tests run the CRM jobs themselves
+      enabled: false
 logging:
   level:
     de.flapdoodle: WARN

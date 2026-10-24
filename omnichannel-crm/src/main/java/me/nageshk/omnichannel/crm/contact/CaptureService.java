@@ -1,0 +1,223 @@
+package me.nageshk.omnichannel.crm.contact;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import me.nageshk.omnichannel.common.api.NotFoundException;
+import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.crm.access.CrmContext;
+import me.nageshk.omnichannel.crm.access.PipelineIds;
+import me.nageshk.omnichannel.crm.activity.ActivityLog;
+import me.nageshk.omnichannel.crm.activity.ActivityType;
+import me.nageshk.omnichannel.crm.common.CrmErrors;
+import me.nageshk.omnichannel.crm.common.CrmTarget;
+import me.nageshk.omnichannel.crm.common.PicklistItem;
+import me.nageshk.omnichannel.crm.common.TargetType;
+import me.nageshk.omnichannel.crm.contact.dto.CaptureRequest;
+import me.nageshk.omnichannel.crm.contact.dto.CaptureResult;
+import me.nageshk.omnichannel.crm.contact.dto.CreateRequest;
+import me.nageshk.omnichannel.crm.deal.CaptureDeal;
+import me.nageshk.omnichannel.crm.deal.DealService;
+import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
+import me.nageshk.omnichannel.crm.platform.ChatDirectory;
+import me.nageshk.omnichannel.crm.platform.ContactDirectory;
+import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
+import me.nageshk.omnichannel.crm.platform.PlatformChat;
+import me.nageshk.omnichannel.crm.platform.PlatformContact;
+import me.nageshk.omnichannel.crm.platform.PlatformNumber;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.stereotype.Service;
+
+/** Turns a chat or a typed phone into a CRM contact on a channel number (spec 4.5, 6.1). */
+@Service
+public class CaptureService {
+
+    private final MongoTemplate mongo;
+    private final ChatDirectory chats;
+    private final ContactDirectory contactDirectory;
+    private final PeopleDirectory people;
+    private final PipelineIds pipelineIds;
+    private final CrmContactService contactService;
+    private final DealService deals;
+    private final ActivityLog activities;
+    private final FieldDefinitionService fields;
+    private final Clock clock;
+
+    CaptureService(MongoTemplate mongo, ChatDirectory chats, ContactDirectory contactDirectory,
+            PeopleDirectory people, PipelineIds pipelineIds, CrmContactService contactService, DealService deals,
+            ActivityLog activities, FieldDefinitionService fields, Clock clock) {
+        this.fields = fields;
+        this.deals = deals;
+        this.mongo = mongo;
+        this.chats = chats;
+        this.contactDirectory = contactDirectory;
+        this.people = people;
+        this.pipelineIds = pipelineIds;
+        this.contactService = contactService;
+        this.activities = activities;
+        this.clock = clock;
+    }
+
+    public CaptureResult capture(CrmContext ctx, CaptureRequest req) {
+        ctx.require("crm:edit");
+        requireAnyPipeline(ctx);
+        if (req.chatId() == null || req.chatId().isBlank()) throw new ValidationException("chatId", "is required");
+        clean(req.dealTitle(), "dealTitle");
+        PlatformChat chat = chats.find(ctx.workspaceId(), req.chatId())
+                .orElseThrow(() -> new NotFoundException("Chat not found"));
+        if (!ctx.viewAll() && !assignedToMe(ctx, chat)) {
+            throw CrmErrors.forbidden("CHAT_NOT_ASSIGNED", "The chat is not assigned to you or your team");
+        }
+        String pipelineId = resolvePipeline(ctx, req.pipelineId());
+        PlatformContact contact = contactDirectory.find(ctx.workspaceId(), chat.contactId())
+                .orElseThrow(() -> new NotFoundException("Contact not found"));
+        PlatformNumber channel = numberOf(ctx, chat.phoneNumberId());
+        Origin origin = new Origin(OriginKind.INBOUND_CHAT, channel.id(), chat.id(), chat.lastInboundAt(), ctx.userId());
+        return findOrCreate(ctx, contact, channel, origin, pipelineId, req.dealTitle());
+    }
+
+    public CaptureResult create(CrmContext ctx, CreateRequest req) {
+        ctx.require("crm:edit");
+        requireAnyPipeline(ctx);
+        if (req.phoneNumberId() == null || !ctx.chattable().contains(req.phoneNumberId())) {
+            throw new NotFoundException("Number not found");
+        }
+        PlatformNumber channel = numberOf(ctx, req.phoneNumberId());
+        String pipelineId = resolvePipeline(ctx, req.pipelineId());
+        if (req.phone() == null || req.phone().isBlank()) throw new ValidationException("phone", "is required");
+        clean(req.dealTitle(), "dealTitle");
+        String first = clean(req.firstName(), "firstName");
+        String last = clean(req.lastName(), "lastName");
+        String name = ((first == null ? "" : first) + " " + (last == null ? "" : last)).trim();
+        PlatformContact contact = contactDirectory.ensure(ctx.workspaceId(), ctx.customerId(), req.phone(),
+                name.isEmpty() ? null : name);
+        Origin origin = new Origin(OriginKind.MANUAL, channel.id(), null, null, ctx.userId());
+        return findOrCreate(ctx, contact, channel, origin, pipelineId, req.dealTitle(), first, last);
+    }
+
+    public CaptureResult findOrCreate(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin,
+            String pipelineId, String dealTitle) {
+        return findOrCreate(ctx, c, channel, origin, pipelineId, dealTitle, null, null);
+    }
+
+    /** As the overload above; a CRM contact created here gets the names. */
+    public CaptureResult findOrCreate(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin,
+            String pipelineId, String dealTitle, String firstName, String lastName) {
+        String ws = ctx.workspaceId();
+        Query existing = new Query(Criteria.where("workspaceId").is(ws).and("contactId").is(c.id())
+                .and("channel.phoneNumberId").is(channel.id()));
+        CrmContact found = mongo.findOne(existing, CrmContact.class);
+        boolean created = found == null;
+        if (created) {
+            CrmContact n = new CrmContact();
+            n.setWorkspaceId(ws);
+            n.setCustomerId(ctx.customerId());
+            n.setContactId(c.id());
+            n.setChannel(new Channel(channel.id(), channel.number()));
+            n.setPhone(c.phone());
+            n.setContactSnapshot(new ContactSnapshot(c.name()));
+            n.setOrigin(origin);
+            n.setFirstName(firstName);
+            n.setLastName(lastName);
+            n.setOwnerId(ctx.userId());
+            n.setLifecycleStatus(defaultKey(ctx.settings().getLifecycleStatuses()));
+            // nobody fills required fields on a capture or an import; defaults still apply
+            n.setCustomFields(fields.values(ctx, TargetType.CONTACT, Map.of(), null, true, false, new LinkedHashMap<>()));
+            n.setCreatedBy(ctx.userId());
+            n.setLastModifiedBy(ctx.userId());
+            try {
+                found = mongo.insert(n);
+                activities.record(ctx, ActivityType.RECORD_CREATED, new CrmTarget(TargetType.CONTACT, found.getId()),
+                        List.of(), null, channel.id(), "Contact added from " + origin.kind(),
+                        new LinkedHashMap<>(Map.of("origin", origin.kind().name())));
+            } catch (DuplicateKeyException race) {
+                found = mongo.findOne(existing, CrmContact.class);
+                created = false;
+            }
+        }
+        CaptureDeal deal = deals.createForCapture(ctx, found, pipelineId, dealTitle);
+        // read again: the deal has changed the contact's counters and pipelines
+        CrmContact fresh = mongo.findOne(new Query(Criteria.where("_id").is(found.getId()).and("workspaceId").is(ws)),
+                CrmContact.class);
+        return new CaptureResult(contactService.view(ctx, fresh == null ? found : fresh), deal.deal(), created,
+                deal.created());
+    }
+
+    /**
+     * Why the caller cannot capture the chat, in the order capture checks it, or null when they can:
+     * {@code NO_EDIT}, {@code NO_PIPELINE_ACCESS}, {@code CHAT_NOT_ASSIGNED} (view-all users skip the last two).
+     */
+    String captureBlockedReason(CrmContext ctx, PlatformChat chat) {
+        if (!ctx.can("crm:edit")) return "NO_EDIT";
+        if (!hasAnyPipeline(ctx)) return "NO_PIPELINE_ACCESS";
+        if (!ctx.viewAll() && !assignedToMe(ctx, chat)) return "CHAT_NOT_ASSIGNED";
+        return null;
+    }
+
+    private static boolean hasAnyPipeline(CrmContext ctx) {
+        return ctx.viewAll() || !ctx.pipelines().pipelineIds().isEmpty();
+    }
+
+    private static void requireAnyPipeline(CrmContext ctx) {
+        if (!hasAnyPipeline(ctx)) {
+            throw CrmErrors.forbidden("NO_PIPELINE_ACCESS", "No pipeline is assigned to you");
+        }
+    }
+
+    private boolean assignedToMe(CrmContext ctx, PlatformChat chat) {
+        if (ctx.userId().equals(chat.assignedUserId())) return true;
+        return chat.assignedTeamId() != null
+                && people.teamIdsOf(ctx.workspaceId(), ctx.userId()).contains(chat.assignedTeamId());
+    }
+
+    /**
+     * Where an import puts its contacts: the number must be one the caller works ({@code ctx.chattable()}) and the
+     * pipeline one they may see and active; 404 otherwise.
+     */
+    public PlatformNumber importChannel(CrmContext ctx, String phoneNumberId) {
+        ctx.require("crm:edit");
+        requireAnyPipeline(ctx);
+        if (phoneNumberId == null || !ctx.chattable().contains(phoneNumberId)) {
+            throw new NotFoundException("Number not found");
+        }
+        return numberOf(ctx, phoneNumberId);
+    }
+
+    /** Required for restricted users; view-all users default to the brand's default pipeline. */
+    public String resolvePipeline(CrmContext ctx, String requested) {
+        String id = requested == null || requested.isBlank() ? null : requested.trim();
+        if (id == null) {
+            if (!ctx.viewAll()) throw new ValidationException("pipelineId", "is required");
+            id = ctx.settings().getDefaultPipelineId();
+            if (id == null) throw new ValidationException("pipelineId", "the brand has no default pipeline");
+        }
+        if (!ctx.pipelines().allows(id) || !pipelineIds.existing(ctx.workspaceId()).contains(id)) {
+            throw new NotFoundException("Pipeline not found");
+        }
+        if (!pipelineIds.active(ctx.workspaceId()).contains(id)) {
+            throw CrmErrors.badRequest("PIPELINE_INACTIVE", "The pipeline is not active");
+        }
+        return id;
+    }
+
+    private static PlatformNumber numberOf(CrmContext ctx, String phoneNumberId) {
+        return ctx.numbers().stream().filter(n -> n.id().equals(phoneNumberId)).findFirst()
+                .orElseThrow(() -> new NotFoundException("Number not found"));
+    }
+
+    private static String defaultKey(List<PicklistItem> items) {
+        if (items == null) return null;
+        return items.stream().filter(i -> i.active() && i.isDefault()).map(PicklistItem::key).findFirst().orElse(null);
+    }
+
+    private static String clean(String s, String field) {
+        if (s == null || s.isBlank()) return null;
+        if (s.trim().length() > 200) throw new ValidationException(field, "must be at most 200 characters");
+        return s.trim();
+    }
+}

@@ -89,7 +89,23 @@ public enum Authority {
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     CAMPAIGN_SETTINGS("campaign:settings", RoleLevel.BRAND,
             "Edit campaign settings, sender states and where each sender runs",
-            CUSTOMER_ADMIN, WORKSPACE_MANAGER);
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    CRM_VIEW("crm:view", RoleLevel.BRAND, "Open the CRM and see records in accessible pipelines",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, AGENT),
+    CRM_VIEW_ALL("crm:view-all", RoleLevel.BRAND, "See every CRM pipeline without being assigned to it",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    CRM_EDIT("crm:edit", RoleLevel.BRAND,
+            "Create and edit CRM contacts, companies, deals, tasks and notes; capture, move, close, log and import",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER, AGENT),
+    CRM_DELETE("crm:delete", RoleLevel.BRAND, "Delete CRM companies and deals (together with crm:edit)",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    CRM_SETTINGS("crm:settings", RoleLevel.BRAND,
+            "Edit CRM settings, pipelines, stages, fields and picklists; assign pipelines; move a channel",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    CRM_EXPORT("crm:export", RoleLevel.BRAND, "Export CRM records to CSV",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    CRM_ENABLE("crm:enable", RoleLevel.PLATFORM, "Switch the CRM on or off for a brand and set its limits",
+            ACCOUNT_MANAGER);
 
     private final String code;
     private final RoleLevel level;
