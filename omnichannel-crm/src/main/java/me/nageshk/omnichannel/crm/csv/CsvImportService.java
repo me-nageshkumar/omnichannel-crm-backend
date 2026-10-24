@@ -39,6 +39,8 @@ import me.nageshk.omnichannel.crm.field.FieldType;
 import me.nageshk.omnichannel.crm.platform.ContactDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformContact;
 import me.nageshk.omnichannel.crm.platform.PlatformNumber;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -52,6 +54,8 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Service
 public class CsvImportService {
+
+    private static final Logger log = LoggerFactory.getLogger(CsvImportService.class);
 
     static final int MAX_COMPANIES = 2000;
     static final int MAX_CONTACTS = 1000;
@@ -87,6 +91,10 @@ public class CsvImportService {
                 companyRow(ctx, r, customValues(r, custom), t);
             } catch (ValidationException | CodedException | NotFoundException e) {
                 t.error(i + 1, message(e));
+            } catch (RuntimeException e) {
+                // a row never aborts the file (spec §6.7); the rows before it are already saved
+                log.warn("CRM import: row {} of brand {} failed", i + 1, ctx.workspaceId(), e);
+                t.error(i + 1, "could not be imported");
             }
         }
         return t.result();
@@ -110,6 +118,10 @@ public class CsvImportService {
                 contactRow(ctx, r, customValues(r, custom), channel, pipeline, companyIds, t);
             } catch (ValidationException | CodedException | NotFoundException e) {
                 t.error(i + 1, message(e));
+            } catch (RuntimeException e) {
+                // a row never aborts the file (spec §6.7); the rows before it are already saved
+                log.warn("CRM import: row {} of brand {} failed", i + 1, ctx.workspaceId(), e);
+                t.error(i + 1, "could not be imported");
             }
         }
         return t.result();
@@ -158,6 +170,17 @@ public class CsvImportService {
         String lifecycle = pick(r.get("Lifecycle"), ctx.settings().getLifecycleStatuses(), "Lifecycle");
         String source = pick(r.get("Source"), ctx.settings().getDealSources(), "Source");
         String companyName = r.get("Company");
+        // everything a row can be refused for is checked before anything is written, so an error row adds nothing
+        Map<String, String> problems = new LinkedHashMap<>();
+        longer(problems, "First name", first, 200);
+        longer(problems, "Last name", last, 200);
+        longer(problems, "Email", r.get("Email"), 254);
+        longer(problems, "Job title", r.get("Job title"), 100);
+        longer(problems, "Company", companyName, 200);
+        Map<String, String> fieldProblems = new LinkedHashMap<>();
+        if (!custom.isEmpty()) fields.values(ctx, TargetType.CONTACT, Map.of(), custom, false, false, fieldProblems);
+        fieldProblems.forEach((k, v) -> problems.put(k.replaceFirst("^customFields\\.", ""), v));
+        if (!problems.isEmpty()) throw new ValidationException(problems);
         String fullName = ((first == null ? "" : first) + " " + (last == null ? "" : last)).trim();
         PlatformContact pc;
         try {
@@ -187,6 +210,10 @@ public class CsvImportService {
         if (created) t.created++;
         else if (changes || result.createdDeal()) t.updated++;
         else t.skipped++;
+    }
+
+    private static void longer(Map<String, String> problems, String column, String value, int max) {
+        if (value != null && value.length() > max) problems.put(column, "must be at most " + max + " characters");
     }
 
     /** The cell, or null (leave unchanged) when it differs from the current value only in case. */

@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -78,7 +79,8 @@ public class FieldValidator {
             if (!def.isActive()) continue;
             String key = def.getKey();
             if (creating && !sent.containsKey(key) && !blank(def.getDefaultValue())) {
-                Object normal = normalise(def, def.getDefaultValue(), null, errors);
+                // a default gone stale (e.g. its option switched off) is skipped, not blamed on the caller
+                Object normal = normalise(def, def.getDefaultValue(), null, new HashMap<>());
                 if (normal != null) out.put(key, normal);
             }
             if (enforceRequired && def.isRequired() && !out.containsKey(key) && (creating || sent.containsKey(key))) {

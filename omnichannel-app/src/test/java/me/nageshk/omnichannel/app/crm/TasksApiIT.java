@@ -162,6 +162,26 @@ class TasksApiIT extends CrmTestBase {
     }
 
     @Test
+    void taskFollowsDealToAnotherPipeline() throws Exception {
+        enableCrm();
+        String second = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
+                .andExpect(status().isCreated())).get("id").asText();
+        JsonNode deal = captured(contact("Lata", "919900000207"), number).get("deal");
+        String dealId = deal.get("id").asText();
+        Map<String, Object> mine = task("DEAL", dealId, "Mine", Instant.now().minus(1, ChronoUnit.HOURS));
+        mine.put("assigneeId", agent.getId());
+        create(managerToken, mine);
+        assignPipelines(agent, salesId());
+        send(get(crm() + "/tasks/mine?bucket=overdue"), agentToken, null).andExpect(jsonPath("$.length()").value(1));
+        send(put(crm() + "/deals/" + dealId), managerToken,
+                Map.of("version", deal.get("version").asLong(), "pipelineId", second)).andExpect(status().isOk());
+        // the deal is now in a pipeline the agent cannot see: so is its task
+        send(get(crm() + "/tasks/mine?bucket=overdue"), agentToken, null).andExpect(jsonPath("$.length()").value(0));
+        assignPipelines(agent, second);
+        send(get(crm() + "/tasks/mine?bucket=overdue"), agentToken, null).andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
     void countsMatchBuckets() throws Exception {
         enableCrm();
         String dealId = captured(contact("Nila", "919900000206"), number).get("deal").get("id").asText();

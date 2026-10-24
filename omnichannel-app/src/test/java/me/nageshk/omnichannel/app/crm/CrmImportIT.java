@@ -102,6 +102,22 @@ class CrmImportIT extends CrmTestBase {
     }
 
     @Test
+    void errorRowCreatesNothing() throws Exception {
+        enableCrm();
+        send(post(crm() + "/fields"), managerToken, Map.of("entityType", "CONTACT", "key", "birthday",
+                "label", "Birthday", "type", "DATE")).andExpect(status().isCreated());
+        importContacts(managerToken, "WhatsApp number,First name,Job title,Birthday (birthday)\n"
+                + "919900000411,Asha,,1990-05-01\n"
+                + "919900000412,Bad date,,someday\n"
+                + "919900000413,Long title," + "x".repeat(101) + ",\n", salesId(), number.getId())
+                .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1))
+                .andExpect(jsonPath("$.errors.length()").value(2)).andExpect(jsonPath("$.errors[0].row").value(2))
+                .andExpect(jsonPath("$.errors[1].row").value(3));
+        assertThat(contacts()).hasSize(1);
+        assertThat(deals(salesId())).hasSize(1);
+    }
+
+    @Test
     void missingHeaderIs400() throws Exception {
         enableCrm();
         importContacts(managerToken, "Name,Email\nAsha,a@example.com\n", salesId(), number.getId())

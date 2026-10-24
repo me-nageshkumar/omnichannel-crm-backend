@@ -226,6 +226,18 @@ class FieldValidatorTest {
     }
 
     @Test
+    void defaultOnSwitchedOffOptionIsSkipped() {
+        CrmFieldDefinition d = select("tier", FieldType.SELECT);
+        d.setDefaultValue("bronze");
+        // the default went stale when its option was switched off: a create that leaves the field alone still works
+        assertThat(validator.validate(List.of(d), Map.of(), Map.of(), true, true)).isEmpty();
+        d.setRequired(true);
+        assertThatThrownBy(() -> validator.validate(List.of(d), Map.of(), Map.of(), true, true))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.fields()).containsEntry("customFields.tier", "is required"));
+    }
+
+    @Test
     void nullIncomingKeepsStored() {
         CrmFieldDefinition d = def("a", FieldType.TEXT);
         assertThat(validator.validate(List.of(d), Map.of("a", "kept"), null, false, true)).containsEntry("a", "kept");

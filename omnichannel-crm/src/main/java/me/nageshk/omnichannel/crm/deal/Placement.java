@@ -21,6 +21,7 @@ import me.nageshk.omnichannel.crm.activity.ActivityType;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.company.CompanyCounters;
+import me.nageshk.omnichannel.crm.contact.ChannelService;
 import me.nageshk.omnichannel.crm.contact.ContactCounters;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
 import me.nageshk.omnichannel.crm.pipeline.CrmStage;
@@ -310,14 +311,18 @@ class Placement {
     }
 
     /**
-     * Re-tags the deals' activities with the pipeline they now sit in, so restricted users' timelines follow the
-     * deal (an entry of a deal moved into a hidden pipeline is hidden too).
+     * Re-tags the deals' activities, tasks and notes with the pipeline they now sit in, so restricted users'
+     * timelines, task lists and reminders follow the deal (one moved into a hidden pipeline is hidden too).
      */
     void retag(String ws, Collection<String> dealIds, String pipelineId) {
         if (dealIds.isEmpty()) return;
-        mongo.updateMulti(new Query(Criteria.where("workspaceId").is(ws).and("target.type")
-                .is(TargetType.DEAL.name()).and("target.id").in(dealIds)), new Update().set("pipelineId", pipelineId),
-                ACTIVITIES);
+        Query ofDeals = new Query(Criteria.where("workspaceId").is(ws).and("target.type").is(TargetType.DEAL.name())
+                .and("target.id").in(dealIds));
+        mongo.updateMulti(ofDeals, new Update().set("pipelineId", pipelineId), ACTIVITIES);
+        // by collection name, so a task or note being edited keeps its version (Ruling B4)
+        for (String collection : ChannelService.FOLLOW_UPS) {
+            mongo.updateMulti(ofDeals, new Update().set("pipelineId", pipelineId), collection);
+        }
     }
 
     // --- derived values --------------------------------------------------------------------------------

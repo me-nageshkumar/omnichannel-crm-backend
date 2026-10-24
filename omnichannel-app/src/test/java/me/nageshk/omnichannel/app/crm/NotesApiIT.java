@@ -142,6 +142,22 @@ class NotesApiIT extends CrmTestBase {
     }
 
     @Test
+    void disguisedOrScriptableFilesRejected() throws Exception {
+        String id = create(managerToken, "files", null).get("id").asText();
+        for (String[] f : new String[][] {{"evil.exe", "image/png"}, {"logo.svg", "image/svg+xml"}, {"x.png", "image/"},
+                {"noext", "application/pdf"}, {"photo.png", "application/pdf"}}) {
+            upload(managerToken, id, f[0], f[1], new byte[] {1, 2}).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("ATTACHMENT_REJECTED"));
+        }
+        assertThat(files()).isZero();
+        upload(managerToken, id, "notes.txt", "text/plain;charset=UTF-8", new byte[] {65}).andExpect(status().isOk());
+        JsonNode n = json(upload(managerToken, id, "Report.PDF", "application/octet-stream", new byte[] {37, 80})
+                .andExpect(status().isOk()));
+        assertThat(n.get("attachments").get(1).get("contentType").asText()).isEqualTo("application/pdf");
+        assertThat(n.get("attachments").get(0).get("contentType").asText()).isEqualTo("text/plain");
+    }
+
+    @Test
     void oversizeRejected() throws Exception {
         String id = create(managerToken, "big", null).get("id").asText();
         upload(managerToken, id, "big.pdf", "application/pdf", new byte[10 * 1024 * 1024 + 1])
