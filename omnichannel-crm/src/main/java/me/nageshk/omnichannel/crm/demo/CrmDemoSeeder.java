@@ -65,6 +65,7 @@ public class CrmDemoSeeder implements ApplicationRunner {
     static final String CUSTOMER = "Demo Retail";
     static final String BRAND = "Demo Fashion";
     private static final String AGENT = "demo-agent";
+    private static final String MANAGER = "demo-manager";
     private static final String[] COMPANIES = {"Bombay Weaves", "Urban Threads", "Kolkata Cottons"};
     private static final String[] INDUSTRIES = {"Textiles", "Retail", "Wholesale"};
     private static final String[] CONTACTS = {"Aarav Sharma", "Vivaan Gupta", "Aditya Verma", "Vihaan Singh",
@@ -188,6 +189,13 @@ public class CrmDemoSeeder implements ApplicationRunner {
         }
         notes.create(ctx, new NoteRequest(new CrmTarget(TargetType.DEAL, dealIds.get(8)),
                 "**Festive order** - 400 pieces, delivery before Diwali. Prefers cotton blends.", true, null));
+        // the system actor created the records; a real demo user owns them, so every owner has a name
+        String ownerId = people.byUsername(MANAGER).map(p -> p.id()).orElse(agentId);
+        if (ownerId != null) {
+            Query bySystem = new Query(Criteria.where("workspaceId").is(brand.id()).and("ownerId").is(ctx.userId()));
+            mongo.updateMulti(bySystem, new Update().set("ownerId", ownerId), "crmContacts");
+            mongo.updateMulti(bySystem, new Update().set("ownerId", ownerId), "crmDeals");
+        }
         log.warn("demo seed: CRM switched on in {} with {} companies, {} contacts and {} deals", BRAND,
                 companyIds.size(), contactIds.size(), dealIds.size());
     }

@@ -84,6 +84,9 @@ class CrmDemoSeederIT {
         assertThat(count("crmTasks", ws.get().and("dueAt").lt(java.time.Instant.now()))).isEqualTo(1);
         assertThat(count("crmTasks", ws.get().and("reminderAt").lt(java.time.Instant.now()))).isEqualTo(1);
         assertThat(count("crmNotes", ws.get().and("pinned").is(true))).isEqualTo(1);
+        // every seeded record belongs to a real demo user, never to the system actor that created it
+        assertThat(count("crmContacts", ws.get().and("ownerId").is("system"))).isZero();
+        assertThat(count("crmDeals", ws.get().and("ownerId").is("system"))).isZero();
 
         seeder.run(null);
         assertThat(count("crmTasks", ws.get())).isEqualTo(3);
