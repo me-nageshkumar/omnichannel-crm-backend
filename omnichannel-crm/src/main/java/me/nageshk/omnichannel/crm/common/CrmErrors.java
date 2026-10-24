@@ -26,4 +26,8 @@ public final class CrmErrors {
     public static CodedException badRequest(String code, String message) {
         return new CodedException(HttpStatus.BAD_REQUEST, code, null, message);
     }
+
+    public static CodedException badRequest(String code, String message, Map<String, String> extra) {
+        return new CodedException(HttpStatus.BAD_REQUEST, code, null, message, extra);
+    }
 }

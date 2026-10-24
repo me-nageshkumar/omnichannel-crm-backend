@@ -105,7 +105,8 @@ public class CaptureService {
         return findOrCreate(ctx, c, channel, origin, pipelineId, dealTitle, null, null);
     }
 
-    private CaptureResult findOrCreate(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin,
+    /** As the overload above; a CRM contact created here gets the names. */
+    public CaptureResult findOrCreate(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin,
             String pipelineId, String dealTitle, String firstName, String lastName) {
         String ws = ctx.workspaceId();
         Query existing = new Query(Criteria.where("workspaceId").is(ws).and("contactId").is(c.id())
@@ -174,8 +175,21 @@ public class CaptureService {
                 && people.teamIdsOf(ctx.workspaceId(), ctx.userId()).contains(chat.assignedTeamId());
     }
 
+    /**
+     * Where an import puts its contacts: the number must be one the caller works ({@code ctx.chattable()}) and the
+     * pipeline one they may see and active; 404 otherwise.
+     */
+    public PlatformNumber importChannel(CrmContext ctx, String phoneNumberId) {
+        ctx.require("crm:edit");
+        requireAnyPipeline(ctx);
+        if (phoneNumberId == null || !ctx.chattable().contains(phoneNumberId)) {
+            throw new NotFoundException("Number not found");
+        }
+        return numberOf(ctx, phoneNumberId);
+    }
+
     /** Required for restricted users; view-all users default to the brand's default pipeline. */
-    private String resolvePipeline(CrmContext ctx, String requested) {
+    public String resolvePipeline(CrmContext ctx, String requested) {
         String id = requested == null || requested.isBlank() ? null : requested.trim();
         if (id == null) {
             if (!ctx.viewAll()) throw new ValidationException("pipelineId", "is required");
