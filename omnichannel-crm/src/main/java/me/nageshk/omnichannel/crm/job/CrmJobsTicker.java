@@ -13,13 +13,20 @@ import org.springframework.stereotype.Component;
 public class CrmJobsTicker {
 
     private final TaskReminderJob reminders;
+    private final DealRottingJob rotting;
 
-    CrmJobsTicker(TaskReminderJob reminders) {
+    CrmJobsTicker(TaskReminderJob reminders, DealRottingJob rotting) {
         this.reminders = reminders;
+        this.rotting = rotting;
     }
 
     @Scheduled(fixedDelay = 60_000)
     void reminders() {
         reminders.run();
+    }
+
+    @Scheduled(cron = "0 15 2 * * *")
+    void rotting() {
+        rotting.run();
     }
 }

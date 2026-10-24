@@ -176,7 +176,7 @@ public class CrmPipelineService {
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
         Update u = new Update().set("name", req.name().trim()).set("active", active).set("isDefault", isDefault);
-        // absent (or null) keeps the stored value; 0 switches rotting off for this pipeline
+        // absent (or null) keeps the stored value; 0 clears it so the brand's rotting days apply
         if (req.rottingDays() != null) {
             if (req.rottingDays() == 0) u.unset("rottingDays");
             else u.set("rottingDays", req.rottingDays());
