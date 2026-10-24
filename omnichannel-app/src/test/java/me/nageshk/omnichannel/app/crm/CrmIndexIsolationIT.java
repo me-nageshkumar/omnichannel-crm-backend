@@ -45,6 +45,8 @@ class CrmIndexIsolationIT extends CrmTestBase {
         List<String> crmCollections = mongo.getCollectionNames().stream().filter(n -> n.startsWith("crm")).toList();
         assertThat(crmCollections).contains("crmContacts", "crmDeals", "crmActivities");
         for (String name : crmCollections) {
+            // GridFS buckets carry the driver's own indexes; their queries filter on metadata.workspaceId
+            if (name.endsWith(".files") || name.endsWith(".chunks")) continue;
             for (Document index : mongo.getCollection(name).listIndexes()) {
                 if ("_id_".equals(index.getString("name"))) continue;
                 Document key = (Document) index.get("key");
