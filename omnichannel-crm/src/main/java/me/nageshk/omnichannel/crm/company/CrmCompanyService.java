@@ -30,6 +30,7 @@ import me.nageshk.omnichannel.crm.contact.ChannelService;
 import me.nageshk.omnichannel.crm.contact.CrmContactService;
 import me.nageshk.omnichannel.crm.deal.DealService;
 import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
+import me.nageshk.omnichannel.crm.note.NoteFiles;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformPerson;
 import org.bson.types.Decimal128;
@@ -56,11 +57,14 @@ public class CrmCompanyService {
     private final CompanyCounters counters;
     private final ActivityLog activities;
     private final FieldDefinitionService fields;
+    private final NoteFiles noteFiles;
     private final Clock clock;
 
     CrmCompanyService(MongoTemplate mongo, PeopleDirectory people, CrmContactService contacts, DealService deals,
-            CompanyCounters counters, ActivityLog activities, FieldDefinitionService fields, Clock clock) {
+            CompanyCounters counters, ActivityLog activities, FieldDefinitionService fields, NoteFiles noteFiles,
+            Clock clock) {
         this.fields = fields;
+        this.noteFiles = noteFiles;
         this.mongo = mongo;
         this.deals = deals;
         this.people = people;
@@ -199,6 +203,7 @@ public class CrmCompanyService {
         Query followUps = new Query(Criteria.where("workspaceId").is(ws).and("target.type")
                 .is(TargetType.COMPANY.name()).and("target.id").is(id));
         for (String collection : ChannelService.FOLLOW_UPS) mongo.remove(followUps, collection);
+        noteFiles.deleteForTarget(ws, TargetType.COMPANY, id);
     }
 
     static RuntimeException versionConflict() {

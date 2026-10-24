@@ -170,10 +170,10 @@ class TasksApiIT extends CrmTestBase {
         create(managerToken, task("DEAL", dealId, "Soon", Instant.now().plus(1, ChronoUnit.MINUTES)));
         create(managerToken, task("DEAL", dealId, "Later", Instant.now().plus(3, ChronoUnit.DAYS)));
         create(managerToken, task("DEAL", dealId, "Someday", null));
-        send(get(crm() + "/tasks/mine/counts?tz=" + tz.replace("+", "%2B")), managerToken, null)
+        send(get(crm() + "/tasks/mine/counts").param("tz", tz), managerToken, null)
                 .andExpect(jsonPath("$.overdue").value(1)).andExpect(jsonPath("$.today").value(1))
                 .andExpect(jsonPath("$.upcoming").value(2));
-        JsonNode upcoming = json(send(get(crm() + "/tasks/mine?bucket=upcoming&tz=" + tz.replace("+", "%2B")),
+        JsonNode upcoming = json(send(get(crm() + "/tasks/mine").param("bucket", "upcoming").param("tz", tz),
                 managerToken, null));
         assertThat(upcoming.get(0).get("title").asText()).isEqualTo("Later");
         assertThat(upcoming.get(1).get("title").asText()).isEqualTo("Someday");

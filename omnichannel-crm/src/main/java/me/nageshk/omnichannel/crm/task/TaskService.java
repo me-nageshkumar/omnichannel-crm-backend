@@ -315,7 +315,7 @@ public class TaskService {
         return f;
     }
 
-    static <E extends Enum<E>> E parse(Class<E> type, String raw, String field) {
+    public static <E extends Enum<E>> E parse(Class<E> type, String raw, String field) {
         try {
             return Enum.valueOf(type, raw.trim().toUpperCase());
         } catch (IllegalArgumentException e) {

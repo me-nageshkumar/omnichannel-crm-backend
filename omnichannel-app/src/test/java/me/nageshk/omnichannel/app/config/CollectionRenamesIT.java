@@ -143,7 +143,8 @@ class CollectionRenamesIT {
         for (MongoPersistentEntity<?> e : mongo.getConverter().getMappingContext().getPersistentEntities())
             if (e.isAnnotationPresent(org.springframework.data.mongodb.core.mapping.Document.class))
                 names.add(e.getCollection());
-        names.addAll(List.of(ChatMediaConfig.BUCKET, TemplateMediaConfig.BUCKET, CampaignCsvConfig.BUCKET));
+        names.addAll(List.of(ChatMediaConfig.BUCKET, TemplateMediaConfig.BUCKET, CampaignCsvConfig.BUCKET,
+                me.nageshk.omnichannel.crm.note.CrmNoteFilesConfig.BUCKET));
 
         assertThat(names).isNotEmpty().allSatisfy(n -> assertThat(n).doesNotContain("_"));
     }
@@ -153,7 +154,8 @@ class CollectionRenamesIT {
         List<String> used = new ArrayList<>();
         for (MongoPersistentEntity<?> e : mongo.getConverter().getMappingContext().getPersistentEntities())
             used.add(e.getCollection());
-        for (String bucket : List.of(ChatMediaConfig.BUCKET, TemplateMediaConfig.BUCKET, CampaignCsvConfig.BUCKET)) {
+        for (String bucket : List.of(ChatMediaConfig.BUCKET, TemplateMediaConfig.BUCKET, CampaignCsvConfig.BUCKET,
+                me.nageshk.omnichannel.crm.note.CrmNoteFilesConfig.BUCKET)) {
             used.add(bucket + ".files");
             used.add(bucket + ".chunks");
         }

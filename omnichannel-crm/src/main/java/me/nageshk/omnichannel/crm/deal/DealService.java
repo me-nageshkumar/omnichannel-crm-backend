@@ -39,6 +39,7 @@ import me.nageshk.omnichannel.crm.deal.dto.DealSearchRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealView;
 import me.nageshk.omnichannel.crm.deal.dto.MoveRequest;
 import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
+import me.nageshk.omnichannel.crm.note.NoteFiles;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipelineService;
 import me.nageshk.omnichannel.crm.pipeline.CrmStage;
@@ -78,12 +79,15 @@ public class DealService {
     private final ActivityLog activities;
     private final LaneLocks lanes;
     private final FieldDefinitionService fields;
+    private final NoteFiles noteFiles;
     private final Clock clock;
 
     DealService(MongoTemplate mongo, CrmDealRepository repository, CrmContactService contacts,
             CrmPipelineService pipelines, ContactDirectory contactDirectory, PeopleDirectory people,
-            Placement placement, ActivityLog activities, LaneLocks lanes, FieldDefinitionService fields, Clock clock) {
+            Placement placement, ActivityLog activities, LaneLocks lanes, FieldDefinitionService fields,
+            NoteFiles noteFiles, Clock clock) {
         this.fields = fields;
+        this.noteFiles = noteFiles;
         this.lanes = lanes;
         this.mongo = mongo;
         this.repository = repository;
@@ -601,6 +605,7 @@ public class DealService {
         Query followUps = new Query(Criteria.where("workspaceId").is(ctx.workspaceId())
                 .and("target.type").is(TargetType.DEAL.name()).and("target.id").is(id));
         for (String collection : ChannelService.FOLLOW_UPS) mongo.remove(followUps, collection);
+        noteFiles.deleteForTarget(ctx.workspaceId(), TargetType.DEAL, id);
         placement.recompute(ctx.workspaceId(), Placement.contactsOf(deal),
                 deal.getCompanyId() == null ? List.of() : List.of(deal.getCompanyId()));
     }
