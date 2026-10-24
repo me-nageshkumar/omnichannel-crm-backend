@@ -114,6 +114,11 @@ public class DealService {
     }
 
     public CrmPage<DealView> search(CrmContext ctx, DealSearchRequest req) {
+        return search(ctx, req, MAX_SIZE);
+    }
+
+    /** The search with pages of up to {@code maxSize} (the CSV export reads 1,000 at a time). */
+    public CrmPage<DealView> search(CrmContext ctx, DealSearchRequest req, int maxSize) {
         int page = req.page() == null ? 0 : req.page();
         int size = req.size() == null ? DEFAULT_SIZE : req.size();
         Map<String, String> errors = new LinkedHashMap<>();
@@ -130,7 +135,7 @@ public class DealService {
             }
         }
         if (!errors.isEmpty()) throw new ValidationException(errors);
-        size = Math.min(size, MAX_SIZE);
+        size = Math.min(size, maxSize);
 
         List<Criteria> all = new ArrayList<>();
         all.add(Criteria.where("workspaceId").is(ctx.workspaceId()));

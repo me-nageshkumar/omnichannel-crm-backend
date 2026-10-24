@@ -71,6 +71,11 @@ public class CrmContactService {
     }
 
     public CrmPage<CrmContactView> search(CrmContext ctx, ContactSearchRequest req) {
+        return search(ctx, req, MAX_SIZE);
+    }
+
+    /** The search with pages of up to {@code maxSize} (the CSV export reads 1,000 at a time). */
+    public CrmPage<CrmContactView> search(CrmContext ctx, ContactSearchRequest req, int maxSize) {
         int page = req.page() == null ? 0 : req.page();
         int size = req.size() == null ? DEFAULT_SIZE : req.size();
         Map<String, String> errors = new LinkedHashMap<>();
@@ -78,7 +83,7 @@ public class CrmContactService {
         if (size < 1) errors.put("size", "must be at least 1");
         CrmSort sorting = CrmSort.parse(req.sort(), req.dir(), SORTS, "creationTime", f -> "desc", errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
-        size = Math.min(size, MAX_SIZE);
+        size = Math.min(size, maxSize);
 
         List<Criteria> all = new ArrayList<>();
         all.add(Criteria.where("workspaceId").is(ctx.workspaceId()));
