@@ -2,11 +2,13 @@ package me.nageshk.omnichannel.app.crm;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
 import tools.jackson.databind.JsonNode;
@@ -39,11 +41,29 @@ class CrmIndexIsolationIT extends CrmTestBase {
         send(MockMvcRequestBuilders.post(crm() + "/activities/log"), managerToken,
                 Map.of("target", Map.of("type", "DEAL", "id", deal.get("id").asText()), "type", "CALL",
                         "summary", "Called")).andExpect(MockMvcResultMatchers.status().isOk());
+        // phase B: tasks, a note with an attachment, an export and an import
+        Map<String, Object> target = Map.of("type", "DEAL", "id", deal.get("id").asText());
+        send(MockMvcRequestBuilders.post(crm() + "/tasks"), managerToken, Map.of("title", "Call back", "target",
+                target, "dueAt", Instant.now().plusSeconds(3600).toString()))
+                .andExpect(MockMvcResultMatchers.status().isOk());
+        JsonNode note = json(send(MockMvcRequestBuilders.post(crm() + "/notes"), managerToken,
+                Map.of("target", target, "body", "Sizes agreed")).andExpect(MockMvcResultMatchers.status().isOk()));
+        mvc.perform(MockMvcRequestBuilders.multipart(crm() + "/notes/" + note.get("id").asText() + "/attachments")
+                .file(new MockMultipartFile("file", "sizes.txt", "text/plain", "S,M,L".getBytes()))
+                .header("Authorization", "Bearer " + managerToken)).andExpect(MockMvcResultMatchers.status().isOk());
+        mvc.perform(MockMvcRequestBuilders.asyncDispatch(send(MockMvcRequestBuilders.post(crm() + "/deals/export"),
+                managerToken, Map.of()).andReturn())).andExpect(MockMvcResultMatchers.status().isOk());
+        mvc.perform(MockMvcRequestBuilders.multipart(crm() + "/contacts/import").file(new MockMultipartFile("file",
+                "c.csv", "text/csv", "WhatsApp number,First name\n919800000002,Ravi\n".getBytes()))
+                .param("pipelineId", salesId()).param("phoneNumberId", number.getId())
+                .header("Authorization", "Bearer " + managerToken))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.created").value(1));
 
         assertThat(snapshot()).isEqualTo(before);
 
         List<String> crmCollections = mongo.getCollectionNames().stream().filter(n -> n.startsWith("crm")).toList();
-        assertThat(crmCollections).contains("crmContacts", "crmDeals", "crmActivities");
+        assertThat(crmCollections).contains("crmContacts", "crmDeals", "crmActivities", "crmTasks", "crmNotes",
+                "crmNoteFiles.files", "crmNoteFiles.chunks");
         for (String name : crmCollections) {
             // GridFS buckets carry the driver's own indexes; their queries filter on metadata.workspaceId
             if (name.endsWith(".files") || name.endsWith(".chunks")) continue;

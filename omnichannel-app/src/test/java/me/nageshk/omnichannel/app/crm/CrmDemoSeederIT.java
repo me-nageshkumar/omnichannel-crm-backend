@@ -78,8 +78,16 @@ class CrmDemoSeederIT {
         assertThat(count("crmActivities", Criteria.where("workspaceId").is(fashion.getId())
                 .and("type").is("CALL_LOGGED"))).isEqualTo(2);
         assertThat(count("crmPipelineAccess", ws.get())).isEqualTo(1);
+        assertThat(mongo.findDistinct(new Query(ws.get().and("entityType").is("DEAL")), "key",
+                "crmFieldDefinitions", String.class)).containsExactlyInAnyOrder("tier", "budget");
+        assertThat(count("crmTasks", ws.get())).isEqualTo(3);
+        assertThat(count("crmTasks", ws.get().and("dueAt").lt(java.time.Instant.now()))).isEqualTo(1);
+        assertThat(count("crmTasks", ws.get().and("reminderAt").lt(java.time.Instant.now()))).isEqualTo(1);
+        assertThat(count("crmNotes", ws.get().and("pinned").is(true))).isEqualTo(1);
 
         seeder.run(null);
+        assertThat(count("crmTasks", ws.get())).isEqualTo(3);
+        assertThat(count("crmNotes", ws.get())).isEqualTo(1);
         assertThat(count("crmCompanies", ws.get())).isEqualTo(3);
         assertThat(count("crmContacts", ws.get())).isEqualTo(8);
         assertThat(count("crmDeals", ws.get())).isEqualTo(10);

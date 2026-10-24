@@ -323,7 +323,9 @@ Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, 
 
 A per-brand CRM in the vertical module `omnichannel-crm` (package `me.nageshk.omnichannel.crm`). It keeps its data in
 `crm*` collections (`crmSettings`, `crmPipelines`, `crmContacts`, `crmCompanies`, `crmDeals`, `crmActivities`,
-`crmPipelineAccess`), every index of which leads with `workspaceId`. Checked by tests: `CrmCollectionsTest`
+`crmPipelineAccess`, `crmFieldDefinitions`, `crmTasks`, `crmNotes`) and the GridFS bucket `crmNoteFiles`; every
+index it creates leads with `workspaceId` (the bucket keeps the driver's own indexes, and every file query filters on
+`metadata.workspaceId`). Checked by tests: `CrmCollectionsTest`
 (structural) asserts every CRM `@Document` maps to a `crm*` collection; `CrmIndexIsolationIT` (runtime) asserts that
 exercising the API adds no index to any other collection and that every `crm*` index leads with `workspaceId`. Brands, numbers, people, platform contacts and chats come
 through the ports in `crm.platform`.
@@ -363,16 +365,43 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 | `GET /deals/board`, `POST /deals/search`, `GET\|PUT\|DELETE /deals/{id}`, `POST /deals` | Kanban board, deal list, deal CRUD |
 | `POST /deals/{id}/move`, `POST /deals/{id}/close` | Move between lanes (`beforeDealId`/`afterDealId`), close WON or LOST (409 `VERSION_CONFLICT` when the deal moved meanwhile) |
 | `GET /activities?targetType=&targetId=`, `POST /activities/log` | Timeline of a record; log a CALL, MEETING or EMAIL |
+| `GET /fields?entityType=&includeInactive=`, `POST /fields`, `PUT\|DELETE /fields/{id}`, `PUT /fields/reorder` | Custom fields of contacts, companies and deals (400 `FIELD_IMMUTABLE`, 409 `LIMIT_REACHED`, `FIELD_KEY_TAKEN`) |
+| `GET /tasks?targetType=&targetId=`, `POST /tasks`, `PUT\|DELETE /tasks/{id}`, `POST /tasks/{id}/complete\|reopen` | Tasks on a contact, company or deal |
+| `GET /tasks/mine?bucket=overdue\|today\|upcoming&tz=`, `GET /tasks/mine/counts?tz=` | My tasks by bucket (`tz` is an IANA zone or offset, default UTC) |
+| `GET /reminders`, `POST /reminders/{taskId}/seen` | Due task reminders of the caller, polled by the console |
+| `GET /notes?targetType=&targetId=`, `POST /notes`, `PUT\|DELETE /notes/{id}`, `POST /notes/{id}/pin` | Markdown notes; the author or a `crm:delete` holder edits |
+| `POST /notes/{id}/attachments` (multipart `file`), `GET\|DELETE /notes/{id}/attachments/{aid}` | Up to 5 files of 10 MB per note in GridFS (400 `ATTACHMENT_REJECTED`) |
+| `POST /contacts\|companies\|deals/export` | CSV of the list with its search body (`crm:export`) |
+| `POST /companies/import`, `POST /contacts/import?pipelineId=&phoneNumberId=` | CSV import (multipart `file`), result `{total, created, updated, skipped, errors}` |
 
 Searches take `sort` as `"field"` or `"field,asc|desc"` (a separate `dir` wins). A restricted user's company
 `openDealAmount` counts only the deals of their pipelines. Lane positions are changed under a per-lane lock held in
 the JVM (`LaneLocks`): enough for the single app instance; running the CRM on several instances needs a shared
 (Mongo) lease behind that interface.
 
+- **Custom fields:** at most `maxCustomFields` active definitions per entity type; keys match
+  `^[a-z][a-zA-Z0-9_]{1,39}$` and, like the type, never change. Values are checked against their definition on every
+  save (errors under `fields["customFields.<key>"]`); captures and imports skip `required` but apply defaults.
+- **Tasks and reminders:** a task has a title, optional due time, reminder (not after the due time), priority
+  `LOW|NORMAL|HIGH` and assignee; the record shows its next open task's due time. Every minute the reminder job marks
+  due reminders, which the console polls from `GET /reminders`; editing `reminderAt` re-arms a reminder.
+- **Notes:** Markdown up to 20,000 characters, pinned notes first; attachments are images, PDF, text, CSV and Office
+  files. Deleting a note, deal or company deletes its files.
+- **CSV:** exports are UTF-8 with a BOM, CRLF and RFC 4180 quoting, cells that would run as a formula get a leading
+  `'`, at most 50,000 rows; restricted users export only their pipelines. Imports take at most 2,000 companies
+  (matched by name, then domain) or 1,000 contacts (into one pipeline and number, origin `IMPORT`); headers are the
+  export's column names, custom fields `Label (key)` or `key`; blank cells never overwrite and a bad row is reported
+  without stopping the file (400 `IMPORT_TOO_LARGE`, `IMPORT_BAD_HEADER`).
+- **Jobs:** task reminders every 60 s and deal rotting daily at 02:15 server time (an OPEN deal is rotting when its last
+  activity, else stage entry, else creation is older than the pipeline's rotting days, else the brand's). Both run
+  in-process; set `omnichannel.crm.jobs.enabled=false` (tests do) to stop scheduling them, e.g. on a second instance.
+
 **Demo data:** with `OMNICHANNEL_SEED_DEMO=true`, `CrmDemoSeeder` (after the other demo seeders) switches the CRM on
 for "Demo Fashion" and adds 3 companies, 8 CRM contacts from the demo contacts on the demo number, 10 deals across
 the Sales lanes (one won, one lost, one rotting) and two logged calls, and gives `demo-agent` the Sales pipeline. It
-runs through the normal services as a system actor, and is skipped when the brand already has CRM settings.
+also adds the DEAL fields `tier` (Gold/Silver) and `budget`, three tasks for `demo-agent` (one overdue, one due
+today, one whose reminder has passed) and a pinned note. It runs through the normal services as a system actor, and
+is skipped when the brand already has CRM settings.
 
 ## Message templates
 

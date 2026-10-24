@@ -128,8 +128,8 @@ public class CsvExportService {
                 DealView::customFields);
     }
 
-    private <T> CsvExport prepare(CrmContext ctx, TargetType entity, List<String> columns, IntFunction<CrmPage<T>> pager,
-            Function<T, List<String>> cells, Function<T, Map<String, Object>> customFields) {
+    private <T> CsvExport prepare(CrmContext ctx, TargetType entity, List<String> columns,
+            IntFunction<CrmPage<T>> pager, Function<T, List<String>> cells, Function<T, Map<String, Object>> customFields) {
         List<CrmFieldDefinition> defs = fields.list(ctx, entity, false);
         CrmPage<T> first = pager.apply(0);
         return out -> {
@@ -145,7 +145,9 @@ public class CsvExportService {
                     if (written >= MAX_ROWS) break;
                     List<String> line = new ArrayList<>(cells.apply(item));
                     Map<String, Object> values = customFields.apply(item);
-                    for (CrmFieldDefinition f : defs) line.add(customCell(f, values == null ? null : values.get(f.getKey())));
+                    for (CrmFieldDefinition f : defs) {
+                        line.add(customCell(f, values == null ? null : values.get(f.getKey())));
+                    }
                     w.write(Csv.row(line));
                     written++;
                 }
