@@ -53,6 +53,12 @@ class CrmIndexIsolationIT extends CrmTestBase {
                 .header("Authorization", "Bearer " + managerToken)).andExpect(MockMvcResultMatchers.status().isOk());
         mvc.perform(MockMvcRequestBuilders.asyncDispatch(send(MockMvcRequestBuilders.post(crm() + "/deals/export"),
                 managerToken, Map.of()).andReturn())).andExpect(MockMvcResultMatchers.status().isOk());
+        // phase C: two reports (an aggregation over deals; the grid over companies)
+        send(MockMvcRequestBuilders.post(crm() + "/reports/pipeline-summary"), managerToken, Map.of("tz", "UTC"))
+                .andExpect(MockMvcResultMatchers.status().isOk());
+        send(MockMvcRequestBuilders.post(crm() + "/reports/grid"), managerToken,
+                Map.of("tz", "UTC", "entityType", "COMPANY", "groupBy", "industry"))
+                .andExpect(MockMvcResultMatchers.status().isOk());
         mvc.perform(MockMvcRequestBuilders.multipart(crm() + "/contacts/import").file(new MockMultipartFile("file",
                 "c.csv", "text/csv", "WhatsApp number,First name\n919800000002,Ravi\n".getBytes()))
                 .param("pipelineId", salesId()).param("phoneNumberId", number.getId())

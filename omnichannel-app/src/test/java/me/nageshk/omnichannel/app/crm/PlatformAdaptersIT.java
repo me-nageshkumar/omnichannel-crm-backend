@@ -9,6 +9,8 @@ import java.util.Set;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.enablement.EnableLevel;
 import me.nageshk.omnichannel.crm.platform.BrandDirectory;
+import me.nageshk.omnichannel.crm.platform.CampaignDirectory;
+import me.nageshk.omnichannel.crm.platform.PlatformCampaign;
 import me.nageshk.omnichannel.crm.platform.ChatDirectory;
 import me.nageshk.omnichannel.crm.platform.ContactDirectory;
 import me.nageshk.omnichannel.crm.platform.ContactNoteDirectory;
@@ -39,6 +41,7 @@ class PlatformAdaptersIT extends CrmTestBase {
     @Autowired PeopleDirectory peopleDirectory;
     @Autowired ContactNoteDirectory noteDirectory;
     @Autowired BrandDirectory brandDirectory;
+    @Autowired CampaignDirectory campaignDirectory;
     @Autowired EnablementAudit audit;
     @Autowired UserRepository userRepository;
 
@@ -188,5 +191,64 @@ class PlatformAdaptersIT extends CrmTestBase {
         assertThat(row.getBy()).isEqualTo("staff");
         assertThat(row.getLevel()).isEqualTo(EnableLevel.PLATFORM);
         assertThat(row.getAt()).isNotNull();
+    }
+
+    private me.nageshk.omnichannel.db.campaign.Campaign campaign(String name, java.time.Instant startedAt,
+            String senderId, int sent, int delivered) {
+        var c = new me.nageshk.omnichannel.db.campaign.Campaign();
+        c.setWorkspaceId(brand.getId());
+        c.setCustomerId(acme.getId());
+        c.setName(name);
+        c.setNameKey(name.toLowerCase() + "-" + System.nanoTime());
+        c.setSenderIds(senderId == null ? List.of() : List.of(senderId));
+        c.setStatus(me.nageshk.omnichannel.db.campaign.CampaignStatus.COMPLETED);
+        c.setCounts(new me.nageshk.omnichannel.db.campaign.Campaign.Counts(sent + 1, 0, sent, delivered, 0, 0, 0, 1));
+        c.setCreationTime(startedAt);
+        c.setStartedAt(startedAt);
+        return mongo.insert(c);
+    }
+
+    private void recipient(String campaignId, String contactId, String phone) {
+        var r = new me.nageshk.omnichannel.db.campaign.CampaignRecipient();
+        r.setCampaignId(campaignId);
+        r.setWorkspaceId(brand.getId());
+        r.setPhone(phone);
+        r.setContactId(contactId);
+        r.setStatus(me.nageshk.omnichannel.db.campaign.RecipientStatus.SENT);
+        mongo.insert(r);
+    }
+
+    @Test
+    void campaignDirectoryListsStartedCampaignsWithRecipients() {
+        var sender = new me.nageshk.omnichannel.db.campaign.CampaignSender();
+        sender.setWorkspaceId(brand.getId());
+        sender.setPhoneNumberId(number.getId());
+        sender = mongo.insert(sender);
+        java.time.Instant now = java.time.Instant.now();
+        var older = campaign("Diwali", now.minus(java.time.Duration.ofDays(5)), sender.getId(), 2, 1);
+        var newer = campaign("Clearance", now.minus(java.time.Duration.ofDays(1)), sender.getId(), 1, 1);
+        campaign("Long ago", now.minus(java.time.Duration.ofDays(40)), sender.getId(), 1, 1);
+        recipient(older.getId(), "ct-1", "919900000101");
+        recipient(older.getId(), "ct-2", "919900000102");
+        recipient(older.getId(), null, "919900000103");
+        recipient(newer.getId(), "ct-1", "919900000101");
+
+        List<PlatformCampaign> found = campaignDirectory.campaigns(brand.getId(),
+                now.minus(java.time.Duration.ofDays(30)), now, 10);
+        assertThat(found).extracting(PlatformCampaign::name).containsExactly("Clearance", "Diwali");
+        PlatformCampaign diwali = found.get(1);
+        assertThat(diwali.status()).isEqualTo("COMPLETED");
+        assertThat(diwali.phoneNumberIds()).containsExactly(number.getId());
+        assertThat(diwali.counts().sent()).isEqualTo(2);
+        assertThat(diwali.counts().delivered()).isEqualTo(1);
+        assertThat(diwali.counts().failed()).isEqualTo(1);
+        assertThat(diwali.recipientContactIds()).containsExactlyInAnyOrder("ct-1", "ct-2");
+        assertThat(found.get(0).recipientContactIds()).containsExactly("ct-1");
+        // the limit cuts the list newest-first
+        assertThat(campaignDirectory.campaigns(brand.getId(), now.minus(java.time.Duration.ofDays(30)), now, 1))
+                .extracting(PlatformCampaign::name).containsExactly("Clearance");
+        // another brand sees nothing
+        assertThat(campaignDirectory.campaigns(other.getId(), now.minus(java.time.Duration.ofDays(30)), now, 10))
+                .isEmpty();
     }
 }

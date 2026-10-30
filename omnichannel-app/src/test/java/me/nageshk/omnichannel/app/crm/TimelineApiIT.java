@@ -269,4 +269,58 @@ class TimelineApiIT extends CrmTestBase {
         send(post(crm() + "/activities/log"), token, log("CONTACT", crmId, "CALL", "x"))
                 .andExpect(status().isForbidden());
     }
+
+    /** The deal's stored stageEnteredAt, as the stage-duration report will read it back. */
+    private Instant enteredAt(String dealId) {
+        Document d = mongo.findOne(new Query(Criteria.where("_id").is(new org.bson.types.ObjectId(dealId))),
+                Document.class, "crmDeals");
+        return ((java.util.Date) d.get("stageEnteredAt")).toInstant();
+    }
+
+    private List<Document> stageChanges(String dealId) {
+        return mongo.find(new Query(Criteria.where("target.id").is(dealId).and("type").is("STAGE_CHANGED")),
+                Document.class, "crmActivities");
+    }
+
+    @Test
+    void stageChangeRecordsWhenTheStageWasEntered() throws Exception {
+        Map<String, String> stages = stages(sales);
+        JsonNode deal = captured(contact("Asha", "919900000701"), number).get("deal");
+        String id = deal.get("id").asText();
+        Instant beforeMove = enteredAt(id);
+        send(post(crm() + "/deals/" + id + "/move"), managerToken, body("stageId", stages.get("Contacted")))
+                .andExpect(status().isOk());
+        List<Document> moves = stageChanges(id);
+        assertThat(moves).hasSize(1);
+        Document payload = moves.get(0).get("payload", Document.class);
+        assertThat(((java.util.Date) payload.get("fromStageEnteredAt")).toInstant()).isEqualTo(beforeMove);
+
+        // a pipeline change through an edit records it too
+        String second = json(send(post(crm() + "/pipelines"), managerToken, body("name", "Second"))
+                .andExpect(status().isCreated())).get("id").asText();
+        Instant beforeEdit = enteredAt(id);
+        JsonNode fresh = json(send(get(crm() + "/deals/" + id), managerToken, null));
+        send(put(crm() + "/deals/" + id), managerToken,
+                body("version", fresh.get("version").asLong(), "pipelineId", second)).andExpect(status().isOk());
+        Document edit = stageChanges(id).get(1).get("payload", Document.class);
+        assertThat(((java.util.Date) edit.get("fromStageEnteredAt")).toInstant()).isEqualTo(beforeEdit);
+        assertThat(edit.getString("fromPipelineId")).isEqualTo(sales);
+
+        // a stage removal with relocation records it on every relocated deal
+        JsonNode other = captured(contact("Ravi", "919900000702"), number).get("deal");
+        String otherId = other.get("id").asText();
+        Instant beforeRemoval = enteredAt(otherId);
+        JsonNode p = json(send(get(crm() + "/pipelines/" + sales), managerToken, null));
+        List<Map<String, Object>> lanes = new java.util.ArrayList<>();
+        for (JsonNode st : p.get("stages")) {
+            Map<String, Object> m = body("id", st.get("id").asText(), "name", st.get("name").asText(),
+                    "type", st.get("type").asText(), "probability", st.get("probability").asInt());
+            if (st.get("name").asText().equals("New")) m.put("moveToStageId", stages.get("Contacted"));
+            lanes.add(m);
+        }
+        send(put(crm() + "/pipelines/" + sales + "/stages"), managerToken,
+                body("version", p.get("version").asLong(), "stages", lanes)).andExpect(status().isOk());
+        Document relocated = stageChanges(otherId).get(0).get("payload", Document.class);
+        assertThat(((java.util.Date) relocated.get("fromStageEnteredAt")).toInstant()).isEqualTo(beforeRemoval);
+    }
 }

@@ -373,6 +373,7 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 | `POST /notes/{id}/attachments` (multipart `file`), `GET\|DELETE /notes/{id}/attachments/{aid}` | Up to 5 files of 10 MB per note in GridFS (400 `ATTACHMENT_REJECTED`) |
 | `POST /contacts\|companies\|deals/export` | CSV of the list with its search body (`crm:export`) |
 | `POST /companies/import`, `POST /contacts/import?pipelineId=&phoneNumberId=` | CSV import (multipart `file`), result `{total, created, updated, skipped, errors}` |
+| `POST /reports/{pipeline-summary\|deals-over-time\|by-owner\|by-source\|by-number\|lifecycle-funnel\|activity-summary\|stage-duration\|campaigns\|grid}` | Reports over what the caller may see, with one shared filter body (400 `INVALID_REPORT_FILTER {field}`, 503 `REPORT_TIMEOUT`) |
 
 Searches take `sort` as `"field"` or `"field,asc|desc"` (a separate `dir` wins). A restricted user's company
 `openDealAmount` counts only the deals of their pipelines. Lane positions are changed under a per-lane lock held in
@@ -392,6 +393,14 @@ the JVM (`LaneLocks`): enough for the single app instance; running the CRM on se
   (matched by name, then domain) or 1,000 contacts (into one pipeline and number, origin `IMPORT`); headers are the
   export's column names, custom fields `Label (key)` or `key`; blank cells never overwrite and a bad row is reported
   without stopping the file (400 `IMPORT_TOO_LARGE`, `IMPORT_BAD_HEADER`).
+- **Reports:** every report takes `{from?, to?, tz?, pipelineId?, phoneNumberIds?, ownerIds?}` — ISO instants
+  (default the last 90 days, at most 731), an IANA zone that decides day, week and month boundaries, and optional
+  narrowing. Figures are computed over the caller's pipelines; activities with no pipeline are left out for restricted
+  users. Sums are in the brand's default currency, with `otherCurrencyDeals` counting the rest. Stage duration reads
+  `payload.fromStageEnteredAt`, which every stage move records from this version on (older moves are left out and the
+  response says `since` when). The campaigns card reads the brand's campaigns through `CampaignDirectory`. Each
+  aggregation has a 10 s limit. New indexes: `crmDeals`/`crmContacts` `{workspaceId, creationTime}`, `crmActivities`
+  `{workspaceId, type, happenedAt}`.
 - **Jobs:** task reminders every 60 s and deal rotting daily at 02:15 server time (an OPEN deal is rotting when its last
   activity, else stage entry, else creation is older than the pipeline's rotting days, else the brand's). Both run
   in-process; set `omnichannel.crm.jobs.enabled=false` (tests do) to stop scheduling them, e.g. on a second instance.
@@ -400,7 +409,9 @@ the JVM (`LaneLocks`): enough for the single app instance; running the CRM on se
 for "Demo Fashion" and adds 3 companies, 8 CRM contacts from the demo contacts on the demo number, 10 deals across
 the Sales lanes (one won, one lost, one rotting) and two logged calls, and gives `demo-agent` the Sales pipeline. It
 also adds the DEAL fields `tier` (Gold/Silver) and `budget`, three tasks for `demo-agent` (one overdue, one due
-today, one whose reminder has passed) and a pinned note. It runs through the normal services as a system actor, and
+today, one whose reminder has passed) and a pinned note, and backdates the records (deals created over the last 60
+days, the won and lost deals closed 3 and 10 days ago, stage moves a few days after creation, calls in the last week)
+so the Reports page has something to show. It runs through the normal services as a system actor, and
 is skipped when the brand already has CRM settings.
 
 ## Message templates

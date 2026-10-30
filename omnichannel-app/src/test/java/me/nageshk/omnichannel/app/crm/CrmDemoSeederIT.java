@@ -84,6 +84,31 @@ class CrmDemoSeederIT {
         assertThat(count("crmTasks", ws.get().and("dueAt").lt(java.time.Instant.now()))).isEqualTo(1);
         assertThat(count("crmTasks", ws.get().and("reminderAt").lt(java.time.Instant.now()))).isEqualTo(1);
         assertThat(count("crmNotes", ws.get().and("pinned").is(true))).isEqualTo(1);
+        // backdated for the reports (phase C §7): creation spread over the last 60 days, outcomes 3 and 10 days ago
+        java.time.Instant now = java.time.Instant.now();
+        List<java.util.Date> created = mongo.findDistinct(new Query(ws.get()), "creationTime", "crmDeals",
+                java.util.Date.class);
+        assertThat(created.stream().map(d -> d.toInstant().atZone(java.time.ZoneOffset.UTC).toLocalDate())
+                .distinct().count()).isGreaterThanOrEqualTo(8);
+        assertThat(created).allSatisfy(d -> assertThat(d.toInstant())
+                .isAfter(now.minus(61, java.time.temporal.ChronoUnit.DAYS)).isBefore(now));
+        org.bson.Document won = mongo.findOne(new Query(ws.get().and("status").is("WON")), org.bson.Document.class,
+                "crmDeals");
+        org.bson.Document lost = mongo.findOne(new Query(ws.get().and("status").is("LOST")), org.bson.Document.class,
+                "crmDeals");
+        assertThat(((java.util.Date) won.get("closedAt")).toInstant())
+                .isBetween(now.minus(4, java.time.temporal.ChronoUnit.DAYS), now.minus(2, java.time.temporal.ChronoUnit.DAYS));
+        assertThat(((java.util.Date) lost.get("closedAt")).toInstant())
+                .isBetween(now.minus(11, java.time.temporal.ChronoUnit.DAYS), now.minus(9, java.time.temporal.ChronoUnit.DAYS));
+        List<org.bson.Document> moves = mongo.find(new Query(ws.get().and("type").is("STAGE_CHANGED")),
+                org.bson.Document.class, "crmActivities");
+        assertThat(moves).isNotEmpty().allSatisfy(m -> {
+            assertThat(m.get("payload", org.bson.Document.class)).containsKey("fromStageEnteredAt");
+            assertThat(((java.util.Date) m.get("happenedAt")).toInstant()).isBefore(now.minus(1, java.time.temporal.ChronoUnit.HOURS));
+        });
+        assertThat(mongo.find(new Query(ws.get().and("type").is("CALL_LOGGED")), org.bson.Document.class,
+                "crmActivities")).hasSize(2).allSatisfy(c -> assertThat(((java.util.Date) c.get("happenedAt")).toInstant())
+                .isAfter(now.minus(7, java.time.temporal.ChronoUnit.DAYS)));
         // every seeded record belongs to a real demo user, never to the system actor that created it
         assertThat(count("crmContacts", ws.get().and("ownerId").is("system"))).isZero();
         assertThat(count("crmDeals", ws.get().and("ownerId").is("system"))).isZero();

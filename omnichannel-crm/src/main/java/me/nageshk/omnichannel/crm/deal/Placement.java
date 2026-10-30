@@ -277,6 +277,8 @@ class Placement {
             payload.put("toStageId", saved.getStageId());
             payload.put("fromStageName", fromName);
             payload.put("toStageName", toName);
+            // when the deal entered the stage it leaves: the stage-duration report reads this (spec C12)
+            if (before.getStageEnteredAt() != null) payload.put("fromStageEnteredAt", before.getStageEnteredAt());
             String summary;
             String shownFrom = fromName == null ? "a removed stage" : fromName;
             if (pipelineChanged) {

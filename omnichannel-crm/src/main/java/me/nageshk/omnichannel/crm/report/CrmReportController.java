@@ -1,0 +1,109 @@
+package me.nageshk.omnichannel.crm.report;
+
+import me.nageshk.omnichannel.crm.access.CrmAccess;
+import me.nageshk.omnichannel.crm.report.dto.ActivitySummaryView;
+import me.nageshk.omnichannel.crm.report.dto.ByNumberView;
+import me.nageshk.omnichannel.crm.report.dto.ByOwnerView;
+import me.nageshk.omnichannel.crm.report.dto.BySourceView;
+import me.nageshk.omnichannel.crm.report.dto.CampaignsView;
+import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeRequest;
+import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeView;
+import me.nageshk.omnichannel.crm.report.dto.GridRequest;
+import me.nageshk.omnichannel.crm.report.dto.GridView;
+import me.nageshk.omnichannel.crm.report.dto.LifecycleFunnelView;
+import me.nageshk.omnichannel.crm.report.dto.PipelineSummaryView;
+import me.nageshk.omnichannel.crm.report.dto.StageDurationView;
+import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/** The reports (spec phase C §5); every call is a POST with the shared filter, open to anyone with crm:view. */
+@RestController
+@RequestMapping("/api/workspaces/{workspaceId}/crm/reports")
+public class CrmReportController {
+
+    private static final String VIEW = "@access.has(#workspaceId, 'crm:view')";
+
+    private final CrmAccess crmAccess;
+    private final CrmReportService reports;
+
+    CrmReportController(CrmAccess crmAccess, CrmReportService reports) {
+        this.crmAccess = crmAccess;
+        this.reports = reports;
+    }
+
+    @PostMapping("/pipeline-summary")
+    @PreAuthorize(VIEW)
+    public PipelineSummaryView pipelineSummary(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
+        return reports.pipelineSummary(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/deals-over-time")
+    @PreAuthorize(VIEW)
+    public DealsOverTimeView dealsOverTime(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @RequestBody(required = false) DealsOverTimeRequest req) {
+        return reports.dealsOverTime(crmAccess.resolve(me, workspaceId), req);
+    }
+
+    @PostMapping("/by-owner")
+    @PreAuthorize(VIEW)
+    public ByOwnerView byOwner(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) ReportFilter filter) {
+        return reports.byOwner(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/by-source")
+    @PreAuthorize(VIEW)
+    public BySourceView bySource(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) ReportFilter filter) {
+        return reports.bySource(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/by-number")
+    @PreAuthorize(VIEW)
+    public ByNumberView byNumber(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) ReportFilter filter) {
+        return reports.byNumber(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/lifecycle-funnel")
+    @PreAuthorize(VIEW)
+    public LifecycleFunnelView lifecycleFunnel(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
+        return reports.lifecycleFunnel(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/activity-summary")
+    @PreAuthorize(VIEW)
+    public ActivitySummaryView activitySummary(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
+        return reports.activitySummary(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/stage-duration")
+    @PreAuthorize(VIEW)
+    public StageDurationView stageDuration(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
+        return reports.stageDuration(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/grid")
+    @PreAuthorize(VIEW)
+    public GridView grid(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) GridRequest req) {
+        return reports.grid(crmAccess.resolve(me, workspaceId), req);
+    }
+
+    @PostMapping("/campaigns")
+    @PreAuthorize(VIEW)
+    public CampaignsView campaigns(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) ReportFilter filter) {
+        return reports.campaigns(crmAccess.resolve(me, workspaceId), filter);
+    }
+}
