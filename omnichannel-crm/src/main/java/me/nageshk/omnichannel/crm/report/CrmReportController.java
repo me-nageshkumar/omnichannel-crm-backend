@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.crm.report;
 
 import me.nageshk.omnichannel.crm.access.CrmAccess;
+import me.nageshk.omnichannel.crm.report.dto.ActivitySummaryView;
 import me.nageshk.omnichannel.crm.report.dto.ByNumberView;
 import me.nageshk.omnichannel.crm.report.dto.ByOwnerView;
 import me.nageshk.omnichannel.crm.report.dto.BySourceView;
@@ -8,6 +9,7 @@ import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeRequest;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeView;
 import me.nageshk.omnichannel.crm.report.dto.LifecycleFunnelView;
 import me.nageshk.omnichannel.crm.report.dto.PipelineSummaryView;
+import me.nageshk.omnichannel.crm.report.dto.StageDurationView;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -72,5 +74,19 @@ public class CrmReportController {
     public LifecycleFunnelView lifecycleFunnel(@AuthenticationPrincipal AuthenticatedUser me,
             @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
         return reports.lifecycleFunnel(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/activity-summary")
+    @PreAuthorize(VIEW)
+    public ActivitySummaryView activitySummary(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
+        return reports.activitySummary(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/stage-duration")
+    @PreAuthorize(VIEW)
+    public StageDurationView stageDuration(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
+        return reports.stageDuration(crmAccess.resolve(me, workspaceId), filter);
     }
 }

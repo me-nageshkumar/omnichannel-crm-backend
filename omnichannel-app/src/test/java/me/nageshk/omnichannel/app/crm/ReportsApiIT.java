@@ -348,4 +348,143 @@ class ReportsApiIT extends CrmTestBase {
         JsonNode source = report("by-source", managerToken, f);
         assertThat(row(source.get("deals"), "source", "").get("created").asLong()).isEqualTo(1);
     }
+
+    // --- Task 5: activity summary and stage duration -------------------------------------------------------
+
+    private String task(String token, String dealId, String title) throws Exception {
+        return json(send(post(crm() + "/tasks"), token, Map.of("title", title, "target",
+                Map.of("type", "DEAL", "id", dealId))).andExpect(status().isOk())).get("id").asText();
+    }
+
+    private void log(String token, String type, String id, String kind) throws Exception {
+        send(post(crm() + "/activities/log"), token, Map.of("target", Map.of("type", type, "id", id), "type", kind,
+                "summary", kind + " done")).andExpect(status().isOk());
+    }
+
+    @Test
+    void activitySummaryCountsPerPerson() throws Exception {
+        enableCrm();
+        assignPipelines(agent, salesId());
+        Map<String, String> stages = stages(salesId());
+        String deal = dealOf("Asha", "919900000631", "100", null).get("id").asText();
+        String lostOne = dealOf("Ravi", "919900000632", "50", null).get("id").asText();
+        String taskId = task(managerToken, deal, "Call back");
+        send(post(crm() + "/tasks/" + taskId + "/complete"), managerToken, null).andExpect(status().isOk());
+        send(post(crm() + "/notes"), managerToken, Map.of("target", Map.of("type", "DEAL", "id", deal), "body",
+                "Spoke to Asha")).andExpect(status().isOk());
+        log(managerToken, "DEAL", deal, "CALL");
+        move(deal, stages.get("Contacted"));
+        close(deal, "WON");
+        close(lostOne, "LOST");
+        log(agentToken, "DEAL", lostOne, "MEETING");
+        log(agentToken, "DEAL", lostOne, "EMAIL");
+
+        JsonNode r = report("activity-summary", managerToken, filter());
+        JsonNode me = row(r.get("rows"), "actorId", manager.getId());
+        assertThat(me.get("label").asText()).isEqualTo(manager.getName());
+        assertThat(me.get("tasksCompleted").asLong()).isEqualTo(1);
+        assertThat(me.get("notesAdded").asLong()).isEqualTo(1);
+        assertThat(me.get("calls").asLong()).isEqualTo(1);
+        assertThat(me.get("stageMoves").asLong()).isEqualTo(3); // move, close WON, close LOST
+        assertThat(me.get("dealsWon").asLong()).isEqualTo(1);
+        assertThat(me.get("dealsLost").asLong()).isEqualTo(1);
+        JsonNode them = row(r.get("rows"), "actorId", agent.getId());
+        assertThat(them.get("meetings").asLong()).isEqualTo(1);
+        assertThat(them.get("emails").asLong()).isEqualTo(1);
+        assertThat(them.get("tasksCompleted").asLong()).isZero();
+        assertThat(r.get("rows").get(0).get("actorId").asText()).isEqualTo(manager.getId()); // busiest first
+    }
+
+    @Test
+    void activitiesWithoutPipelineExcludedForRestricted() throws Exception {
+        enableCrm();
+        assignPipelines(agent, salesId());
+        String company = json(send(post(crm() + "/companies"), managerToken, Map.of("name", "Acme"))
+                .andExpect(status().isOk())).get("id").asText();
+        // a company note carries no pipeline
+        send(post(crm() + "/notes"), managerToken, Map.of("target", Map.of("type", "COMPANY", "id", company),
+                "body", "Brand-wide note")).andExpect(status().isOk());
+        String deal = dealOf("Asha", "919900000633", "10", null).get("id").asText();
+        log(managerToken, "DEAL", deal, "CALL");
+
+        JsonNode mine = row(report("activity-summary", managerToken, filter()).get("rows"), "actorId",
+                manager.getId());
+        assertThat(mine.get("notesAdded").asLong()).isEqualTo(1);
+        assertThat(mine.get("calls").asLong()).isEqualTo(1);
+        JsonNode seenByAgent = row(report("activity-summary", agentToken, filter()).get("rows"), "actorId",
+                manager.getId());
+        assertThat(seenByAgent.get("notesAdded").asLong()).isZero();
+        assertThat(seenByAgent.get("calls").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void stageDurationFromMoves() throws Exception {
+        enableCrm();
+        Map<String, String> stages = stages(salesId());
+        String a = dealOf("Asha", "919900000634", "1", null).get("id").asText();
+        String b = dealOf("Ravi", "919900000635", "1", null).get("id").asText();
+        String stays = dealOf("Meena", "919900000636", "1", null).get("id").asText();
+        // a: 4 days in New, then 2 days in Contacted; b: 8 days in New
+        backdate("crmDeals", a, "stageEnteredAt", daysAgo(4));
+        move(a, stages.get("Contacted"));
+        backdate("crmDeals", a, "stageEnteredAt", daysAgo(2));
+        move(a, stages.get("Qualified"));
+        backdate("crmDeals", b, "stageEnteredAt", daysAgo(8));
+        move(b, stages.get("Contacted"));
+        backdate("crmDeals", stays, "stageEnteredAt", daysAgo(10));
+
+        JsonNode r = report("stage-duration", managerToken, filter());
+        assertThat(r.get("pipelineName").asText()).isEqualTo("Sales");
+        assertThat(r.get("since").isNull()).isFalse();
+        JsonNode newStage = row(r.get("stages"), "name", "New");
+        assertThat(newStage.get("movesOut").asLong()).isEqualTo(2);
+        assertThat(newStage.get("averageDays").asDouble()).isEqualTo(6.0);
+        assertThat(newStage.get("medianDays").asDouble()).isEqualTo(6.0);
+        assertThat(newStage.get("openNow").asLong()).isEqualTo(1);
+        assertThat(newStage.get("averageDaysOpenNow").asDouble()).isEqualTo(10.0);
+        JsonNode contacted = row(r.get("stages"), "name", "Contacted");
+        assertThat(contacted.get("movesOut").asLong()).isEqualTo(1);
+        assertThat(contacted.get("averageDays").asDouble()).isEqualTo(2.0);
+        assertThat(contacted.get("openNow").asLong()).isEqualTo(1);
+        JsonNode qualified = row(r.get("stages"), "name", "Qualified");
+        assertThat(qualified.get("movesOut").asLong()).isZero();
+        assertThat(qualified.get("averageDays").isNull()).isTrue();
+        assertThat(qualified.get("openNow").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void legacyMovesIgnored() throws Exception {
+        enableCrm();
+        Map<String, String> stages = stages(salesId());
+        String a = dealOf("Asha", "919900000637", "1", null).get("id").asText();
+        backdate("crmDeals", a, "stageEnteredAt", daysAgo(3));
+        move(a, stages.get("Contacted"));
+        mongo.updateFirst(new Query(Criteria.where("target.id").is(a).and("type").is("STAGE_CHANGED")),
+                new Update().unset("payload.fromStageEnteredAt"), "crmActivities");
+        JsonNode r = report("stage-duration", managerToken, filter());
+        assertThat(row(r.get("stages"), "name", "New").get("movesOut").asLong()).isZero();
+        assertThat(r.get("since").isNull()).isTrue();
+        String b = dealOf("Ravi", "919900000638", "1", null).get("id").asText();
+        backdate("crmDeals", b, "stageEnteredAt", daysAgo(1));
+        move(b, stages.get("Contacted"));
+        JsonNode again = report("stage-duration", managerToken, filter());
+        assertThat(row(again.get("stages"), "name", "New").get("movesOut").asLong()).isEqualTo(1);
+        assertThat(Instant.parse(again.get("since").asText())).isAfter(daysAgo(1).minus(1, ChronoUnit.MINUTES));
+    }
+
+    @Test
+    void newIndexesLeadWithWorkspace() {
+        enableCrm();
+        for (String[] ix : new String[][] {{"crmDeals", "ws_created"}, {"crmContacts", "ws_created"},
+                {"crmActivities", "ws_type_happened"}}) {
+            boolean found = false;
+            for (org.bson.Document d : mongo.getCollection(ix[0]).listIndexes()) {
+                if (ix[1].equals(d.getString("name"))) {
+                    found = true;
+                    assertThat(((org.bson.Document) d.get("key")).keySet().iterator().next()).isEqualTo("workspaceId");
+                }
+            }
+            assertThat(found).as(ix[0] + "." + ix[1]).isTrue();
+        }
+    }
 }

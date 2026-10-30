@@ -17,6 +17,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One append-only entry of a record's timeline. */
 @Document("crmActivities")
+@CompoundIndex(name = "ws_type_happened", def = "{'workspaceId': 1, 'type': 1, 'happenedAt': 1}")
 @CompoundIndex(name = "ws_target", def = "{'workspaceId': 1, 'target.type': 1, 'target.id': 1, 'happenedAt': -1}")
 @CompoundIndex(name = "ws_related", def = "{'workspaceId': 1, 'relatedTargets.id': 1, 'happenedAt': -1}")
 @Getter

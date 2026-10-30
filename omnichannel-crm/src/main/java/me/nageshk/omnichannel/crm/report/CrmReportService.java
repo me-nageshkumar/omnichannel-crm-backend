@@ -14,6 +14,7 @@ import me.nageshk.omnichannel.crm.platform.NumberDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformNumber;
 import me.nageshk.omnichannel.crm.platform.PlatformPerson;
+import me.nageshk.omnichannel.crm.report.dto.ActivitySummaryView;
 import me.nageshk.omnichannel.crm.report.dto.ByNumberView;
 import me.nageshk.omnichannel.crm.report.dto.ByOwnerView;
 import me.nageshk.omnichannel.crm.report.dto.BySourceView;
@@ -21,6 +22,7 @@ import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeRequest;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeView;
 import me.nageshk.omnichannel.crm.report.dto.LifecycleFunnelView;
 import me.nageshk.omnichannel.crm.report.dto.PipelineSummaryView;
+import me.nageshk.omnichannel.crm.report.dto.StageDurationView;
 import me.nageshk.omnichannel.crm.settings.CrmSettings;
 import me.nageshk.omnichannel.crm.settings.CrmSettingsService;
 import org.springframework.stereotype.Service;
@@ -38,10 +40,13 @@ public class CrmReportService {
     private final DealsOverTimeReport dealsOverTime;
     private final BreakdownReports breakdowns;
     private final LifecycleFunnelReport lifecycleFunnel;
+    private final ActivitySummaryReport activitySummary;
+    private final StageDurationReport stageDuration;
 
     CrmReportService(ReportFilterResolver resolver, ReportScope scope, CrmSettingsService settings,
             PeopleDirectory people, NumberDirectory numbers, PipelineSummaryReport pipelineSummary,
-            DealsOverTimeReport dealsOverTime, BreakdownReports breakdowns, LifecycleFunnelReport lifecycleFunnel) {
+            DealsOverTimeReport dealsOverTime, BreakdownReports breakdowns, LifecycleFunnelReport lifecycleFunnel,
+            ActivitySummaryReport activitySummary, StageDurationReport stageDuration) {
         this.resolver = resolver;
         this.scope = scope;
         this.settings = settings;
@@ -51,6 +56,8 @@ public class CrmReportService {
         this.dealsOverTime = dealsOverTime;
         this.breakdowns = breakdowns;
         this.lifecycleFunnel = lifecycleFunnel;
+        this.activitySummary = activitySummary;
+        this.stageDuration = stageDuration;
     }
 
     public PipelineSummaryView pipelineSummary(CrmContext ctx, ReportFilter filter) {
@@ -94,6 +101,22 @@ public class CrmReportService {
     public LifecycleFunnelView lifecycleFunnel(CrmContext ctx, ReportFilter filter) {
         ResolvedFilter f = resolver.resolve(ctx, filter);
         return lifecycleFunnel.build(ctx, f, settings(ctx).getLifecycleStatuses());
+    }
+
+    public ActivitySummaryView activitySummary(CrmContext ctx, ReportFilter filter) {
+        ResolvedFilter f = resolver.resolve(ctx, filter);
+        ActivitySummaryView raw = activitySummary.build(ctx, f, id -> id);
+        Function<String, String> names = personNames(raw.rows().stream().map(ActivitySummaryView.Row::actorId)
+                .collect(Collectors.toSet()));
+        return new ActivitySummaryView(raw.rows().stream().map(r -> new ActivitySummaryView.Row(r.actorId(),
+                names.apply(r.actorId()), r.tasksCompleted(), r.notesAdded(), r.stageMoves(), r.dealsWon(),
+                r.dealsLost(), r.calls(), r.meetings(), r.emails())).toList());
+    }
+
+    public StageDurationView stageDuration(CrmContext ctx, ReportFilter filter) {
+        ResolvedFilter f = resolver.resolve(ctx, filter);
+        CrmPipeline pipeline = scope.pipelineOrDefault(ctx, f.pipelineId());
+        return stageDuration.build(ctx, f, pipeline);
     }
 
     /** Display names for user ids; one lookup, "Unknown person" for ids the brand no longer knows. */

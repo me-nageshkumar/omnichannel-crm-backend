@@ -23,6 +23,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
  * parts read this collection by name ({@code crmDeals}): keep the field names.
  */
 @Document("crmDeals")
+@CompoundIndex(name = "ws_created", def = "{'workspaceId': 1, 'creationTime': 1}")
 @CompoundIndex(name = "ws_lane", def = "{'workspaceId': 1, 'pipelineId': 1, 'stageId': 1, 'position': 1}")
 @CompoundIndex(name = "ws_owner_status", def = "{'workspaceId': 1, 'ownerId': 1, 'status': 1}")
 @CompoundIndex(name = "ws_primary", def = "{'workspaceId': 1, 'primaryCrmContactId': 1}")

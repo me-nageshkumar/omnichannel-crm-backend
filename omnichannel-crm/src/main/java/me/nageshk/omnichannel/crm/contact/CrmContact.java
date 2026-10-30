@@ -19,6 +19,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 
 /** One brand contact on one channel number: the person as the CRM tracks them. */
 @Document("crmContacts")
+@CompoundIndex(name = "ws_created", def = "{'workspaceId': 1, 'creationTime': 1}")
 @CompoundIndex(name = "ws_contact_channel", def = "{'workspaceId': 1, 'contactId': 1, 'channel.phoneNumberId': 1}",
         unique = true)
 @CompoundIndex(name = "ws_pipelines", def = "{'workspaceId': 1, 'pipelineIds': 1, '_id': -1}")
