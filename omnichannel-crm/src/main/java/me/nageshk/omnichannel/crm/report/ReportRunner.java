@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.crm.report;
 import com.mongodb.MongoExecutionTimeoutException;
 import java.time.Duration;
 import java.util.List;
+import java.util.function.Supplier;
 import org.bson.Document;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -20,10 +21,23 @@ public final class ReportRunner {
     public static List<Document> run(MongoTemplate mongo, String collection, List<AggregationOperation> ops) {
         Aggregation aggregation = Aggregation.newAggregation(ops)
                 .withOptions(AggregationOptions.builder().maxTime(MAX_TIME).build());
+        return guard(() -> mongo.aggregate(aggregation, collection, Document.class).getMappedResults());
+    }
+
+    /**
+     * Runs a read under the report's rules: a time-limit error anywhere in the cause chain (Spring wraps the driver's
+     * in an uncategorized {@code DataAccessException}) becomes {@link ReportErrors#timeout()}; anything else passes.
+     */
+    public static <T> T guard(Supplier<T> read) {
         try {
-            return mongo.aggregate(aggregation, collection, Document.class).getMappedResults();
-        } catch (QueryTimeoutException | MongoExecutionTimeoutException e) {
-            throw ReportErrors.timeout();
+            return read.get();
+        } catch (RuntimeException e) {
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                if (t instanceof MongoExecutionTimeoutException || t instanceof QueryTimeoutException) {
+                    throw ReportErrors.timeout();
+                }
+            }
+            throw e;
         }
     }
 }

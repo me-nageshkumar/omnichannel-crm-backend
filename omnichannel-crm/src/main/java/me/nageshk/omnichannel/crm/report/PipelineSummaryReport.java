@@ -72,6 +72,7 @@ public class PipelineSummaryReport {
 
         long wonCount = 0, lostCount = 0;
         BigDecimal wonAmount = BigDecimal.ZERO, lostAmount = BigDecimal.ZERO;
+        long wonInCurrency = 0; // the wins behind wonAmount: the average is over these, not over every win
         for (Document d : ReportRunner.run(mongo, DEALS, List.of(Aggregation.match(closed), group))) {
             Document id = d.get("_id", Document.class);
             long n = ((Number) d.get("count")).longValue();
@@ -83,8 +84,12 @@ public class PipelineSummaryReport {
                 continue;
             }
             BigDecimal amount = ReportMoney.toBigDecimal(d.get("amount"));
-            if (won) wonAmount = wonAmount.add(amount);
-            else lostAmount = lostAmount.add(amount);
+            if (won) {
+                wonAmount = wonAmount.add(amount);
+                wonInCurrency += n;
+            } else {
+                lostAmount = lostAmount.add(amount);
+            }
         }
 
         List<PipelineSummaryView.Stage> stages = pipeline.getStages().stream()
@@ -101,8 +106,8 @@ public class PipelineSummaryReport {
         long decided = wonCount + lostCount;
         Double winRate = decided == 0 ? null
                 : BigDecimal.valueOf(wonCount).divide(BigDecimal.valueOf(decided), 3, RoundingMode.HALF_UP).doubleValue();
-        Double averageWon = wonCount == 0 ? null
-                : ReportMoney.scaled(wonAmount.divide(BigDecimal.valueOf(wonCount), 2, RoundingMode.HALF_UP));
+        Double averageWon = wonInCurrency == 0 ? null
+                : ReportMoney.scaled(wonAmount.divide(BigDecimal.valueOf(wonInCurrency), 2, RoundingMode.HALF_UP));
         return new PipelineSummaryView(pipeline.getId(), pipeline.getName(), defaultCurrency, stages, totalOpen,
                 ReportMoney.scaled(totalOpenAmount), new PipelineSummaryView.Outcome(wonCount, ReportMoney.scaled(wonAmount)),
                 new PipelineSummaryView.Outcome(lostCount, ReportMoney.scaled(lostAmount)), winRate, averageWon, other);

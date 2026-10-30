@@ -35,16 +35,17 @@ public class CampaignsReport {
     }
 
     public CampaignsView build(CrmContext ctx, ResolvedFilter f, Function<String, String> numberLabels) {
-        List<PlatformCampaign> found = campaigns.campaigns(ctx.workspaceId(), f.from(), f.to(), LIMIT + 1);
+        List<PlatformCampaign> found = ReportRunner.guard(
+                () -> campaigns.campaigns(ctx.workspaceId(), f.from(), f.to(), LIMIT + 1));
         boolean truncated = found.size() > LIMIT;
         if (truncated) found = found.subList(0, LIMIT);
         // the platform contacts behind the CRM contacts the caller may see (the owner filter does not apply here)
         ResolvedFilter contacts = new ResolvedFilter(f.from(), f.to(), f.zone(), f.pipelineId(), f.phoneNumberIds(),
                 Set.of());
-        Query q = new Query(scope.contacts(ctx, contacts));
+        Query q = new Query(scope.contacts(ctx, contacts)).maxTime(ReportRunner.MAX_TIME);
         q.fields().include("contactId");
         Set<String> visible = new HashSet<>();
-        for (Document d : mongo.find(q, Document.class, "crmContacts")) {
+        for (Document d : ReportRunner.guard(() -> mongo.find(q, Document.class, "crmContacts"))) {
             String id = d.getString("contactId");
             if (id != null) visible.add(id);
         }

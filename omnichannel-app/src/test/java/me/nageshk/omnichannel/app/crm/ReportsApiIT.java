@@ -332,6 +332,19 @@ class ReportsApiIT extends CrmTestBase {
         assertThat(summary.get("won").get("count").asLong()).isEqualTo(2);
         assertThat(summary.get("won").get("amount").asDouble()).isEqualTo(400.0);
         assertThat(summary.get("otherCurrencyDeals").asLong()).isEqualTo(1);
+        // the average is over the deals whose money was summed, not over every won deal
+        assertThat(summary.get("averageWonAmount").asDouble()).isEqualTo(400.0);
+    }
+
+    @Test
+    void activitySummaryHonoursTheOwnerFilter() throws Exception {
+        enableCrm();
+        String deal = dealOf("Asha", "919900000641", "100", null).get("id").asText();
+        log(managerToken, "DEAL", deal, "CALL");
+        JsonNode mine = report("activity-summary", managerToken, filter("ownerIds", List.of(manager.getId())));
+        assertThat(row(mine.get("rows"), "actorId", manager.getId()).get("calls").asLong()).isEqualTo(1);
+        JsonNode theirs = report("activity-summary", managerToken, filter("ownerIds", List.of(agent.getId())));
+        assertThat(theirs.get("rows")).isEmpty();
     }
 
     @Test

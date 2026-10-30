@@ -37,8 +37,10 @@ public class ActivitySummaryReport {
 
     public ActivitySummaryView build(CrmContext ctx, ResolvedFilter f, Function<String, String> names) {
         Criteria c = scope.activities(ctx, f).and("actorType").is(ActorType.USER.name())
-                .and("actorId").ne("system")
                 .and("type").in(COUNTED.stream().map(Enum::name).toList());
+        // The owner filter already puts actorId on the criteria (Spring allows one expression per key); without it
+        // the system actor is excluded here, with it the loop below drops a "system" owner.
+        if (f.ownerIds().isEmpty()) c = c.and("actorId").ne("system");
         AggregationOperation group = x -> new Document("$group",
                 new Document("_id", new Document("actor", "$actorId").append("type", "$type"))
                         .append("count", new Document("$sum", 1)));
@@ -46,7 +48,7 @@ public class ActivitySummaryReport {
         for (Document d : ReportRunner.run(mongo, ACTIVITIES, List.of(Aggregation.match(c), group))) {
             Document id = d.get("_id", Document.class);
             String actor = id.getString("actor");
-            if (actor == null) continue;
+            if (actor == null || "system".equals(actor)) continue;
             ActivityType type;
             try {
                 type = ActivityType.valueOf(id.getString("type"));

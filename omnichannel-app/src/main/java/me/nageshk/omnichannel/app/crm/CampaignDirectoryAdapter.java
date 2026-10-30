@@ -31,23 +31,23 @@ class CampaignDirectoryAdapter implements CampaignDirectory {
     @Override
     public List<PlatformCampaign> campaigns(String workspaceId, Instant from, Instant to, int limit) {
         List<Campaign> campaigns = mongo.find(new Query(Criteria.where("workspaceId").is(workspaceId)
-                .and("startedAt").gte(from).lt(to)).with(Sort.by(Sort.Direction.DESC, "startedAt")).limit(limit),
-                Campaign.class);
+                .and("startedAt").gte(from).lt(to)).with(Sort.by(Sort.Direction.DESC, "startedAt")).limit(limit)
+                .maxTime(MAX_TIME), Campaign.class);
         if (campaigns.isEmpty()) return List.of();
         Set<String> senderIds = new HashSet<>();
         campaigns.forEach(c -> {
             if (c.getSenderIds() != null) senderIds.addAll(c.getSenderIds());
         });
         Map<String, String> numberOfSender = senderIds.isEmpty() ? Map.of()
-                : mongo.find(new Query(Criteria.where("_id").in(senderIds).and("workspaceId").is(workspaceId)),
-                        CampaignSender.class).stream()
+                : mongo.find(new Query(Criteria.where("_id").in(senderIds).and("workspaceId").is(workspaceId))
+                        .maxTime(MAX_TIME), CampaignSender.class).stream()
                         .collect(Collectors.toMap(CampaignSender::getId, CampaignSender::getPhoneNumberId, (a, b) -> a));
         List<PlatformCampaign> out = new ArrayList<>();
         for (Campaign c : campaigns) {
             List<String> numbers = (c.getSenderIds() == null ? List.<String>of() : c.getSenderIds()).stream()
                     .map(numberOfSender::get).filter(n -> n != null).distinct().toList();
             Set<String> contactIds = new HashSet<>(mongo.findDistinct(
-                    new Query(Criteria.where("campaignId").is(c.getId()).and("contactId").ne(null)),
+                    new Query(Criteria.where("campaignId").is(c.getId()).and("contactId").ne(null)).maxTime(MAX_TIME),
                     "contactId", CampaignRecipient.class, String.class));
             Campaign.Counts n = c.getCounts() == null ? Campaign.Counts.ZERO : c.getCounts();
             out.add(new PlatformCampaign(c.getId(), c.getName(), c.getStatus() == null ? null : c.getStatus().name(),
