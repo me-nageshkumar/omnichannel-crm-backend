@@ -75,14 +75,17 @@ public class ReportScope {
                 .orElseThrow(() -> ReportErrors.invalid("pipelineId", "No accessible pipeline"));
     }
 
-    /** Brand + access on {@code pipelineField} + the filter's pipeline. An empty access set matches nothing. */
+    /**
+     * Brand + the filter's pipeline when one is named (the resolver has already checked it is accessible), else the
+     * caller's whole access on {@code pipelineField}; an empty access set matches nothing.
+     */
     private static Criteria scoped(CrmContext ctx, ResolvedFilter f, String pipelineField) {
         Criteria c = Criteria.where("workspaceId").is(ctx.workspaceId());
+        if (f.pipelineId() != null) return c.and(pipelineField).is(f.pipelineId());
         if (!ctx.pipelines().all()) {
             Set<String> ids = ctx.pipelines().pipelineIds();
             c = c.and(pipelineField).in(ids.isEmpty() ? List.of("") : ids);
         }
-        if (f.pipelineId() != null) c = c.and(pipelineField).is(f.pipelineId());
         return c;
     }
 
