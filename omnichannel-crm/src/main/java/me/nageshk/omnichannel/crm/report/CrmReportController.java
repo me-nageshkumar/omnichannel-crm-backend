@@ -5,6 +5,7 @@ import me.nageshk.omnichannel.crm.report.dto.ActivitySummaryView;
 import me.nageshk.omnichannel.crm.report.dto.ByNumberView;
 import me.nageshk.omnichannel.crm.report.dto.ByOwnerView;
 import me.nageshk.omnichannel.crm.report.dto.BySourceView;
+import me.nageshk.omnichannel.crm.report.dto.CampaignsView;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeRequest;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeView;
 import me.nageshk.omnichannel.crm.report.dto.GridRequest;
@@ -97,5 +98,12 @@ public class CrmReportController {
     public GridView grid(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @RequestBody(required = false) GridRequest req) {
         return reports.grid(crmAccess.resolve(me, workspaceId), req);
+    }
+
+    @PostMapping("/campaigns")
+    @PreAuthorize(VIEW)
+    public CampaignsView campaigns(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) ReportFilter filter) {
+        return reports.campaigns(crmAccess.resolve(me, workspaceId), filter);
     }
 }

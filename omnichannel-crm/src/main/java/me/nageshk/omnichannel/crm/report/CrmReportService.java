@@ -24,6 +24,7 @@ import me.nageshk.omnichannel.crm.report.dto.ActivitySummaryView;
 import me.nageshk.omnichannel.crm.report.dto.ByNumberView;
 import me.nageshk.omnichannel.crm.report.dto.ByOwnerView;
 import me.nageshk.omnichannel.crm.report.dto.BySourceView;
+import me.nageshk.omnichannel.crm.report.dto.CampaignsView;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeRequest;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeView;
 import me.nageshk.omnichannel.crm.report.dto.GridRequest;
@@ -53,12 +54,13 @@ public class CrmReportService {
     private final GridReport grid;
     private final FieldDefinitionService fields;
     private final CrmPipelineService pipelines;
+    private final CampaignsReport campaignsReport;
 
     CrmReportService(ReportFilterResolver resolver, ReportScope scope, CrmSettingsService settings,
             PeopleDirectory people, NumberDirectory numbers, PipelineSummaryReport pipelineSummary,
             DealsOverTimeReport dealsOverTime, BreakdownReports breakdowns, LifecycleFunnelReport lifecycleFunnel,
             ActivitySummaryReport activitySummary, StageDurationReport stageDuration, GridReport grid,
-            FieldDefinitionService fields, CrmPipelineService pipelines) {
+            FieldDefinitionService fields, CrmPipelineService pipelines, CampaignsReport campaignsReport) {
         this.resolver = resolver;
         this.scope = scope;
         this.settings = settings;
@@ -73,6 +75,7 @@ public class CrmReportService {
         this.grid = grid;
         this.fields = fields;
         this.pipelines = pipelines;
+        this.campaignsReport = campaignsReport;
     }
 
     public PipelineSummaryView pipelineSummary(CrmContext ctx, ReportFilter filter) {
@@ -107,10 +110,7 @@ public class CrmReportService {
 
     public ByNumberView byNumber(CrmContext ctx, ReportFilter filter) {
         ResolvedFilter f = resolver.resolve(ctx, filter);
-        Map<String, String> labels = numbers.numbers(ctx.workspaceId()).stream().collect(Collectors.toMap(
-                PlatformNumber::id, n -> n.label() == null || n.label().isBlank() ? n.number() : n.label(),
-                (a, b) -> a));
-        return breakdowns.byNumber(ctx, f, currency(ctx), id -> labels.getOrDefault(id, "Removed number"));
+        return breakdowns.byNumber(ctx, f, currency(ctx), numberLabels(ctx));
     }
 
     public LifecycleFunnelView lifecycleFunnel(CrmContext ctx, ReportFilter filter) {
@@ -132,6 +132,18 @@ public class CrmReportService {
         ResolvedFilter f = resolver.resolve(ctx, filter);
         CrmPipeline pipeline = scope.pipelineOrDefault(ctx, f.pipelineId());
         return stageDuration.build(ctx, f, pipeline);
+    }
+
+    public CampaignsView campaigns(CrmContext ctx, ReportFilter filter) {
+        ResolvedFilter f = resolver.resolve(ctx, filter);
+        return campaignsReport.build(ctx, f, numberLabels(ctx));
+    }
+
+    private Function<String, String> numberLabels(CrmContext ctx) {
+        Map<String, String> labels = numbers.numbers(ctx.workspaceId()).stream().collect(Collectors.toMap(
+                PlatformNumber::id, n -> n.label() == null || n.label().isBlank() ? n.number() : n.label(),
+                (a, b) -> a));
+        return id -> labels.getOrDefault(id, "Removed number");
     }
 
     public GridView grid(CrmContext ctx, GridRequest req) {
@@ -166,12 +178,7 @@ public class CrmReportService {
             case LOST_REASONS -> labelsOf(settings(ctx).getLostReasons());
             case LIFECYCLE -> labelsOf(settings(ctx).getLifecycleStatuses());
             case INDUSTRIES -> labelsOf(settings(ctx).getIndustries());
-            case NUMBER -> {
-                Map<String, String> m = numbers.numbers(ctx.workspaceId()).stream().collect(Collectors.toMap(
-                        PlatformNumber::id, n -> n.label() == null || n.label().isBlank() ? n.number() : n.label(),
-                        (a, b) -> a));
-                yield id -> m.getOrDefault(id, "Removed number");
-            }
+            case NUMBER -> numberLabels(ctx);
             case OPTIONS -> {
                 Map<String, String> m = new java.util.HashMap<>();
                 CrmFieldDefinition d = g.groupField();

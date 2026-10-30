@@ -635,4 +635,80 @@ class ReportsApiIT extends CrmTestBase {
                     .andExpect(jsonPath("$.field").value(b[1]));
         }
     }
+
+    // --- Task 7: campaigns card ------------------------------------------------------------------------------
+
+    private String campaignWith(String name, Instant startedAt, List<String> recipientContactIds) {
+        // one sender per number (unique index): reuse it across the test's campaigns
+        var sender = mongo.findOne(new Query(Criteria.where("phoneNumberId").is(number.getId())),
+                me.nageshk.omnichannel.db.campaign.CampaignSender.class);
+        if (sender == null) {
+            sender = new me.nageshk.omnichannel.db.campaign.CampaignSender();
+            sender.setWorkspaceId(brand.getId());
+            sender.setPhoneNumberId(number.getId());
+            sender = mongo.insert(sender);
+        }
+        var c = new me.nageshk.omnichannel.db.campaign.Campaign();
+        c.setWorkspaceId(brand.getId());
+        c.setCustomerId(acme.getId());
+        c.setName(name);
+        c.setNameKey(name.toLowerCase() + "-" + System.nanoTime());
+        c.setSenderIds(List.of(sender.getId()));
+        c.setStatus(me.nageshk.omnichannel.db.campaign.CampaignStatus.COMPLETED);
+        c.setCounts(new me.nageshk.omnichannel.db.campaign.Campaign.Counts(recipientContactIds.size(), 0,
+                recipientContactIds.size(), recipientContactIds.size(), 1, 0, 0, 0));
+        c.setCreationTime(startedAt);
+        c.setStartedAt(startedAt);
+        c = mongo.insert(c);
+        int i = 0;
+        for (String contactId : recipientContactIds) {
+            var r = new me.nageshk.omnichannel.db.campaign.CampaignRecipient();
+            r.setCampaignId(c.getId());
+            r.setWorkspaceId(brand.getId());
+            r.setPhone("91980000" + (1000 + i++));
+            r.setContactId(contactId);
+            r.setStatus(me.nageshk.omnichannel.db.campaign.RecipientStatus.DELIVERED);
+            mongo.insert(r);
+        }
+        return c.getId();
+    }
+
+    @Test
+    void campaignsCardCountsCrmContactsReached() throws Exception {
+        enableCrm();
+        String second = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
+                .andExpect(status().isCreated())).get("id").asText();
+        JsonNode a = captured(contact("Asha", "919900000651"), number).get("contact");
+        JsonNode b = captured(contact("Ravi", "919900000652"), number).get("contact");
+        String reached = campaignWith("Festive", daysAgo(2),
+                List.of(a.get("contactId").asText(), b.get("contactId").asText(), "someone-else"));
+        campaignWith("Nobody in CRM", daysAgo(3), List.of("stranger"));
+        JsonNode r = report("campaigns", managerToken, filter());
+        assertThat(r.get("truncated").asBoolean()).isFalse();
+        assertThat(r.get("rows")).hasSize(2);
+        JsonNode festive = row(r.get("rows"), "campaignId", reached);
+        assertThat(festive.get("name").asText()).isEqualTo("Festive");
+        assertThat(festive.get("status").asText()).isEqualTo("COMPLETED");
+        assertThat(festive.get("recipients").asLong()).isEqualTo(3);
+        assertThat(festive.get("delivered").asLong()).isEqualTo(3);
+        assertThat(festive.get("read").asLong()).isEqualTo(1);
+        assertThat(festive.get("crmContactsReached").asLong()).isEqualTo(2);
+        assertThat(festive.get("numbers").get(0).get("label").asText()).isEqualTo(number.getNumber());
+        // an agent restricted to a pipeline with none of those contacts sees no row
+        assignPipelines(agent, second);
+        assertThat(report("campaigns", agentToken, filter()).get("rows")).isEmpty();
+        assignPipelines(agent, salesId());
+        JsonNode mine = report("campaigns", agentToken, filter());
+        assertThat(mine.get("rows")).hasSize(1);
+        assertThat(mine.get("rows").get(0).get("crmContactsReached").asLong()).isEqualTo(2);
+    }
+
+    @Test
+    void campaignsCardEmptyWhenNoneStarted() throws Exception {
+        enableCrm();
+        campaignWith("Old", daysAgo(200), List.of("x"));
+        JsonNode r = report("campaigns", managerToken, filter());
+        assertThat(r.get("rows")).isEmpty();
+        assertThat(r.get("truncated").asBoolean()).isFalse();
+    }
 }
