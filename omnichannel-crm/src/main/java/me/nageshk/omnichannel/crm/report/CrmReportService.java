@@ -9,7 +9,13 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
+import me.nageshk.omnichannel.crm.common.TargetType;
+import me.nageshk.omnichannel.crm.field.CrmFieldDefinition;
+import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
+import me.nageshk.omnichannel.crm.field.FieldOption;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
+import me.nageshk.omnichannel.crm.pipeline.CrmPipelineService;
+import me.nageshk.omnichannel.crm.pipeline.CrmStage;
 import me.nageshk.omnichannel.crm.platform.NumberDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformNumber;
@@ -20,6 +26,8 @@ import me.nageshk.omnichannel.crm.report.dto.ByOwnerView;
 import me.nageshk.omnichannel.crm.report.dto.BySourceView;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeRequest;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeView;
+import me.nageshk.omnichannel.crm.report.dto.GridRequest;
+import me.nageshk.omnichannel.crm.report.dto.GridView;
 import me.nageshk.omnichannel.crm.report.dto.LifecycleFunnelView;
 import me.nageshk.omnichannel.crm.report.dto.PipelineSummaryView;
 import me.nageshk.omnichannel.crm.report.dto.StageDurationView;
@@ -42,11 +50,15 @@ public class CrmReportService {
     private final LifecycleFunnelReport lifecycleFunnel;
     private final ActivitySummaryReport activitySummary;
     private final StageDurationReport stageDuration;
+    private final GridReport grid;
+    private final FieldDefinitionService fields;
+    private final CrmPipelineService pipelines;
 
     CrmReportService(ReportFilterResolver resolver, ReportScope scope, CrmSettingsService settings,
             PeopleDirectory people, NumberDirectory numbers, PipelineSummaryReport pipelineSummary,
             DealsOverTimeReport dealsOverTime, BreakdownReports breakdowns, LifecycleFunnelReport lifecycleFunnel,
-            ActivitySummaryReport activitySummary, StageDurationReport stageDuration) {
+            ActivitySummaryReport activitySummary, StageDurationReport stageDuration, GridReport grid,
+            FieldDefinitionService fields, CrmPipelineService pipelines) {
         this.resolver = resolver;
         this.scope = scope;
         this.settings = settings;
@@ -58,6 +70,9 @@ public class CrmReportService {
         this.lifecycleFunnel = lifecycleFunnel;
         this.activitySummary = activitySummary;
         this.stageDuration = stageDuration;
+        this.grid = grid;
+        this.fields = fields;
+        this.pipelines = pipelines;
     }
 
     public PipelineSummaryView pipelineSummary(CrmContext ctx, ReportFilter filter) {
@@ -117,6 +132,61 @@ public class CrmReportService {
         ResolvedFilter f = resolver.resolve(ctx, filter);
         CrmPipeline pipeline = scope.pipelineOrDefault(ctx, f.pipelineId());
         return stageDuration.build(ctx, f, pipeline);
+    }
+
+    public GridView grid(CrmContext ctx, GridRequest req) {
+        GridRequest r = req == null ? new GridRequest(null, null, null, null, null, null, null, null, null, null,
+                null, null) : req;
+        ResolvedFilter f = resolver.resolve(ctx, r.filter());
+        GridFields.Resolved g = GridFields.resolve(r, f, entity -> fields.list(ctx, entity, false));
+        GridView raw = grid.build(ctx, f, g, currency(ctx), key -> key);
+        Function<String, String> labels = gridLabels(ctx, g, raw);
+        return new GridView(raw.entityType(), raw.groupBy(), raw.metric(), raw.field(), raw.dateBucket(),
+                raw.currency(), raw.rows().stream().map(row -> GridView.OTHER.equals(row.key()) ? row
+                        : new GridView.Row(row.key(), labels.apply(row.key()), row.bucket(), row.value(), row.count()))
+                        .toList(), raw.truncated(), raw.otherCurrencyDeals());
+    }
+
+    /** How the grid names its keys (spec C14); "" is always "Not set". */
+    private Function<String, String> gridLabels(CrmContext ctx, GridFields.Resolved g, GridView raw) {
+        Function<String, String> named = switch (g.labels()) {
+            case PIPELINE -> {
+                Map<String, String> m = pipelines.list(ctx).stream()
+                        .collect(Collectors.toMap(CrmPipeline::getId, CrmPipeline::getName, (a, b) -> a));
+                yield id -> m.getOrDefault(id, "Removed pipeline");
+            }
+            case STAGE -> {
+                Map<String, String> m = new java.util.HashMap<>();
+                for (CrmPipeline p : pipelines.list(ctx)) for (CrmStage s : p.getStages()) m.put(s.getId(), s.getName());
+                yield id -> m.getOrDefault(id, "Removed stage");
+            }
+            case PERSON -> personNames(raw.rows().stream().map(GridView.Row::key)
+                    .filter(k -> !k.isEmpty() && !GridView.OTHER.equals(k)).collect(Collectors.toSet()));
+            case DEAL_SOURCES -> labelsOf(settings(ctx).getDealSources());
+            case LOST_REASONS -> labelsOf(settings(ctx).getLostReasons());
+            case LIFECYCLE -> labelsOf(settings(ctx).getLifecycleStatuses());
+            case INDUSTRIES -> labelsOf(settings(ctx).getIndustries());
+            case NUMBER -> {
+                Map<String, String> m = numbers.numbers(ctx.workspaceId()).stream().collect(Collectors.toMap(
+                        PlatformNumber::id, n -> n.label() == null || n.label().isBlank() ? n.number() : n.label(),
+                        (a, b) -> a));
+                yield id -> m.getOrDefault(id, "Removed number");
+            }
+            case OPTIONS -> {
+                Map<String, String> m = new java.util.HashMap<>();
+                CrmFieldDefinition d = g.groupField();
+                if (d != null && d.getOptions() != null) for (FieldOption o : d.getOptions()) m.put(o.key(), o.label());
+                yield key -> m.getOrDefault(key, key);
+            }
+            case BOOLEAN -> key -> "true".equals(key) ? "Yes" : "false".equals(key) ? "No" : key;
+            default -> key -> key;
+        };
+        return key -> key.isEmpty() ? "Not set" : named.apply(key);
+    }
+
+    private static Function<String, String> labelsOf(List<PicklistItem> items) {
+        Map<String, String> m = picklistLabels(items);
+        return key -> m.getOrDefault(key, key);
     }
 
     /** Display names for user ids; one lookup, "Unknown person" for ids the brand no longer knows. */

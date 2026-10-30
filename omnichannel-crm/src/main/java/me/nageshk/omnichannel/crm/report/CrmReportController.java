@@ -7,6 +7,8 @@ import me.nageshk.omnichannel.crm.report.dto.ByOwnerView;
 import me.nageshk.omnichannel.crm.report.dto.BySourceView;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeRequest;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeView;
+import me.nageshk.omnichannel.crm.report.dto.GridRequest;
+import me.nageshk.omnichannel.crm.report.dto.GridView;
 import me.nageshk.omnichannel.crm.report.dto.LifecycleFunnelView;
 import me.nageshk.omnichannel.crm.report.dto.PipelineSummaryView;
 import me.nageshk.omnichannel.crm.report.dto.StageDurationView;
@@ -88,5 +90,12 @@ public class CrmReportController {
     public StageDurationView stageDuration(@AuthenticationPrincipal AuthenticatedUser me,
             @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
         return reports.stageDuration(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/grid")
+    @PreAuthorize(VIEW)
+    public GridView grid(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) GridRequest req) {
+        return reports.grid(crmAccess.resolve(me, workspaceId), req);
     }
 }

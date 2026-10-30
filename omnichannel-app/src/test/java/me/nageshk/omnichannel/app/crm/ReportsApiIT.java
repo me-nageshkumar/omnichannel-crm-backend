@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.app.crm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -485,6 +487,152 @@ class ReportsApiIT extends CrmTestBase {
                 }
             }
             assertThat(found).as(ix[0] + "." + ix[1]).isTrue();
+        }
+    }
+
+    // --- Task 6: grid ----------------------------------------------------------------------------------------
+
+    private Map<String, Object> grid(String entity, String groupBy, Object... kv) {
+        Map<String, Object> m = filter("entityType", entity, "groupBy", groupBy);
+        for (int i = 0; i < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);
+        return m;
+    }
+
+    private void field(String entity, String key, String type, List<Map<String, String>> options) throws Exception {
+        Map<String, Object> body = new HashMap<>(Map.of("entityType", entity, "key", key, "label",
+                key.toUpperCase(), "type", type));
+        if (options != null) body.put("options", options);
+        send(post(crm() + "/fields"), managerToken, body).andExpect(status().isCreated());
+    }
+
+    @Test
+    void gridCountsDealsByStage() throws Exception {
+        enableCrm();
+        Map<String, String> stages = stages(salesId());
+        dealOf("Asha", "919900000641", "1", null);
+        String b = dealOf("Ravi", "919900000642", "1", null).get("id").asText();
+        move(b, stages.get("Qualified"));
+        JsonNode r = report("grid", managerToken, grid("DEAL", "stage", "pipelineId", salesId()));
+        assertThat(r.get("metric").asText()).isEqualTo("COUNT");
+        assertThat(r.get("truncated").asBoolean()).isFalse();
+        assertThat(row(r.get("rows"), "label", "New").get("count").asLong()).isEqualTo(1);
+        assertThat(row(r.get("rows"), "label", "Qualified").get("value").asDouble()).isEqualTo(1.0);
+        assertThat(row(r.get("rows"), "label", "Qualified").get("key").asText()).isEqualTo(stages.get("Qualified"));
+    }
+
+    @Test
+    void gridSumsAmountBySourcePerMonth() throws Exception {
+        enableCrm();
+        String a = dealOf("Asha", "919900000643", "100", null).get("id").asText();
+        String b = dealOf("Ravi", "919900000644", "250", null).get("id").asText();
+        String usd = dealOf("Meena", "919900000645", "999", "USD").get("id").asText();
+        setDeal(a, "source", "website");
+        setDeal(b, "source", "website");
+        setDeal(usd, "source", "website");
+        backdate("crmDeals", a, "creationTime", daysAgo(45));
+        JsonNode r = report("grid", managerToken, grid("DEAL", "source", "metric", "SUM", "field", "amount",
+                "dateBucket", "MONTH"));
+        assertThat(r.get("currency").asText()).isEqualTo("INR");
+        assertThat(r.get("otherCurrencyDeals").asLong()).isEqualTo(1);
+        double total = 0;
+        int websiteRows = 0;
+        for (JsonNode x : r.get("rows")) {
+            if ("website".equals(x.get("key").asText())) {
+                websiteRows++;
+                assertThat(x.get("label").asText()).isEqualTo("Website");
+                assertThat(x.get("bucket").isNull()).isFalse();
+                total += x.get("value").asDouble();
+            }
+        }
+        assertThat(websiteRows).isGreaterThanOrEqualTo(1);
+        assertThat(total).isEqualTo(350.0);
+    }
+
+    @Test
+    void gridGroupsContactsByLifecycleAndCompaniesByIndustry() throws Exception {
+        enableCrm();
+        captured(contact("Asha", "919900000646"), number);
+        captured(contact("Ravi", "919900000647"), number);
+        send(post(crm() + "/companies"), managerToken, Map.of("name", "A", "industry", "mining"))
+                .andExpect(status().isOk());
+        send(post(crm() + "/companies"), managerToken, Map.of("name", "B")).andExpect(status().isOk());
+        JsonNode c = report("grid", managerToken, grid("CONTACT", "lifecycle"));
+        assertThat(row(c.get("rows"), "key", "lead").get("label").asText()).isEqualTo("Lead");
+        assertThat(row(c.get("rows"), "key", "lead").get("count").asLong()).isEqualTo(2);
+        JsonNode co = report("grid", managerToken, grid("COMPANY", "industry"));
+        assertThat(row(co.get("rows"), "key", "mining").get("count").asLong()).isEqualTo(1);
+        assertThat(row(co.get("rows"), "key", "").get("label").asText()).isEqualTo("Not set");
+    }
+
+    @Test
+    void gridCustomFieldGroupAndMetric() throws Exception {
+        enableCrm();
+        field("DEAL", "tier", "SELECT", List.of(Map.of("key", "gold", "label", "Gold"),
+                Map.of("key", "silver", "label", "Silver")));
+        field("DEAL", "rush", "BOOLEAN", null);
+        field("DEAL", "budget", "CURRENCY", null);
+        String a = dealOf("Asha", "919900000648", "1", null).get("id").asText();
+        String b = dealOf("Ravi", "919900000649", "1", null).get("id").asText();
+        setDeal(a, "customFields", Map.of("tier", "gold", "rush", true, "budget", 100L));
+        setDeal(b, "customFields", Map.of("tier", "gold", "rush", false, "budget", 300L));
+        JsonNode tier = report("grid", managerToken, grid("DEAL", "custom:tier"));
+        assertThat(row(tier.get("rows"), "key", "gold").get("label").asText()).isEqualTo("Gold");
+        assertThat(row(tier.get("rows"), "key", "gold").get("count").asLong()).isEqualTo(2);
+        JsonNode rush = report("grid", managerToken, grid("DEAL", "custom:rush"));
+        assertThat(row(rush.get("rows"), "key", "true").get("label").asText()).isEqualTo("Yes");
+        assertThat(row(rush.get("rows"), "key", "false").get("label").asText()).isEqualTo("No");
+        JsonNode avg = report("grid", managerToken, grid("DEAL", "custom:tier", "metric", "AVG", "field",
+                "custom:budget"));
+        assertThat(row(avg.get("rows"), "key", "gold").get("value").asDouble()).isEqualTo(200.0);
+        assertThat(avg.get("field").asText()).isEqualTo("custom:budget");
+    }
+
+    @Test
+    void gridFoldsBeyond100Groups() throws Exception {
+        enableCrm();
+        List<org.bson.Document> docs = new java.util.ArrayList<>();
+        for (int i = 0; i < 101; i++) {
+            docs.add(new org.bson.Document("workspaceId", brand.getId()).append("customerId", acme.getId())
+                    .append("name", "Co " + i).append("size", "size-" + String.format("%03d", i))
+                    .append("creationTime", java.util.Date.from(daysAgo(1))).append("version", 0L)
+                    .append("_class", "me.nageshk.omnichannel.crm.company.CrmCompany"));
+        }
+        mongo.getCollection("crmCompanies").insertMany(docs);
+        JsonNode r = report("grid", managerToken, grid("COMPANY", "size"));
+        assertThat(r.get("truncated").asBoolean()).isTrue();
+        assertThat(r.get("rows")).hasSize(101);
+        JsonNode other = r.get("rows").get(100);
+        assertThat(other.get("key").asText()).isEqualTo("__other");
+        assertThat(other.get("label").asText()).isEqualTo("Other");
+        assertThat(other.get("count").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void gridRefusesBadFields() throws Exception {
+        enableCrm();
+        field("DEAL", "tags", "MULTI_SELECT", List.of(Map.of("key", "a", "label", "A")));
+        field("DEAL", "old", "TEXT", null);
+        JsonNode defs = json(send(get(crm() + "/fields?entityType=DEAL"), managerToken, null));
+        String oldId = row(defs, "key", "old").get("id").asText();
+        send(delete(crm() + "/fields/" + oldId), managerToken, null).andExpect(status().isNoContent());
+        Object[][] bad = {
+            {grid("DEAL", "stage"), "pipelineId"},
+            {grid("DEAL", "custom:tags"), "groupBy"},
+            {grid("DEAL", "custom:old"), "groupBy"},
+            {grid("DEAL", "custom:nope"), "groupBy"},
+            {grid("CONTACT", "owner", "dateField", "closedAt"), "dateField"},
+            {grid("DEAL", "owner", "metric", "MAX"), "metric"},
+            {grid("DEAL", "owner", "metric", "SUM"), "field"},
+            {grid("DEAL", "owner", "metric", "SUM", "field", "custom:tags"), "field"},
+            {grid("DEAL", "owner", "dateBucket", "HOUR"), "dateBucket"},
+            {grid("PIPELINE", "owner"), "entityType"},
+        };
+        for (Object[] b : bad) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) b[0];
+            send(post(reports() + "/grid"), managerToken, body).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_REPORT_FILTER"))
+                    .andExpect(jsonPath("$.field").value(b[1]));
         }
     }
 }
