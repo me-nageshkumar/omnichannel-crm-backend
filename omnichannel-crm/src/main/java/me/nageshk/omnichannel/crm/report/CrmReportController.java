@@ -1,8 +1,12 @@
 package me.nageshk.omnichannel.crm.report;
 
 import me.nageshk.omnichannel.crm.access.CrmAccess;
+import me.nageshk.omnichannel.crm.report.dto.ByNumberView;
+import me.nageshk.omnichannel.crm.report.dto.ByOwnerView;
+import me.nageshk.omnichannel.crm.report.dto.BySourceView;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeRequest;
 import me.nageshk.omnichannel.crm.report.dto.DealsOverTimeView;
+import me.nageshk.omnichannel.crm.report.dto.LifecycleFunnelView;
 import me.nageshk.omnichannel.crm.report.dto.PipelineSummaryView;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -40,5 +44,33 @@ public class CrmReportController {
     public DealsOverTimeView dealsOverTime(@AuthenticationPrincipal AuthenticatedUser me,
             @PathVariable String workspaceId, @RequestBody(required = false) DealsOverTimeRequest req) {
         return reports.dealsOverTime(crmAccess.resolve(me, workspaceId), req);
+    }
+
+    @PostMapping("/by-owner")
+    @PreAuthorize(VIEW)
+    public ByOwnerView byOwner(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) ReportFilter filter) {
+        return reports.byOwner(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/by-source")
+    @PreAuthorize(VIEW)
+    public BySourceView bySource(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) ReportFilter filter) {
+        return reports.bySource(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/by-number")
+    @PreAuthorize(VIEW)
+    public ByNumberView byNumber(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody(required = false) ReportFilter filter) {
+        return reports.byNumber(crmAccess.resolve(me, workspaceId), filter);
+    }
+
+    @PostMapping("/lifecycle-funnel")
+    @PreAuthorize(VIEW)
+    public LifecycleFunnelView lifecycleFunnel(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @RequestBody(required = false) ReportFilter filter) {
+        return reports.lifecycleFunnel(crmAccess.resolve(me, workspaceId), filter);
     }
 }

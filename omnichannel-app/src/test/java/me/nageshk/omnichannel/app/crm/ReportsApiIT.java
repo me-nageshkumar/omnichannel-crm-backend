@@ -209,4 +209,143 @@ class ReportsApiIT extends CrmTestBase {
         assignPipelines(agent, salesId());
         send(post(reports() + "/pipeline-summary"), agentToken, filter()).andExpect(status().isOk());
     }
+
+    // --- Task 3: breakdowns and the lifecycle funnel ------------------------------------------------------
+
+    private void setDeal(String dealId, Object... kv) {
+        Update u = new Update();
+        for (int i = 0; i < kv.length; i += 2) u.set((String) kv[i], kv[i + 1]);
+        mongo.updateFirst(new Query(Criteria.where("_id").is(new ObjectId(dealId))), u, "crmDeals");
+    }
+
+    private static JsonNode row(JsonNode rows, String field, String value) {
+        for (JsonNode r : rows) if (value.equals(r.get(field).asText())) return r;
+        throw new AssertionError("no row with " + field + "=" + value);
+    }
+
+    @Test
+    void byOwnerListsUnassignedAndNames() throws Exception {
+        enableCrm();
+        String mine = dealOf("Asha", "919900000611", "1000", null).get("id").asText();
+        String agents = dealOf("Ravi", "919900000612", "2000", null).get("id").asText();
+        String nobody = dealOf("Meena", "919900000613", "300", null).get("id").asText();
+        setDeal(agents, "ownerId", agent.getId());
+        mongo.updateFirst(new Query(Criteria.where("_id").is(new ObjectId(nobody))), new Update().unset("ownerId"),
+                "crmDeals");
+        close(agents, "WON");
+        JsonNode r = report("by-owner", managerToken, filter());
+        JsonNode managerRow = row(r.get("rows"), "ownerId", manager.getId());
+        assertThat(managerRow.get("label").asText()).isEqualTo(manager.getName());
+        assertThat(managerRow.get("openCount").asLong()).isEqualTo(1);
+        assertThat(managerRow.get("openAmount").asDouble()).isEqualTo(1000.0);
+        JsonNode agentRow = row(r.get("rows"), "ownerId", agent.getId());
+        assertThat(agentRow.get("wonCount").asLong()).isEqualTo(1);
+        assertThat(agentRow.get("wonAmount").asDouble()).isEqualTo(2000.0);
+        assertThat(agentRow.get("winRate").asDouble()).isEqualTo(1.0);
+        JsonNode unassigned = row(r.get("rows"), "ownerId", "");
+        assertThat(unassigned.get("label").asText()).isEqualTo("Unassigned");
+        assertThat(unassigned.get("openCount").asLong()).isEqualTo(1);
+        assertThat(mine).isNotNull();
+    }
+
+    @Test
+    void bySourceLabelsPicklistAndOrigins() throws Exception {
+        enableCrm();
+        String web = dealOf("Asha", "919900000614", "500", null).get("id").asText();
+        String blank = dealOf("Ravi", "919900000615", "100", null).get("id").asText();
+        setDeal(web, "source", "website");
+        close(web, "WON");
+        send(post(crm() + "/contacts/create"), managerToken, Map.of("phone", "919900000616", "phoneNumberId",
+                number.getId(), "firstName", "Manual", "pipelineId", salesId())).andExpect(status().isOk());
+        JsonNode r = report("by-source", managerToken, filter());
+        JsonNode website = row(r.get("deals"), "source", "website");
+        assertThat(website.get("label").asText()).isEqualTo("Website");
+        assertThat(website.get("created").asLong()).isEqualTo(1);
+        assertThat(website.get("won").asLong()).isEqualTo(1);
+        assertThat(website.get("wonAmount").asDouble()).isEqualTo(500.0);
+        JsonNode unspecified = row(r.get("deals"), "source", "");
+        assertThat(unspecified.get("label").asText()).isEqualTo("Unspecified");
+        assertThat(unspecified.get("created").asLong()).isEqualTo(2); // the blank one and the manual contact's deal
+        assertThat(r.get("contacts").size()).isEqualTo(7);
+        assertThat(row(r.get("contacts"), "originKind", "INBOUND_CHAT").get("created").asLong()).isEqualTo(2);
+        assertThat(row(r.get("contacts"), "originKind", "MANUAL").get("created").asLong()).isEqualTo(1);
+        assertThat(row(r.get("contacts"), "originKind", "API").get("created").asLong()).isZero();
+        assertThat(blank).isNotNull();
+    }
+
+    @Test
+    void byNumberLabelsNumbers() throws Exception {
+        enableCrm();
+        String onSales = dealOf("Asha", "919900000617", "900", null).get("id").asText();
+        JsonNode other = captured(contact("Ravi", "919900000618"), number2).get("deal");
+        close(other.get("id").asText(), "WON");
+        JsonNode r = report("by-number", managerToken, filter());
+        JsonNode first = row(r.get("rows"), "phoneNumberId", number.getId());
+        assertThat(first.get("label").asText()).isEqualTo(number.getNumber());
+        assertThat(first.get("created").asLong()).isEqualTo(1);
+        assertThat(first.get("openAmount").asDouble()).isEqualTo(900.0);
+        JsonNode second = row(r.get("rows"), "phoneNumberId", number2.getId());
+        assertThat(second.get("won").asLong()).isEqualTo(1);
+        assertThat(onSales).isNotNull();
+        // a number filter narrows the rows
+        JsonNode only = report("by-number", managerToken, filter("phoneNumberIds", List.of(number2.getId())));
+        assertThat(only.get("rows")).hasSize(1);
+    }
+
+    @Test
+    void lifecycleFunnelOrdersPicklistAndNotSet() throws Exception {
+        enableCrm();
+        JsonNode a = captured(contact("Asha", "919900000619"), number).get("contact");
+        captured(contact("Ravi", "919900000620"), number);
+        mongo.updateFirst(new Query(Criteria.where("_id").is(new ObjectId(a.get("id").asText()))),
+                new Update().set("lifecycleStatus", "lost"), "crmContacts");
+        // "lost" switched off in the picklist: still listed, after the active ones
+        mongo.updateFirst(new Query(Criteria.where("workspaceId").is(brand.getId())
+                .and("lifecycleStatuses.key").is("lost")), new Update().set("lifecycleStatuses.$.active", false),
+                "crmSettings");
+        JsonNode r = report("lifecycle-funnel", managerToken, filter());
+        List<String> keys = new java.util.ArrayList<>();
+        r.get("rows").forEach(x -> keys.add(x.get("key").asText()));
+        assertThat(keys).containsExactly("lead", "prospect", "customer", "lost", "");
+        assertThat(row(r.get("rows"), "key", "lead").get("count").asLong()).isEqualTo(1);
+        assertThat(row(r.get("rows"), "key", "lost").get("count").asLong()).isEqualTo(1);
+        assertThat(row(r.get("rows"), "key", "lost").get("active").asBoolean()).isFalse();
+        assertThat(row(r.get("rows"), "key", "").get("label").asText()).isEqualTo("Not set");
+        assertThat(r.get("total").asLong()).isEqualTo(2);
+    }
+
+    @Test
+    void otherCurrencyCountedNotSummed() throws Exception {
+        enableCrm();
+        String usd = dealOf("Asha", "919900000621", "100", "USD").get("id").asText();
+        String inr = dealOf("Ravi", "919900000622", "400", null).get("id").asText();
+        close(usd, "WON");
+        close(inr, "WON");
+        JsonNode r = report("by-owner", managerToken, filter());
+        JsonNode mine = row(r.get("rows"), "ownerId", manager.getId());
+        assertThat(mine.get("wonCount").asLong()).isEqualTo(2);
+        assertThat(mine.get("wonAmount").asDouble()).isEqualTo(400.0);
+        assertThat(r.get("otherCurrencyDeals").asLong()).isEqualTo(1);
+        JsonNode summary = report("pipeline-summary", managerToken, filter());
+        assertThat(summary.get("won").get("count").asLong()).isEqualTo(2);
+        assertThat(summary.get("won").get("amount").asDouble()).isEqualTo(400.0);
+        assertThat(summary.get("otherCurrencyDeals").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void ownerFilterNarrowsEveryBreakdown() throws Exception {
+        enableCrm();
+        String agents = dealOf("Asha", "919900000623", "50", null).get("id").asText();
+        dealOf("Ravi", "919900000624", "60", null);
+        setDeal(agents, "ownerId", agent.getId());
+        mongo.updateMulti(new Query(Criteria.where("workspaceId").is(brand.getId()).and("phone").is("919900000623")),
+                new Update().set("ownerId", agent.getId()), "crmContacts");
+        Map<String, Object> f = filter("ownerIds", List.of(agent.getId()));
+        assertThat(report("by-owner", managerToken, f).get("rows")).hasSize(1);
+        assertThat(report("by-number", managerToken, f).get("rows").get(0).get("openAmount").asDouble())
+                .isEqualTo(50.0);
+        assertThat(report("lifecycle-funnel", managerToken, f).get("total").asLong()).isEqualTo(1);
+        JsonNode source = report("by-source", managerToken, f);
+        assertThat(row(source.get("deals"), "source", "").get("created").asLong()).isEqualTo(1);
+    }
 }
