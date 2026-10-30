@@ -4,10 +4,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.access.PipelineAccessService;
+import me.nageshk.omnichannel.crm.activity.ActivityType;
 import me.nageshk.omnichannel.crm.activity.TimelineService;
 import me.nageshk.omnichannel.crm.activity.dto.LogRequest;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
@@ -166,6 +169,7 @@ public class CrmDemoSeeder implements ApplicationRunner {
                 "Called to confirm the sample sizes", null));
         timeline.logActivity(ctx, new LogRequest(new LogRequest.Target("DEAL", dealIds.get(4)), "CALL",
                 "Negotiated the delivery date", null));
+        backdate(brand.id(), dealIds, rotting);
 
         fields.create(ctx, new FieldDefinitionRequest("DEAL", "tier", "Tier", "SELECT",
                 List.of(new FieldOptionRequest("gold", "Gold", "#f59e0b", true),
@@ -198,5 +202,40 @@ public class CrmDemoSeeder implements ApplicationRunner {
         }
         log.warn("demo seed: CRM switched on in {} with {} companies, {} contacts and {} deals", BRAND,
                 companyIds.size(), contactIds.size(), dealIds.size());
+    }
+
+    /**
+     * Gives the records some history so the reports have something to show on a fresh seed (phase C §7): deals
+     * created over the last 60 days (one every six days, newest first), the won deal closed 3 days ago and the lost
+     * one 10, each stage move dated when its deal was created plus a few days (and carrying when the stage was
+     * entered), and the two logged calls in the last week. Written by collection name after the services ran, like
+     * the stale card above; the rotting deal keeps its three-week quiet.
+     */
+    private void backdate(String ws, List<String> dealIds, String rotting) {
+        Instant now = Instant.now();
+        Map<String, Instant> createdAt = new LinkedHashMap<>();
+        for (int i = 0; i < dealIds.size(); i++) {
+            String id = dealIds.get(i);
+            Instant created = id.equals(rotting) ? now.minus(28, ChronoUnit.DAYS)
+                    : now.minus(6L * (dealIds.size() - 1 - i) + 2, ChronoUnit.DAYS);
+            createdAt.put(id, created);
+            Update u = new Update().set("creationTime", created);
+            if (!id.equals(rotting)) u.set("stageEnteredAt", created.plus(3, ChronoUnit.DAYS));
+            mongo.updateFirst(new Query(Criteria.where("_id").is(id).and("workspaceId").is(ws)), u, "crmDeals");
+        }
+        mongo.updateFirst(new Query(Criteria.where("_id").is(dealIds.get(5)).and("workspaceId").is(ws)),
+                new Update().set("closedAt", now.minus(3, ChronoUnit.DAYS)), "crmDeals");
+        mongo.updateFirst(new Query(Criteria.where("_id").is(dealIds.get(6)).and("workspaceId").is(ws)),
+                new Update().set("closedAt", now.minus(10, ChronoUnit.DAYS)), "crmDeals");
+        // every stage move: a day in the stage it left, then moved three days after creation
+        for (Map.Entry<String, Instant> e : createdAt.entrySet()) {
+            Instant entered = e.getValue().plus(1, ChronoUnit.DAYS);
+            Instant moved = e.getValue().plus(3, ChronoUnit.DAYS);
+            mongo.updateMulti(new Query(Criteria.where("workspaceId").is(ws).and("target.id").is(e.getKey())
+                    .and("type").is(ActivityType.STAGE_CHANGED.name())),
+                    new Update().set("happenedAt", moved).set("payload.fromStageEnteredAt", entered), "crmActivities");
+        }
+        mongo.updateMulti(new Query(Criteria.where("workspaceId").is(ws).and("type").is(ActivityType.CALL_LOGGED.name())),
+                new Update().set("happenedAt", now.minus(2, ChronoUnit.DAYS)), "crmActivities");
     }
 }
