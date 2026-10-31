@@ -81,7 +81,7 @@ class ChannelContactQueryAdapter implements ChannelContactQuery {
         // the repositories answer in name order, so the two lists come out sorted
         List<ChannelLabel> named = labels(workspaceId).stream().filter(l -> c.getLabels().contains(l.id())).toList();
         List<ChannelAttributeValue> values = attributes(workspaceId).stream()
-                .filter(a -> c.getAttributes().containsKey(a.id()))
+                .filter(a -> c.getAttributes().get(a.id()) != null)
                 .map(a -> new ChannelAttributeValue(a.name(), c.getAttributes().get(a.id()))).toList();
         return new ChannelContactDetails(named, values);
     }

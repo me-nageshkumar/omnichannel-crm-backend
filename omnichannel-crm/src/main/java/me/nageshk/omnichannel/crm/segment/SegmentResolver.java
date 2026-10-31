@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.common.TimeLimited;
+import me.nageshk.omnichannel.crm.contact.ChannelAccounts;
 import me.nageshk.omnichannel.crm.contact.CrmContact;
 import me.nageshk.omnichannel.crm.field.CrmFieldDefinition;
 import me.nageshk.omnichannel.crm.field.FieldDefinitionService;

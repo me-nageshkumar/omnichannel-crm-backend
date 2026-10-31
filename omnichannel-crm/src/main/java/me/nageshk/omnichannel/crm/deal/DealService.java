@@ -512,7 +512,10 @@ public class DealService {
         Map<String, CrmContact> found = new HashMap<>();
         mongo.find(new Query(Criteria.where("workspaceId").is(ctx.workspaceId()).and("_id").in(list)), CrmContact.class)
                 .forEach(c -> found.put(c.getId(), c));
-        return list.stream().map(id -> found.containsKey(id) ? displayName(ctx, found.get(id)) : "a removed contact")
+        Map<String, PlatformContact> live = contactDirectory.findAll(ctx.workspaceId(),
+                found.values().stream().map(CrmContact::getContactId).filter(Objects::nonNull).toList());
+        return list.stream().map(id -> found.containsKey(id)
+                ? CrmContactService.name(found.get(id), live.get(found.get(id).getContactId())) : "a removed contact")
                 .collect(Collectors.joining(", "));
     }
 

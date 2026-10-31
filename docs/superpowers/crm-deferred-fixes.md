@@ -62,10 +62,10 @@ Small findings from the final reviews of phases D to G, kept here because the le
 
 ## Phase F, backend
 
-- [ ] named() gives "Changed CRM pipelines of " for a person with a blank display name; should fall back to username like ref()
-- [ ] channel-details emits an attribute with a null value when the host stores one
-- [ ] contactNames calls the directory per contact on each contact-list save; CrmContactService.views already batches
-- [ ] crm.contact now imports crm.segment.ChannelAccounts for FIELD; the constant would sit better beside Channel
+- [x] named() gives "Changed CRM pipelines of " for a person with a blank display name; should fall back to username like ref()
+- [x] channel-details emits an attribute with a null value when the host stores one
+- [x] contactNames calls the directory per contact on each contact-list save; CrmContactService.views already batches
+- [x] crm.contact now imports crm.segment.ChannelAccounts for FIELD; the constant would sit better beside Channel
 - [ ] linkedContactIsListedForARestrictedUser uses a contact already in Sales, so it does not pin that linking alone carries the pipeline (verified by reading ContactCounters)
 - [ ] template round trips do not assert stored lifecycle, source, annual revenue, city or country; templateNeedsEdit covers contacts only
 

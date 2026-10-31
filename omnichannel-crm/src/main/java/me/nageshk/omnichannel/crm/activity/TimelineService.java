@@ -165,8 +165,10 @@ public class TimelineService {
 
     private static ActivityView named(ActivityView a, String userId, Map<String, PlatformPerson> persons) {
         PlatformPerson p = userId == null ? null : persons.get(userId);
-        if (p == null || p.name() == null || a.summary() == null) return a;
-        return new ActivityView(a.id(), a.type(), a.target(), a.summary().replace(userId, p.name()), a.payload(),
+        if (p == null || a.summary() == null) return a;
+        String shown = p.name() != null && !p.name().isBlank() ? p.name() : p.username();
+        if (shown == null) return a;
+        return new ActivityView(a.id(), a.type(), a.target(), a.summary().replace(userId, shown), a.payload(),
                 a.actor(), a.actorType(), a.happenedAt());
     }
 
