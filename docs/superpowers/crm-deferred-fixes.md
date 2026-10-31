@@ -99,12 +99,12 @@ Small findings from the final reviews of phases D to G, kept here because the le
 
 ## From the review of these fixes
 
-- [ ] Completing a repeating task inserts the next occurrence before closing the current one, so a conflict in that two-step window leaves the new occurrence beside the open one until a retry
-- [ ] One shared action under per-row busy in `useTaskActions`: a run on one row clears another row's error
-- [ ] A 404 on deleting a task keeps the dialog open with an error instead of removing the row
-- [ ] A failed company lookup in a segment rule shows "Unknown company" for a live company and is not retried
-- [ ] `CrmJobLocks`: a failure giving the lock back hides the job's own exception
-- [ ] A stage of another active pipeline is labelled missing rather than no access
+- [x] Completing a repeating task inserts the next occurrence before closing the current one, so a conflict in that two-step window leaves the new occurrence beside the open one until a retry
+- [x] One shared action under per-row busy in `useTaskActions`: a run on one row clears another row's error
+- [x] A 404 on deleting a task keeps the dialog open with an error instead of removing the row
+- [x] A failed company lookup in a segment rule shows "Unknown company" for a live company and is not retried
+- [x] `CrmJobLocks`: a failure giving the lock back hides the job's own exception
+- [x] A stage of another active pipeline is labelled missing rather than no access
 
 ## Found in the phase D and E browser walks, fixed
 
@@ -112,4 +112,4 @@ Small findings from the final reviews of phases D to G, kept here because the le
 - [x] "1 CRM contacts" and "1 contacts" in segments and the campaign wizard
 - [x] The repeat unit labels wrapped mid-word in the task form
 - [x] The masthead made every page 464 px wide at phone width
-
+- [x] A task form problem could sit out of sight at the edge of the scrolling form
