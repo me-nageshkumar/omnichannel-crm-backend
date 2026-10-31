@@ -10,6 +10,12 @@ public interface ChannelContactQuery {
 
     List<ChannelAttribute> attributes(String workspaceId);
 
+    /**
+     * The labels and attributes of one channel contact of the brand. Ids whose definition is gone are dropped; a
+     * contact that does not exist in the brand has neither.
+     */
+    ChannelContactDetails details(String workspaceId, String contactId);
+
     /** The brand's channel accounts, ordered by address. */
     List<ChannelAccount> accounts(String workspaceId);
 

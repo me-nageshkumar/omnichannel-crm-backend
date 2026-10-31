@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.crm.access.CrmContext;
@@ -33,7 +35,9 @@ import me.nageshk.omnichannel.crm.contact.Channel;
 import me.nageshk.omnichannel.crm.contact.ChannelService;
 import me.nageshk.omnichannel.crm.contact.CrmContact;
 import me.nageshk.omnichannel.crm.contact.CrmContactService;
+import me.nageshk.omnichannel.crm.contact.dto.CrmContactView;
 import me.nageshk.omnichannel.crm.deal.dto.CloseRequest;
+import me.nageshk.omnichannel.crm.deal.dto.DealContactView;
 import me.nageshk.omnichannel.crm.deal.dto.DealRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealSearchRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealView;
@@ -430,7 +434,8 @@ public class DealService {
             throw new NotFoundException("Deal not found");
         }
         if (!diffs.isEmpty()) {
-            List<Map<String, Object>> changes = diffs.stream().map(d -> {
+            List<FieldDiff> recorded = recorded(ctx, diffs);
+            List<Map<String, Object>> changes = recorded.stream().map(d -> {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("field", d.field());
                 m.put("from", Placement.plain(d.from()));
@@ -439,7 +444,7 @@ public class DealService {
             }).toList();
             activities.record(ctx, ActivityType.FIELD_CHANGED, Placement.target(saved), Placement.related(saved),
                     saved.getPipelineId(), Placement.phoneOf(saved),
-                    "Changed " + String.join(", ", diffs.stream().map(FieldDiff::field).toList()),
+                    "Changed " + String.join(", ", recorded.stream().map(FieldDiff::field).toList()),
                     new LinkedHashMap<>(Map.of("changes", changes)));
         }
         if (pipelineChange) {
@@ -474,6 +479,41 @@ public class DealService {
         m.put("labelIds", labelIds == null ? List.of() : List.copyOf(labelIds));
         m.put("customFields", custom == null ? new LinkedHashMap<>() : custom);
         return m;
+    }
+
+    /** The deal's contacts: the primary, then the linked ones in list order; a contact since removed is left out. */
+    public List<DealContactView> contacts(CrmContext ctx, String id) {
+        CrmDeal deal = load(ctx, id);
+        Set<String> ids = Placement.contactsOf(deal);
+        Map<String, CrmContactView> found = new HashMap<>();
+        contacts.views(ctx, mongo.find(new Query(Criteria.where("workspaceId").is(ctx.workspaceId()).and("_id").in(ids)),
+                CrmContact.class)).forEach(v -> found.put(v.id(), v));
+        List<DealContactView> out = new ArrayList<>();
+        for (String contactId : ids) {
+            CrmContactView v = found.get(contactId);
+            if (v == null) continue;
+            out.add(new DealContactView(v.id(), v.name(), v.phone(), v.jobTitle(),
+                    contactId.equals(deal.getPrimaryCrmContactId())));
+        }
+        return out;
+    }
+
+    /**
+     * The diffs as the timeline shows them: a change of the deal's contacts under the field {@code contacts}, with
+     * names. Only what is recorded changes; the write above needs the stored field name.
+     */
+    private List<FieldDiff> recorded(CrmContext ctx, List<FieldDiff> diffs) {
+        return diffs.stream().map(d -> "crmContactIds".equals(d.field())
+                ? new FieldDiff("contacts", contactNames(ctx, d.from()), contactNames(ctx, d.to())) : d).toList();
+    }
+
+    private String contactNames(CrmContext ctx, Object ids) {
+        List<String> list = ids instanceof Collection<?> c ? c.stream().map(String::valueOf).toList() : List.of();
+        Map<String, CrmContact> found = new HashMap<>();
+        mongo.find(new Query(Criteria.where("workspaceId").is(ctx.workspaceId()).and("_id").in(list)), CrmContact.class)
+                .forEach(c -> found.put(c.getId(), c));
+        return list.stream().map(id -> found.containsKey(id) ? displayName(ctx, found.get(id)) : "a removed contact")
+                .collect(Collectors.joining(", "));
     }
 
     /**

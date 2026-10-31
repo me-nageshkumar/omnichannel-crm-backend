@@ -60,6 +60,12 @@ public class CsvImportService {
     static final int MAX_COMPANIES = 2000;
     static final int MAX_CONTACTS = 1000;
 
+    /** The columns the imports below read; the templates are built from these (spec F C13). */
+    private static final List<String> CONTACT_COLUMNS = List.of("WhatsApp number", "First name", "Last name", "Email",
+            "Job title", "Company", "Lifecycle", "Source");
+    private static final List<String> COMPANY_COLUMNS = List.of("Name", "Domain", "Website", "Industry", "Size",
+            "Annual revenue", "Phone", "Email", "City", "Country", "Description");
+
     private static final Pattern KEYED = Pattern.compile("^.*\\(([a-z][a-zA-Z0-9_]{1,39})\\)$");
 
     private final MongoTemplate mongo;
@@ -77,6 +83,17 @@ public class CsvImportService {
         this.capture = capture;
         this.directory = directory;
         this.fields = fields;
+    }
+
+    /**
+     * A header row for the entity's import, with one {@code Label (key)} column per active custom field. No example
+     * row: left in by accident it would create a fake contact and a deal (spec F C14).
+     */
+    public String template(CrmContext ctx, TargetType entity) {
+        ctx.require("crm:edit");
+        List<String> header = new ArrayList<>(entity == TargetType.CONTACT ? CONTACT_COLUMNS : COMPANY_COLUMNS);
+        fields.list(ctx, entity, false).forEach(f -> header.add(f.getLabel() + " (" + f.getKey() + ")"));
+        return Csv.BOM + Csv.row(header);
     }
 
     /** Upserts by case-insensitive name, then by domain; a matched company keeps its name. */

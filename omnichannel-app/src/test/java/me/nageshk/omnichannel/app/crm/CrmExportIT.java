@@ -136,4 +136,13 @@ class CrmExportIT extends CrmTestBase {
         send(post(crm() + "/contacts/export"), managerToken, Map.of("sort", "nope"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void contactExportHonoursTheChannelAccountFilter() throws Exception {
+        enableCrm();
+        captured(contact("Mira", "919833330021"), number);
+        captured(contact("Noor", "919833330022"), number2);
+        String csv = export("contacts", managerToken, Map.of("channelAccountId", number2.getId()));
+        assertThat(csv).contains("919833330022").doesNotContain("919833330021");
+    }
 }

@@ -26,9 +26,12 @@ import me.nageshk.omnichannel.crm.common.Ref;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.company.CompanyCounters;
 import me.nageshk.omnichannel.crm.contact.dto.ContactSearchRequest;
+import me.nageshk.omnichannel.crm.segment.ChannelAccounts;
 import me.nageshk.omnichannel.crm.contact.dto.ContactUpdateRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CrmContactView;
 import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
+import me.nageshk.omnichannel.crm.platform.ChannelContactDetails;
+import me.nageshk.omnichannel.crm.platform.ChannelContactQuery;
 import me.nageshk.omnichannel.crm.platform.ContactDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformContact;
@@ -56,10 +59,13 @@ public class CrmContactService {
     private final ActivityLog activities;
     private final FieldDefinitionService fields;
     private final Clock clock;
+    private final ChannelContactQuery channelContacts;
 
     CrmContactService(MongoTemplate mongo, ContactDirectory contactDirectory, PeopleDirectory people,
             ContactCounters counters, CompanyCounters companyCounters, ActivityLog activities,
-            FieldDefinitionService fields, Clock clock) {
+            FieldDefinitionService fields, Clock clock,
+            ChannelContactQuery channelContacts) {
+        this.channelContacts = channelContacts;
         this.fields = fields;
         this.mongo = mongo;
         this.contactDirectory = contactDirectory;
@@ -92,6 +98,7 @@ public class CrmContactService {
         if (present(req.ownerId())) all.add(Criteria.where("ownerId").is(req.ownerId()));
         if (present(req.lifecycleStatus())) all.add(Criteria.where("lifecycleStatus").is(req.lifecycleStatus()));
         if (present(req.companyId())) all.add(Criteria.where("companyId").is(req.companyId()));
+        if (present(req.channelAccountId())) all.add(Criteria.where(ChannelAccounts.FIELD).is(req.channelAccountId()));
         if (present(req.q())) {
             Pattern p = Pattern.compile(Pattern.quote(req.q().trim()), Pattern.CASE_INSENSITIVE);
             all.add(new Criteria().orOperator(Criteria.where("firstName").regex(p), Criteria.where("lastName").regex(p),
@@ -299,6 +306,11 @@ public class CrmContactService {
     }
 
     /** The CRM contacts linked to the company that the caller may see, newest first (at most {@value #MAX_SIZE}). */
+    /** The contact's labels and attributes on its channel (spec F C10); 404 when the caller may not see it. */
+    public ChannelContactDetails channelDetails(CrmContext ctx, String id) {
+        return channelContacts.details(ctx.workspaceId(), load(ctx, id).getContactId());
+    }
+
     public List<CrmContactView> linkedTo(CrmContext ctx, String companyId) {
         List<Criteria> all = new ArrayList<>();
         all.add(Criteria.where("workspaceId").is(ctx.workspaceId()));

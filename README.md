@@ -357,6 +357,7 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 |---|---|
 | `GET /status` | Enabled, limits, phones, pipeline access, authorities |
 | `GET\|PUT /settings` | Currency, default pipeline, rotting days, channel-move and timeline switches, picklists (`version` on PUT) |
+| `GET /settings/history?page=&size=` | What changed in the CRM settings, newest first (`crm:settings`) |
 | `GET /pipelines`, `GET\|PUT /pipelines/{id}`, `POST /pipelines`, `PUT /pipelines/{id}/stages`, `DELETE /pipelines/{id}?moveDealsToPipelineId=` | Pipelines and their stages (409 `STAGE_HAS_DEALS`, `PIPELINE_HAS_DEALS`) |
 | `GET\|PUT /users/{userId}/pipelines` | Pipeline access per user |
 | `POST /contacts/search`, `GET\|PUT /contacts/{id}` | CRM contacts (one per platform contact and number) |
@@ -365,7 +366,9 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 | `POST /companies/search`, `GET /companies/typeahead?q=`, `GET\|PUT\|DELETE /companies/{id}`, `GET /companies/{id}/summary`, `POST /companies` | Companies (409 `COMPANY_HAS_OPEN_DEALS`) |
 | `GET /deals/board`, `POST /deals/search`, `GET\|PUT\|DELETE /deals/{id}`, `POST /deals` | Kanban board, deal list, deal CRUD |
 | `POST /deals/{id}/move`, `POST /deals/{id}/close` | Move between lanes (`beforeDealId`/`afterDealId`), close WON or LOST (409 `VERSION_CONFLICT` when the deal moved meanwhile) |
-| `GET /activities?targetType=&targetId=`, `POST /activities/log` | Timeline of a record; log a CALL, MEETING or EMAIL |
+| `GET /activities?targetType=&targetId=`, `POST /activities/log` | Timeline of a record; log a CALL, MEETING or EMAIL. Restricted users read stage moves through a pipeline they cannot see with that side redacted |
+| `GET /deals/{id}/contacts` | The deal's contacts, primary first |
+| `GET /contacts/{id}/channel-details` | The contact's channel labels and attributes, read-only |
 | `GET /fields?entityType=&includeInactive=`, `POST /fields`, `PUT\|DELETE /fields/{id}`, `PUT /fields/reorder` | Custom fields of contacts, companies and deals (400 `FIELD_IMMUTABLE`, 409 `LIMIT_REACHED`, `FIELD_KEY_TAKEN`) |
 | `GET /tasks?targetType=&targetId=`, `POST /tasks`, `PUT\|DELETE /tasks/{id}`, `POST /tasks/{id}/complete\|reopen\|skip` | Tasks on a contact, company or deal; complete, reopen and skip need `crm:edit` or being the assignee |
 | `POST /tasks/{id}/checklist/{itemId}` `{done}` | Tick or untick one step atomically (400 `TASK_NOT_OPEN`) |
@@ -376,6 +379,7 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 | `POST /notes/{id}/attachments` (multipart `file`), `GET\|DELETE /notes/{id}/attachments/{aid}` | Up to 5 files of 10 MB per note in GridFS (400 `ATTACHMENT_REJECTED`) |
 | `POST /contacts\|companies\|deals/export` | CSV of the list with its search body (`crm:export`) |
 | `POST /companies/import`, `POST /contacts/import?pipelineId=&phoneNumberId=` | CSV import (multipart `file`), result `{total, created, updated, skipped, errors}` |
+| `GET /contacts/import/template`, `GET /companies/import/template` | Header-only CSV with the import's columns and active custom fields (`crm:edit`) |
 | `POST /reports/{pipeline-summary\|deals-over-time\|by-owner\|by-source\|by-number\|lifecycle-funnel\|activity-summary\|stage-duration\|campaigns\|grid}` | Reports over what the caller may see, with one shared filter body (400 `INVALID_REPORT_FILTER {field}`, 503 `REPORT_TIMEOUT`) |
 | `GET /segments`, `GET\|PUT\|DELETE /segments/{id}`, `POST /segments`, `GET /segments/fields`, `POST /segments/preview`, `POST /segments/{id}/preview` | Saved segments and their live per-caller preview (`crm:segments`; 400 `INVALID_SEGMENT`, `SEGMENT_TOO_BROAD`, 409 `SEGMENT_NAME_TAKEN`, `SEGMENT_IN_USE`, 503 `SEGMENT_TIMEOUT`) |
 

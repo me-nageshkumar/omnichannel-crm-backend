@@ -601,4 +601,88 @@ class CrmDealsApiIT extends CrmTestBase {
         assertThat(infos).allSatisfy(i -> assertThat(i.getName().equals("_id_")
                 || i.getIndexFields().get(0).getKey().equals("workspaceId")).isTrue());
     }
+
+    // --- a deal's contacts (spec F C3, C7) -----------------------------------------------------------------------
+
+    private String linkDave() throws Exception {
+        String daveId = captured(contact("Dave Ray", "919822222201"), number).get("contact").get("id").asText();
+        send(put(crm() + "/deals/" + aliceDeal), managerToken, body("version", deal(aliceDeal).get("version").asLong(),
+                "crmContactIds", List.of(aliceId, daveId))).andExpect(status().isOk());
+        return daveId;
+    }
+
+    @Test
+    void dealContactsListPrimaryFirst() throws Exception {
+        String daveId = linkDave();
+        JsonNode rows = json(send(get(crm() + "/deals/" + aliceDeal + "/contacts"), managerToken, null)
+                .andExpect(status().isOk()));
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).get("id").asText()).isEqualTo(aliceId);
+        assertThat(rows.get(0).get("primary").asBoolean()).isTrue();
+        assertThat(rows.get(0).get("name").asText()).isEqualTo("Alice Wonder");
+        assertThat(rows.get(0).get("phone").asText()).isEqualTo("919811111111");
+        assertThat(rows.get(1).get("id").asText()).isEqualTo(daveId);
+        assertThat(rows.get(1).get("primary").asBoolean()).isFalse();
+    }
+
+    @Test
+    void dealContactsFollowDealAccess() throws Exception {
+        send(get(crm() + "/deals/" + aliceDeal + "/contacts"), agentToken, null).andExpect(status().isNotFound());
+        send(get(crm() + "/deals/missing/contacts"), managerToken, null).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void linkedContactIsListedForARestrictedUser() throws Exception {
+        String daveId = linkDave();
+        assignPipelines(agent, sales);
+        JsonNode rows = json(send(get(crm() + "/deals/" + aliceDeal + "/contacts"), agentToken, null)
+                .andExpect(status().isOk()));
+        assertThat(rows.valueStream().map(r -> r.get("id").asText()).toList()).containsExactly(aliceId, daveId);
+    }
+
+    @Test
+    void removedLinkedContactIsLeftOut() throws Exception {
+        String daveId = linkDave();
+        mongo.remove(new Query(Criteria.where("_id").is(daveId)), "crmContacts");
+        JsonNode rows = json(send(get(crm() + "/deals/" + aliceDeal + "/contacts"), managerToken, null));
+        assertThat(rows).hasSize(1);
+    }
+
+    @Test
+    void contactListChangeIsNamedOnTheTimeline() throws Exception {
+        String daveId = linkDave();
+        Document change = mongo.find(new Query(Criteria.where("target.id").is(aliceDeal).and("type").is("FIELD_CHANGED")),
+                Document.class, "crmActivities").get(0);
+        Document payload = change.get("payload", Document.class);
+        Document first = payload.getList("changes", Document.class).get(0);
+        assertThat(first.getString("field")).isEqualTo("contacts");
+        assertThat(first.getString("from")).isEqualTo("Alice Wonder");
+        assertThat(first.getString("to")).isEqualTo("Alice Wonder, Dave Ray");
+        assertThat(change.getString("summary")).isEqualTo("Changed contacts");
+        Document stored = mongo.findOne(new Query(Criteria.where("_id").is(aliceDeal)), Document.class, "crmDeals");
+        assertThat(stored.getList("crmContactIds", String.class)).containsExactly(aliceId, daveId);
+        assertThat(stored.containsKey("contacts")).isFalse();
+    }
+
+    @Test
+    void removedContactReadsPlainlyOnTheTimeline() throws Exception {
+        String daveId = linkDave();
+        mongo.remove(new Query(Criteria.where("_id").is(daveId)), "crmContacts");
+        send(put(crm() + "/deals/" + aliceDeal), managerToken, body("version", deal(aliceDeal).get("version").asLong(),
+                "crmContactIds", List.of(aliceId))).andExpect(status().isOk());
+        List<Document> changes = mongo.find(new Query(Criteria.where("target.id").is(aliceDeal).and("type")
+                .is("FIELD_CHANGED")).with(org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "happenedAt", "_id")),
+                Document.class, "crmActivities");
+        Document last = changes.get(0).get("payload", Document.class).getList("changes", Document.class).get(0);
+        assertThat(last.getString("from")).isEqualTo("Alice Wonder, a removed contact");
+    }
+
+    @Test
+    void putWithoutContactIdsKeepsThem() throws Exception {
+        String daveId = linkDave();
+        send(put(crm() + "/deals/" + aliceDeal), managerToken, body("version", deal(aliceDeal).get("version").asLong(),
+                "amount", 10)).andExpect(status().isOk());
+        assertThat(deal(aliceDeal).get("crmContactIds")).extracting(JsonNode::asText).containsExactly(aliceId, daveId);
+    }
 }

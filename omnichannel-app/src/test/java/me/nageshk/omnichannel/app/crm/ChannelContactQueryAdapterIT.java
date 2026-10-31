@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import me.nageshk.omnichannel.crm.platform.ChannelAccount;
+import me.nageshk.omnichannel.crm.platform.ChannelAttributeValue;
+import me.nageshk.omnichannel.crm.platform.ChannelContactDetails;
 import me.nageshk.omnichannel.crm.platform.ChannelContactQuery;
 import me.nageshk.omnichannel.crm.platform.ChannelKind;
 import me.nageshk.omnichannel.crm.platform.ChannelRule;
@@ -153,5 +155,53 @@ class ChannelContactQueryAdapterIT extends CrmTestBase {
         assertThat(match("label", "has", l.getId())).containsExactly(mine.getId());
         assertThat(channel.labels(other.getId())).isEmpty();
         assertThat(channel.accounts(other.getId())).extracting(ChannelAccount::id).containsExactly(otherNumber.getId());
+    }
+
+    // --- one contact's labels and attributes (spec F C10) --------------------------------------------------------
+
+    @Test
+    void detailsNameLabelsAndAttributes() {
+        ContactLabel vip = label("VIP");
+        ContactLabel gold = label("Gold");
+        ContactAttribute zone = attribute("Zone");
+        ContactAttribute city = attribute("City");
+        Contact c = contact("A", "919900000801");
+        c.setLabels(Set.of(vip.getId(), gold.getId()));
+        c.setAttributes(Map.of(zone.getId(), "West", city.getId(), "Pune"));
+        contacts.save(c);
+        ChannelContactDetails d = channel.details(brand.getId(), c.getId());
+        assertThat(d.labels()).extracting("name", "color").containsExactly(
+                org.assertj.core.groups.Tuple.tuple("Gold", "#ff0000"), org.assertj.core.groups.Tuple.tuple("VIP", "#ff0000"));
+        assertThat(d.attributes()).containsExactly(new ChannelAttributeValue("City", "Pune"),
+                new ChannelAttributeValue("Zone", "West"));
+    }
+
+    @Test
+    void detailsDropUnknownIds() {
+        ContactLabel vip = label("VIP");
+        Contact c = contact("B", "919900000802");
+        c.setLabels(Set.of(vip.getId(), "gone-label"));
+        c.setAttributes(Map.of("gone-attribute", "x"));
+        contacts.save(c);
+        ChannelContactDetails d = channel.details(brand.getId(), c.getId());
+        assertThat(d.labels()).extracting("name").containsExactly("VIP");
+        assertThat(d.attributes()).isEmpty();
+    }
+
+    @Test
+    void detailsOfAMissingContactAreEmpty() {
+        ChannelContactDetails d = channel.details(brand.getId(), "missing");
+        assertThat(d.labels()).isEmpty();
+        assertThat(d.attributes()).isEmpty();
+    }
+
+    @Test
+    void detailsAreBrandScoped() {
+        ContactLabel vip = label("VIP");
+        Contact c = contact(other, "C", "919900000803");
+        c.setLabels(Set.of(vip.getId()));
+        contacts.save(c);
+        assertThat(channel.details(brand.getId(), c.getId()).labels()).isEmpty();
+        assertThat(channel.details(other.getId(), c.getId()).labels()).isEmpty();
     }
 }

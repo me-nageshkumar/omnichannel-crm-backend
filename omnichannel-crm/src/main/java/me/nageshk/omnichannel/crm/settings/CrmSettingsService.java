@@ -150,6 +150,7 @@ public class CrmSettingsService {
         checkList(errors, "industries", req.industries(), current.getIndustries());
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
+        List<String> changed = SettingsChanges.between(current, req);
         Update update = new Update()
                 .set("defaultCurrency", req.defaultCurrency())
                 .set("dealRottingDays", req.dealRottingDays())
@@ -168,8 +169,11 @@ public class CrmSettingsService {
                         .and("version").is(req.version())),
                 update, FindAndModifyOptions.options().returnNew(true), CrmSettings.class);
         if (saved != null) {
-            activities.record(ctx, ActivityType.SETTINGS_CHANGED, new CrmTarget(TargetType.SETTINGS, ctx.workspaceId()),
-                    List.of(), null, null, "Updated CRM settings", new java.util.LinkedHashMap<>());
+            if (!changed.isEmpty()) {
+                activities.record(ctx, ActivityType.SETTINGS_CHANGED,
+                        new CrmTarget(TargetType.SETTINGS, ctx.workspaceId()), List.of(), null, null,
+                        SettingsChanges.summary(changed), new java.util.LinkedHashMap<>(Map.of("changed", changed)));
+            }
             return saved;
         }
         if (repository.findById(current.getId()).isEmpty()) throw new NotFoundException("CRM settings not found");

@@ -3,6 +3,9 @@ package me.nageshk.omnichannel.app.crm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 
@@ -180,5 +184,96 @@ class CrmImportIT extends CrmTestBase {
                 .andExpect(status().isNotFound());
         importContacts(agentToken, "WhatsApp number\n919900000408\n", salesId(), number.getId())
                 .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1));
+    }
+
+    // --- templates (spec F C13, C14) -------------------------------------------------------------------------------
+
+    private String template(String entity) throws Exception {
+        MvcResult done = send(get(crm() + "/" + entity + "/import/template"), managerToken, null)
+                .andExpect(status().isOk()).andExpect(header().string("Content-Type", "text/csv;charset=UTF-8"))
+                .andReturn();
+        assertThat(done.getResponse().getHeader("Content-Disposition"))
+                .isEqualTo("attachment; filename=\"crm-" + entity + "-template.csv\"");
+        return done.getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    private void customField(String entity, String key, String label) throws Exception {
+        send(post(crm() + "/fields"), managerToken, Map.of("entityType", entity, "key", key, "label", label,
+                "type", "TEXT")).andExpect(status().isCreated());
+    }
+
+    private String firstActiveLabel(String picklist) throws Exception {
+        JsonNode list = json(send(get(crm() + "/settings"), managerToken, null)).get(picklist);
+        return list.valueStream().filter(i -> i.get("active").asBoolean()).findFirst().orElseThrow().get("label").asText();
+    }
+
+    @Test
+    void templateListsColumnsAndActiveFields() throws Exception {
+        enableCrm();
+        customField("CONTACT", "tier", "Tier");
+        String hidden = json(send(post(crm() + "/fields"), managerToken, Map.of("entityType", "CONTACT", "key", "old",
+                "label", "Old", "type", "TEXT")).andExpect(status().isCreated())).get("id").asText();
+        JsonNode def = json(send(get(crm() + "/fields?entityType=CONTACT"), managerToken, null)).valueStream()
+                .filter(f -> f.get("id").asText().equals(hidden)).findFirst().orElseThrow();
+        Map<String, Object> off = new java.util.HashMap<>(mapper.convertValue(def,
+                new tools.jackson.core.type.TypeReference<Map<String, Object>>() {}));
+        off.put("active", false);
+        send(put(crm() + "/fields/" + hidden), managerToken, off).andExpect(status().isOk());
+        assertThat(template("contacts")).isEqualTo("\uFEFFWhatsApp number,First name,Last name,Email,Job title,Company,"
+                + "Lifecycle,Source,Tier (tier)\r\n");
+        assertThat(template("companies")).isEqualTo("\uFEFFName,Domain,Website,Industry,Size,Annual revenue,Phone,Email,"
+                + "City,Country,Description\r\n");
+    }
+
+    @Test
+    void contactTemplateRoundTrips() throws Exception {
+        enableCrm();
+        customField("CONTACT", "tier", "Tier");
+        String header = template("contacts").replace("\uFEFF", "");
+        String lifecycle = firstActiveLabel("lifecycleStatuses");
+        String row = "919900000501,Asha,Rao,asha@example.com,Buyer,Acme Traders," + lifecycle + ","
+                + firstActiveLabel("dealSources") + ",Gold\r\n";
+        importContacts(managerToken, header + row, salesId(), number.getId()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.created").value(1)).andExpect(jsonPath("$.errors.length()").value(0));
+        JsonNode asha = contactByPhone("919900000501");
+        assertThat(asha.get("firstName").asText()).isEqualTo("Asha");
+        assertThat(asha.get("lastName").asText()).isEqualTo("Rao");
+        assertThat(asha.get("email").asText()).isEqualTo("asha@example.com");
+        assertThat(asha.get("jobTitle").asText()).isEqualTo("Buyer");
+        assertThat(asha.at("/company/name").asText()).isEqualTo("Acme Traders");
+        assertThat(asha.at("/customFields/tier").asText()).isEqualTo("Gold");
+    }
+
+    @Test
+    void companyTemplateRoundTrips() throws Exception {
+        enableCrm();
+        customField("COMPANY", "tier", "Tier");
+        Map<String, Object> settings = new java.util.HashMap<>(mapper.convertValue(json(send(get(crm() + "/settings"),
+                managerToken, null)), new tools.jackson.core.type.TypeReference<Map<String, Object>>() {}));
+        settings.put("industries", java.util.List.of(Map.of("key", "retail", "label", "Retail", "position", 0, "active",
+                true, "isDefault", false)));
+        send(put(crm() + "/settings"), managerToken, settings).andExpect(status().isOk());
+        String header = template("companies").replace("\uFEFF", "");
+        String row = "Acme,acme.example,https://acme.example,Retail"
+                + ",11-50,1000,919900000502,hi@acme.example,Pune,India,Makes things,Gold\r\n";
+        importCompanies(header + row).andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1))
+                .andExpect(jsonPath("$.errors.length()").value(0));
+        JsonNode acme = json(send(post(crm() + "/companies/search"), managerToken, Map.of())).get("items").get(0);
+        assertThat(acme.get("domain").asText()).isEqualTo("acme.example");
+        assertThat(acme.get("industry").asText()).isEqualTo("retail");
+        assertThat(acme.get("website").asText()).isEqualTo("https://acme.example");
+        assertThat(acme.get("size").asText()).isEqualTo("11-50");
+        assertThat(acme.get("phone").asText()).isEqualTo("919900000502");
+        assertThat(acme.get("email").asText()).isEqualTo("hi@acme.example");
+        assertThat(acme.get("description").asText()).isEqualTo("Makes things");
+        assertThat(acme.at("/customFields/tier").asText()).isEqualTo("Gold");
+    }
+
+    @Test
+    void templateNeedsEdit() throws Exception {
+        enableCrm();
+        me.nageshk.omnichannel.db.user.User viewer = brandUserWith("viewer", "CRM_VIEWER", java.util.Set.of("crm:view"));
+        send(get(crm() + "/contacts/import/template"), testUsers.accessToken(viewer), null)
+                .andExpect(status().isForbidden());
     }
 }

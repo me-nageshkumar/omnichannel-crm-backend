@@ -1,11 +1,13 @@
 package me.nageshk.omnichannel.crm.deal;
 
+import java.util.List;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.common.CrmPage;
 import me.nageshk.omnichannel.crm.deal.dto.BoardView;
 import me.nageshk.omnichannel.crm.deal.dto.CloseRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealSearchRequest;
+import me.nageshk.omnichannel.crm.deal.dto.DealContactView;
 import me.nageshk.omnichannel.crm.deal.dto.DealView;
 import me.nageshk.omnichannel.crm.deal.dto.MoveRequest;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
@@ -63,6 +65,13 @@ public class CrmDealController {
     public DealView get(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String id) {
         return deals.get(crmAccess.resolve(me, workspaceId), id);
+    }
+
+    @GetMapping("/{id}/contacts")
+    @PreAuthorize(VIEW)
+    public List<DealContactView> contacts(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @PathVariable String id) {
+        return deals.contacts(crmAccess.resolve(me, workspaceId), id);
     }
 
     @PostMapping
