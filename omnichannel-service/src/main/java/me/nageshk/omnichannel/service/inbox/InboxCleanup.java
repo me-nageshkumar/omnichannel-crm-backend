@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatActionRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
+import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChatRepository;
+import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
 import org.springframework.stereotype.Component;
 
@@ -21,9 +23,11 @@ public class InboxCleanup {
     private final WaWebChatRepository chats;
     private final WaWebMessageRepository messages;
     private final WaWebChatActionRepository actions;
+    private final WaWebHistoryImportRepository historyImports;
+    private final WaWebHistoryImportChatRepository historyImportChats;
     private final ChatMediaService media;
 
-    /** Deletes the number's chats, messages, chat actions, routing settings and media. Safe to run again. */
+    /** Deletes the number's chats, messages, chat actions, history imports, routing settings and media. Safe to run again. */
     public void deleteForNumber(String phoneNumberId) {
         List<String> chatIds = chats.findIdsByPhoneNumberId(phoneNumberId).stream().map(WaWebChat::getId).toList();
         for (int from = 0; from < chatIds.size(); from += BATCH) {
@@ -31,6 +35,8 @@ public class InboxCleanup {
         }
         messages.deleteByPhoneNumberId(phoneNumberId);
         chats.deleteByPhoneNumberId(phoneNumberId);
+        historyImports.deleteByPhoneNumberId(phoneNumberId);
+        historyImportChats.deleteByPhoneNumberId(phoneNumberId);
         media.deleteByPhoneNumber(phoneNumberId);
     }
 }
