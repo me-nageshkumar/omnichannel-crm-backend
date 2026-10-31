@@ -13,6 +13,7 @@ import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.access.PipelineAccess;
 import me.nageshk.omnichannel.crm.activity.ActivityLog;
 import me.nageshk.omnichannel.crm.activity.ActivityType;
+import me.nageshk.omnichannel.crm.activity.ActorType;
 import me.nageshk.omnichannel.crm.activity.CrmActivity;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.TargetType;
@@ -95,5 +96,20 @@ class ActivityLogIT extends CrmTestBase {
         CrmActivity pipe = all.stream().filter(a -> a.getTarget().type() == TargetType.PIPELINE).findFirst().orElseThrow();
         assertThat(pipe.getTarget().id()).isEqualTo(id);
         assertThat(pipe.getPayload()).containsEntry("pipelineId", id);
+    }
+
+    @Test
+    void appendDoesNotRaiseLastActivityAt() {
+        raw("crmContacts", "c1");
+        Instant at = Instant.parse("2026-06-01T10:00:00Z");
+        CrmActivity a = log.append(brand.getId(), acme.getId(), ActivityType.CAMPAIGN_SENT,
+                new CrmTarget(TargetType.CONTACT, "c1"), null, number.getId(), "system", ActorType.SYSTEM, at,
+                "Campaign \"Diwali\" sent", new HashMap<>(Map.of("campaignId", "k1")));
+        assertThat(a.getId()).isNotNull();
+        assertThat(a.getActorType()).isEqualTo(ActorType.SYSTEM);
+        assertThat(a.getActorId()).isEqualTo("system");
+        assertThat(a.getHappenedAt()).isEqualTo(at);
+        assertThat(a.getPhoneNumberId()).isEqualTo(number.getId());
+        assertThat(lastActivity("crmContacts", "c1")).isEqualTo(Instant.parse("2026-01-01T00:00:00Z"));
     }
 }

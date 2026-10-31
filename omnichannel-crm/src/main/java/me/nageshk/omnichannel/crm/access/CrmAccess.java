@@ -68,7 +68,7 @@ public class CrmAccess {
     }
 
     private static final Set<String> SYSTEM_AUTHORITIES = Set.of("crm:view", "crm:view-all", "crm:edit",
-            "crm:delete", "crm:settings", "crm:export");
+            "crm:delete", "crm:settings", "crm:export", "crm:segments");
 
     private CrmContext build(AuthenticatedUser me, String workspaceId, Set<String> authorities, CrmSettings found) {
         CrmSettings s = found;

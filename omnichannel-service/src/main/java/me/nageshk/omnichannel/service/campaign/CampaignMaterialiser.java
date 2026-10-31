@@ -19,6 +19,9 @@ import me.nageshk.omnichannel.service.contact.ContactQuery;
 import me.nageshk.omnichannel.service.contact.Phones;
 import me.nageshk.omnichannel.service.contact.QueryTimeouts;
 import org.springframework.data.domain.Sort;
+import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.common.api.ValidationException;
+import java.util.Map;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -35,9 +38,11 @@ public class CampaignMaterialiser {
     private final CampaignCsvStore csvStore;
     private final RecipientSkips skips;
     private final QueryTimeouts timeouts;
+    private final SegmentAudiences segments;
 
     CampaignMaterialiser(MongoTemplate mongo, ContactQuery contactQuery, CampaignCsvStore csvStore,
-            RecipientSkips skips, QueryTimeouts timeouts) {
+            RecipientSkips skips, QueryTimeouts timeouts, SegmentAudiences segments) {
+        this.segments = segments;
         this.mongo = mongo;
         this.contactQuery = contactQuery;
         this.csvStore = csvStore;
@@ -54,6 +59,8 @@ public class CampaignMaterialiser {
         final CampaignSettings settings;
         final Instant now;
         final Set<String> seen = new HashSet<>();
+        /** A segment member's channel account by host contact id: the sender to prefer when it has no chat (C21). */
+        Map<String, String> channelAccounts = Map.of();
         int next;
         int written;
 
@@ -64,11 +71,18 @@ public class CampaignMaterialiser {
         }
     }
 
-    /** Returns the rows written; on failure the campaign's recipients are deleted and the failure rethrown. */
-    int materialise(Campaign c, CampaignSettings s, Instant now) {
+    /**
+     * Returns the rows written; on failure the campaign's recipients are deleted and the failure rethrown. A SEGMENT
+     * audience is resolved for {@code actor}, the user starting the campaign.
+     */
+    int materialise(Campaign c, CampaignSettings s, Instant now, AuthenticatedUser actor) {
         Run run = new Run(c, s, now);
         try {
-            if (c.getAudience().kind() == AudienceKind.CSV) csv(run); else filter(run);
+            switch (c.getAudience().kind()) {
+                case CSV -> csv(run);
+                case SEGMENT -> segment(run, actor);
+                default -> filter(run);
+            }
             return run.written;
         } catch (RuntimeException failed) {
             mongo.remove(new Query(Criteria.where("campaignId").is(c.getId())), CampaignRecipient.class);
@@ -93,6 +107,27 @@ public class CampaignMaterialiser {
             lastId = page.get(page.size() - 1).getId();
             write(run, page.stream().map(c -> new Row(c.getPhone(), c, null)).toList(), page);
             if (page.size() < PAGE) return;
+        }
+    }
+
+    /** The segment's distinct host contacts, in member order, judged like a filter audience (spec D C12, C23). */
+    private void segment(Run run, AuthenticatedUser actor) {
+        Campaign c = run.campaign;
+        Campaign.Audience a = c.getAudience();
+        SegmentAudiences.AudienceMembers m = segments.resolve(c.getWorkspaceId(), a.segmentId(), actor, c.getId(),
+                c.getName());
+        if (m.truncated()) {
+            throw new ValidationException("audience.segmentId",
+                    "The segment has more than 50,000 contacts for you; narrow its rules before sending.");
+        }
+        run.channelAccounts = m.channelAccountByContactId();
+        List<String> ids = m.contactIds();
+        for (int from = 0; from < ids.size(); from += PAGE) {
+            List<String> chunk = ids.subList(from, Math.min(ids.size(), from + PAGE));
+            Query q = new Query(Criteria.where("_id").in(chunk).and("workspaceId").is(c.getWorkspaceId())
+                    .and("phone").ne(null)).with(Sort.by("_id")).maxTime(timeouts.materialise());
+            List<Contact> page = QueryTimeouts.guarded(() -> mongo.find(q, Contact.class));
+            if (!page.isEmpty()) write(run, page.stream().map(x -> new Row(x.getPhone(), x, null)).toList(), page);
         }
     }
 
@@ -152,7 +187,12 @@ public class CampaignMaterialiser {
                 continue;
             }
             rec.setStatus(RecipientStatus.PENDING);
-            rec.setPreferredSenderId(skips.preferredSender(page.chatsOf(contact), c.getSenderIds()));
+            String preferred = skips.preferredSender(page.chatsOf(contact), c.getSenderIds());
+            if (preferred == null && contact != null) {
+                String own = run.channelAccounts.get(contact.getId());
+                if (own != null && c.getSenderIds().contains(own)) preferred = own;
+            }
+            rec.setPreferredSenderId(preferred);
             rec.setTemplateId(c.getTemplateIds().get(run.next++ % c.getTemplateIds().size()));
         }
         if (!out.isEmpty()) mongo.insertAll(out);

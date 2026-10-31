@@ -323,7 +323,7 @@ Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, 
 
 A per-brand CRM in the vertical module `omnichannel-crm` (package `me.nageshk.omnichannel.crm`). It keeps its data in
 `crm*` collections (`crmSettings`, `crmPipelines`, `crmContacts`, `crmCompanies`, `crmDeals`, `crmActivities`,
-`crmPipelineAccess`, `crmFieldDefinitions`, `crmTasks`, `crmNotes`) and the GridFS bucket `crmNoteFiles`; every
+`crmPipelineAccess`, `crmFieldDefinitions`, `crmTasks`, `crmNotes`, `crmSegments`) and the GridFS bucket `crmNoteFiles`; every
 index it creates leads with `workspaceId` (the bucket keeps the driver's own indexes, and every file query filters on
 `metadata.workspaceId`). Checked by tests: `CrmCollectionsTest`
 (structural) asserts every CRM `@Document` maps to a `crm*` collection; `CrmIndexIsolationIT` (runtime) asserts that
@@ -347,6 +347,7 @@ through the ports in `crm.platform`.
 | `crm:delete` | BRAND | Delete companies and deals (with `crm:edit`) | Customer Admin, Workspace Manager |
 | `crm:settings` | BRAND | Settings, pipelines, stages, picklists; assign pipelines; move a channel | Customer Admin, Workspace Manager |
 | `crm:export` | BRAND | Export records to CSV | Customer Admin, Workspace Manager |
+| `crm:segments` | BRAND | Build and preview segments and use them as campaign audiences | Customer Admin, Workspace Manager |
 | `crm:enable` | PLATFORM | Switch the CRM on or off for a brand and set limits | Account Manager |
 
 Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601 instants (`expectedCloseDate` is
@@ -374,6 +375,7 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 | `POST /contacts\|companies\|deals/export` | CSV of the list with its search body (`crm:export`) |
 | `POST /companies/import`, `POST /contacts/import?pipelineId=&phoneNumberId=` | CSV import (multipart `file`), result `{total, created, updated, skipped, errors}` |
 | `POST /reports/{pipeline-summary\|deals-over-time\|by-owner\|by-source\|by-number\|lifecycle-funnel\|activity-summary\|stage-duration\|campaigns\|grid}` | Reports over what the caller may see, with one shared filter body (400 `INVALID_REPORT_FILTER {field}`, 503 `REPORT_TIMEOUT`) |
+| `GET /segments`, `GET\|PUT\|DELETE /segments/{id}`, `POST /segments`, `GET /segments/fields`, `POST /segments/preview`, `POST /segments/{id}/preview` | Saved segments and their live per-caller preview (`crm:segments`; 400 `INVALID_SEGMENT`, `SEGMENT_TOO_BROAD`, 409 `SEGMENT_NAME_TAKEN`, `SEGMENT_IN_USE`, 503 `SEGMENT_TIMEOUT`) |
 
 Searches take `sort` as `"field"` or `"field,asc|desc"` (a separate `dir` wins). A restricted user's company
 `openDealAmount` counts only the deals of their pipelines. Lane positions are changed under a per-lane lock held in
@@ -401,7 +403,23 @@ the JVM (`LaneLocks`): enough for the single app instance; running the CRM on se
   response says `since` when). The campaigns card reads the brand's campaigns through `CampaignDirectory`. Each
   aggregation has a 10 s limit. New indexes: `crmDeals`/`crmContacts` `{workspaceId, creationTime}`, `crmActivities`
   `{workspaceId, type, happenedAt}`.
-- **Jobs:** task reminders every 60 s and deal rotting daily at 02:15 server time (an OPEN deal is rotting when its last
+- **Segments and campaigns:** a segment is a saved rule tree (the advanced contact filter's JSON shape) over the CRM
+  contact (`contact.*`), its deals (`deal.*`, every deal rule in an AND group met by one deal) and the channel contact
+  (`channel.*`: labels, attributes, last message, source, do-not-contact), the last through the host's own filter
+  compiler. Every preview and send resolves it for the caller: their pipelines are the universe, rules naming things
+  they cannot see or that no longer exist match nothing (`inaccessible` / `missing` on GET), NOT groups complement
+  within that universe, dates are days in the brand's campaign time zone, every query has a 10 s limit, any set over
+  200,000 ids is refused, members are capped at 50,000 records in id order (`truncated`). Counts are records, with
+  `people` the distinct host contacts. The list shows cached brand-wide counts, refreshed on save and hourly. A campaign
+  may take a `SEGMENT` audience (`{kind: "SEGMENT", segmentId}`; the chooser and the starter need `crm:view` and
+  `crm:segments`): it resolves when the campaign starts, for the starter, refuses a truncated segment (400 on
+  `audience.segmentId`), and a member with no chat on a chosen sender is sent from its own channel account when that is
+  chosen. Every campaign message sent to a CRM contact writes a `CAMPAIGN_SENT` activity (system actor, campaign and
+  segment in the payload, the channel account stamped) that never moves the contact's `lastActivityAt`. A segment used
+  by a draft, running or paused campaign cannot be deleted. New vocabulary is channel-neutral: `channelAccountId`,
+  `ChannelKind` (`WHATSAPP_WEB`, `WHATSAPP_CLOUD`, reserved `INSTAGRAM`, `FACEBOOK`); the phase A field
+  `channel.phoneNumberId` is unchanged and mapped in one place (`ChannelAccounts`).
+- **Jobs:** task reminders every 60 s, deal rotting daily at 02:15 server time and segment counts hourly at :05 (an OPEN deal is rotting when its last
   activity, else stage entry, else creation is older than the pipeline's rotting days, else the brand's). Both run
   in-process; set `omnichannel.crm.jobs.enabled=false` (tests do) to stop scheduling them, e.g. on a second instance.
 
@@ -409,7 +427,9 @@ the JVM (`LaneLocks`): enough for the single app instance; running the CRM on se
 for "Demo Fashion" and adds 3 companies, 8 CRM contacts from the demo contacts on the demo number, 10 deals across
 the Sales lanes (one won, one lost, one rotting) and two logged calls, and gives `demo-agent` the Sales pipeline. It
 also adds the DEAL fields `tier` (Gold/Silver) and `budget`, three tasks for `demo-agent` (one overdue, one due
-today, one whose reminder has passed) and a pinned note, and backdates the records (deals created over the last 60
+today, one whose reminder has passed), a pinned note and two segments ("Gold-tier deals in Sales" — the festive
+order carries `tier = gold` — and "Quiet contacts"; these two are also added to a brand seeded before they existed),
+and backdates the records (deals created over the last 60
 days, the won and lost deals closed 3 and 10 days ago, stage moves a few days after creation, calls in the last week)
 so the Reports page has something to show. It runs through the normal services as a system actor, and
 is skipped when the brand already has CRM settings.

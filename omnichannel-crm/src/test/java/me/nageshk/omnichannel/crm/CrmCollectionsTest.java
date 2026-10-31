@@ -25,6 +25,6 @@ class CrmCollectionsTest {
             assertThat(name).as("collection of " + type.getName()).startsWith("crm");
             collections.add(name);
         }
-        assertThat(collections).contains("crmContacts", "crmDeals", "crmActivities");
+        assertThat(collections).contains("crmContacts", "crmDeals", "crmActivities", "crmSegments");
     }
 }

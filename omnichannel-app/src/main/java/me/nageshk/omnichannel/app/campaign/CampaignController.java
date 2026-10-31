@@ -64,8 +64,9 @@ class CampaignController {
 
     @PutMapping(path = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
-    CampaignView update(@PathVariable String workspaceId, @PathVariable String id, @RequestBody CampaignRequest req) {
-        return views.detail(service.update(workspaceId, id, req, null));
+    CampaignView update(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id, @RequestBody CampaignRequest req) {
+        return views.detail(service.update(me, workspaceId, id, req, null));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -79,10 +80,11 @@ class CampaignController {
 
     @PutMapping(path = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
-    CampaignView updateWithFile(@PathVariable String workspaceId, @PathVariable String id,
-            @RequestPart("campaign") CampaignRequest req, @RequestPart(value = "file", required = false) MultipartFile file)
+    CampaignView updateWithFile(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id, @RequestPart("campaign") CampaignRequest req,
+            @RequestPart(value = "file", required = false) MultipartFile file)
             throws IOException {
-        return views.detail(service.update(workspaceId, id, req, upload(file)));
+        return views.detail(service.update(me, workspaceId, id, req, upload(file)));
     }
 
     @PostMapping(path = "/csv/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -114,8 +116,9 @@ class CampaignController {
 
     @PostMapping("/{id}/start")
     @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
-    CampaignView start(@PathVariable String workspaceId, @PathVariable String id) {
-        return views.detail(lifecycle.start(workspaceId, id));
+    CampaignView start(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id) {
+        return views.detail(lifecycle.start(workspaceId, id, me));
     }
 
     @PostMapping("/{id}/pause")

@@ -30,6 +30,7 @@ import me.nageshk.omnichannel.db.user.WorkspaceRole;
 import me.nageshk.omnichannel.db.enablement.Disabled;
 import me.nageshk.omnichannel.security.access.BuiltInRoles;
 import java.time.Instant;
+import org.bson.Document;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -250,5 +251,34 @@ class PlatformAdaptersIT extends CrmTestBase {
         // another brand sees nothing
         assertThat(campaignDirectory.campaigns(other.getId(), now.minus(java.time.Duration.ofDays(30)), now, 10))
                 .isEmpty();
+    }
+
+    private void rawCampaign(String name, String status, String segmentId) {
+        mongo.insert(new Document("workspaceId", brand.getId()).append("customerId", acme.getId())
+                .append("name", name).append("nameKey", name.toLowerCase()).append("status", status)
+                .append("audience", new Document("kind", "SEGMENT").append("segmentId", segmentId)
+                        .append("segmentName", "Seg")), "campaigns");
+    }
+
+    @Test
+    void usingSegmentListsUnfinishedCampaignsOnly() {
+        rawCampaign("Zeta draft", "DRAFT", "s1");
+        rawCampaign("Alpha running", "RUNNING", "s1");
+        rawCampaign("Paused", "PAUSED", "s1");
+        rawCampaign("Done", "COMPLETED", "s1");
+        rawCampaign("Killed", "TERMINATED", "s1");
+        rawCampaign("Other segment", "RUNNING", "s2");
+        mongo.insert(new Document("workspaceId", other.getId()).append("name", "Elsewhere").append("nameKey", "elsewhere")
+                .append("status", "RUNNING").append("audience", new Document("kind", "SEGMENT").append("segmentId", "s1")),
+                "campaigns");
+        assertThat(campaignDirectory.usingSegment(brand.getId(), "s1")).extracting("name")
+                .containsExactly("Alpha running", "Paused", "Zeta draft");
+        assertThat(campaignDirectory.usingSegment(brand.getId(), "s9")).isEmpty();
+    }
+
+    @Test
+    void zoneOfIsTheBrandCampaignZone() {
+        assertThat(brandDirectory.zoneOf(brand.getId())).isNotNull();
+        assertThat(brandDirectory.zoneOf("missing-brand")).isNotNull();
     }
 }

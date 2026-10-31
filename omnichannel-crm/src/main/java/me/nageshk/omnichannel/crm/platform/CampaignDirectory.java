@@ -15,4 +15,7 @@ public interface CampaignDirectory {
      * one more than it shows to learn whether the list was cut.
      */
     List<PlatformCampaign> campaigns(String workspaceId, Instant from, Instant to, int limit);
+
+    /** The brand's unfinished (draft, running, paused) campaigns whose audience is the segment, by name. */
+    List<CampaignRef> usingSegment(String workspaceId, String segmentId);
 }
