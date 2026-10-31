@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.crm.job;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import me.nageshk.omnichannel.crm.segment.SegmentCountRefreshJob;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -14,10 +15,12 @@ public class CrmJobsTicker {
 
     private final TaskReminderJob reminders;
     private final DealRottingJob rotting;
+    private final SegmentCountRefreshJob segmentCounts;
 
-    CrmJobsTicker(TaskReminderJob reminders, DealRottingJob rotting) {
+    CrmJobsTicker(TaskReminderJob reminders, DealRottingJob rotting, SegmentCountRefreshJob segmentCounts) {
         this.reminders = reminders;
         this.rotting = rotting;
+        this.segmentCounts = segmentCounts;
     }
 
     @Scheduled(fixedDelay = 60_000)
@@ -28,5 +31,10 @@ public class CrmJobsTicker {
     @Scheduled(cron = "0 15 2 * * *")
     void rotting() {
         rotting.run();
+    }
+
+    @Scheduled(cron = "0 5 * * * *")
+    void segmentCounts() {
+        segmentCounts.run();
     }
 }
