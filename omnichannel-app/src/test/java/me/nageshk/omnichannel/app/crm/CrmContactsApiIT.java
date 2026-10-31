@@ -286,4 +286,16 @@ class CrmContactsApiIT extends CrmTestBase {
         assertThat(all.get("openDealCount").asInt()).isEqualTo(2);
         assertThat(all.get("channelHistory")).isEmpty();
     }
+
+    @Test
+    void searchFiltersByChannelAccount() throws Exception {
+        String first = captureAs(contact("Mira", "919833330001"), number);
+        String second = captureAs(contact("Mira Two", "919833330002"), number2);
+        JsonNode onFirst = json(send(post(crm() + "/contacts/search"), managerToken,
+                Map.of("q", "Mira", "channelAccountId", number.getId())).andExpect(status().isOk()));
+        assertThat(onFirst.get("items").valueStream().map(i -> i.get("id").asText()).toList()).containsExactly(first);
+        JsonNode onSecond = json(send(post(crm() + "/contacts/search"), managerToken,
+                Map.of("q", "Mira", "channelAccountId", number2.getId())));
+        assertThat(onSecond.get("items").valueStream().map(i -> i.get("id").asText()).toList()).containsExactly(second);
+    }
 }

@@ -26,6 +26,7 @@ import me.nageshk.omnichannel.crm.common.Ref;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.company.CompanyCounters;
 import me.nageshk.omnichannel.crm.contact.dto.ContactSearchRequest;
+import me.nageshk.omnichannel.crm.segment.ChannelAccounts;
 import me.nageshk.omnichannel.crm.contact.dto.ContactUpdateRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CrmContactView;
 import me.nageshk.omnichannel.crm.field.FieldDefinitionService;
@@ -92,6 +93,7 @@ public class CrmContactService {
         if (present(req.ownerId())) all.add(Criteria.where("ownerId").is(req.ownerId()));
         if (present(req.lifecycleStatus())) all.add(Criteria.where("lifecycleStatus").is(req.lifecycleStatus()));
         if (present(req.companyId())) all.add(Criteria.where("companyId").is(req.companyId()));
+        if (present(req.channelAccountId())) all.add(Criteria.where(ChannelAccounts.FIELD).is(req.channelAccountId()));
         if (present(req.q())) {
             Pattern p = Pattern.compile(Pattern.quote(req.q().trim()), Pattern.CASE_INSENSITIVE);
             all.add(new Criteria().orOperator(Criteria.where("firstName").regex(p), Criteria.where("lastName").regex(p),

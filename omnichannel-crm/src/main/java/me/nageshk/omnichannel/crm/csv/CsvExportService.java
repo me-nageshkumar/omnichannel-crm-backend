@@ -83,7 +83,7 @@ public class CsvExportService {
         ctx.require("crm:export");
         return prepare(ctx, TargetType.CONTACT, CONTACT_COLUMNS, n -> contacts.search(ctx,
                 new ContactSearchRequest(r.q(), r.ownerId(), r.lifecycleStatus(), r.companyId(), r.pipelineId(),
-                        r.sort(), r.dir(), n, PAGE_SIZE), PAGE_SIZE),
+                        r.sort(), r.dir(), n, PAGE_SIZE, r.channelAccountId()), PAGE_SIZE),
                 c -> List.of(s(c.firstName()), s(c.lastName()), s(c.phone()),
                         c.channel() == null ? "" : s(c.channel().number()), s(c.email()), s(c.jobTitle()),
                         name(c.company()), name(c.owner()), s(c.lifecycleStatus()), s(c.source()),

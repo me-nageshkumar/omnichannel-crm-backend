@@ -51,7 +51,7 @@ public class CrmContactController {
     public CrmPage<CrmContactView> search(@AuthenticationPrincipal AuthenticatedUser me,
             @PathVariable String workspaceId, @RequestBody(required = false) ContactSearchRequest request) {
         ContactSearchRequest r = request == null
-                ? new ContactSearchRequest(null, null, null, null, null, null, null, null, null) : request;
+                ? new ContactSearchRequest(null, null, null, null, null, null, null, null, null, null) : request;
         return contacts.search(crmAccess.resolve(me, workspaceId), r);
     }
 
