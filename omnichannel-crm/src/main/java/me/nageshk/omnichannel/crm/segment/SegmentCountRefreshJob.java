@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Hourly (spec D C9): recounts every segment of every brand whose CRM is on, over the brand-wide universe. A brand
- * or segment that fails is logged and skipped; the job is idempotent, so a second instance running it does no harm.
+ * or segment that fails is logged and skipped; the job is idempotent. One instance runs it at a time (the ticker's lock).
  */
 @Component
 public class SegmentCountRefreshJob {

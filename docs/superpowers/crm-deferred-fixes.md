@@ -95,4 +95,4 @@ Small findings from the final reviews of phases D to G, kept here because the le
 ## Not small: also pending
 
 - [ ] Segment rules on companies show ids instead of names (console, `SegmentValueEditor`)
-- [ ] Job lock: CRM jobs run on every instance unless `omnichannel.crm.jobs.enabled=false`
+- [x] Job lock: CRM jobs run on every instance unless `omnichannel.crm.jobs.enabled=false`

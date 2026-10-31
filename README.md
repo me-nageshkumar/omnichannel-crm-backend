@@ -323,7 +323,7 @@ Endpoints are under `/api/workspaces/{workspaceId}`: `contacts` (`POST` create, 
 
 A per-brand CRM in the vertical module `omnichannel-crm` (package `me.nageshk.omnichannel.crm`). It keeps its data in
 `crm*` collections (`crmSettings`, `crmPipelines`, `crmContacts`, `crmCompanies`, `crmDeals`, `crmActivities`,
-`crmPipelineAccess`, `crmFieldDefinitions`, `crmTasks`, `crmNotes`, `crmSegments`) and the GridFS bucket `crmNoteFiles`; every
+`crmPipelineAccess`, `crmFieldDefinitions`, `crmTasks`, `crmNotes`, `crmSegments`, `crmJobLocks`) and the GridFS bucket `crmNoteFiles`; every
 index it creates leads with `workspaceId` (the bucket keeps the driver's own indexes, and every file query filters on
 `metadata.workspaceId`). Checked by tests: `CrmCollectionsTest`
 (structural) asserts every CRM `@Document` maps to a `crm*` collection; `CrmIndexIsolationIT` (runtime) asserts that
@@ -436,8 +436,10 @@ the JVM (`LaneLocks`): enough for the single app instance; running the CRM on se
   `ChannelKind` (`WHATSAPP_WEB`, `WHATSAPP_CLOUD`, reserved `INSTAGRAM`, `FACEBOOK`); the phase A field
   `channel.phoneNumberId` is unchanged and mapped in one place (`ChannelAccounts`).
 - **Jobs:** task reminders every 60 s, deal rotting daily at 02:15 server time and segment counts hourly at :05 (an OPEN deal is rotting when its last
-  activity, else stage entry, else creation is older than the pipeline's rotting days, else the brand's). Both run
-  in-process; set `omnichannel.crm.jobs.enabled=false` (tests do) to stop scheduling them, e.g. on a second instance.
+  activity, else stage entry, else creation is older than the pipeline's rotting days, else the brand's). They run
+  in-process, each on one instance at a time: every instance ticks and the one that takes the job's lease in
+  `crmJobLocks` does the work (a crashed holder blocks the job until its lease expires, 5 minutes for reminders, 2
+  hours for the others). Set `omnichannel.crm.jobs.enabled=false` (tests do) to stop scheduling them on an instance.
 
 **Demo data:** with `OMNICHANNEL_SEED_DEMO=true`, `CrmDemoSeeder` (after the other demo seeders) switches the CRM on
 for "Demo Fashion" and adds 3 companies, 8 CRM contacts from the demo contacts on the demo number, 10 deals across
