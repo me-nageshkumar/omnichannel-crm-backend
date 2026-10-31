@@ -4,6 +4,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -21,6 +23,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class CrmJobLocks {
 
+    private static final Logger log = LoggerFactory.getLogger(CrmJobLocks.class);
+
     /** A finished run keeps the lease this long, so instances whose cron ticks land moments apart do not both run. */
     static final Duration MIN_HOLD = Duration.ofSeconds(30);
 
@@ -34,7 +38,8 @@ public class CrmJobLocks {
 
     /**
      * Runs {@code work} if the job's lease is free, holding it for at most {@code lease}, which must outlast a normal
-     * run. The lease goes back when the work ends, also when it fails.
+     * run. The lease goes back when the work ends, also when it fails; failing to give it back only logs, because
+     * the lease expires by itself and the job's own failure is the one that matters.
      *
      * @return false when another run holds the lease and nothing ran
      */
@@ -45,7 +50,11 @@ public class CrmJobLocks {
         try {
             work.run();
         } finally {
-            giveBack(job, holder, start);
+            try {
+                giveBack(job, holder, start);
+            } catch (RuntimeException e) {
+                log.warn("could not give back the {} lease; it expires by itself", job, e);
+            }
         }
         return true;
     }
