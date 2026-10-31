@@ -64,7 +64,7 @@ One new port in `crm.platform`: `CampaignDirectory` (C13), implemented by `app.c
 host's `campaigns` and `campaignRecipients` collections through `MongoTemplate` (the recipient repository has no
 finders): campaigns by `workspaceId` with `startedAt` in range, newest first, at most 200; per campaign the `counts`
 record as stored, and the distinct recipient `contactId`s (non-null) read with a projection. The port returns the
-numbers used through `senderIds` → `campaignSenders.phoneNumberId`.
+numbers used are `senderIds` themselves: a campaign stores phone number ids there, not `campaignSenders` ids.
 
 ## 5. API (`/api/workspaces/{ws}/crm/reports`, all `POST`, JSON; `crm:view`)
 

@@ -4,16 +4,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import me.nageshk.omnichannel.crm.platform.CampaignDirectory;
 import me.nageshk.omnichannel.crm.platform.CampaignRef;
 import me.nageshk.omnichannel.db.campaign.CampaignStatus;
 import me.nageshk.omnichannel.crm.platform.PlatformCampaign;
 import me.nageshk.omnichannel.db.campaign.Campaign;
 import me.nageshk.omnichannel.db.campaign.CampaignRecipient;
-import me.nageshk.omnichannel.db.campaign.CampaignSender;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -36,18 +33,10 @@ class CampaignDirectoryAdapter implements CampaignDirectory {
                 .and("startedAt").gte(from).lt(to)).with(Sort.by(Sort.Direction.DESC, "startedAt")).limit(limit)
                 .maxTime(MAX_TIME), Campaign.class);
         if (campaigns.isEmpty()) return List.of();
-        Set<String> senderIds = new HashSet<>();
-        campaigns.forEach(c -> {
-            if (c.getSenderIds() != null) senderIds.addAll(c.getSenderIds());
-        });
-        Map<String, String> numberOfSender = senderIds.isEmpty() ? Map.of()
-                : mongo.find(new Query(Criteria.where("_id").in(senderIds).and("workspaceId").is(workspaceId))
-                        .maxTime(MAX_TIME), CampaignSender.class).stream()
-                        .collect(Collectors.toMap(CampaignSender::getId, CampaignSender::getPhoneNumberId, (a, b) -> a));
         List<PlatformCampaign> out = new ArrayList<>();
         for (Campaign c : campaigns) {
-            List<String> numbers = (c.getSenderIds() == null ? List.<String>of() : c.getSenderIds()).stream()
-                    .map(numberOfSender::get).filter(n -> n != null).distinct().toList();
+            // a campaign's senderIds are the ids of its phone numbers, not of campaignSenders rows
+            List<String> numbers = c.getSenderIds() == null ? List.of() : c.getSenderIds().stream().distinct().toList();
             Set<String> contactIds = new HashSet<>(mongo.findDistinct(
                     new Query(Criteria.where("campaignId").is(c.getId()).and("contactId").ne(null)).maxTime(MAX_TIME),
                     "contactId", CampaignRecipient.class, String.class));
