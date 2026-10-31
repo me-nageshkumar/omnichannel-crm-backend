@@ -171,6 +171,8 @@ class TaskDelegationIT extends CrmTestBase {
         JsonNode done = json(send(get(crm() + "/tasks/delegated?status=DONE"), managerToken, null));
         assertThat(done).hasSize(1);
         assertThat(done.get(0).get("title").asText()).isEqualTo("Soon");
+        send(get(crm() + "/tasks/delegated?status=foo"), managerToken, null).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.status").value("must be OPEN or DONE"));
         send(get(crm() + "/tasks/delegated?status=CANCELLED"), managerToken, null).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fields.status").value("must be OPEN or DONE"));
         send(get(crm() + "/tasks/delegated"), agentToken, null).andExpect(jsonPath("$.length()").value(0));

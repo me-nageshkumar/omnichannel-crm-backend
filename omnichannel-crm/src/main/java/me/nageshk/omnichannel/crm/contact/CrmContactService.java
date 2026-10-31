@@ -26,7 +26,6 @@ import me.nageshk.omnichannel.crm.common.Ref;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.company.CompanyCounters;
 import me.nageshk.omnichannel.crm.contact.dto.ContactSearchRequest;
-import me.nageshk.omnichannel.crm.segment.ChannelAccounts;
 import me.nageshk.omnichannel.crm.contact.dto.ContactUpdateRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CrmContactView;
 import me.nageshk.omnichannel.crm.field.FieldDefinitionService;

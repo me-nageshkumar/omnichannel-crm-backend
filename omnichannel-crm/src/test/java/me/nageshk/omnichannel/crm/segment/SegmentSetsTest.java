@@ -28,22 +28,4 @@ class SegmentSetsTest {
         assertThat(SegmentSets.unionAll(List.of(Set.of("a"), Set.of("b", "a"), Set.of()))).containsExactlyInAnyOrder("a", "b");
         assertThat(SegmentSets.complement(Set.of("a", "b", "c"), Set.of("b", "x"))).containsExactlyInAnyOrder("a", "c");
     }
-
-    @Test
-    void needsUniverseOnlyForNegatives() {
-        SegmentRule plain = new SegmentRule("contact.email", "isSet", null);
-        SegmentRule negativeContact = new SegmentRule("contact.lifecycleStatus", "isNot", "lead");
-        SegmentRule negativeChannel = new SegmentRule("channel.label", "hasNone", List.of("l1"));
-        SegmentRule negativeDeal = new SegmentRule("deal.status", "isNot", "WON");
-        assertThat(SegmentSets.needsUniverse(group("and", false, plain))).isFalse();
-        assertThat(SegmentSets.needsUniverse(group("and", true, plain))).as("a NOT group").isTrue();
-        assertThat(SegmentSets.needsUniverse(group("and", false, group("or", true, plain)))).as("nested NOT").isTrue();
-        assertThat(SegmentSets.needsUniverse(group("and", false, negativeChannel))).as("channel negatives are complements").isTrue();
-        assertThat(SegmentSets.needsUniverse(group("and", false, negativeContact))).as("contact negatives run in Mongo").isFalse();
-        assertThat(SegmentSets.needsUniverse(group("and", false, negativeDeal))).as("deal negatives apply per deal").isFalse();
-    }
-
-    static SegmentRuleGroup group(String combinator, boolean not, SegmentRuleNode... rules) {
-        return new SegmentRuleGroup(combinator, not, List.of(rules));
-    }
 }

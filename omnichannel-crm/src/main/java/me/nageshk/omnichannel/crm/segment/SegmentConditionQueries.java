@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.common.TimeLimited;
+import me.nageshk.omnichannel.crm.contact.ChannelAccounts;
 import me.nageshk.omnichannel.crm.field.FieldType;
 import me.nageshk.omnichannel.crm.platform.ChannelContactQuery;
 import me.nageshk.omnichannel.crm.platform.ChannelRule;

@@ -150,6 +150,11 @@ public final class SegmentFields {
         return NEGATIVE.contains(operator);
     }
 
+    /** Whether the rule picks the pipeline or pipelines of a deal, which is what a stage rule needs beside it. */
+    public static boolean choosesPipeline(SegmentRule r) {
+        return "deal.pipelineId".equals(r.field()) && ("is".equals(r.operator()) || "in".equals(r.operator()));
+    }
+
     public static SegmentValueType typeOfCustom(FieldType type) {
         return switch (type) {
             case TEXT, LONG_TEXT, URL, EMAIL, PHONE -> SegmentValueType.TEXT;

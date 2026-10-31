@@ -91,6 +91,15 @@ class SettingsHistoryIT extends CrmTestBase {
     }
 
     @Test
+    void aPersonWithABlankNameReadsAsTheirUsername() throws Exception {
+        assignPipelines(agent, salesId());
+        mongo.updateFirst(new Query(Criteria.where("_id").is(new org.bson.types.ObjectId(agent.getId()))),
+                new org.springframework.data.mongodb.core.query.Update().set("name", "  "), "users");
+        assertThat(history("").get("items").get(0).get("summary").asText())
+                .isEqualTo("Changed CRM pipelines of " + agent.getUsername());
+    }
+
+    @Test
     void pipelineChangeNamesThePerson() throws Exception {
         assignPipelines(agent, salesId());
         JsonNode entry = history("").get("items").get(0);

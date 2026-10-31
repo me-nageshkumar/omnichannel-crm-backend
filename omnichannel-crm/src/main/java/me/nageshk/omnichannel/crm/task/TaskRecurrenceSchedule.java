@@ -9,9 +9,11 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import me.nageshk.omnichannel.crm.task.dto.RecurrenceRequest;
 
 /**
  * Repeat rules (spec E C11, C12): validation into a normalised copy, and the next due date. Pure; every date is
@@ -24,8 +26,39 @@ public final class TaskRecurrenceSchedule {
     public static final int MAX_ENDS_AFTER = 999;
     /** Guards the catch-up loop; a daily rule needs ~270 years of missed occurrences to reach it. */
     static final int MAX_STEPS = 100_000;
+    private static final String WEEKDAYS = "recurrence.weekdays";
 
     private TaskRecurrenceSchedule() {}
+
+    /**
+     * The rule as sent, with the enums read: a frequency that is none is left null for {@link #normalize} to report, and
+     * a weekday that is none goes into {@code errors}.
+     */
+    public static Recurrence parse(RecurrenceRequest req, Map<String, String> errors) {
+        return new Recurrence(frequency(req.frequency()), req.interval(), weekdays(req.weekdays(), errors),
+                req.dayOfMonth(), req.timeZone(), req.endsAfter(), req.endsOn());
+    }
+
+    private static RecurrenceFrequency frequency(String raw) {
+        try {
+            return raw == null ? null : RecurrenceFrequency.valueOf(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static List<DayOfWeek> weekdays(List<String> raw, Map<String, String> errors) {
+        if (raw == null) return null;
+        List<DayOfWeek> days = new ArrayList<>();
+        for (String day : raw) {
+            try {
+                if (day != null) days.add(DayOfWeek.valueOf(day));
+            } catch (IllegalArgumentException e) {
+                errors.put(WEEKDAYS, "must be days of the week, MONDAY to SUNDAY");
+            }
+        }
+        return days;
+    }
 
     /**
      * A validated, cleaned copy of {@code rule} for a task first due at {@code firstDue}; every problem goes into
@@ -60,7 +93,7 @@ public final class TaskRecurrenceSchedule {
             weekdays = rule.weekdays() == null ? List.of()
                     : rule.weekdays().stream().filter(d -> d != null).distinct().sorted().toList();
             if (weekdays.isEmpty()) {
-                errors.put("recurrence.weekdays", "pick at least one weekday");
+                errors.putIfAbsent(WEEKDAYS, "pick at least one weekday");
                 ok = false;
             }
         } else if (rule.frequency() == RecurrenceFrequency.MONTHLY) {

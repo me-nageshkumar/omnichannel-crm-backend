@@ -51,7 +51,7 @@ public final class SegmentValidator {
         }
         boolean and = "and".equals(g.combinator());
         boolean hasPipeline = and && g.rules().stream().anyMatch(n -> n instanceof SegmentRule r
-                && "deal.pipelineId".equals(r.field()));
+                && SegmentFields.choosesPipeline(r));
         for (int i = 0; i < g.rules().size(); i++) {
             String at = (path.isEmpty() ? "rules" : path + ".rules") + "[" + i + "]";
             SegmentRuleNode n = g.rules().get(i);

@@ -177,6 +177,21 @@ class ChannelContactQueryAdapterIT extends CrmTestBase {
     }
 
     @Test
+    void detailsLeaveOutAnAttributeWithNoValue() {
+        ContactAttribute zone = attribute("Zone");
+        ContactAttribute city = attribute("City");
+        Contact c = contact("A", "919900000803");
+        c.setAttributes(Map.of(zone.getId(), "West"));
+        contacts.save(c);
+        mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(
+                org.springframework.data.mongodb.core.query.Criteria.where("_id").is(c.getId())),
+                new org.springframework.data.mongodb.core.query.Update().set("attributes." + city.getId(), null),
+                Contact.class);
+        assertThat(channel.details(brand.getId(), c.getId()).attributes())
+                .containsExactly(new ChannelAttributeValue("Zone", "West"));
+    }
+
+    @Test
     void detailsDropUnknownIds() {
         ContactLabel vip = label("VIP");
         Contact c = contact("B", "919900000802");

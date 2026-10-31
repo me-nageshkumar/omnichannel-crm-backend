@@ -66,8 +66,8 @@ public class CrmTaskController {
     @PreAuthorize(VIEW)
     public List<TaskView> delegated(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @RequestParam(defaultValue = "OPEN") String status, @RequestParam(required = false) Integer limit) {
-        return service.delegated(crmAccess.resolve(me, workspaceId), TaskService.parse(TaskStatus.class, status, "status"),
-                limit);
+        return service.delegated(crmAccess.resolve(me, workspaceId),
+                TaskService.parse(TaskStatus.class, status, "status", TaskService.DELEGATED_STATUS), limit);
     }
 
     @GetMapping("/mine/counts")

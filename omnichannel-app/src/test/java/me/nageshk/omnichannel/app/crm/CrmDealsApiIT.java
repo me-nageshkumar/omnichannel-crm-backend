@@ -633,7 +633,14 @@ class CrmDealsApiIT extends CrmTestBase {
 
     @Test
     void linkedContactIsListedForARestrictedUser() throws Exception {
-        String daveId = linkDave();
+        // a contact with no deal of its own: being linked is all that can bring it into Sales
+        String daveId = json(send(post(crm() + "/contacts/add"), managerToken, body("contactId",
+                contact("Dave Ray", "919822222201").getId(), "channelAccountId", number.getId()))
+                .andExpect(status().isOk())).get("contact").get("id").asText();
+        assertThat(mongo.count(new Query(Criteria.where("_id").is(new org.bson.types.ObjectId(daveId))
+                .and("pipelineIds").is(sales)), "crmContacts")).isZero();
+        send(put(crm() + "/deals/" + aliceDeal), managerToken, body("version", deal(aliceDeal).get("version").asLong(),
+                "crmContactIds", List.of(aliceId, daveId))).andExpect(status().isOk());
         assignPipelines(agent, sales);
         JsonNode rows = json(send(get(crm() + "/deals/" + aliceDeal + "/contacts"), agentToken, null)
                 .andExpect(status().isOk()));

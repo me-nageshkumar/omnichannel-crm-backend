@@ -1,6 +1,4 @@
-package me.nageshk.omnichannel.crm.segment;
-
-import me.nageshk.omnichannel.crm.contact.CrmContact;
+package me.nageshk.omnichannel.crm.contact;
 
 /**
  * The one place the channel-neutral vocabulary of this feature meets the phase A names: a CRM contact's channel

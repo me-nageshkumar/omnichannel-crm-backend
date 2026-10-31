@@ -31,6 +31,7 @@ import me.nageshk.omnichannel.crm.task.dto.TaskCounts;
 import me.nageshk.omnichannel.crm.task.dto.TaskRequest;
 import me.nageshk.omnichannel.crm.task.dto.TaskView;
 import org.bson.Document;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -48,6 +49,7 @@ public class TaskService {
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
     private static final int MAX_PER_TARGET = 1000;
+    static final String DELEGATED_STATUS = "must be OPEN or DONE";
 
     private final MongoTemplate mongo;
     private final TaskAccess access;
@@ -154,14 +156,12 @@ public class TaskService {
         if (current.getStatus() == TaskStatus.DONE) return views(ctx, List.of(current)).get(0);
         if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen(); // a skipped occurrence stays skipped
         Instant now = Instant.now(clock);
-        CrmTask next = nextOccurrence(ctx, current, now);
-        Update u = new Update().set("status", TaskStatus.DONE).set("completedAt", now).set("completedBy", ctx.userId());
-        if (next != null) u.set("nextOccurrenceId", next.getId());
-        // a racing second completion fails here on the version, before it could create a second occurrence
-        CrmTask saved = guarded(ctx, id, current.getVersion(), u);
+        Scheduled next = scheduleNext(ctx, current, now);
+        CrmTask saved = close(ctx, id, next, new Update().set("status", TaskStatus.DONE).set("completedAt", now)
+                .set("completedBy", ctx.userId()));
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_COMPLETED, saved, "Task done: " + saved.getTitle(), null);
-        insertNextOccurrence(ctx, next);
+        recordNextOccurrence(ctx, next.task());
         return views(ctx, List.of(saved)).get(0);
     }
 
@@ -174,20 +174,51 @@ public class TaskService {
         assertCanWork(ctx, current);
         if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
         if (current.getRecurrence() == null) throw TaskErrors.notRecurring();
-        CrmTask next = nextOccurrence(ctx, current, Instant.now(clock));
-        Update u = new Update().set("status", TaskStatus.CANCELLED);
-        if (next != null) u.set("nextOccurrenceId", next.getId());
-        CrmTask saved = guarded(ctx, id, current.getVersion(), u);
+        Scheduled next = scheduleNext(ctx, current, Instant.now(clock));
+        CrmTask saved = close(ctx, id, next, new Update().set("status", TaskStatus.CANCELLED));
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_UPDATED, saved, "Task skipped: " + saved.getTitle(), "SKIPPED");
-        CrmTask inserted = insertNextOccurrence(ctx, next);
+        recordNextOccurrence(ctx, next.task());
         return new SkipResult(views(ctx, List.of(saved)).get(0),
-                inserted == null ? null : views(ctx, List.of(inserted)).get(0));
+                next.task() == null ? null : views(ctx, List.of(next.task())).get(0));
+    }
+
+    /** The occurrence stored for a task about to close (null when none is due), and the version it has to close at. */
+    private record Scheduled(CrmTask task, Long taskVersion) {}
+
+    /**
+     * Stores the next occurrence before the current one closes, so that without transactions a crash cannot end a
+     * series and a retry cannot make two: the new id is first claimed on the still-open task (guarded by the version,
+     * so a racing second close fails here, having written nothing), then inserted under that id, and only then does
+     * {@link #close} mark the task. A crash at any point leaves an open task, visibly not done, whose next attempt
+     * reuses the claimed id, so the unique {@code _id} stops a second occurrence and the stored one is adopted.
+     */
+    private Scheduled scheduleNext(CrmContext ctx, CrmTask task, Instant now) {
+        CrmTask next = nextOccurrence(ctx, task, now);
+        if (next == null) return new Scheduled(null, task.getVersion());
+        Long version = task.getVersion();
+        if (task.getPendingNextOccurrenceId() == null) {
+            version = guarded(ctx, task.getId(), version, new Update().set("pendingNextOccurrenceId", next.getId()))
+                    .getVersion();
+        }
+        try {
+            return new Scheduled(mongo.insert(next), version);
+        } catch (DuplicateKeyException stored) {
+            return new Scheduled(mongo.findOne(byId(ctx, next.getId()), CrmTask.class), version);
+        }
+    }
+
+    /** Applies the closing update, turning a claim into {@code nextOccurrenceId}; guarded by the version. */
+    private CrmTask close(CrmContext ctx, String id, Scheduled next, Update u) {
+        u.unset("pendingNextOccurrenceId");
+        if (next.task() != null) u.set("nextOccurrenceId", next.task().getId());
+        return guarded(ctx, id, next.taskVersion(), u);
     }
 
     /**
      * The next occurrence of a repeating task being completed or skipped (spec E C13), not yet stored; null for a
-     * one-off, an undated task, an occurrence already created, or an ended series.
+     * one-off, an undated task, an occurrence already created, or an ended series. An unfinished earlier attempt's
+     * claimed id is reused.
      */
     private CrmTask nextOccurrence(CrmContext ctx, CrmTask task, Instant now) {
         if (task.getRecurrence() == null || task.getNextOccurrenceId() != null || task.getDueAt() == null) return null;
@@ -201,7 +232,8 @@ public class TaskService {
         // the target may have moved (a deal changes pipeline) since the task was written
         TaskAccess.TargetInfo info = access.assertVisible(ctx, task.getTarget());
         CrmTask next = new CrmTask();
-        next.setId(new org.bson.types.ObjectId().toHexString());
+        next.setId(task.getPendingNextOccurrenceId() != null ? task.getPendingNextOccurrenceId()
+                : new org.bson.types.ObjectId().toHexString());
         next.setWorkspaceId(task.getWorkspaceId());
         next.setCustomerId(task.getCustomerId());
         next.setTitle(task.getTitle());
@@ -228,14 +260,11 @@ public class TaskService {
         return next;
     }
 
-    /** Stores a prepared next occurrence and records it; null in, null out. */
-    private CrmTask insertNextOccurrence(CrmContext ctx, CrmTask next) {
-        if (next == null) return null;
-        CrmTask inserted = mongo.insert(next);
-        counters.recompute(ctx.workspaceId(), inserted.getTarget());
-        record(ctx, ActivityType.TASK_CREATED, inserted, "Next task scheduled: " + inserted.getTitle(), null,
-                Map.of("recurringFromTaskId", inserted.getRecurringFromTaskId()));
-        return inserted;
+    /** Puts the stored next occurrence on the timeline; null does nothing. */
+    private void recordNextOccurrence(CrmContext ctx, CrmTask next) {
+        if (next == null) return;
+        record(ctx, ActivityType.TASK_CREATED, next, "Next task scheduled: " + next.getTitle(), null,
+                Map.of("recurringFromTaskId", next.getRecurringFromTaskId()));
     }
 
     public TaskView reopen(CrmContext ctx, String id) {
@@ -253,7 +282,7 @@ public class TaskService {
     /**
      * Ticks or unticks one step atomically (spec E C9): one findAndModify on an OPEN task that bumps the version so a
      * stale full save fails; no timeline entry, no counter change. 400 TASK_NOT_OPEN unless OPEN, 404 for an unknown
-     * step.
+     * step, also when a concurrent save removed it.
      */
     public TaskView tick(CrmContext ctx, String taskId, String itemId, boolean done) {
         CrmTask current = load(ctx, taskId);
@@ -269,8 +298,10 @@ public class TaskService {
         CrmTask saved = mongo.findAndModify(new Query(Criteria.where("_id").is(taskId).and("workspaceId")
                 .is(ctx.workspaceId()).and("status").is(TaskStatus.OPEN).and("checklist.id").is(itemId)), u,
                 FindAndModifyOptions.options().returnNew(true), CrmTask.class);
-        if (saved == null) throw TaskErrors.notOpen(); // completed or cancelled since it was read
-        return views(ctx, List.of(saved)).get(0);
+        if (saved != null) return views(ctx, List.of(saved)).get(0);
+        // changed since it was read: closed, or the step was saved away
+        if (load(ctx, taskId).getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
+        throw new NotFoundException("Checklist item not found");
     }
 
     public void delete(CrmContext ctx, String id) {
@@ -325,7 +356,7 @@ public class TaskService {
      */
     public List<TaskView> delegated(CrmContext ctx, TaskStatus status, Integer limit) {
         if (status != TaskStatus.OPEN && status != TaskStatus.DONE)
-            throw new ValidationException("status", "must be OPEN or DONE");
+            throw new ValidationException("status", DELEGATED_STATUS);
         int n = limit == null || limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
         Criteria base = new Criteria().andOperator(delegatedBy(ctx).and("status").is(status),
                 access.visibleCriteria(ctx));
@@ -499,7 +530,8 @@ public class TaskService {
             errors.put("reminderAt", "must not be after the due time");
         if (req.assigneeId() != null && !req.assigneeId().isBlank()) f.assigneeId = req.assigneeId().trim();
         f.checklist = Checklists.merge(current == null ? null : current.getChecklist(), req.checklist(), errors);
-        f.recurrence = req.recurrence() == null ? null : TaskRecurrenceSchedule.normalize(req.recurrence(), f.dueAt, errors);
+        f.recurrence = req.recurrence() == null ? null : TaskRecurrenceSchedule.normalize(
+                TaskRecurrenceSchedule.parse(req.recurrence(), errors), f.dueAt, errors);
         if (current != null && req.target() != null && (req.target().type() != current.getTarget().type()
                 || !java.util.Objects.equals(req.target().id(), current.getTarget().id())))
             errors.put("target", "cannot change");
@@ -507,10 +539,14 @@ public class TaskService {
     }
 
     public static <E extends Enum<E>> E parse(Class<E> type, String raw, String field) {
+        return parse(type, raw, field, "is not a valid value");
+    }
+
+    public static <E extends Enum<E>> E parse(Class<E> type, String raw, String field, String problem) {
         try {
             return Enum.valueOf(type, raw.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new ValidationException(field, "is not a valid value");
+            throw new ValidationException(field, problem);
         }
     }
 

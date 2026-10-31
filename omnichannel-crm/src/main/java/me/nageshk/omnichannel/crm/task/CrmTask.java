@@ -62,6 +62,8 @@ public class CrmTask {
     private String recurringFromTaskId;
     /** Set once completing or skipping created the next occurrence, so it is created once. */
     private String nextOccurrenceId;
+    /** The id claimed for the next occurrence while this task closes; only outlives that when the close was cut short. */
+    private String pendingNextOccurrenceId;
     @CreatedDate
     private Instant creationTime;
     @LastModifiedDate
