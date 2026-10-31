@@ -110,7 +110,7 @@ public class TaskService {
         if (reassigned) assigneeCheck.assertAssignable(ctx, assignee, current.getTarget());
         Update u = new Update().set("title", f.title).set("description", f.description).set("type", f.type)
                 .set("priority", f.priority).set("dueAt", f.dueAt).set("reminderAt", f.reminderAt)
-                .set("assigneeId", assignee);
+                .set("assigneeId", assignee).set("checklist", f.checklist);
         if (!java.util.Objects.equals(f.reminderAt, current.getReminderAt()) || reassigned) {
             // a new reminder time, or a new person, re-arms the reminder
             u.unset("reminderSentAt").unset("reminderSeenAt");
@@ -151,6 +151,29 @@ public class TaskService {
                 .unset("completedAt").unset("completedBy"));
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_UPDATED, saved, "Task reopened: " + saved.getTitle(), "REOPENED");
+        return views(ctx, List.of(saved)).get(0);
+    }
+
+    /**
+     * Ticks or unticks one step atomically (spec E C9): one findAndModify on an OPEN task that bumps the version so a
+     * stale full save fails; no timeline entry, no counter change. 400 TASK_NOT_OPEN unless OPEN, 404 for an unknown
+     * step.
+     */
+    public TaskView tick(CrmContext ctx, String taskId, String itemId, boolean done) {
+        CrmTask current = load(ctx, taskId);
+        assertCanWork(ctx, current);
+        if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
+        boolean present = current.getChecklist() != null
+                && current.getChecklist().stream().anyMatch(i -> itemId.equals(i.getId()));
+        if (!present) throw new NotFoundException("Checklist item not found");
+        Instant now = Instant.now(clock);
+        Update u = new Update().set("checklist.$.done", done).set("checklist.$.doneAt", done ? now : null)
+                .set("checklist.$.doneBy", done ? ctx.userId() : null)
+                .set("lastModifiedBy", ctx.userId()).set("lastUpdateTime", now).inc("version", 1);
+        CrmTask saved = mongo.findAndModify(new Query(Criteria.where("_id").is(taskId).and("workspaceId")
+                .is(ctx.workspaceId()).and("status").is(TaskStatus.OPEN).and("checklist.id").is(itemId)), u,
+                FindAndModifyOptions.options().returnNew(true), CrmTask.class);
+        if (saved == null) throw TaskErrors.notOpen(); // completed or cancelled since it was read
         return views(ctx, List.of(saved)).get(0);
     }
 
@@ -339,6 +362,7 @@ public class TaskService {
         Instant dueAt;
         Instant reminderAt;
         String assigneeId;
+        List<ChecklistItem> checklist;
 
         void applyTo(CrmTask t) {
             t.setTitle(title);
@@ -347,6 +371,7 @@ public class TaskService {
             t.setPriority(priority);
             t.setDueAt(dueAt);
             t.setReminderAt(reminderAt);
+            t.setChecklist(checklist);
         }
     }
 
@@ -375,6 +400,7 @@ public class TaskService {
         if (f.dueAt != null && f.reminderAt != null && f.reminderAt.isAfter(f.dueAt))
             errors.put("reminderAt", "must not be after the due time");
         if (req.assigneeId() != null && !req.assigneeId().isBlank()) f.assigneeId = req.assigneeId().trim();
+        f.checklist = Checklists.merge(current == null ? null : current.getChecklist(), req.checklist(), errors);
         if (current != null && req.target() != null && (req.target().type() != current.getTarget().type()
                 || !java.util.Objects.equals(req.target().id(), current.getTarget().id())))
             errors.put("target", "cannot change");
