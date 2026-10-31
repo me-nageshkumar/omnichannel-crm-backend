@@ -88,6 +88,15 @@ All times are WhatsApp seconds (`msg.t`). Defaults `limit 100`, `maxLoads 20`, `
 Assumption to verify on a real number first: messages added by `loadEarlierMsgs` have `isNewMsg === false`, so the
 live `Msg.add` handler (`src/page/events.js`) does not emit `message_create` for them.
 
+Pending verification (as of 2026-11-01; the real-number spike has not run, it is deferred to the end-to-end check):
+
+- `loadEarlierMsgs` results have `isNewMsg === false` so the live `Msg.add` handler stays silent; if not, the fallback is to filter the live emitter by chat id + message id, never to mute all `Msg.add`.
+- `chat.msgs.msgLoadState.noEarlierMsgs` exists and means what §3 assumes.
+- The lid fallback in the non-creating chat lookup finds chats keyed by lid on current WhatsApp Web builds.
+- Whether WhatsApp trims `chat.msgs` between calls (a deep cursor would then yield empty pages until `FAILED NO_PROGRESS`).
+- Memory growth in the tab during an ALL import.
+- The own account's lid (`getMaybeMeLidUser`) is not yet excluded from `listChats`.
+
 ## 4. Data model
 
 ### `waWebHistoryImports`

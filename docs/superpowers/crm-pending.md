@@ -106,6 +106,17 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
   That is a temp folder and may vanish. Pending work does not need it.
 - **Remote branches:** feature branches are still on GitHub (the user deleted local ones only).
 
+### F. Chat history import
+
+- `@c.us` / `@lid` duplicate-chat limitation (inherited): the same person can end up as two chats.
+- `console:<id>` duplicate limitation (inherited).
+- Pending real-number spike: see spec `2026-10-31-chat-history-import-design.md` §3, "Pending verification".
+- `timeouts` on a chat item never resets after a successful page: a device that hangs with the socket open ends every chat FAILED TIMEOUT and the import COMPLETED instead of waiting.
+- The claim sort `(attemptedAt, _id)` has no supporting index.
+- `HistoryImportViews` does N+1 lookups (phone number per import, chat per item).
+- Imported rows have `statusTimes` null; the console must tolerate it.
+- An ALL import whose `listChats` item insert fails partway is never re-listed.
+
 ## 3. Rules the user set
 
 - Merge, push and restart only when asked. `--no-ff` merges; push the feature branch with `main`.

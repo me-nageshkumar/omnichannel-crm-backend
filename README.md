@@ -254,6 +254,10 @@ number (recorded and shown in the console). Disabling, revoking or deleting clos
 the same request. Status shown per number: `DISABLED` (with `disabledBecause` NUMBER/BRAND/CUSTOMER),
 `NOT_CONNECTED_YET`, `WAITING_FOR_LOGIN`, `CONNECTED`, `WRONG_NUMBER`, `DISCONNECTED`.
 
+### Import chat history
+
+"Import chat history" pulls the existing WhatsApp Web history of a connected number into the inbox: for all chats, chosen contacts, or one chat, optionally within a date range. It is idempotent and resumable (re-running skips messages already imported, and an interrupted import continues where it stopped); chats it creates start closed and are not routed. In the console: phone numbers page kebab "Import chat history…", the chat header "Fetch history", and the page Inbox → History imports. Requires the authority `inbox:import-history`. Configuration (`omnichannel.history.*`, defaults): `tick` 5s, `page-size` 100, `max-loads` 20, `page-delay` 400ms, `chat-delay` 1s, `max-messages-per-chat` 5000, `max-empty-pages` 50, `max-timeouts-per-chat` 3, `time-budget` 60s, `auto-tick` true.
+
 ## Contacts
 
 A brand's people, in `contacts` (one per brand and WhatsApp person; everything is scoped by
