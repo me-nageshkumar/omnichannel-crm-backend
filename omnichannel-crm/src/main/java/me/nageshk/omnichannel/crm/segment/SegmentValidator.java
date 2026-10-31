@@ -77,8 +77,22 @@ public final class SegmentValidator {
             errors.put(at + ".operator", "is not an operator of a " + spec.type().name().toLowerCase() + " field");
             return;
         }
-        String problem = value(spec.type(), r.operator(), r.value());
+        String problem = "deal.daysInStage".equals(r.field()) ? days(r.operator(), r.value())
+                : value(spec.type(), r.operator(), r.value());
         if (problem != null) errors.put(at + ".value", problem);
+    }
+
+    /** Days in a stage are whole days, 0 to {@link SegmentFields#MAX_DAYS}; the query turns them into instants. */
+    static String days(String op, Object value) {
+        String msg = "must be a whole number of days from 0 to " + SegmentFields.MAX_DAYS;
+        if ("between".equals(op)) {
+            if (!(value instanceof List<?> l) || l.size() != 2) return "needs two values";
+            Integer a = l.get(0) instanceof String s ? parseInt(s) : null, b = l.get(1) instanceof String s ? parseInt(s) : null;
+            if (a == null || b == null || a < 0 || b > SegmentFields.MAX_DAYS) return msg;
+            return a > b ? "must be two day counts, the first not greater than the second" : null;
+        }
+        Integer n = value instanceof String s ? parseInt(s) : null;
+        return n == null || n < 0 || n > SegmentFields.MAX_DAYS ? msg : null;
     }
 
     /** The message for a value of the wrong shape, or null. */

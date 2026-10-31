@@ -187,6 +187,7 @@ public class SegmentConditionQueries {
             return dates.dateCriteria(path, op, v);
         }
         Criteria c = Criteria.where(path);
+        if (spec.type() == SegmentValueType.TEXT) return text(c, op, v);
         return switch (op) {
             case "is", "eq", "has", "contains" -> c.is(scalar(spec, v));
             case "isNot", "neq", "hasNot" -> c.ne(scalar(spec, v));
@@ -211,7 +212,25 @@ public class SegmentConditionQueries {
         };
     }
 
-    /** TEXT {@code is}/{@code contains} are case-insensitive; numbers compare as Decimal128; booleans as booleans. */
+    /**
+     * TEXT rules match case-insensitively with the value quoted, like the host's contact filters: {@code is} is the
+     * whole value, {@code contains} any part, {@code startsWith} the beginning; the negatives are their complements.
+     */
+    private static Criteria text(Criteria c, String op, Object v) {
+        String q = v instanceof String s ? Pattern.quote(s.trim()) : "";
+        return switch (op) {
+            case "is" -> c.regex("^" + q + "$", "i");
+            case "isNot" -> c.not().regex("^" + q + "$", "i");
+            case "contains" -> c.regex(q, "i");
+            case "notContains" -> c.not().regex(q, "i");
+            case "startsWith" -> c.regex("^" + q, "i");
+            case "isSet" -> c.ne(null);
+            case "isNotSet" -> c.is(null);
+            default -> throw new IllegalArgumentException("not a text operator: " + op);
+        };
+    }
+
+    /** Numbers compare as Decimal128; booleans as booleans; everything else as the string it is. */
     private static Object scalar(FieldSpec spec, Object v) {
         String s = v instanceof String str ? str.trim() : null;
         return switch (spec.type()) {

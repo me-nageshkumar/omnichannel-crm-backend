@@ -92,7 +92,7 @@ public class SegmentResolver {
     public SegmentMembers resolve(CrmContext ctx, SegmentRuleGroup rules, SegmentScope scope) {
         Run run = new Run(ctx, scope, brands.zoneOf(ctx.workspaceId()), queries.universe(ctx), scope.specs(rules));
         Set<String> ids = group(run, rules);
-        return members(ids);
+        return members(ctx, ids);
     }
 
     /** One resolution: the caller, what they may name, the zone, the universe and the specs of the tree's rules. */
@@ -156,7 +156,7 @@ public class SegmentResolver {
     }
 
     /** The members in id order, capped; {@code people} counts the distinct host contacts among them. */
-    private SegmentMembers members(Set<String> ids) {
+    private SegmentMembers members(CrmContext ctx, Set<String> ids) {
         List<String> sorted = new ArrayList<>(ids);
         sorted.sort(null);
         boolean truncated = sorted.size() > SegmentMembers.MAX_MEMBERS;
@@ -165,7 +165,8 @@ public class SegmentResolver {
         Set<String> people = new HashSet<>();
         for (int from = 0; from < take.size(); from += SegmentConditionQueries.CHUNK) {
             List<String> chunk = take.subList(from, Math.min(take.size(), from + SegmentConditionQueries.CHUNK));
-            Query q = new Query(Criteria.where("_id").in(chunk)).with(Sort.by("_id")).maxTime(TimeLimited.MAX_TIME);
+            Query q = new Query(Criteria.where("workspaceId").is(ctx.workspaceId()).and("_id").in(chunk))
+                    .with(Sort.by("_id")).maxTime(TimeLimited.MAX_TIME);
             q.fields().include("contactId").include(ChannelAccounts.FIELD);
             List<CrmContact> found = TimeLimited.guard(() -> mongo.find(q, CrmContact.class), SegmentErrors::timeout);
             for (CrmContact c : found) {

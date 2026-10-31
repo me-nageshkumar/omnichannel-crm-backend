@@ -147,4 +147,14 @@ class SegmentValidatorTest {
         assertThat(errorsOf(and(rule("contact.lifecycleStatus", "in", tooMany)))).containsKey("rules[0].value");
         assertThat(errorsOf(and(rule("contact.email", "is", "x".repeat(201))))).containsKey("rules[0].value");
     }
+
+    @Test
+    void daysInStageNeedsAWholeDayCount() {
+        for (String bad : List.of("7.5", "1e2", "-1", "3651", "many")) {
+            assertThat(errorsOf(and(rule("deal.daysInStage", "gt", bad)))).as(bad).containsKey("rules[0].value");
+        }
+        assertThat(errorsOf(and(rule("deal.daysInStage", "between", List.of("1.5", "3"))))).containsKey("rules[0].value");
+        assertThatCode(() -> SegmentValidator.validate(and(rule("deal.daysInStage", "gt", "0"),
+                rule("deal.daysInStage", "between", List.of("7", "3650"))), KNOWN)).doesNotThrowAnyException();
+    }
 }

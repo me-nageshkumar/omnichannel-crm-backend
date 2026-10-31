@@ -227,4 +227,26 @@ class SegmentConditionQueriesIT extends CrmTestBase {
         assertThat(queries.contactRule(ctx, queries.universe(ctx), rule("contact.lifecycleStatus", "is", "lead"),
                 spec("contact.lifecycleStatus"), ZONE)).hasSize(3);
     }
+
+    @Test
+    void contactTextRulesMatchCaseInsensitively() throws Exception {
+        enableCrm();
+        JsonNode a = captured(contact("Asha", "919900000881"), number).get("contact");
+        JsonNode b = captured(contact("Ravi", "919900000882"), number).get("contact");
+        setContact(a.get("id").asText(), "email", "Asha@Acme.com", "customFields.motto", "Keep (it) simple");
+        setContact(b.get("id").asText(), "email", "ravi@other.org");
+        Known known = new Known(Set.of("motto"), Map.of("motto", FieldType.TEXT), Set.of(), Map.of(), Set.of());
+        FieldSpec motto = SegmentFields.spec("contact.custom:motto", known).orElseThrow();
+        CrmContext ctx = manager();
+        Criteria universe = queries.universe(ctx);
+        assertThat(contactRule(ctx, "contact.email", "contains", "acme")).containsExactly(a.get("id").asText());
+        assertThat(contactRule(ctx, "contact.email", "notContains", "acme")).containsExactly(b.get("id").asText());
+        assertThat(contactRule(ctx, "contact.email", "is", "asha@acme.com")).containsExactly(a.get("id").asText());
+        assertThat(contactRule(ctx, "contact.email", "isNot", "asha@acme.com")).containsExactly(b.get("id").asText());
+        assertThat(contactRule(ctx, "contact.email", "startsWith", "ASHA")).containsExactly(a.get("id").asText());
+        assertThat(queries.contactRule(ctx, universe, rule("contact.custom:motto", "contains", "(it)"), motto, ZONE))
+                .as("regex characters in the value are quoted").containsExactly(a.get("id").asText());
+        assertThat(queries.contactRule(ctx, universe, rule("contact.custom:motto", "is", "keep (it) SIMPLE"), motto, ZONE))
+                .containsExactly(a.get("id").asText());
+    }
 }
