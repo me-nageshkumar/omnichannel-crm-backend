@@ -55,9 +55,12 @@ public class CampaignValidator {
     private final ContactAttributeRepository attributes;
     private final PhoneNumberRepository numbers;
     private final CampaignSenderService senders;
+    private final SegmentAudiences segments;
 
     CampaignValidator(CampaignRepository campaigns, ContactFilterRepository filters, MessageTemplateRepository templates,
-            ContactAttributeRepository attributes, PhoneNumberRepository numbers, CampaignSenderService senders) {
+            ContactAttributeRepository attributes, PhoneNumberRepository numbers, CampaignSenderService senders,
+            SegmentAudiences segments) {
+        this.segments = segments;
         this.campaigns = campaigns;
         this.filters = filters;
         this.templates = templates;
@@ -98,6 +101,7 @@ public class CampaignValidator {
     private Campaign.Audience audience(String workspaceId, CampaignRequest.AudienceRequest a, List<String> csvHeaders) {
         if (a == null || a.kind() == null) throw new ValidationException("audience.kind", "unsupported");
         if (a.kind() == AudienceKind.CSV) return csvAudience(a, csvHeaders);
+        if (a.kind() == AudienceKind.SEGMENT) return segmentAudience(workspaceId, a);
         if (a.kind() != AudienceKind.FILTER) throw new ValidationException("audience.kind", "unsupported");
         if (a.filterId() == null || a.filterId().isBlank()) {
             throw new ValidationException("audience.filterId", "required");
@@ -106,6 +110,17 @@ public class CampaignValidator {
                 .orElseThrow(() -> new ValidationException("audience.filterId", "unknown filter"));
         return new Campaign.Audience(AudienceKind.FILTER, f.getId(), f.getName(), f.getFilter(), null, null, null,
                 null, null, null, FilterKind.orSimple(f.getKind()), f.getQueryJson(), f.getUses(), null, null);
+    }
+
+    /** A CRM segment, snapshotted by id and name; its members are resolved when the campaign starts. */
+    private Campaign.Audience segmentAudience(String workspaceId, CampaignRequest.AudienceRequest a) {
+        if (a.segmentId() == null || a.segmentId().isBlank()) {
+            throw new ValidationException("audience.segmentId", "required");
+        }
+        SegmentAudiences.SegmentRef ref = segments.find(workspaceId, a.segmentId())
+                .orElseThrow(() -> new ValidationException("audience.segmentId", "unknown segment"));
+        return new Campaign.Audience(AudienceKind.SEGMENT, null, null, null, null, null, null, null, null, null, null,
+                null, null, ref.id(), ref.name());
     }
 
     /** The CSV audience's columns; the file's name, row count and id are filled in by the service. */

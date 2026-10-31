@@ -8,6 +8,7 @@ import me.nageshk.omnichannel.db.campaign.Campaign;
 public record CampaignRequest(String name, AudienceRequest audience, List<String> templateIds,
         List<Campaign.PlaceholderMapping> placeholders, List<String> senderIds) {
 
-    public record AudienceRequest(AudienceKind kind, String filterId, String phoneColumn, String nameColumn) {
+    public record AudienceRequest(AudienceKind kind, String filterId, String phoneColumn, String nameColumn,
+            String segmentId) {
     }
 }

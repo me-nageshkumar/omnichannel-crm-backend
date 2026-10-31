@@ -44,9 +44,12 @@ public class CampaignService {
     private final Clock clock;
     private final CampaignCsvStore csvStore;
     private final MessageTemplateRepository templates;
+    private final SegmentAudiences segments;
 
     CampaignService(CampaignRepository repository, CampaignValidator validator, WorkspaceRepository workspaces,
-            MongoTemplate mongo, Clock clock, CampaignCsvStore csvStore, MessageTemplateRepository templates) {
+            MongoTemplate mongo, Clock clock, CampaignCsvStore csvStore, MessageTemplateRepository templates,
+            SegmentAudiences segments) {
+        this.segments = segments;
         this.csvStore = csvStore;
         this.templates = templates;
         this.repository = repository;
@@ -57,6 +60,7 @@ public class CampaignService {
     }
 
     public Campaign create(AuthenticatedUser me, String workspaceId, CampaignRequest req, CsvUpload csv) {
+        requireSegmentAccess(me, workspaceId, req);
         CampaignCsv.Parsed parsed = isCsv(req) && csv != null ? CampaignCsv.parse(csv.bytes()) : null;
         CampaignValidator.Validated v = validator.validate(workspaceId, req, parsed == null ? null : parsed.headers(),
                 null);
@@ -81,7 +85,8 @@ public class CampaignService {
         }
     }
 
-    public Campaign update(String workspaceId, String id, CampaignRequest req, CsvUpload csv) {
+    public Campaign update(AuthenticatedUser me, String workspaceId, String id, CampaignRequest req, CsvUpload csv) {
+        requireSegmentAccess(me, workspaceId, req);
         Campaign existing = require(workspaceId, id);
         Campaign.Audience old = existing.getAudience();
         CampaignCsv.Parsed parsed = isCsv(req) && csv != null ? CampaignCsv.parse(csv.bytes()) : null;
@@ -159,6 +164,13 @@ public class CampaignService {
                     .orElseThrow(() -> new ValidationException("templateIds", "unknown template")));
         }
         return out;
+    }
+
+    /** A SEGMENT audience is the CRM's: the person choosing it must be allowed to use segments (spec D C7). */
+    private void requireSegmentAccess(AuthenticatedUser me, String workspaceId, CampaignRequest req) {
+        if (req.audience() != null && req.audience().kind() == AudienceKind.SEGMENT) {
+            segments.requireAccess(workspaceId, me);
+        }
     }
 
     private static boolean isCsv(CampaignRequest req) {

@@ -14,6 +14,7 @@ import me.nageshk.omnichannel.db.campaign.CampaignStatus;
 import me.nageshk.omnichannel.db.campaign.PausedBy;
 import me.nageshk.omnichannel.db.campaign.RecipientStatus;
 import me.nageshk.omnichannel.db.campaign.SkipReason;
+import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -48,7 +49,7 @@ public class CampaignLifecycleService {
     }
 
     /** Checks the draft again, writes its recipients and makes it RUNNING. */
-    public Campaign start(String workspaceId, String id) {
+    public Campaign start(String workspaceId, String id, AuthenticatedUser actor) {
         if (campaigns.require(workspaceId, id).getStatus() != CampaignStatus.DRAFT || !starting.add(id)) {
             throw CampaignErrors.state("started");
         }
@@ -58,7 +59,7 @@ public class CampaignLifecycleService {
             Campaign.Audience a = c.getAudience();
             validator.validate(workspaceId, requestOf(c), a.kind() == AudienceKind.CSV ? a.csvHeaders() : null, id);
             Instant now = clock.instant();
-            materialiser.materialise(c, settings.get(workspaceId), now);
+            materialiser.materialise(c, settings.get(workspaceId), now, actor);
             Query draft = new Query(Criteria.where("_id").is(id).and("workspaceId").is(workspaceId)
                     .and("status").is(CampaignStatus.DRAFT));
             Update running = new Update().set("status", CampaignStatus.RUNNING).set("startedAt", now)
@@ -117,7 +118,8 @@ public class CampaignLifecycleService {
     private static CampaignRequest requestOf(Campaign c) {
         Campaign.Audience a = c.getAudience();
         return new CampaignRequest(c.getName(),
-                new CampaignRequest.AudienceRequest(a.kind(), a.filterId(), a.phoneColumn(), a.nameColumn()),
+                new CampaignRequest.AudienceRequest(a.kind(), a.filterId(), a.phoneColumn(), a.nameColumn(),
+                        a.segmentId()),
                 c.getTemplateIds(), c.getPlaceholders(), c.getSenderIds());
     }
 }

@@ -43,7 +43,8 @@ public class CampaignViews {
         CampaignView.AudienceView audience = a == null ? null : new CampaignView.AudienceView(a.kind(),
                 a.filterId(), a.filterName(), a.filterSpec(), a.csvFileName(), a.csvHeaders(), a.csvRows(),
                 a.phoneColumn(), a.nameColumn(),
-                a.kind() == AudienceKind.FILTER ? FilterKind.orSimple(a.filterKind()) : null);
+                a.kind() == AudienceKind.FILTER ? FilterKind.orSimple(a.filterKind()) : null, a.segmentId(),
+                a.segmentName());
         return new CampaignView(c.getId(), c.getName(), c.getStatus(), c.getPausedBy(), c.getPauseReason(), audience,
                 c.getTemplateIds(), c.getTemplateNames(), c.getPlaceholders(), c.getSenderIds(), c.getCounts(), estimate,
                 senders, c.getCreatedBy(), c.getCreationTime(), c.getStartedAt(), c.getFinishedAt(),

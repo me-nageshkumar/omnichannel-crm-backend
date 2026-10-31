@@ -19,6 +19,6 @@ public record CampaignView(String id, String name, CampaignStatus status, Paused
     /** The audience without the stored file's id. */
     public record AudienceView(AudienceKind kind, String filterId, String filterName, ContactFilterSpec filterSpec,
             String csvFileName, List<String> csvHeaders, Integer csvRows, String phoneColumn, String nameColumn,
-            FilterKind filterKind) {
+            FilterKind filterKind, String segmentId, String segmentName) {
     }
 }

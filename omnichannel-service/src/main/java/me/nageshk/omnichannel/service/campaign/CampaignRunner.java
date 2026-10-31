@@ -103,6 +103,7 @@ public class CampaignRunner {
     private final WaWebMessageRepository messages;
     private final PacingRandom random;
     private final SenderHealth health;
+    private final CampaignObserver observer;
     private final Clock clock;
     private final Executor executor;
     private final Duration stuckAfter;
@@ -116,8 +117,9 @@ public class CampaignRunner {
             CampaignCounter counter, RecipientSkips skips, PlaceholderValues placeholderValues,
             NumberLookupService lookups, NewChatService newChats, TemplateRenderer renderer, InboxDevices devices,
             ContactService contactService, ContactRepository contacts, WaWebChatRepository chats,
-            WaWebMessageRepository messages, PacingRandom random, SenderHealth health, Clock clock,
-            @Qualifier("campaignScheduler") Executor executor, OmnichannelProperties props) {
+            WaWebMessageRepository messages, PacingRandom random, SenderHealth health, CampaignObserver observer,
+            Clock clock, @Qualifier("campaignScheduler") Executor executor, OmnichannelProperties props) {
+        this.observer = observer;
         this.mongo = mongo;
         this.senders = senders;
         this.settingsService = settingsService;
@@ -475,6 +477,15 @@ public class CampaignRunner {
                 .set("contactId", contactId));
         if (recorded) alreadyAcknowledged(r, message.id());
         Campaign.Audience a = claim.campaign().getAudience();
+        if (recorded && contactId != null) {
+            try {
+                observer.sent(new CampaignObserver.CampaignSent(claim.campaign().getWorkspaceId(),
+                        claim.campaign().getId(), claim.campaign().getName(), a == null ? null : a.segmentId(),
+                        a == null ? null : a.segmentName(), contactId, claim.senderId(), now));
+            } catch (RuntimeException e) {
+                log.warn("campaign send observer failed for recipient {}", r.getId(), e);
+            }
+        }
         if (a != null && a.kind() == AudienceKind.CSV && a.nameColumn() != null && chat != null) {
             contactService.nameIfBlank(claim.campaign().getWorkspaceId(), chat.getContactId(),
                     PlaceholderValues.cell(a, r, a.nameColumn()));
