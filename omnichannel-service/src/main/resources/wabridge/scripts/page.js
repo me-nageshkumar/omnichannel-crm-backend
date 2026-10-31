@@ -1659,6 +1659,112 @@
         filesize: resolved.filesize
       };
     });
+    methods.set("listChats", async () => {
+      if (typeof window.WWebJS === "undefined") {
+        throw codedError(
+          ErrorCodes.WHATSAPP_NOT_READY,
+          "WWebJS helpers are not loaded yet"
+        );
+      }
+      const { Chat } = window.require("WAWebCollections");
+      const info = getInfo();
+      const own = new Set(
+        [
+          info?.wid?._serialized,
+          info?.pnWid?._serialized ?? info?.pnWid
+        ].filter(Boolean)
+      );
+      return Chat.getModelsArray().filter(
+        (chat) => !chat.isPSA && chat.id._serialized !== "0@c.us" && !own.has(chat.id._serialized) && (chat.id.server === "c.us" || chat.id.server === "lid") && !chat.isGroup && !chat.isNewsletter && !chat.isBroadcast && chat.id._serialized !== "status@broadcast"
+      ).map((chat) => ({
+        id: chat.id._serialized,
+        name: chat.formattedTitle ?? chat.name ?? null,
+        t: typeof chat.t === "number" ? chat.t : null,
+        unreadCount: chat.unreadCount ?? 0
+      }));
+    });
+    methods.set(
+      "fetchChatHistory",
+      async ({
+        chatId,
+        before,
+        excludeIds = [],
+        from,
+        to,
+        limit = 100,
+        maxLoads = 20
+      }) => {
+        if (typeof window.WWebJS === "undefined") {
+          throw codedError(
+            ErrorCodes.WHATSAPP_NOT_READY,
+            "WWebJS helpers are not loaded yet"
+          );
+        }
+        if (typeof chatId !== "string" || !chatId) {
+          throw codedError(
+            ErrorCodes.PAGE_ERROR,
+            "chatId must be a non-empty string"
+          );
+        }
+        if (!Number.isInteger(limit) || limit < 1 || !Number.isInteger(maxLoads) || maxLoads < 1) {
+          throw codedError(
+            ErrorCodes.PAGE_ERROR,
+            "limit and maxLoads must be positive integers"
+          );
+        }
+        const { Chat } = window.require("WAWebCollections");
+        const wid = window.require("WAWebWidFactory").createWid(chatId);
+        let chat = Chat.get(wid);
+        if (!chat && wid.server === "c.us") {
+          let lid = null;
+          try {
+            lid = window.require("WAWebApiContact").getCurrentLid(wid);
+          } catch {
+          }
+          chat = lid ? Chat.get(lid) : null;
+        }
+        if (!chat) {
+          throw codedError(
+            ErrorCodes.CHAT_NOT_FOUND,
+            `Chat not found: ${chatId}`
+          );
+        }
+        const exclude = new Set(excludeIds);
+        const keep = (m) => !m.isNotification && m.type !== "ciphertext" && (before == null || m.t <= before) && !exclude.has(m.id?._serialized) && (to == null || m.t <= to) && (from == null || m.t >= from);
+        const load = window.require("WAWebChatLoadMessages");
+        let all = chat.msgs.getModelsArray();
+        let exhausted = false;
+        let pastFrom = false;
+        let loads = 0;
+        const oldestLoaded = () => all.reduce((min, m) => m.t < min ? m.t : min, Infinity);
+        while (all.filter(keep).length < limit && !exhausted && !pastFrom && loads < maxLoads) {
+          loads++;
+          const more = await load.loadEarlierMsgs({ chat });
+          if (!more || !more.length) {
+            if (chat.msgs.msgLoadState?.noEarlierMsgs === false) break;
+            exhausted = true;
+          } else {
+            all = chat.msgs.getModelsArray();
+            pastFrom = from != null && oldestLoaded() < from;
+          }
+        }
+        const kept = all.filter(keep).sort((a, b) => a.t - b.t);
+        const page = kept.slice(-limit);
+        let oldest = null;
+        if (page.length) {
+          const pageIds = page.filter((m) => m.t === page[0].t).map((m) => m.id._serialized);
+          const ids = before != null && page[0].t === before ? [.../* @__PURE__ */ new Set([...excludeIds, ...pageIds])] : pageIds;
+          oldest = { t: page[0].t, ids };
+        }
+        return {
+          messages: page.map(
+            (m) => normalizeMessageModel(window.WWebJS.getMessageModel(m))
+          ),
+          oldest,
+          hasMore: kept.length > limit || !exhausted && !pastFrom
+        };
+      }
+    );
     return methods;
   }
 
@@ -1717,7 +1823,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "5579b1509e4e" : "dev";
+  var BUILD = true ? "2b68afab80a7" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
