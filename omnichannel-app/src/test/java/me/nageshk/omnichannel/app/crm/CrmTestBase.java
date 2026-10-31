@@ -60,6 +60,8 @@ public abstract class CrmTestBase {
     @Autowired WaWebChatRepository chats;
     @Autowired AccessService access;
     @Autowired MongoTemplate mongo;
+    @Autowired me.nageshk.omnichannel.db.access.RoleRepository roleRepository;
+    @Autowired me.nageshk.omnichannel.security.access.RoleCache roleCache;
 
     Customer acme;
     Workspace brand;
@@ -121,6 +123,18 @@ public abstract class CrmTestBase {
     User brandUser(String username, String roleName) {
         return testUsers.createInCustomer(acme.getId(), username, null,
                 List.of(new WorkspaceRole(brand.getId(), testUsers.roleId(roleName))));
+    }
+
+    /** A brand user on a new role with exactly these authorities (the role cache is refreshed). */
+    User brandUserWith(String username, String roleName, java.util.Set<String> authorities) {
+        me.nageshk.omnichannel.db.access.Role r = new me.nageshk.omnichannel.db.access.Role();
+        r.setName(roleName);
+        r.setLevel(me.nageshk.omnichannel.db.access.RoleLevel.BRAND);
+        r.setAuthorities(authorities);
+        r = roleRepository.save(r);
+        roleCache.evictAll();
+        return testUsers.createInCustomer(acme.getId(), username, null,
+                List.of(new WorkspaceRole(brand.getId(), r.getId())));
     }
 
     Team team(String name, User... members) {

@@ -8,6 +8,8 @@ import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.common.CrmPage;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.TargetType;
+import me.nageshk.omnichannel.crm.task.dto.ChecklistTickRequest;
+import me.nageshk.omnichannel.crm.task.dto.SkipResult;
 import me.nageshk.omnichannel.crm.task.dto.TaskCounts;
 import me.nageshk.omnichannel.crm.task.dto.TaskRequest;
 import me.nageshk.omnichannel.crm.task.dto.TaskView;
@@ -60,6 +62,14 @@ public class CrmTaskController {
                 zone(tz), assigneeId, limit);
     }
 
+    @GetMapping("/delegated")
+    @PreAuthorize(VIEW)
+    public List<TaskView> delegated(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestParam(defaultValue = "OPEN") String status, @RequestParam(required = false) Integer limit) {
+        return service.delegated(crmAccess.resolve(me, workspaceId), TaskService.parse(TaskStatus.class, status, "status"),
+                limit);
+    }
+
     @GetMapping("/mine/counts")
     @PreAuthorize(VIEW)
     public TaskCounts counts(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
@@ -82,17 +92,32 @@ public class CrmTaskController {
     }
 
     @PostMapping("/{id}/complete")
-    @PreAuthorize(EDIT)
+    @PreAuthorize(VIEW) // the assignee may complete their own task; the service checks crm:edit for others
     public TaskView complete(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String id) {
         return service.complete(crmAccess.resolve(me, workspaceId), id);
     }
 
     @PostMapping("/{id}/reopen")
-    @PreAuthorize(EDIT)
+    @PreAuthorize(VIEW)
     public TaskView reopen(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String id) {
         return service.reopen(crmAccess.resolve(me, workspaceId), id);
+    }
+
+    @PostMapping("/{id}/skip")
+    @PreAuthorize(VIEW)
+    public SkipResult skip(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id) {
+        return service.skip(crmAccess.resolve(me, workspaceId), id);
+    }
+
+    @PostMapping("/{id}/checklist/{itemId}")
+    @PreAuthorize(VIEW)
+    public TaskView tick(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id, @PathVariable String itemId, @RequestBody ChecklistTickRequest body) {
+        if (body == null || body.done() == null) throw new ValidationException("done", "is required");
+        return service.tick(crmAccess.resolve(me, workspaceId), id, itemId, body.done());
     }
 
     @DeleteMapping("/{id}")

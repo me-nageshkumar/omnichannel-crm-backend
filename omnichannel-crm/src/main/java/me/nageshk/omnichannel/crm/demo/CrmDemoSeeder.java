@@ -127,6 +127,7 @@ public class CrmDemoSeeder implements ApplicationRunner {
         if (settings.find(brand.id()).isPresent()) {
             // seeded before: only what later phases add, when it is missing
             seedSegments(brand);
+            seedTaskExtras(brand);
             return;
         }
         settings.enableForSystem(brand.id(), brand.customerId());
@@ -199,13 +200,13 @@ public class CrmDemoSeeder implements ApplicationRunner {
             Instant now = Instant.now();
             CrmTarget festive = new CrmTarget(TargetType.DEAL, dealIds.get(8));
             tasks.create(ctx, new TaskRequest("Send the festive price list", null, "follow_up", "HIGH",
-                    now.minus(1, ChronoUnit.DAYS), null, agentId, festive, null));
+                    now.minus(1, ChronoUnit.DAYS), null, agentId, festive, null, null, null));
             tasks.create(ctx, new TaskRequest("Call about uniform sizes", null, "call", "NORMAL",
                     now.plus(1, ChronoUnit.HOURS), null, agentId, new CrmTarget(TargetType.DEAL, dealIds.get(3)),
-                    null));
+                    null, null, null));
             tasks.create(ctx, new TaskRequest("Confirm the delivery date", null, "call", "NORMAL",
                     now.plus(2, ChronoUnit.DAYS), now.minus(10, ChronoUnit.MINUTES), agentId,
-                    new CrmTarget(TargetType.DEAL, dealIds.get(4)), null));
+                    new CrmTarget(TargetType.DEAL, dealIds.get(4)), null, null, null));
         }
         notes.create(ctx, new NoteRequest(new CrmTarget(TargetType.DEAL, dealIds.get(8)),
                 "**Festive order** - 400 pieces, delivery before Diwali. Prefers cotton blends.", true, null));
@@ -222,6 +223,59 @@ public class CrmDemoSeeder implements ApplicationRunner {
         log.warn("demo seed: CRM switched on in {} with {} companies, {} contacts and {} deals", BRAND,
                 companyIds.size(), contactIds.size(), dealIds.size());
         seedSegments(brand);
+        seedTaskExtras(brand);
+    }
+
+    private static final List<String> HANDED_OVER = List.of("Send the festive price list", "Call about uniform sizes",
+            "Confirm the delivery date");
+
+    /**
+     * Phase E §7: the three agent tasks are handed over by {@code demo-manager}; the festive one gets steps (the first
+     * ticked), the uniform call repeats weekly. Applied to every demo task whose assigner is still missing or the
+     * system actor (the seeder's own creates), so a database seeded
+     * before phase E gains them on the next start and a second run changes nothing.
+     */
+    private void seedTaskExtras(PlatformBrand brand) {
+        if (!settings.find(brand.id()).filter(CrmSettings::isEnabled).isPresent()) return;
+        String managerId = people.byUsername(MANAGER).map(p -> p.id()).orElse(null);
+        if (managerId == null) return;
+        List<org.bson.Document> pending = mongo.find(new Query(Criteria.where("workspaceId").is(brand.id())
+                .and("title").in(HANDED_OVER).and("assignedBy").in(null, "system")), org.bson.Document.class, "crmTasks");
+        if (pending.isEmpty()) return;
+        Instant now = Instant.now();
+        java.time.ZoneId zone = brands.zoneOf(brand.id());
+        for (org.bson.Document task : pending) {
+            Update u = new Update().set("assignedBy", managerId).set("assignedAt", now).unset("assignmentSeenAt");
+            String title = task.getString("title");
+            if (title.startsWith("Send the festive")) {
+                List<me.nageshk.omnichannel.crm.task.ChecklistItem> steps = me.nageshk.omnichannel.crm.task.Checklists
+                        .copyUndone(List.of(step("Attach the catalogue"), step("Mention the festive discount"),
+                                step("Ask about quantities")));
+                steps.get(0).setDone(true);
+                steps.get(0).setDoneAt(now);
+                steps.get(0).setDoneBy(managerId);
+                u.set("checklist", steps);
+            } else if (title.startsWith("Call about uniform") && task.getDate("dueAt") != null) {
+                Instant due = task.getDate("dueAt").toInstant();
+                Map<String, String> errors = new LinkedHashMap<>();
+                me.nageshk.omnichannel.crm.task.Recurrence rule = me.nageshk.omnichannel.crm.task.TaskRecurrenceSchedule
+                        .normalize(new me.nageshk.omnichannel.crm.task.Recurrence(
+                                me.nageshk.omnichannel.crm.task.RecurrenceFrequency.WEEKLY, 1,
+                                List.of(due.atZone(zone).getDayOfWeek()), null, zone.getId(), null, null), due, errors);
+                if (rule != null) {
+                    u.set("recurrence", rule).set("seriesId", task.get("_id").toString()).set("occurrence", 1);
+                }
+            }
+            // by collection name: the tasks keep their version
+            mongo.updateFirst(new Query(Criteria.where("_id").is(task.get("_id"))), u, "crmTasks");
+        }
+        log.warn("demo seed: {} CRM tasks handed over by {} in {}", pending.size(), MANAGER, BRAND);
+    }
+
+    private static me.nageshk.omnichannel.crm.task.ChecklistItem step(String text) {
+        me.nageshk.omnichannel.crm.task.ChecklistItem i = new me.nageshk.omnichannel.crm.task.ChecklistItem();
+        i.setText(text);
+        return i;
     }
 
     /**

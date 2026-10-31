@@ -23,6 +23,7 @@ import org.springframework.data.mongodb.core.query.Query;
 @SpringBootTest(properties = "omnichannel.seed.demo=true")
 class CrmDemoSeederIT {
 
+    @Autowired me.nageshk.omnichannel.db.user.UserRepository users;
     @Autowired DemoSeeder demoSeeder;
     @Autowired ContactDemoSeeder contactSeeder;
     @Autowired CrmDemoSeeder seeder;
@@ -153,5 +154,58 @@ class CrmDemoSeederIT {
         seeder.run(null);
         assertThat(count("crmSegments", ws)).isEqualTo(2);
         assertThat(count("crmContacts", ws)).as("the rest of the seed is not repeated").isEqualTo(8);
+    }
+
+    @Test
+    void seedsDelegatedTasksWithStepsAndRepeat() {
+        demoSeeder.run(null);
+        contactSeeder.run(null);
+        seeder.run(null);
+        Customer retail = customers.findAll().stream().filter(x -> x.getName().equals(DemoSeeder.CUSTOMER))
+                .findFirst().orElseThrow();
+        Workspace fashion = workspaces.findByCustomerIdOrderByName(retail.getId()).stream()
+                .filter(w -> w.getName().equals("Demo Fashion")).findFirst().orElseThrow();
+        Criteria ws = Criteria.where("workspaceId").is(fashion.getId());
+        String managerId = users.findByUsername("demo-manager").orElseThrow().getId();
+        List<org.bson.Document> tasks = mongo.find(new Query(ws), org.bson.Document.class, "crmTasks");
+        assertThat(tasks).hasSize(3);
+        assertThat(tasks).allSatisfy(t -> {
+            assertThat(t.getString("assignedBy")).isEqualTo(managerId);
+            assertThat(t.get("assignedAt")).isNotNull();
+            assertThat(t.get("assignmentSeenAt")).isNull();
+        });
+        org.bson.Document festive = tasks.stream().filter(t -> t.getString("title").startsWith("Send the festive"))
+                .findFirst().orElseThrow();
+        List<org.bson.Document> steps = festive.getList("checklist", org.bson.Document.class);
+        assertThat(steps).extracting(d -> d.getString("text"))
+                .containsExactly("Attach the catalogue", "Mention the festive discount", "Ask about quantities");
+        assertThat(steps.get(0).getBoolean("done")).isTrue();
+        assertThat(steps.get(0).getString("doneBy")).isEqualTo(managerId);
+        assertThat(steps.get(1).getBoolean("done")).isFalse();
+        org.bson.Document uniform = tasks.stream().filter(t -> t.getString("title").startsWith("Call about uniform"))
+                .findFirst().orElseThrow();
+        org.bson.Document rule = uniform.get("recurrence", org.bson.Document.class);
+        assertThat(rule.getString("frequency")).isEqualTo("WEEKLY");
+        assertThat(rule.getList("weekdays", String.class)).hasSize(1);
+        assertThat(uniform.getString("seriesId")).isEqualTo(uniform.get("_id").toString());
+        assertThat(uniform.getInteger("occurrence")).isEqualTo(1);
+        // running again changes nothing
+        seeder.run(null);
+        org.bson.Document festiveAgain = mongo.findOne(new Query(Criteria.where("_id").is(festive.get("_id"))),
+                org.bson.Document.class, "crmTasks");
+        assertThat(festiveAgain.get("assignedAt")).isEqualTo(festive.get("assignedAt"));
+        assertThat(String.valueOf(steps.get(0).get("_id"))).hasSize(24);
+        assertThat(String.valueOf(festiveAgain.getList("checklist", org.bson.Document.class).get(0).get("_id")))
+                .isEqualTo(String.valueOf(steps.get(0).get("_id")));
+        // a database seeded before phase E: the fields are missing and get applied
+        mongo.updateMulti(new Query(ws), new org.springframework.data.mongodb.core.query.Update().unset("assignedBy")
+                .unset("assignedAt").unset("checklist").unset("recurrence").unset("seriesId").unset("occurrence"), "crmTasks");
+        seeder.run(null);
+        assertThat(count("crmTasks", Criteria.where("workspaceId").is(fashion.getId()).and("assignedBy").is(managerId)))
+                .isEqualTo(3);
+        assertThat(count("crmTasks", Criteria.where("workspaceId").is(fashion.getId()).and("recurrence.frequency")
+                .is("WEEKLY"))).isEqualTo(1);
+        assertThat(count("crmContacts", Criteria.where("workspaceId").is(fashion.getId())))
+                .as("the rest of the seed is not repeated").isEqualTo(8);
     }
 }

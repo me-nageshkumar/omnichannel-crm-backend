@@ -1,0 +1,204 @@
+package me.nageshk.omnichannel.app.crm;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import me.nageshk.omnichannel.crm.activity.ActivityType;
+import me.nageshk.omnichannel.crm.activity.CrmActivity;
+import me.nageshk.omnichannel.db.user.User;
+import org.bson.Document;
+import org.junit.jupiter.api.Test;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import tools.jackson.databind.JsonNode;
+
+/** Delegation (spec E C1–C6): assigner fields, the assignee check, work rights, the Delegated list and count. */
+class TaskDelegationIT extends CrmTestBase {
+
+    Map<String, Object> task(String type, String id, String title, String assigneeId) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("title", title);
+        m.put("target", Map.of("type", type, "id", id));
+        m.put("dueAt", Instant.now().plus(1, ChronoUnit.HOURS).toString());
+        if (assigneeId != null) m.put("assigneeId", assigneeId);
+        return m;
+    }
+
+    JsonNode create(String token, Map<String, Object> body) throws Exception {
+        return json(send(post(crm() + "/tasks"), token, body).andExpect(status().isOk()));
+    }
+
+    Document raw(String id) {
+        return mongo.findOne(new Query(Criteria.where("_id").is(id)), Document.class, "crmTasks");
+    }
+
+    String dealId(String name, String phone) throws Exception {
+        return captured(contact(name, phone), number).get("deal").get("id").asText();
+    }
+
+    @Test
+    void createRecordsAssigner() throws Exception {
+        enableCrm();
+        assignPipelines(agent, salesId());
+        String dealId = dealId("Asha", "919900000301");
+        JsonNode t = create(managerToken, task("DEAL", dealId, "Call back", agent.getId()));
+        assertThat(t.get("assignedBy").get("id").asText()).isEqualTo(manager.getId());
+        assertThat(t.get("assignedAt").isNull()).isFalse();
+        assertThat(raw(t.get("id").asText()).get("assignmentSeenAt")).isNull();
+        JsonNode own = create(managerToken, task("DEAL", dealId, "Mine", null));
+        assertThat(own.get("assignedBy").get("id").asText()).isEqualTo(manager.getId());
+        assertThat(raw(own.get("id").asText()).get("assignmentSeenAt")).isNotNull();
+    }
+
+    @Test
+    void reassignRecordsTimelineAndAssigner() throws Exception {
+        enableCrm();
+        assignPipelines(agent, salesId());
+        assignPipelines(agent2, salesId());
+        String dealId = dealId("Ravi", "919900000302");
+        JsonNode t = create(managerToken, task("DEAL", dealId, "Call back", agent.getId()));
+        Map<String, Object> body = task("DEAL", dealId, "Call back", agent2.getId());
+        body.put("version", t.get("version").asLong());
+        JsonNode saved = json(send(put(crm() + "/tasks/" + t.get("id").asText()), manager2Token, body)
+                .andExpect(status().isOk()));
+        assertThat(saved.get("assignee").get("id").asText()).isEqualTo(agent2.getId());
+        assertThat(saved.get("assignedBy").get("id").asText()).isEqualTo(manager2.getId());
+        CrmActivity a = mongo.findOne(new Query(Criteria.where("type").is(ActivityType.TASK_UPDATED)
+                .and("payload.action").is("REASSIGNED")), CrmActivity.class);
+        assertThat(a).isNotNull();
+        assertThat(a.getPayload().get("fromAssigneeId")).isEqualTo(agent.getId());
+        assertThat(a.getPayload().get("toAssigneeId")).isEqualTo(agent2.getId());
+        assertThat(a.getSummary()).startsWith("Task reassigned to ");
+    }
+
+    @Test
+    void assigneeMustBeBrandUser() throws Exception {
+        enableCrm();
+        String dealId = dealId("Lata", "919900000303");
+        send(post(crm() + "/tasks"), managerToken, task("DEAL", dealId, "x", staff.getId()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.assigneeId").value("is not a user of this brand"));
+    }
+
+    @Test
+    void assigneeNeedsCrmView() throws Exception {
+        enableCrm();
+        User noCrm = brandUserWith("nocrm", "NO_CRM", Set.of("inbox:view"));
+        String dealId = dealId("Om", "919900000304");
+        send(post(crm() + "/tasks"), managerToken, task("DEAL", dealId, "x", noCrm.getId()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.assigneeId").value("cannot use the CRM"));
+    }
+
+    @Test
+    void assigneeMustSeeTheRecord() throws Exception {
+        enableCrm();
+        String secondId = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
+                .andExpect(status().isCreated())).get("id").asText();
+        assignPipelines(agent, secondId);
+        String dealId = dealId("Ria", "919900000305");
+        send(post(crm() + "/tasks"), managerToken, task("DEAL", dealId, "x", agent.getId()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.assigneeId").value("cannot see this record"));
+        String companyId = json(send(post(crm() + "/companies"), managerToken, Map.of("name", "Acme Ltd"))
+                .andExpect(status().is2xxSuccessful())).get("id").asText();
+        create(managerToken, task("COMPANY", companyId, "Visit", agent.getId()));
+    }
+
+    @Test
+    void unchangedAssigneeNotRechecked() throws Exception {
+        enableCrm();
+        String secondId = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
+                .andExpect(status().isCreated())).get("id").asText();
+        assignPipelines(agent, salesId());
+        String dealId = dealId("Tara", "919900000306");
+        JsonNode t = create(managerToken, task("DEAL", dealId, "Call back", agent.getId()));
+        assignPipelines(agent, secondId);
+        Map<String, Object> body = task("DEAL", dealId, "Call back soon", agent.getId());
+        body.put("version", t.get("version").asLong());
+        send(put(crm() + "/tasks/" + t.get("id").asText()), managerToken, body).andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Call back soon"));
+    }
+
+    // --- work rights, Delegated list and count (C3, C5) --------------------------------------------------
+
+    @Test
+    void assigneeCompletesAndReopensWithViewOnly() throws Exception {
+        enableCrm();
+        User viewer = brandUserWith("viewer", "CRM_VIEWER", Set.of("crm:view"));
+        User viewer2 = brandUserWith("viewer2", "CRM_VIEWER_2", Set.of("crm:view"));
+        assignPipelines(viewer, salesId());
+        assignPipelines(viewer2, salesId());
+        assignPipelines(agent2, salesId());
+        String dealId = dealId("Vikram", "919900000311");
+        JsonNode t = create(managerToken, task("DEAL", dealId, "Call back", viewer.getId()));
+        String path = crm() + "/tasks/" + t.get("id").asText();
+        String viewerToken = testUsers.accessToken(viewer);
+        send(post(path + "/complete"), testUsers.accessToken(viewer2), null).andExpect(status().isForbidden());
+        send(post(path + "/complete"), viewerToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DONE"));
+        send(post(path + "/reopen"), viewerToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("OPEN"));
+        send(post(path + "/complete"), agent2Token, null).andExpect(status().isOk());
+        send(put(path), viewerToken, Map.of("title", "x", "version", 3)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void delegatedListsOpenAndDone() throws Exception {
+        enableCrm();
+        assignPipelines(agent, salesId());
+        String dealId = dealId("Neha", "919900000312");
+        Map<String, Object> later = task("DEAL", dealId, "Later", agent.getId());
+        later.put("dueAt", Instant.now().plus(3, ChronoUnit.DAYS).toString());
+        JsonNode second = create(managerToken, later);
+        JsonNode first = create(managerToken, task("DEAL", dealId, "Soon", agent.getId()));
+        create(managerToken, task("DEAL", dealId, "Mine", null));
+        JsonNode open = json(send(get(crm() + "/tasks/delegated"), managerToken, null).andExpect(status().isOk()));
+        assertThat(open).hasSize(2);
+        assertThat(open.get(0).get("id").asText()).isEqualTo(first.get("id").asText());
+        assertThat(open.get(1).get("id").asText()).isEqualTo(second.get("id").asText());
+        send(post(crm() + "/tasks/" + first.get("id").asText() + "/complete"), agentToken, null).andExpect(status().isOk());
+        JsonNode done = json(send(get(crm() + "/tasks/delegated?status=DONE"), managerToken, null));
+        assertThat(done).hasSize(1);
+        assertThat(done.get(0).get("title").asText()).isEqualTo("Soon");
+        send(get(crm() + "/tasks/delegated?status=CANCELLED"), managerToken, null).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.status").value("must be OPEN or DONE"));
+        send(get(crm() + "/tasks/delegated"), agentToken, null).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void delegatedHidesInaccessibleTargets() throws Exception {
+        enableCrm();
+        String secondId = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
+                .andExpect(status().isCreated())).get("id").asText();
+        assignPipelines(agent, salesId());
+        String dealId = dealId("Isha", "919900000313");
+        create(agentToken, task("DEAL", dealId, "For the manager", manager.getId()));
+        send(get(crm() + "/tasks/delegated"), agentToken, null).andExpect(jsonPath("$.length()").value(1));
+        assignPipelines(agent, secondId);
+        send(get(crm() + "/tasks/delegated"), agentToken, null).andExpect(jsonPath("$.length()").value(0));
+        send(get(crm() + "/tasks/mine/counts"), agentToken, null).andExpect(jsonPath("$.delegated").value(0));
+    }
+
+    @Test
+    void delegatedCountIsAlwaysTheCallers() throws Exception {
+        enableCrm();
+        assignPipelines(agent, salesId());
+        String dealId = dealId("Kabir", "919900000314");
+        create(managerToken, task("DEAL", dealId, "One", agent.getId()));
+        create(managerToken, task("DEAL", dealId, "Two", agent.getId()));
+        send(get(crm() + "/tasks/mine/counts?assigneeId=" + agent.getId()), managerToken, null)
+                .andExpect(jsonPath("$.delegated").value(2));
+        send(get(crm() + "/tasks/mine/counts"), agentToken, null).andExpect(jsonPath("$.delegated").value(0));
+    }
+}

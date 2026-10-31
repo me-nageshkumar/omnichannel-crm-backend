@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.crm.task;
 
 import java.time.Instant;
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
@@ -17,6 +18,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @CompoundIndex(name = "ws_target_status_due",
         def = "{'workspaceId': 1, 'target.type': 1, 'target.id': 1, 'status': 1, 'dueAt': 1}")
 @CompoundIndex(name = "ws_status_reminder", def = "{'workspaceId': 1, 'status': 1, 'reminderAt': 1}")
+@CompoundIndex(name = "ws_assignedBy_status_due", def = "{'workspaceId': 1, 'assignedBy': 1, 'status': 1, 'dueAt': 1}")
 @Getter
 @Setter
 public class CrmTask {
@@ -46,6 +48,20 @@ public class CrmTask {
     private Instant reminderSentAt;
     /** Set when the assignee dismisses the reminder in the console. */
     private Instant reminderSeenAt;
+    /** Who set the current assignee: the creator, or whoever last reassigned it (spec E C1). */
+    private String assignedBy;
+    private Instant assignedAt;
+    /** Null while the assignee has not seen the hand-off notice; unset again on reassignment (spec E C4). */
+    private Instant assignmentSeenAt;
+    private List<ChecklistItem> checklist;
+    private Recurrence recurrence;
+    /** The series' first task id; kept when the repeat is removed. */
+    private String seriesId;
+    /** 1-based position in the series. */
+    private Integer occurrence;
+    private String recurringFromTaskId;
+    /** Set once completing or skipping created the next occurrence, so it is created once. */
+    private String nextOccurrenceId;
     @CreatedDate
     private Instant creationTime;
     @LastModifiedDate

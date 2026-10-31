@@ -47,7 +47,8 @@ class CrmAccessTest {
             @Override public Set<String> existing(String ws) { return existing; }
             @Override public Set<String> active(String ws) { return existing; }
         };
-        crmAccess = new CrmAccess(access, settings, numbers, reader, ids, mock(me.nageshk.omnichannel.crm.pipeline.CrmPipelineService.class));
+        crmAccess = new CrmAccess(access, settings, numbers, reader, ids, mock(me.nageshk.omnichannel.crm.pipeline.CrmPipelineService.class),
+                mock(me.nageshk.omnichannel.crm.platform.PeopleDirectory.class));
         CrmSettings s = new CrmSettings();
         s.setEnabled(true);
         s.setWorkspaceId(WS);

@@ -26,6 +26,7 @@ import me.nageshk.omnichannel.crm.common.Ref;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformPerson;
+import me.nageshk.omnichannel.crm.task.dto.SkipResult;
 import me.nageshk.omnichannel.crm.task.dto.TaskCounts;
 import me.nageshk.omnichannel.crm.task.dto.TaskRequest;
 import me.nageshk.omnichannel.crm.task.dto.TaskView;
@@ -54,15 +55,17 @@ public class TaskService {
     private final PeopleDirectory people;
     private final ActivityLog activities;
     private final Clock clock;
+    private final TaskAssigneeCheck assigneeCheck;
 
     TaskService(MongoTemplate mongo, TaskAccess access, TaskCounters counters, PeopleDirectory people,
-            ActivityLog activities, Clock clock) {
+            ActivityLog activities, Clock clock, TaskAssigneeCheck assigneeCheck) {
         this.mongo = mongo;
         this.access = access;
         this.counters = counters;
         this.people = people;
         this.activities = activities;
         this.clock = clock;
+        this.assigneeCheck = assigneeCheck;
     }
 
     // --- writes --------------------------------------------------------------------------------------------
@@ -80,7 +83,19 @@ public class TaskService {
         t.setPipelineId(info.pipelineId());
         t.setPhoneNumberId(info.phoneNumberId());
         f.applyTo(t);
-        t.setAssigneeId(f.assigneeId != null ? f.assigneeId : ctx.userId());
+        String assignee = f.assigneeId != null ? f.assigneeId : ctx.userId();
+        assigneeCheck.assertAssignable(ctx, assignee, t.getTarget());
+        Instant now = Instant.now(clock);
+        t.setAssigneeId(assignee);
+        t.setAssignedBy(ctx.userId());
+        t.setAssignedAt(now);
+        if (assignee.equals(ctx.userId())) t.setAssignmentSeenAt(now);
+        if (t.getRecurrence() != null) {
+            String id = new org.bson.types.ObjectId().toHexString();
+            t.setId(id);
+            t.setSeriesId(id);
+            t.setOccurrence(1);
+        }
         t.setStatus(TaskStatus.OPEN);
         t.setCreatedBy(ctx.userId());
         t.setLastModifiedBy(ctx.userId());
@@ -97,37 +112,164 @@ public class TaskService {
         if (req.version() == null) errors.put("version", "is required");
         Fields f = fields(ctx, req, current, errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
+        String assignee = f.assigneeId != null ? f.assigneeId : current.getAssigneeId();
+        boolean reassigned = !java.util.Objects.equals(assignee, current.getAssigneeId());
+        if (reassigned) assigneeCheck.assertAssignable(ctx, assignee, current.getTarget());
         Update u = new Update().set("title", f.title).set("description", f.description).set("type", f.type)
                 .set("priority", f.priority).set("dueAt", f.dueAt).set("reminderAt", f.reminderAt)
-                .set("assigneeId", f.assigneeId != null ? f.assigneeId : current.getAssigneeId());
-        if (!java.util.Objects.equals(f.reminderAt, current.getReminderAt())) {
-            u.unset("reminderSentAt").unset("reminderSeenAt"); // a new reminder time re-arms the reminder
+                .set("assigneeId", assignee).set("checklist", f.checklist);
+        if (f.recurrence == null) {
+            u.unset("recurrence"); // a one-off from now on; the series id stays
+        } else {
+            u.set("recurrence", f.recurrence);
+            if (current.getRecurrence() == null) {
+                u.set("seriesId", current.getSeriesId() == null ? id : current.getSeriesId())
+                        .set("occurrence", current.getOccurrence() == null ? 1 : current.getOccurrence());
+            }
+        }
+        if (!java.util.Objects.equals(f.reminderAt, current.getReminderAt()) || reassigned) {
+            // a new reminder time, or a new person, re-arms the reminder
+            u.unset("reminderSentAt").unset("reminderSeenAt");
+        }
+        if (reassigned) {
+            u.set("assignedBy", ctx.userId()).set("assignedAt", Instant.now(clock)).unset("assignmentSeenAt");
         }
         CrmTask saved = guarded(ctx, id, req.version(), u);
         counters.recompute(ctx.workspaceId(), saved.getTarget());
-        record(ctx, ActivityType.TASK_UPDATED, saved, "Task changed: " + saved.getTitle(), "UPDATED");
+        if (reassigned) {
+            Map<String, Object> handOff = new LinkedHashMap<>();
+            handOff.put("fromAssigneeId", current.getAssigneeId());
+            handOff.put("toAssigneeId", assignee);
+            record(ctx, ActivityType.TASK_UPDATED, saved, "Task reassigned to " + nameOf(assignee) + ": "
+                    + saved.getTitle(), "REASSIGNED", handOff);
+        } else {
+            record(ctx, ActivityType.TASK_UPDATED, saved, "Task changed: " + saved.getTitle(), "UPDATED");
+        }
         return views(ctx, List.of(saved)).get(0);
     }
 
     public TaskView complete(CrmContext ctx, String id) {
-        ctx.require("crm:edit");
         CrmTask current = load(ctx, id);
+        assertCanWork(ctx, current);
         if (current.getStatus() == TaskStatus.DONE) return views(ctx, List.of(current)).get(0);
-        CrmTask saved = guarded(ctx, id, current.getVersion(), new Update().set("status", TaskStatus.DONE)
-                .set("completedAt", Instant.now(clock)).set("completedBy", ctx.userId()));
+        if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen(); // a skipped occurrence stays skipped
+        Instant now = Instant.now(clock);
+        CrmTask next = nextOccurrence(ctx, current, now);
+        Update u = new Update().set("status", TaskStatus.DONE).set("completedAt", now).set("completedBy", ctx.userId());
+        if (next != null) u.set("nextOccurrenceId", next.getId());
+        // a racing second completion fails here on the version, before it could create a second occurrence
+        CrmTask saved = guarded(ctx, id, current.getVersion(), u);
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_COMPLETED, saved, "Task done: " + saved.getTitle(), null);
+        insertNextOccurrence(ctx, next);
         return views(ctx, List.of(saved)).get(0);
     }
 
-    public TaskView reopen(CrmContext ctx, String id) {
-        ctx.require("crm:edit");
+    /**
+     * Skips one occurrence of a repeating task (spec E C14): cancels it and schedules the next one, like completing
+     * does. 400 TASK_NOT_OPEN unless OPEN, NOT_RECURRING for a one-off.
+     */
+    public SkipResult skip(CrmContext ctx, String id) {
         CrmTask current = load(ctx, id);
+        assertCanWork(ctx, current);
+        if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
+        if (current.getRecurrence() == null) throw TaskErrors.notRecurring();
+        CrmTask next = nextOccurrence(ctx, current, Instant.now(clock));
+        Update u = new Update().set("status", TaskStatus.CANCELLED);
+        if (next != null) u.set("nextOccurrenceId", next.getId());
+        CrmTask saved = guarded(ctx, id, current.getVersion(), u);
+        counters.recompute(ctx.workspaceId(), saved.getTarget());
+        record(ctx, ActivityType.TASK_UPDATED, saved, "Task skipped: " + saved.getTitle(), "SKIPPED");
+        CrmTask inserted = insertNextOccurrence(ctx, next);
+        return new SkipResult(views(ctx, List.of(saved)).get(0),
+                inserted == null ? null : views(ctx, List.of(inserted)).get(0));
+    }
+
+    /**
+     * The next occurrence of a repeating task being completed or skipped (spec E C13), not yet stored; null for a
+     * one-off, an undated task, an occurrence already created, or an ended series.
+     */
+    private CrmTask nextOccurrence(CrmContext ctx, CrmTask task, Instant now) {
+        if (task.getRecurrence() == null || task.getNextOccurrenceId() != null || task.getDueAt() == null) return null;
+        int occurrence = task.getOccurrence() == null ? 1 : task.getOccurrence();
+        java.util.Optional<Instant> nextDue = TaskRecurrenceSchedule.nextDue(task.getRecurrence(), task.getDueAt(),
+                occurrence, now);
+        if (nextDue.isEmpty()) return null;
+        Instant reminder = task.getReminderAt() == null ? null
+                : nextDue.get().minus(java.time.Duration.between(task.getReminderAt(), task.getDueAt()));
+        if (reminder != null && !reminder.isAfter(now)) reminder = null; // the same offset would fire at once
+        // the target may have moved (a deal changes pipeline) since the task was written
+        TaskAccess.TargetInfo info = access.assertVisible(ctx, task.getTarget());
+        CrmTask next = new CrmTask();
+        next.setId(new org.bson.types.ObjectId().toHexString());
+        next.setWorkspaceId(task.getWorkspaceId());
+        next.setCustomerId(task.getCustomerId());
+        next.setTitle(task.getTitle());
+        next.setDescription(task.getDescription());
+        next.setType(task.getType());
+        next.setPriority(task.getPriority());
+        next.setDueAt(nextDue.get());
+        next.setReminderAt(reminder);
+        next.setStatus(TaskStatus.OPEN);
+        next.setAssigneeId(task.getAssigneeId());
+        next.setAssignedBy(task.getAssignedBy());
+        next.setAssignedAt(task.getAssignedAt());
+        next.setAssignmentSeenAt(now); // the assignee did not change: no notice
+        next.setTarget(task.getTarget());
+        next.setPipelineId(info.pipelineId());
+        next.setPhoneNumberId(info.phoneNumberId());
+        next.setChecklist(Checklists.copyUndone(task.getChecklist()));
+        next.setRecurrence(task.getRecurrence());
+        next.setSeriesId(task.getSeriesId() == null ? task.getId() : task.getSeriesId());
+        next.setOccurrence(occurrence + 1);
+        next.setRecurringFromTaskId(task.getId());
+        next.setCreatedBy(ctx.userId());
+        next.setLastModifiedBy(ctx.userId());
+        return next;
+    }
+
+    /** Stores a prepared next occurrence and records it; null in, null out. */
+    private CrmTask insertNextOccurrence(CrmContext ctx, CrmTask next) {
+        if (next == null) return null;
+        CrmTask inserted = mongo.insert(next);
+        counters.recompute(ctx.workspaceId(), inserted.getTarget());
+        record(ctx, ActivityType.TASK_CREATED, inserted, "Next task scheduled: " + inserted.getTitle(), null,
+                Map.of("recurringFromTaskId", inserted.getRecurringFromTaskId()));
+        return inserted;
+    }
+
+    public TaskView reopen(CrmContext ctx, String id) {
+        CrmTask current = load(ctx, id);
+        assertCanWork(ctx, current);
         if (current.getStatus() == TaskStatus.OPEN) return views(ctx, List.of(current)).get(0);
+        if (current.getStatus() != TaskStatus.DONE) throw TaskErrors.notOpen(); // its series moved on when it was skipped
         CrmTask saved = guarded(ctx, id, current.getVersion(), new Update().set("status", TaskStatus.OPEN)
                 .unset("completedAt").unset("completedBy"));
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_UPDATED, saved, "Task reopened: " + saved.getTitle(), "REOPENED");
+        return views(ctx, List.of(saved)).get(0);
+    }
+
+    /**
+     * Ticks or unticks one step atomically (spec E C9): one findAndModify on an OPEN task that bumps the version so a
+     * stale full save fails; no timeline entry, no counter change. 400 TASK_NOT_OPEN unless OPEN, 404 for an unknown
+     * step.
+     */
+    public TaskView tick(CrmContext ctx, String taskId, String itemId, boolean done) {
+        CrmTask current = load(ctx, taskId);
+        assertCanWork(ctx, current);
+        if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
+        boolean present = current.getChecklist() != null
+                && current.getChecklist().stream().anyMatch(i -> itemId.equals(i.getId()));
+        if (!present) throw new NotFoundException("Checklist item not found");
+        Instant now = Instant.now(clock);
+        Update u = new Update().set("checklist.$.done", done).set("checklist.$.doneAt", done ? now : null)
+                .set("checklist.$.doneBy", done ? ctx.userId() : null)
+                .set("lastModifiedBy", ctx.userId()).set("lastUpdateTime", now).inc("version", 1);
+        CrmTask saved = mongo.findAndModify(new Query(Criteria.where("_id").is(taskId).and("workspaceId")
+                .is(ctx.workspaceId()).and("status").is(TaskStatus.OPEN).and("checklist.id").is(itemId)), u,
+                FindAndModifyOptions.options().returnNew(true), CrmTask.class);
+        if (saved == null) throw TaskErrors.notOpen(); // completed or cancelled since it was read
         return views(ctx, List.of(saved)).get(0);
     }
 
@@ -177,6 +319,39 @@ public class TaskService {
         return views(ctx, out);
     }
 
+    /**
+     * Tasks the caller handed to someone else and can still see (spec E C5): OPEN by due time (undated last) or DONE
+     * by completion, latest first.
+     */
+    public List<TaskView> delegated(CrmContext ctx, TaskStatus status, Integer limit) {
+        if (status != TaskStatus.OPEN && status != TaskStatus.DONE)
+            throw new ValidationException("status", "must be OPEN or DONE");
+        int n = limit == null || limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
+        Criteria base = new Criteria().andOperator(delegatedBy(ctx).and("status").is(status),
+                access.visibleCriteria(ctx));
+        List<CrmTask> out = new ArrayList<>();
+        if (status == TaskStatus.DONE) {
+            out.addAll(mongo.find(new Query(base).with(Sort.by(Sort.Direction.DESC, "completedAt")).limit(n),
+                    CrmTask.class));
+        } else {
+            out.addAll(find(new Criteria().andOperator(base, Criteria.where("dueAt").ne(null)), n));
+            if (out.size() < n) out.addAll(find(new Criteria().andOperator(base, Criteria.where("dueAt").is(null)),
+                    n - out.size()));
+        }
+        return views(ctx, out);
+    }
+
+    private Criteria delegatedBy(CrmContext ctx) {
+        return Criteria.where("workspaceId").is(ctx.workspaceId()).and("assignedBy").is(ctx.userId())
+                .and("assigneeId").ne(ctx.userId());
+    }
+
+    /** The assignee may work their own task with view rights; anyone else needs {@code crm:edit} (spec E C3). */
+    void assertCanWork(CrmContext ctx, CrmTask t) {
+        if (!ctx.can("crm:edit") && !ctx.userId().equals(t.getAssigneeId()))
+            throw new ForbiddenException("requires crm:edit or being the assignee");
+    }
+
     public TaskCounts counts(CrmContext ctx, ZoneId zone, String assigneeId) {
         String who = assignee(ctx, assigneeId);
         Buckets b = Buckets.of(Instant.now(clock), zone);
@@ -187,7 +362,10 @@ public class TaskService {
                 Criteria.where("dueAt").gte(b.now()).lt(b.tomorrowStart()))), CrmTask.class);
         long upcoming = mongo.count(new Query(new Criteria().andOperator(base, new Criteria().orOperator(
                 Criteria.where("dueAt").gte(b.tomorrowStart()), Criteria.where("dueAt").is(null)))), CrmTask.class);
-        return new TaskCounts(overdue, today, upcoming);
+        // always the caller's own hand-offs, whoever's buckets were asked for
+        long delegated = mongo.count(new Query(new Criteria().andOperator(delegatedBy(ctx).and("status")
+                .is(TaskStatus.OPEN), access.visibleCriteria(ctx))), CrmTask.class);
+        return new TaskCounts(overdue, today, upcoming, delegated);
     }
 
     /** The earliest open task on the contact or one of the given (already visible) deals, or null. */
@@ -252,11 +430,23 @@ public class TaskService {
     }
 
     private void record(CrmContext ctx, ActivityType type, CrmTask t, String summary, String action) {
+        record(ctx, type, t, summary, action, Map.of());
+    }
+
+    private void record(CrmContext ctx, ActivityType type, CrmTask t, String summary, String action,
+            Map<String, Object> extra) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("taskId", t.getId());
         if (action != null) payload.put("action", action);
+        payload.putAll(extra);
         activities.record(ctx, type, t.getTarget(), List.of(), t.getPipelineId(), t.getPhoneNumberId(), summary,
                 payload);
+    }
+
+    /** A user's display name, or the id when unknown. */
+    private String nameOf(String userId) {
+        PlatformPerson p = people.people(List.of(userId)).get(userId);
+        return p == null || p.name() == null ? userId : p.name();
     }
 
     /** The validated editable fields of a create or a full update. */
@@ -268,6 +458,8 @@ public class TaskService {
         Instant dueAt;
         Instant reminderAt;
         String assigneeId;
+        List<ChecklistItem> checklist;
+        Recurrence recurrence;
 
         void applyTo(CrmTask t) {
             t.setTitle(title);
@@ -276,6 +468,8 @@ public class TaskService {
             t.setPriority(priority);
             t.setDueAt(dueAt);
             t.setReminderAt(reminderAt);
+            t.setChecklist(checklist);
+            t.setRecurrence(recurrence);
         }
     }
 
@@ -303,12 +497,9 @@ public class TaskService {
         f.reminderAt = req.reminderAt();
         if (f.dueAt != null && f.reminderAt != null && f.reminderAt.isAfter(f.dueAt))
             errors.put("reminderAt", "must not be after the due time");
-        if (req.assigneeId() != null && !req.assigneeId().isBlank()) {
-            String a = req.assigneeId().trim();
-            if (!(current != null && a.equals(current.getAssigneeId())) && !people.isBrandUser(ctx.workspaceId(), a))
-                errors.put("assigneeId", "must be a user of this brand");
-            f.assigneeId = a;
-        }
+        if (req.assigneeId() != null && !req.assigneeId().isBlank()) f.assigneeId = req.assigneeId().trim();
+        f.checklist = Checklists.merge(current == null ? null : current.getChecklist(), req.checklist(), errors);
+        f.recurrence = req.recurrence() == null ? null : TaskRecurrenceSchedule.normalize(req.recurrence(), f.dueAt, errors);
         if (current != null && req.target() != null && (req.target().type() != current.getTarget().type()
                 || !java.util.Objects.equals(req.target().id(), current.getTarget().id())))
             errors.put("target", "cannot change");
@@ -330,6 +521,8 @@ public class TaskService {
         for (CrmTask t : tasks) {
             if (t.getAssigneeId() != null) users.add(t.getAssigneeId());
             if (t.getCompletedBy() != null) users.add(t.getCompletedBy());
+            if (t.getAssignedBy() != null) users.add(t.getAssignedBy());
+            if (t.getChecklist() != null) t.getChecklist().forEach(i -> { if (i.getDoneBy() != null) users.add(i.getDoneBy()); });
             ids.computeIfAbsent(t.getTarget().type(), k -> new LinkedHashSet<>()).add(t.getTarget().id());
         }
         Map<String, PlatformPerson> who = people.people(users);
@@ -340,10 +533,14 @@ public class TaskService {
         Instant now = Instant.now(clock);
         return tasks.stream().map(t -> new TaskView(t.getId(), t.getTitle(), t.getDescription(), t.getType(),
                 t.getPriority(), t.getDueAt(), t.getReminderAt(), t.getStatus(), t.getCompletedAt(),
-                ref(t.getCompletedBy(), who), ref(t.getAssigneeId(), who),
+                ref(t.getCompletedBy(), who), ref(t.getAssigneeId(), who), ref(t.getAssignedBy(), who),
+                t.getAssignedAt(),
                 new TaskView.Target(t.getTarget().type(), t.getTarget().id(), names.get(t.getTarget().id())),
                 t.getStatus() == TaskStatus.OPEN && t.getDueAt() != null && t.getDueAt().isBefore(now),
-                t.getVersion())).toList();
+                t.getChecklist() == null ? List.of() : t.getChecklist().stream().map(i -> new TaskView.ChecklistItemView(
+                        i.getId(), i.getText(), i.isDone(), i.getDoneAt(), ref(i.getDoneBy(), who))).toList(),
+                t.getRecurrence(), t.getSeriesId(), t.getOccurrence(), t.getRecurringFromTaskId(),
+                t.getNextOccurrenceId(), t.getVersion())).toList();
     }
 
     private void names(CrmContext ctx, Set<String> ids, String collection, Map<String, String> out,
