@@ -126,6 +126,25 @@ class TaskOccurrenceFailureIT extends CrmTestBase {
     }
 
     @Test
+    void aChangeWhileCompletingDoesNotLeaveTheNextOccurrenceBesideAnOpenTask() throws Exception {
+        // the claim goes through, then a tick lands while the next occurrence is being stored
+        MongoTestCommands.delayNext(client, mongo.getDb().getName(), "crmTasks", "insert", 1, 700);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Integer> call = pool.submit(this::complete);
+            while (original().get("pendingNextOccurrenceId") == null) Thread.onSpinWait();
+            mongo.updateFirst(new Query(Criteria.where("_id").is(new org.bson.types.ObjectId(taskId))),
+                    new org.springframework.data.mongodb.core.query.Update().inc("version", 1), "crmTasks");
+            assertThat(call.get()).isEqualTo(200);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(original().getString("status")).isEqualTo("DONE");
+        assertThat(original().get("pendingNextOccurrenceId")).isNull();
+        assertThat(tasks()).filteredOn(t -> "OPEN".equals(t.getString("status"))).hasSize(1);
+    }
+
+    @Test
     void skippingFinishesTheSameWayAfterAFailure() throws Exception {
         MongoTestCommands.failNext(client, mongo.getDb().getName(), "crmTasks", "insert", 1);
         assertThat(act("skip")).isEqualTo(500);
