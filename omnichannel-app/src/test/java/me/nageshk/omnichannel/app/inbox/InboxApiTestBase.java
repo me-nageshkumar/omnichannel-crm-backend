@@ -110,7 +110,9 @@ abstract class InboxApiTestBase {
 
     private void clean() {
         testUsers.deleteAll();
-        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class, InboxSetting.class))
+        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class, InboxSetting.class,
+                me.nageshk.omnichannel.db.inbox.WaWebHistoryImport.class,
+                me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat.class))
             mongo.remove(new Query(), c);
     }
 
