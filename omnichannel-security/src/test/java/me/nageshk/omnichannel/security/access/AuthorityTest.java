@@ -13,7 +13,7 @@ class AuthorityTest {
     @Test
     void codesAreUnique() {
         Set<String> codes = Arrays.stream(Authority.values()).map(Authority::code).collect(Collectors.toSet());
-        assertThat(codes).hasSize(Authority.values().length).hasSize(43);
+        assertThat(codes).hasSize(Authority.values().length).hasSize(44);
     }
 
     @Test
@@ -27,7 +27,7 @@ class AuthorityTest {
                     BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER, BuiltInRoles.AGENT);
         }
         for (Authority a : new Authority[] {Authority.CRM_VIEW_ALL, Authority.CRM_DELETE,
-                Authority.CRM_SETTINGS, Authority.CRM_EXPORT}) {
+                Authority.CRM_SETTINGS, Authority.CRM_EXPORT, Authority.CRM_SEGMENTS}) {
             assertThat(a.level()).isEqualTo(me.nageshk.omnichannel.db.access.RoleLevel.BRAND);
             assertThat(a.defaultRoles()).containsExactlyInAnyOrder(
                     BuiltInRoles.CUSTOMER_ADMIN, BuiltInRoles.WORKSPACE_MANAGER);
