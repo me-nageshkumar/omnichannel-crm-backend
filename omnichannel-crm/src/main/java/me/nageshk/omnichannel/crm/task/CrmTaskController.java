@@ -9,6 +9,7 @@ import me.nageshk.omnichannel.crm.common.CrmPage;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.TargetType;
 import me.nageshk.omnichannel.crm.task.dto.ChecklistTickRequest;
+import me.nageshk.omnichannel.crm.task.dto.SkipResult;
 import me.nageshk.omnichannel.crm.task.dto.TaskCounts;
 import me.nageshk.omnichannel.crm.task.dto.TaskRequest;
 import me.nageshk.omnichannel.crm.task.dto.TaskView;
@@ -102,6 +103,13 @@ public class CrmTaskController {
     public TaskView reopen(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String id) {
         return service.reopen(crmAccess.resolve(me, workspaceId), id);
+    }
+
+    @PostMapping("/{id}/skip")
+    @PreAuthorize(VIEW)
+    public SkipResult skip(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id) {
+        return service.skip(crmAccess.resolve(me, workspaceId), id);
     }
 
     @PostMapping("/{id}/checklist/{itemId}")

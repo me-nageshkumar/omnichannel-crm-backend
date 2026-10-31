@@ -15,25 +15,16 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.IntStream;
 import me.nageshk.omnichannel.crm.activity.CrmActivity;
-import me.nageshk.omnichannel.db.access.Role;
-import me.nageshk.omnichannel.db.access.RoleLevel;
-import me.nageshk.omnichannel.db.access.RoleRepository;
 import me.nageshk.omnichannel.db.user.User;
-import me.nageshk.omnichannel.db.user.WorkspaceRole;
-import me.nageshk.omnichannel.security.access.RoleCache;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import tools.jackson.databind.JsonNode;
 
 /** Checklists (spec E C7–C9): save merges by id, ticking is atomic and bumps the version, no timeline entry. */
 class TaskChecklistIT extends CrmTestBase {
-
-    @Autowired RoleRepository roles;
-    @Autowired RoleCache roleCache;
 
     private String dealId;
 
@@ -160,14 +151,4 @@ class TaskChecklistIT extends CrmTestBase {
                 .andExpect(jsonPath("$.fields['checklist[1].text']").value("must be 1 to 200 characters"));
     }
 
-    private User brandUserWith(String username, String roleName, Set<String> authorities) {
-        Role r = new Role();
-        r.setName(roleName);
-        r.setLevel(RoleLevel.BRAND);
-        r.setAuthorities(authorities);
-        r = roles.save(r);
-        roleCache.evictAll();
-        return testUsers.createInCustomer(acme.getId(), username, null,
-                List.of(new WorkspaceRole(brand.getId(), r.getId())));
-    }
 }

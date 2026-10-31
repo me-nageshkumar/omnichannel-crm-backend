@@ -15,36 +15,15 @@ import java.util.Map;
 import java.util.Set;
 import me.nageshk.omnichannel.crm.activity.ActivityType;
 import me.nageshk.omnichannel.crm.activity.CrmActivity;
-import me.nageshk.omnichannel.db.access.Role;
-import me.nageshk.omnichannel.db.access.RoleRepository;
 import me.nageshk.omnichannel.db.user.User;
-import me.nageshk.omnichannel.db.user.WorkspaceRole;
-import me.nageshk.omnichannel.security.access.RoleCache;
-import me.nageshk.omnichannel.db.access.RoleLevel;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import tools.jackson.databind.JsonNode;
 
 /** Delegation (spec E C1–C6): assigner fields, the assignee check, work rights, the Delegated list and count. */
 class TaskDelegationIT extends CrmTestBase {
-
-    @Autowired RoleRepository roles;
-    @Autowired RoleCache roleCache;
-
-    /** A brand user on a role with exactly these authorities. */
-    User userWith(String username, String roleName, Set<String> authorities) {
-        Role r = new Role();
-        r.setName(roleName);
-        r.setLevel(RoleLevel.BRAND);
-        r.setAuthorities(authorities);
-        r = roles.save(r);
-        roleCache.evictAll();
-        return testUsers.createInCustomer(acme.getId(), username, null,
-                List.of(new WorkspaceRole(brand.getId(), r.getId())));
-    }
 
     Map<String, Object> task(String type, String id, String title, String assigneeId) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -114,7 +93,7 @@ class TaskDelegationIT extends CrmTestBase {
     @Test
     void assigneeNeedsCrmView() throws Exception {
         enableCrm();
-        User noCrm = userWith("nocrm", "NO_CRM", Set.of("inbox:view"));
+        User noCrm = brandUserWith("nocrm", "NO_CRM", Set.of("inbox:view"));
         String dealId = dealId("Om", "919900000304");
         send(post(crm() + "/tasks"), managerToken, task("DEAL", dealId, "x", noCrm.getId()))
                 .andExpect(status().isBadRequest())
@@ -156,8 +135,8 @@ class TaskDelegationIT extends CrmTestBase {
     @Test
     void assigneeCompletesAndReopensWithViewOnly() throws Exception {
         enableCrm();
-        User viewer = userWith("viewer", "CRM_VIEWER", Set.of("crm:view"));
-        User viewer2 = userWith("viewer2", "CRM_VIEWER_2", Set.of("crm:view"));
+        User viewer = brandUserWith("viewer", "CRM_VIEWER", Set.of("crm:view"));
+        User viewer2 = brandUserWith("viewer2", "CRM_VIEWER_2", Set.of("crm:view"));
         assignPipelines(viewer, salesId());
         assignPipelines(viewer2, salesId());
         assignPipelines(agent2, salesId());
