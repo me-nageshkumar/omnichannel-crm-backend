@@ -126,4 +126,32 @@ class CrmDemoSeederIT {
         seeder.run(null);
         assertThat(mongo.count(new Query(), "crmSettings")).isZero();
     }
+
+    @Test
+    void seedsTwoSegmentsWithCounts() {
+        demoSeeder.run(null);
+        contactSeeder.run(null);
+        seeder.run(null);
+        Customer retail = customers.findAll().stream().filter(x -> x.getName().equals(DemoSeeder.CUSTOMER))
+                .findFirst().orElseThrow();
+        Workspace fashion = workspaces.findByCustomerIdOrderByName(retail.getId()).stream()
+                .filter(w -> w.getName().equals("Demo Fashion")).findFirst().orElseThrow();
+        Criteria ws = Criteria.where("workspaceId").is(fashion.getId());
+        List<org.bson.Document> segments = mongo.find(new Query(ws), org.bson.Document.class, "crmSegments");
+        assertThat(segments).extracting(d -> d.getString("name"))
+                .containsExactlyInAnyOrder("Gold-tier deals in Sales", "Quiet contacts");
+        org.bson.Document gold = segments.stream().filter(d -> d.getString("name").startsWith("Gold")).findFirst().orElseThrow();
+        org.bson.Document quiet = segments.stream().filter(d -> d.getString("name").startsWith("Quiet")).findFirst().orElseThrow();
+        // every demo host contact was messaged in the last 30 days, so this one is counted but may well be empty
+        assertThat(quiet.get("cachedCounts", org.bson.Document.class).getLong("total")).isGreaterThanOrEqualTo(0L);
+        assertThat(quiet.get("cachedCounts", org.bson.Document.class).get("at")).isNotNull();
+        // running again adds nothing
+        seeder.run(null);
+        assertThat(count("crmSegments", ws)).isEqualTo(2);
+        // a brand seeded before this phase: settings present, no segments yet
+        mongo.remove(new Query(ws), "crmSegments");
+        seeder.run(null);
+        assertThat(count("crmSegments", ws)).isEqualTo(2);
+        assertThat(count("crmContacts", ws)).as("the rest of the seed is not repeated").isEqualTo(8);
+    }
 }

@@ -36,6 +36,12 @@ import me.nageshk.omnichannel.crm.platform.BrandDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformBrand;
 import me.nageshk.omnichannel.crm.platform.PlatformNumber;
+import me.nageshk.omnichannel.crm.segment.CrmSegmentRepository;
+import me.nageshk.omnichannel.crm.segment.SegmentRule;
+import me.nageshk.omnichannel.crm.segment.SegmentRuleGroup;
+import me.nageshk.omnichannel.crm.segment.SegmentService;
+import me.nageshk.omnichannel.crm.segment.dto.SegmentRequest;
+import me.nageshk.omnichannel.crm.settings.CrmSettings;
 import me.nageshk.omnichannel.crm.settings.CrmSettingsService;
 import me.nageshk.omnichannel.crm.task.TaskService;
 import me.nageshk.omnichannel.crm.task.dto.TaskRequest;
@@ -87,12 +93,17 @@ public class CrmDemoSeeder implements ApplicationRunner {
     private final FieldDefinitionService fields;
     private final TaskService tasks;
     private final NoteService notes;
+    private final SegmentService segments;
+    private final CrmSegmentRepository segmentRepository;
     private final MongoTemplate mongo;
 
     CrmDemoSeeder(BrandDirectory brands, PeopleDirectory people, CrmSettingsService settings,
             CrmPipelineService pipelines, CrmAccess access, CaptureService capture, CrmCompanyService companies,
             DealService deals, PipelineAccessService pipelineAccess, TimelineService timeline,
-            FieldDefinitionService fields, TaskService tasks, NoteService notes, MongoTemplate mongo) {
+            FieldDefinitionService fields, TaskService tasks, NoteService notes, SegmentService segments,
+            CrmSegmentRepository segmentRepository, MongoTemplate mongo) {
+        this.segments = segments;
+        this.segmentRepository = segmentRepository;
         this.brands = brands;
         this.people = people;
         this.settings = settings;
@@ -112,7 +123,12 @@ public class CrmDemoSeeder implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         PlatformBrand brand = brands.findByNames(CUSTOMER, BRAND).orElse(null);
-        if (brand == null || settings.find(brand.id()).isPresent()) return;
+        if (brand == null) return;
+        if (settings.find(brand.id()).isPresent()) {
+            // seeded before: only what later phases add, when it is missing
+            seedSegments(brand);
+            return;
+        }
         settings.enableForSystem(brand.id(), brand.customerId());
         CrmPipeline sales = pipelines.ensureDefault(brand.id(), brand.customerId(), "system");
         CrmContext ctx = access.forSystem(brand.id(), brand.customerId());
@@ -200,8 +216,37 @@ public class CrmDemoSeeder implements ApplicationRunner {
             mongo.updateMulti(bySystem, new Update().set("ownerId", ownerId), "crmContacts");
             mongo.updateMulti(bySystem, new Update().set("ownerId", ownerId), "crmDeals");
         }
+        // the festive order is a gold-tier deal, so the demo segment below has someone in it
+        mongo.updateFirst(new Query(Criteria.where("_id").is(dealIds.get(8)).and("workspaceId").is(brand.id())),
+                new Update().set("customFields.tier", "gold"), "crmDeals");
         log.warn("demo seed: CRM switched on in {} with {} companies, {} contacts and {} deals", BRAND,
                 companyIds.size(), contactIds.size(), dealIds.size());
+        seedSegments(brand);
+    }
+
+    /**
+     * Two demo segments (phase D §7): gold-tier deals in the Sales pipeline, and contacts nobody has messaged in 30
+     * days who are not customers yet. Added whenever the brand's CRM is on and has no segments, so a database seeded
+     * before this phase gains them on the next start.
+     */
+    private void seedSegments(PlatformBrand brand) {
+        if (!settings.find(brand.id()).filter(CrmSettings::isEnabled).isPresent()) return;
+        if (!segmentRepository.findByWorkspaceIdOrderByName(brand.id()).isEmpty()) return;
+        CrmContext ctx = access.forSystem(brand.id(), brand.customerId());
+        String salesId = settings.find(brand.id()).map(CrmSettings::getDefaultPipelineId)
+                .orElseGet(() -> pipelines.ensureDefault(brand.id(), brand.customerId(), "system").getId());
+        SegmentRuleGroup gold = new SegmentRuleGroup("and", false, List.of(new SegmentRuleGroup("and", false, List.of(
+                new SegmentRule("deal.pipelineId", "is", salesId), new SegmentRule("deal.custom:tier", "is", "gold")))));
+        SegmentRuleGroup quiet = new SegmentRuleGroup("and", false, List.of(
+                new SegmentRuleGroup("or", false, List.of(
+                        new SegmentRule("channel.lastMessageAt", "moreThanDaysAgo", "30"),
+                        new SegmentRule("channel.lastMessageAt", "isNotSet", null))),
+                new SegmentRule("contact.lifecycleStatus", "isNot", "customer")));
+        segments.create(ctx, new SegmentRequest("Gold-tier deals in Sales",
+                "Contacts with a gold-tier deal in the Sales pipeline", gold, null));
+        segments.create(ctx, new SegmentRequest("Quiet contacts",
+                "Not yet customers, and no message in the last 30 days", quiet, null));
+        log.warn("demo seed: two CRM segments added to {}", BRAND);
     }
 
     /**
