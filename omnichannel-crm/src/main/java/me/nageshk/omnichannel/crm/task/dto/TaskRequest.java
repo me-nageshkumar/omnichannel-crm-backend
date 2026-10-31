@@ -3,7 +3,6 @@ package me.nageshk.omnichannel.crm.task.dto;
 import java.time.Instant;
 import java.util.List;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
-import me.nageshk.omnichannel.crm.task.Recurrence;
 
 /**
  * Create a task (target required) or replace an existing task's editable fields: on update a null field clears it
@@ -12,4 +11,4 @@ import me.nageshk.omnichannel.crm.task.Recurrence;
  */
 public record TaskRequest(String title, String description, String type, String priority, Instant dueAt,
         Instant reminderAt, String assigneeId, CrmTarget target, Long version, List<ChecklistItemRequest> checklist,
-        Recurrence recurrence) {}
+        RecurrenceRequest recurrence) {}

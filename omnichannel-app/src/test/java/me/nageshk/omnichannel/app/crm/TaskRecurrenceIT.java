@@ -101,6 +101,19 @@ class TaskRecurrenceIT extends CrmTestBase {
     }
 
     @Test
+    void badEnumValuesAreFieldErrors() throws Exception {
+        Map<String, Object> r = weekly("MONDAY", "FUNDAY");
+        send(post(crm() + "/tasks"), managerToken, body("Stock check", Instant.now().plus(1, ChronoUnit.DAYS), r))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields['recurrence.weekdays']").value("must be days of the week, MONDAY to SUNDAY"));
+        r = daily(1);
+        r.put("frequency", "FORTNIGHTLY");
+        send(post(crm() + "/tasks"), managerToken, body("Stock check", Instant.now().plus(1, ChronoUnit.DAYS), r))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields['recurrence.frequency']").value("must be DAILY, WEEKLY or MONTHLY"));
+    }
+
+    @Test
     void removingRecurrenceKeepsSeriesId() throws Exception {
         JsonNode t = create(managerToken, body("Stock check", Instant.now().plus(1, ChronoUnit.DAYS), daily(2)));
         JsonNode saved = update(managerToken, t, body("Stock check", Instant.now().plus(1, ChronoUnit.DAYS), null));

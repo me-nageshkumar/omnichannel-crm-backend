@@ -49,6 +49,7 @@ public class TaskService {
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
     private static final int MAX_PER_TARGET = 1000;
+    static final String DELEGATED_STATUS = "must be OPEN or DONE";
 
     private final MongoTemplate mongo;
     private final TaskAccess access;
@@ -281,7 +282,7 @@ public class TaskService {
     /**
      * Ticks or unticks one step atomically (spec E C9): one findAndModify on an OPEN task that bumps the version so a
      * stale full save fails; no timeline entry, no counter change. 400 TASK_NOT_OPEN unless OPEN, 404 for an unknown
-     * step.
+     * step, also when a concurrent save removed it.
      */
     public TaskView tick(CrmContext ctx, String taskId, String itemId, boolean done) {
         CrmTask current = load(ctx, taskId);
@@ -297,8 +298,10 @@ public class TaskService {
         CrmTask saved = mongo.findAndModify(new Query(Criteria.where("_id").is(taskId).and("workspaceId")
                 .is(ctx.workspaceId()).and("status").is(TaskStatus.OPEN).and("checklist.id").is(itemId)), u,
                 FindAndModifyOptions.options().returnNew(true), CrmTask.class);
-        if (saved == null) throw TaskErrors.notOpen(); // completed or cancelled since it was read
-        return views(ctx, List.of(saved)).get(0);
+        if (saved != null) return views(ctx, List.of(saved)).get(0);
+        // changed since it was read: closed, or the step was saved away
+        if (load(ctx, taskId).getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
+        throw new NotFoundException("Checklist item not found");
     }
 
     public void delete(CrmContext ctx, String id) {
@@ -353,7 +356,7 @@ public class TaskService {
      */
     public List<TaskView> delegated(CrmContext ctx, TaskStatus status, Integer limit) {
         if (status != TaskStatus.OPEN && status != TaskStatus.DONE)
-            throw new ValidationException("status", "must be OPEN or DONE");
+            throw new ValidationException("status", DELEGATED_STATUS);
         int n = limit == null || limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
         Criteria base = new Criteria().andOperator(delegatedBy(ctx).and("status").is(status),
                 access.visibleCriteria(ctx));
@@ -527,7 +530,8 @@ public class TaskService {
             errors.put("reminderAt", "must not be after the due time");
         if (req.assigneeId() != null && !req.assigneeId().isBlank()) f.assigneeId = req.assigneeId().trim();
         f.checklist = Checklists.merge(current == null ? null : current.getChecklist(), req.checklist(), errors);
-        f.recurrence = req.recurrence() == null ? null : TaskRecurrenceSchedule.normalize(req.recurrence(), f.dueAt, errors);
+        f.recurrence = req.recurrence() == null ? null : TaskRecurrenceSchedule.normalize(
+                TaskRecurrenceSchedule.parse(req.recurrence(), errors), f.dueAt, errors);
         if (current != null && req.target() != null && (req.target().type() != current.getTarget().type()
                 || !java.util.Objects.equals(req.target().id(), current.getTarget().id())))
             errors.put("target", "cannot change");
@@ -535,10 +539,14 @@ public class TaskService {
     }
 
     public static <E extends Enum<E>> E parse(Class<E> type, String raw, String field) {
+        return parse(type, raw, field, "is not a valid value");
+    }
+
+    public static <E extends Enum<E>> E parse(Class<E> type, String raw, String field, String problem) {
         try {
             return Enum.valueOf(type, raw.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new ValidationException(field, "is not a valid value");
+            throw new ValidationException(field, problem);
         }
     }
 

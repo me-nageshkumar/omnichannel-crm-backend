@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import me.nageshk.omnichannel.crm.task.dto.RecurrenceRequest;
 import org.junit.jupiter.api.Test;
 
 class TaskRecurrenceScheduleTest {
@@ -163,5 +164,20 @@ class TaskRecurrenceScheduleTest {
         assertThat(dailyRule.dayOfMonth()).isNull();
         assertThat(dailyRule.interval()).isEqualTo(1);
         assertThat(dailyRule.endsOn()).isEqualTo("2026-12-01");
+    }
+
+    @Test
+    void parsesTheRequestAndNamesBadEnumValues() {
+        Map<String, String> errors = new LinkedHashMap<>();
+        Recurrence ok = TaskRecurrenceSchedule.parse(new RecurrenceRequest("WEEKLY", 2, List.of("MONDAY", "FRIDAY"), null,
+                "UTC", 3, null), errors);
+        assertThat(errors).isEmpty();
+        assertThat(ok).isEqualTo(new Recurrence(RecurrenceFrequency.WEEKLY, 2, List.of(DayOfWeek.MONDAY, DayOfWeek.FRIDAY),
+                null, "UTC", 3, null));
+
+        Recurrence bad = TaskRecurrenceSchedule.parse(new RecurrenceRequest("FORTNIGHTLY", 1,
+                List.of("MONDAY", "FUNDAY"), null, "UTC", null, null), errors);
+        assertThat(bad.frequency()).isNull();
+        assertThat(errors).containsOnlyKeys("recurrence.weekdays");
     }
 }
