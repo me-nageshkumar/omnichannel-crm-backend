@@ -152,6 +152,10 @@ public class HistoryImportRunner {
     void process(WaWebHistoryImport imp) {
         String id = imp.getId();
         try {
+            // only this worker serves the number (busy), so a RUNNING chat here was left behind by an
+            // earlier pass that failed to write (a DB blip) or by the last shutdown: back to PENDING, cursor kept
+            mongo.updateMulti(new Query(Criteria.where("importId").is(id).and("status").is(HistoryChatStatus.RUNNING)),
+                    new Update().set("status", HistoryChatStatus.PENDING), WaWebHistoryImportChat.class);
             DeviceSession device;
             try {
                 device = devices.requireReady(imp.getWorkspaceId(), imp.getPhoneNumberId());
@@ -272,7 +276,7 @@ public class HistoryImportRunner {
         ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId());
         WaWebHistoryImport.Range range = imp.getRange();
         Long from = range == null || range.from() == null ? null : range.from().getEpochSecond();
-        Long to = range == null || range.to() == null ? null : range.to().getEpochSecond();
+        Long to = until(imp);
         WaWebHistoryImportChat.Cursor cursor = item.getCursor();
         WaWebHistoryImportChat.Counts start = item.getCounts() == null ? WaWebHistoryImportChat.Counts.ZERO
                 : item.getCounts();
@@ -280,6 +284,8 @@ public class HistoryImportRunner {
         long inserted = start.inserted();
         long updated = start.updated();
         int emptyPages = item.getEmptyPages();
+        // consecutive timeouts: a page that arrives resets the count
+        int timeouts = item.getTimeouts();
         WaWebChat chat = null;
         try {
             while (true) {
@@ -300,9 +306,10 @@ public class HistoryImportRunner {
                     cursor = new WaWebHistoryImportChat.Cursor(page.oldestT(), page.oldestIds());
                 }
                 emptyPages = page.messages().isEmpty() ? emptyPages + 1 : 0;
+                timeouts = 0;
                 if (!whileRunning(item, new Update().set("cursor", cursor)
                         .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated))
-                        .set("emptyPages", emptyPages))) {
+                        .set("emptyPages", emptyPages).set("timeouts", 0))) {
                     return true;
                 }
                 if (!page.hasMore()) {
@@ -338,13 +345,13 @@ public class HistoryImportRunner {
                 return true;
             }
             if (cause instanceof TimeoutException) {
-                int timeouts = item.getTimeouts() + 1;
-                if (timeouts >= settings.maxTimeoutsPerChat()) {
+                int count = timeouts + 1;
+                if (count >= settings.maxTimeoutsPerChat()) {
                     finish(item, chat, new Update().set("status", HistoryChatStatus.FAILED).set("error", "TIMEOUT")
-                            .set("timeouts", timeouts));
+                            .set("timeouts", count));
                     return true;
                 }
-                whileRunning(item, new Update().set("status", HistoryChatStatus.PENDING).set("timeouts", timeouts));
+                whileRunning(item, new Update().set("status", HistoryChatStatus.PENDING).set("timeouts", count));
                 setWaiting(imp.getId(), HistoryWaiting.WHATSAPP_NOT_READY);
                 return false;
             }
@@ -387,6 +394,18 @@ public class HistoryImportRunner {
     }
 
     // ---- helpers ----
+
+    /**
+     * The newest second to import: the range's end, but never after the request. A message that arrived later is the
+     * live path's, which counts it unread, reopens and routes the chat; stored here first it would be "existing" to it.
+     */
+    private static Long until(WaWebHistoryImport imp) {
+        WaWebHistoryImport.Range range = imp.getRange();
+        Long to = range == null || range.to() == null ? null : range.to().getEpochSecond();
+        if (imp.getCreationTime() == null) return to;
+        long created = imp.getCreationTime().getEpochSecond();
+        return to == null ? created : Math.min(to, created);
+    }
 
     private boolean isRunning(String importId) {
         return mongo.exists(byIdIn(importId, HistoryImportStatus.RUNNING), WaWebHistoryImport.class);

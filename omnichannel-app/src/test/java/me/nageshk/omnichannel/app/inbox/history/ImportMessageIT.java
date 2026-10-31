@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactRepository;
+import me.nageshk.omnichannel.db.contact.ContactSource;
 import me.nageshk.omnichannel.db.inbox.ChatStatus;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageSource;
@@ -224,6 +225,52 @@ class ImportMessageIT {
         assertThat(chat.getLastMessageAt()).isEqualTo(Instant.ofEpochSecond(200));
         assertThat(messages.count()).isEqualTo(2);
         assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void importDoesNotRenameAContactThatHasAName() {
+        Contact asha = new Contact();
+        asha.setWorkspaceId("ws-1");
+        asha.setCustomerId("cust-1");
+        asha.setPhone("919911111111");
+        asha.setName("Asha");
+        asha.setSource(ContactSource.CHAT);
+        contacts.save(asha);
+        ObjectNode old = msg("m1", REMOTE, false, 100, 0, "hello");
+        old.put("notifyName", "Old Name");
+
+        ingest.importMessage(ctx, old);
+
+        assertThat(contacts.findByWorkspaceIdAndPhone("ws-1", "919911111111").orElseThrow().getName())
+                .isEqualTo("Asha");
+    }
+
+    @Test
+    void importNamesANamelessContact() {
+        ObjectNode old = msg("m1", REMOTE, false, 100, 0, "hello");
+        old.put("notifyName", "Old Name");
+
+        ingest.importMessage(ctx, old);
+
+        assertThat(contacts.findByWorkspaceIdAndPhone("ws-1", "919911111111").orElseThrow().getName())
+                .isEqualTo("Old Name");
+    }
+
+    @Test
+    void importCreatedChatIsReopenedAndRoutedByALaterLiveMessage() {
+        ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "old"));
+        assertThat(onlyChat().getStatus()).isEqualTo(ChatStatus.CLOSED);
+
+        ingest.ingestMessage(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
+                msg("m2", REMOTE, false, 200, 0, "new"), null, null));
+
+        WaWebChat chat = onlyChat();
+        assertThat(chat.getStatus()).isEqualTo(ChatStatus.OPEN);
+        assertThat(chat.getUnreadCount()).isEqualTo(1);
+        assertThat(chat.getLastMessage().text()).isEqualTo("new");
+        assertThat(recorder.events).hasAtLeastOneElementOfType(InboxEvents.ChatReopened.class)
+                .hasAtLeastOneElementOfType(InboxEvents.MessageUpserted.class);
+        assertThat(recorder.events).noneMatch(e -> e instanceof InboxEvents.ChatCreated);
     }
 
     @Test

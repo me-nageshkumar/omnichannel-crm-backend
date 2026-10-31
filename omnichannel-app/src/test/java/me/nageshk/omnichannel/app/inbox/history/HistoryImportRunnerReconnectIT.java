@@ -13,7 +13,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.context.TestPropertySource;
 
-/** A second between chats, long enough for the extension to reconnect while an import is running. */
+/** Three seconds between chats, long enough for the extension to reconnect while an import is running. */
 @TestPropertySource(properties = "omnichannel.history.chat-delay=3s")
 class HistoryImportRunnerReconnectIT extends HistoryImportTestBase {
 

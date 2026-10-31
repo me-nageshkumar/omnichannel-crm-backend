@@ -111,8 +111,8 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 - `@c.us` / `@lid` duplicate-chat limitation (inherited): the same person can end up as two chats.
 - `console:<id>` duplicate limitation (inherited).
 - Pending real-number spike: see spec `2026-10-31-chat-history-import-design.md` §3, "Pending verification".
-- `timeouts` on a chat item never resets after a successful page: a device that hangs with the socket open ends every chat FAILED TIMEOUT and the import COMPLETED instead of waiting.
-- The claim sort `(attemptedAt, _id)` has no supporting index.
+- A device that stops answering with its socket open ends each chat FAILED TIMEOUT after `max-timeouts-per-chat` rounds and the import COMPLETED instead of waiting (the counter now resets after every page that arrives, so only consecutive timeouts count). Pending refinement: probe the device before charging a timeout to the chat.
+- The claim sort `(attemptedAt, _id)` has no dedicated index: `(importId, status, _id)` serves the claim filter and the PENDING items of one import are sorted in memory. The `(status, attemptedAt)` index serves `releaseStuck`, not the claim.
 - `HistoryImportViews` does N+1 lookups (phone number per import, chat per item).
 - Imported rows have `statusTimes` null; the console must tolerate it.
 - An ALL import whose `listChats` item insert fails partway is never re-listed.

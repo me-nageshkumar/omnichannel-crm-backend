@@ -114,8 +114,8 @@ public class InboxIngestService {
 
     /**
      * A message read from the phone's history. Unlike {@link #ingestMessage} it publishes no event, never reopens
-     * a chat or counts it unread, creates chats {@code CLOSED} and records no status times; SKIPPED when it is not a
-     * person's chat or has no usable phone or id.
+     * a chat or counts it unread, creates chats {@code CLOSED}, records no status times and names only a nameless
+     * contact; SKIPPED when it is not a person's chat or has no usable phone or id.
      */
     public ImportResult importMessage(ImportContext ctx, JsonNode payload) {
         if (payload == null || !payload.isObject()) return SKIPPED;
@@ -139,8 +139,14 @@ public class InboxIngestService {
             String waMessageId) {
         boolean fromMe = MessagePayloads.fromMe(p);
         Instant at = MessagePayloads.timestamp(p, clock.instant());
-        Contact contact = contacts.upsertFromChat(ctx.workspaceId(), ctx.customerId(), remote,
-                fromMe ? null : MessagePayloads.senderName(p), lid ? MessagePayloads.lidPhone(p) : null, at);
+        // the import walks backwards, so a push name it reads is older than the one the contact has
+        String senderName = fromMe ? null : MessagePayloads.senderName(p);
+        if (senderName != null) {
+            Contact known = contacts.findForChat(ctx.workspaceId(), remote);
+            if (known != null && known.getName() != null) senderName = null;
+        }
+        Contact contact = contacts.upsertFromChat(ctx.workspaceId(), ctx.customerId(), remote, senderName,
+                lid ? MessagePayloads.lidPhone(p) : null, at);
         if (contact == null) return SKIPPED;
 
         WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(ctx.phoneNumberId(), remote).orElse(null);

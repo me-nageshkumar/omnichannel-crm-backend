@@ -4,8 +4,10 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import me.nageshk.omnichannel.db.inbox.ChatStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryChatStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryImportStatus;
@@ -21,6 +23,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /** The history import runner with the default settings: one page per chat, no message cap in reach. */
 class HistoryImportRunnerIT extends HistoryImportTestBase {
@@ -243,6 +246,70 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
         assertThat(released.getStatus()).isEqualTo(HistoryChatStatus.PENDING);
         assertThat(released.getAttemptedAt()).isNull();
         assertThat(released.getCursor().beforeT()).isEqualTo(123L);
+    }
+
+    @Test
+    void importStopsAtTheRequestTime() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            WaWebHistoryImport imp = importChats("919811100001");
+            // creationTime comes from Mongo auditing (the system clock), so the messages are placed around it
+            long created = reload(imp).getCreationTime().getEpochSecond();
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, created - 100, 1, "before"),
+                    HistoryDevice.msg(A, false, created + 100, 1, "after")));
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+            assertThat(messages.findAll()).extracting(WaWebMessage::getBody).containsExactly("before");
+            assertThat(device.requests("fetchChatHistory").get(0).params().get("to").asLong()).isEqualTo(created);
+        }
+    }
+
+    @Test
+    void timeoutCounterResetsAfterASuccessfulPage() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            // three full pages of 100: every page is answered only after a timeout
+            List<ObjectNode> history = new ArrayList<>();
+            for (int i = 0; i < 300; i++) history.add(HistoryDevice.msg(A, false, 1000 + i, 1, "m" + i));
+            device.chats.put(A, history);
+            AtomicInteger fetches = new AtomicInteger();
+            device.override = req -> "fetchChatHistory".equals(req.method()) && fetches.getAndIncrement() % 2 == 0
+                    ? null : device.answer(req);
+            WaWebHistoryImport imp = importChats("919811100001");
+
+            for (int tick = 0; tick < 6 && reload(imp).isActive(); tick++) runner.tick().get(20, SECONDS);
+
+            WaWebHistoryImportChat a = item(imp, A);
+            assertThat(a.getError()).isNull();
+            assertThat(a.getStatus()).isEqualTo(HistoryChatStatus.DONE);
+            assertThat(a.getTimeouts()).isZero();
+            assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+            assertThat(messages.count()).isEqualTo(300);
+        }
+    }
+
+    @Test
+    void runningItemLeftBehindIsReleasedOnNextTick() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, 100, 1, "a1"),
+                    HistoryDevice.msg(A, false, 200, 1, "a2"), HistoryDevice.msg(A, false, 300, 1, "a3")));
+            WaWebHistoryImport imp = importChats("919811100001");
+            mongo.updateFirst(new Query(Criteria.where("_id").is(imp.getId())),
+                    new Update().set("status", HistoryImportStatus.RUNNING), WaWebHistoryImport.class);
+            // a DB blip after a page left the item RUNNING with its cursor
+            WaWebHistoryImportChat stuck = item(imp, A);
+            stuck.setStatus(HistoryChatStatus.RUNNING);
+            stuck.setAttemptedAt(Instant.now());
+            stuck.setCursor(new WaWebHistoryImportChat.Cursor(250L, List.of()));
+            items.save(stuck);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(item(imp, A).getStatus()).isEqualTo(HistoryChatStatus.DONE);
+            assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+            assertThat(device.requests("fetchChatHistory").get(0).params().get("before").asLong()).isEqualTo(250);
+            assertThat(messages.findAll()).extracting(WaWebMessage::getBody).containsExactlyInAnyOrder("a1", "a2");
+        }
     }
 
     WaWebHistoryImportChat item(WaWebHistoryImport imp, String remoteId) {

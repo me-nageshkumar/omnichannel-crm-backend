@@ -46,9 +46,10 @@ does not disturb the live inbox.
 | Idempotency | (1) unique `(phoneNumberId, waMessageId)` on `waWebMessages`; (2) a request identical in `(phoneNumberId, scope, range)` to an active import returns that import (partial unique index on `scopeKey` where `active`); (3) items unique on `(importId, remoteId)`, runner writes conditional on item status. |
 | Ingest side effects | A separate ingest path: no `unreadCount++`, no reopen, no `ChatCreated` (no routing), no `MessageUpserted` (no campaign listener, no per-message SSE). One `ChatChanged` per chat when its import finishes. |
 | Chats created by the import | `CLOSED`, unassigned, `unreadCount 0`. A later inbound message reopens and routes through the existing path. Existing chats keep their status. |
+| Contact names | An import never renames a contact that already has a name: it walks backwards, so the push names it reads are older than the contact's. It names only a contact without a name. |
 | "All chats" | WhatsApp's own chat list on the phone, filtered to `@c.us` / `@lid`. Unknown contacts and chats are created. |
 | "Selected contacts" | Phone digits or CRM contact ids → remote ids `<digits>@c.us` plus the contact's `waId` when known. No chat on the device → item `SKIPPED` / `NO_CHAT`. |
-| Date range | Optional `from` / `to`. The page walks backwards with `loadEarlierMsgs` until the oldest loaded message is older than `from` or nothing more loads; `to` only filters. Per-chat cap `maxMessagesPerChat` (5 000) → `DONE`, `capped`. |
+| Date range | Optional `from` / `to`. The page walks backwards with `loadEarlierMsgs` until the oldest loaded message is older than `from` or nothing more loads; `to` only filters, and is clamped to the request time (§5). Per-chat cap `maxMessagesPerChat` (5 000) → `DONE`, `capped`. |
 | Status of imported rows | `status` from `ack`; `statusTimes` **empty**. Existing rows: status only moves up, `statusTimes` untouched. |
 | Pacing | One page in flight per device; `pageDelay` 400 ms between pages, `chatDelay` 1 s between chats; at most one active import per number (others wait `QUEUED`). |
 | Authority | New `inbox:import-history` (BRAND; default roles Customer Admin, Workspace Manager). |
@@ -123,36 +124,51 @@ cursor { beforeT: Long?, excludeIds: [..] }   // saved after every page
 counts { seen, inserted, updated } ; capped: boolean ; emptyPages: int ; timeouts: int
 attemptedAt, finishedAt
 ```
-Indexes: unique `(importId, remoteId)`; `(importId, status, _id)`; `(status, attemptedAt)`.
+Indexes: unique `(importId, remoteId)`; `(importId, status, _id)`, which serves the claim filter and the per-status
+listing; `(status, attemptedAt)`, which serves `releaseStuck`. The claim sort `(attemptedAt, _id)` has no dedicated
+index: it sorts the PENDING items of one import in memory (at most 500 for CHATS; pending, see `crm-pending.md` §F).
 
 Deleting a phone number deletes both (`InboxCleanup`).
 
 ## 5. Runner
 
 - Own scheduler `historyImportScheduler` (2 threads). Tick every `omnichannel.history.tick` (5 s), behind
-  `omnichannel.history.auto-tick`. At startup: items `RUNNING → PENDING` (cursor kept).
+  `omnichannel.history.auto-tick`. At startup: items `RUNNING → PENDING` (cursor kept, `attemptedAt` cleared).
 - Tick: for each number with an active import (oldest QUEUED/RUNNING first by `creationTime`, then `_id`; one per
   number), skip if busy, else run `process(import)` on the pool.
-- `process`: `InboxDevices.requireReady` → on `NoDeviceException` set `waiting`, return. Else clear `waiting`,
+- `process` first puts the import's items left `RUNNING` back to `PENDING` (cursor and `attemptedAt` kept): only one
+  worker serves a number (`busy`), so such an item was left behind by an earlier pass whose write failed (a DB blip)
+  or by the last shutdown, and would otherwise stall the number until a restart. This also covers a first tick that
+  beats the startup `releaseStuck`.
+- Then `InboxDevices.requireReady` → on `NoDeviceException` set `waiting`, return. Else clear `waiting`,
   `QUEUED → RUNNING` (+`startedAt`). `ALL` with no items yet → `listChats` → one PENDING item per row
   (duplicates ignored), `counts.chatsTotal`. Then, before every chat, resolve the device again (`requireReady`; the
   extension may have reconnected with a new session, or gone: set `waiting` and stop), claim the PENDING item
   attempted least recently (`findAndModify` → RUNNING, sort `attemptedAt` asc then `_id`, so never-attempted items go
   first) and run `importChat` until none left, the import stops being RUNNING (cancel), the device fails, or the
   `timeBudget` (60 s) is spent. No PENDING/RUNNING items left → `COMPLETED`, `active=false`, `finishedAt`.
-- `importChat`: loop `fetchChatHistory(remoteId, cursor, range, pageSize)`; ingest each message (ascending);
+- `importChat`: loop `fetchChatHistory(remoteId, cursor, range, pageSize)`, with `to` clamped to
+  `min(range.to, creationTime)` in epoch seconds (the creation time alone when `range.to` is null). The first page
+  has no `before`, so without the clamp it holds the newest messages; one stored by the import before its live
+  `message_create` is processed (typical while a reconnecting extension replays its outbox) would be an existing row
+  to the live path, which would then skip `unreadCount++`, reopen and routing. Anything newer than the request is the
+  live path's; ingest each message (ascending);
   conditional write (item still RUNNING) of cursor + counts; stop on `hasMore=false`, `seen >= maxMessagesPerChat`
   (`capped`), `emptyPages >= maxEmptyPages` (`FAILED NO_PROGRESS`), or cancel. `CHAT_NOT_FOUND` → `SKIPPED NO_CHAT`;
   `DEVICE_DISCONNECTED` / `SEND_FAILED` (the session closed between pages) / `WHATSAPP_NOT_READY` → item back to
   PENDING (cursor and `attemptedAt` kept), `waiting` set, return; a timeout increments the item's `timeouts` and does
   the same, except that at `maxTimeoutsPerChat` (3) the item is `FAILED TIMEOUT` instead, so one chat that never
-  answers cannot stall the import; other `RpcException` → item `FAILED` with the code, next chat. On DONE/SKIPPED/FAILED publish one
+  answers cannot stall the import. `timeouts` counts consecutive timeouts: every page that arrives resets it to 0 (in
+  the same conditional write as the cursor), so a chat that times out now and then but keeps making progress is not
+  failed. A device that stops answering with its socket open ends each chat `FAILED TIMEOUT` after
+  `maxTimeoutsPerChat` rounds and the import `COMPLETED`; a probe-before-charging refinement is pending; other `RpcException` → item `FAILED` with the code, next chat. On DONE/SKIPPED/FAILED publish one
   `ChatChanged` if a chat row exists. `pageDelay` between pages, `chatDelay` between chats.
 
 ## 6. Ingest (`InboxIngestService.importMessage`)
 
 Returns `INSERTED | UPDATED | UNCHANGED | SKIPPED` with the chat row. Differences from the live path: contact upsert
-as today; created chat is `CLOSED`, `unreadCount 0`; existing message → status moves up only, no `statusTimes`;
+as today, except that the push name is passed only when the contact has no name yet (`ContactService.findForChat`
+finds it the way the upsert does), so an import never renames a named contact; created chat is `CLOSED`, `unreadCount 0`; existing message → status moves up only, no `statusTimes`;
 new message → `statusTimes` null, status from `ack`; fold `lastMessage*` / `lastInboundAt` / `lastOutboundAt` only
 (`foldPreview` already ignores older messages); no `unreadCount++`, no reopen, no `REOPENED` action, no campaign
 first-reply detection, no events. Wrapped in `retrying`; `DataAccessException` → `IngestionFailedException`.
@@ -169,7 +185,9 @@ first-reply detection, no events. Wrapped in `retrying`; `DataAccessException` �
 | `POST /history-imports/{id}/cancel` | view; 409 `HISTORY_IMPORT_STATE` unless QUEUED/RUNNING |
 
 Validation (400 `VALIDATION`): `from` after `to`; CHATS with neither phones nor contactIds; more than 500 resolved
-chats; an invalid phone (`Phones.MESSAGE`). 404 when the number or chat is not in the workspace.
+chats; an invalid phone (`Phones.MESSAGE`); a number that is not WhatsApp Web (`phoneNumberId`: "only WhatsApp Web
+numbers can import history") or is disabled (`phoneNumberId`: "the number is disabled"), on both create endpoints.
+404 when the number or chat is not in the workspace.
 
 View: `{id, phoneNumber{id,number,label}, scope{kind, phones, chatCount}, range{from,to}, status, waiting, counts,
 requestedBy{id,name}, creationTime, startedAt, finishedAt, progressPercent}`; `progressPercent` =

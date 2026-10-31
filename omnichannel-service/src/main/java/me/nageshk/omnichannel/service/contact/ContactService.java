@@ -209,6 +209,19 @@ public class ContactService {
     }
 
     /**
+     * The contact {@link #upsertFromChat} would update for this chat partner, or null: the one of the chat's phone
+     * for a {@code @c.us} chat, else the one carrying the chat id.
+     */
+    public Contact findForChat(String workspaceId, String remote) {
+        Contact c = null;
+        int at = remote.indexOf('@');
+        if (!remote.endsWith("@lid") && at > 0) {
+            c = contacts.findByWorkspaceIdAndPhone(workspaceId, remote.substring(0, at)).orElse(null);
+        }
+        return c != null ? c : contacts.findByWorkspaceIdAndWaId(workspaceId, remote).orElse(null);
+    }
+
+    /**
      * The console wrote to {@code phone} and WhatsApp answered under {@code lid}: both ids are one person. The
      * contact of that phone takes the lid; a nameless hidden contact that ingest just created for the lid (its
      * {@code message_create} can beat the reply) is folded away, as the lid is unique. A lid contact with a name or
@@ -238,9 +251,7 @@ public class ContactService {
         if (!lid && !Phones.isValid(phone)) return null;
         if (lid && !Phones.isValid(phone)) phone = null;
 
-        Contact c = null;
-        if (!lid) c = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
-        if (c == null) c = contacts.findByWorkspaceIdAndWaId(workspaceId, remote).orElse(null);
+        Contact c = findForChat(workspaceId, remote);
         boolean changed = false;
         if (c == null) {
             c = new Contact();

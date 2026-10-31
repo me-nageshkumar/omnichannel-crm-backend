@@ -23,6 +23,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportRepository;
+import me.nageshk.omnichannel.db.phone.ConnectionType;
 import me.nageshk.omnichannel.db.phone.PhoneNumber;
 import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
@@ -213,9 +214,16 @@ public class HistoryImportService {
         return waId.contains("@") ? waId : waId + "@c.us";
     }
 
+    /** The number to import from: one of the workspace's, connected through WhatsApp Web and not disabled. */
     private PhoneNumber number(String workspaceId, String phoneNumberId) {
-        return phoneNumbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
+        PhoneNumber number = phoneNumbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("phone number not found"));
+        // a Cloud API number has no phone to read history from, and a disabled one never gets a device
+        if (number.getConnectionType() != ConnectionType.WHATSAPP_WEB) {
+            throw new ValidationException("phoneNumberId", "only WhatsApp Web numbers can import history");
+        }
+        if (number.getDisabled() != null) throw new ValidationException("phoneNumberId", "the number is disabled");
+        return number;
     }
 
     private static void checkRange(Instant from, Instant to) {

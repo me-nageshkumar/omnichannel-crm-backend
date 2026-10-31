@@ -10,9 +10,11 @@ import me.nageshk.omnichannel.app.support.TestDevices;
 import me.nageshk.omnichannel.app.support.TestUsers;
 import me.nageshk.omnichannel.common.api.CodedException;
 import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.common.enablement.EnableLevel;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.contact.ContactSource;
+import me.nageshk.omnichannel.db.enablement.Disabled;
 import me.nageshk.omnichannel.db.inbox.HistoryChatStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryImportStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryScopeKind;
@@ -22,6 +24,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportRepository;
+import me.nageshk.omnichannel.db.phone.ConnectionType;
 import me.nageshk.omnichannel.db.phone.PhoneNumber;
 import me.nageshk.omnichannel.db.tenant.Customer;
 import me.nageshk.omnichannel.db.tenant.Workspace;
@@ -195,6 +198,34 @@ class HistoryImportServiceIT {
     void invalidPhoneIsValidation() {
         assertThatThrownBy(() -> service.create(me, brand.getId(), number.getId(), chatsOf(List.of("12"), null)))
                 .isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    void cloudApiNumberIsRejected() {
+        number.setConnectionType(ConnectionType.WHATSAPP_CLOUD_API);
+        mongo.save(number);
+        assertThatThrownBy(() -> service.create(me, brand.getId(), number.getId(), all(null, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("only WhatsApp Web numbers can import history");
+        WaWebChat chat = new WaWebChat();
+        chat.setCustomerId(acme.getId());
+        chat.setWorkspaceId(brand.getId());
+        chat.setPhoneNumberId(number.getId());
+        chat.setRemoteId("919811100009@c.us");
+        String chatId = chats.save(chat).getId();
+        assertThatThrownBy(() -> service.createForChat(me, brand.getId(), chatId, null, null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("only WhatsApp Web numbers can import history");
+        assertThat(imports.count()).isZero();
+    }
+
+    @Test
+    void disabledNumberIsRejected() {
+        number.setDisabled(new Disabled("someone", EnableLevel.BRAND, Instant.now()));
+        mongo.save(number);
+        assertThatThrownBy(() -> service.create(me, brand.getId(), number.getId(), all(null, null)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("the number is disabled");
+        assertThat(imports.count()).isZero();
     }
 
     @Test
