@@ -58,21 +58,26 @@ does not disturb the live inbox.
 ### `listChats({})` → `ChatRow[]`
 `ChatRow = { id: string /* <digits>@c.us | <id>@lid */, name: string | null, t: number | null /* seconds */, unreadCount: number }`
 From `WAWebCollections.Chat.getModelsArray()`, keeping chats whose `id.server` is `c.us` or `lid` and that are not
-groups, newsletters, broadcasts or status. Lightweight rows: **not** `WWebJS.getChatModel`. `WHATSAPP_NOT_READY`
+groups, newsletters, broadcasts or status. The own-account chat (`wid`/`pnWid`), `0@c.us` and PSA chats are
+excluded. Lightweight rows: **not** `WWebJS.getChatModel`. `WHATSAPP_NOT_READY`
 when `window.WWebJS` is missing.
 
 ### `fetchChatHistory({ chatId, before?, excludeIds?, from?, to?, limit?, maxLoads? })` → `HistoryPage`
 All times are WhatsApp seconds (`msg.t`). Defaults `limit 100`, `maxLoads 20`, `excludeIds []`.
-- `chat = WWebJS.getChat(chatId, {getAsModel:false})`; null → `CHAT_NOT_FOUND`. `PAGE_ERROR` when `chatId` is not
-  a non-empty string.
+- The chat is looked up with `Chat.get` (phone id, then its lid via `getCurrentLid` for `@c.us` ids), never created
+  (`WWebJS.getChat` would create it); none → `CHAT_NOT_FOUND`. `PAGE_ERROR` when `chatId` is not a non-empty
+  string, or when `limit`/`maxLoads` is not a positive integer.
 - keep(m) = `!m.isNotification && m.type !== 'ciphertext' && (before == null || m.t <= before)
   && !excludeIds.includes(m.id._serialized) && (to == null || m.t <= to) && (from == null || m.t >= from)`.
 - Loop while `kept.length < limit` and not `exhausted` and not `pastFrom` and `loads < maxLoads`:
-  `loadEarlierMsgs({chat})`; empty/null → `exhausted = true`; re-read `chat.msgs.getModelsArray()`;
+  `loadEarlierMsgs({chat})`; empty/null → `exhausted = true` only when `chat.msgs.msgLoadState?.noEarlierMsgs !== false` (otherwise stop
+  loading for this call, `exhausted` stays false); re-read `chat.msgs.getModelsArray()`;
   `pastFrom = from != null && min(t of loaded) < from`.
 - `kept` sorted ascending by `t`; `messages = kept.slice(-limit)` (the newest `limit` of them) mapped through
   `normalizeMessageModel(WWebJS.getMessageModel(m))`.
-- `oldest = messages.length ? { t: messages[0].t, ids: [ids of messages with t === messages[0].t] } : null`.
+- `oldest = messages.length ? { t: messages[0].t, ids: [ids of messages with t === messages[0].t] } : null`. When `before` is set and
+  `messages[0].t === before`, `ids` is the union of the incoming `excludeIds` and the page's ids at that second, so a
+  second holding more than `limit` messages is still walked to completion.
 - `hasMore = kept.length > limit || (!exhausted && !pastFrom)`.
 - `HistoryPage = { messages: object[] /* ascending by t */, oldest: {t, ids} | null, hasMore: boolean }`.
 - `before` is inclusive: the caller passes `oldest.t` as the next `before` and `oldest.ids` as `excludeIds`, which
