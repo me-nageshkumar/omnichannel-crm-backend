@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import me.nageshk.omnichannel.common.api.ForbiddenException;
+import me.nageshk.omnichannel.common.api.CodedException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.crm.access.CrmContext;
@@ -208,11 +209,25 @@ public class TaskService {
         }
     }
 
-    /** Applies the closing update, turning a claim into {@code nextOccurrenceId}; guarded by the version. */
+    /**
+     * Applies the closing update, turning a claim into {@code nextOccurrenceId}; guarded by the version. The next
+     * occurrence is stored by now, so a change that landed after the claim (a tick, an edit) must not leave it beside
+     * a task that stays open: while the task is still open and still holds this claim, closing goes ahead on the
+     * newer version. Anything else, such as another request having closed it, stays a conflict.
+     */
     private CrmTask close(CrmContext ctx, String id, Scheduled next, Update u) {
         u.unset("pendingNextOccurrenceId");
         if (next.task() != null) u.set("nextOccurrenceId", next.task().getId());
-        return guarded(ctx, id, next.taskVersion(), u);
+        try {
+            return guarded(ctx, id, next.taskVersion(), u);
+        } catch (CodedException conflict) {
+            if (next.task() == null) throw conflict;
+            CrmTask now = mongo.findOne(byId(ctx, id), CrmTask.class);
+            boolean stillOurs = now != null && now.getStatus() == TaskStatus.OPEN
+                    && next.task().getId().equals(now.getPendingNextOccurrenceId());
+            if (!stillOurs) throw conflict;
+            return guarded(ctx, id, now.getVersion(), u);
+        }
     }
 
     /**
