@@ -10,7 +10,7 @@ import java.util.function.Consumer;
  * Set algebra over CRM contact ids (spec D C5, C16). Contact rules with a negative operator run as Mongo negations
  * inside the universe query, and deal negatives apply to the deal itself (C22); negative channel-contact rules
  * complement within the universe inside {@code SegmentConditionQueries.channelRule}. So the resolver itself needs
- * the universe only for NOT groups; {@link #needsUniverse} also reports negative channel rules, as they load it.
+ * the universe only for NOT groups.
  */
 public final class SegmentSets {
 
@@ -44,18 +44,5 @@ public final class SegmentSets {
         Set<String> out = new HashSet<>(universe);
         out.removeAll(s);
         return out;
-    }
-
-    /** Whether resolving the tree needs the universe's ids in memory: a NOT group, or a negative channel rule. */
-    public static boolean needsUniverse(SegmentRuleGroup g) {
-        if (g.not()) return true;
-        for (SegmentRuleNode n : g.rules()) {
-            if (n instanceof SegmentRuleGroup child && needsUniverse(child)) return true;
-            if (n instanceof SegmentRule r && SegmentFields.groupOf(r.field()).equals(SegmentFields.CHANNEL)
-                    && SegmentFields.isNegative(r.operator())) {
-                return true;
-            }
-        }
-        return false;
     }
 }
