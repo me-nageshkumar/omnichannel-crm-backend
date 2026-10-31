@@ -653,21 +653,12 @@ class ReportsApiIT extends CrmTestBase {
     // --- Task 7: campaigns card ------------------------------------------------------------------------------
 
     private String campaignWith(String name, Instant startedAt, List<String> recipientContactIds) {
-        // one sender per number (unique index): reuse it across the test's campaigns
-        var sender = mongo.findOne(new Query(Criteria.where("phoneNumberId").is(number.getId())),
-                me.nageshk.omnichannel.db.campaign.CampaignSender.class);
-        if (sender == null) {
-            sender = new me.nageshk.omnichannel.db.campaign.CampaignSender();
-            sender.setWorkspaceId(brand.getId());
-            sender.setPhoneNumberId(number.getId());
-            sender = mongo.insert(sender);
-        }
         var c = new me.nageshk.omnichannel.db.campaign.Campaign();
         c.setWorkspaceId(brand.getId());
         c.setCustomerId(acme.getId());
         c.setName(name);
         c.setNameKey(name.toLowerCase() + "-" + System.nanoTime());
-        c.setSenderIds(List.of(sender.getId()));
+        c.setSenderIds(List.of(number.getId()));
         c.setStatus(me.nageshk.omnichannel.db.campaign.CampaignStatus.COMPLETED);
         c.setCounts(new me.nageshk.omnichannel.db.campaign.Campaign.Counts(recipientContactIds.size(), 0,
                 recipientContactIds.size(), recipientContactIds.size(), 1, 0, 0, 0));
@@ -715,6 +706,19 @@ class ReportsApiIT extends CrmTestBase {
         JsonNode mine = report("campaigns", agentToken, filter());
         assertThat(mine.get("rows")).hasSize(1);
         assertThat(mine.get("rows").get(0).get("crmContactsReached").asLong()).isEqualTo(2);
+    }
+
+    @Test
+    void campaignsCardFiltersByNumber() throws Exception {
+        enableCrm();
+        String festive = campaignWith("Festive", daysAgo(2), List.of("x"));
+        Map<String, Object> onNumber = new java.util.HashMap<>(filter());
+        onNumber.put("phoneNumberIds", List.of(number.getId()));
+        assertThat(report("campaigns", managerToken, onNumber).get("rows")).extracting(n -> n.get("campaignId").asText())
+                .containsExactly(festive);
+        Map<String, Object> onOther = new java.util.HashMap<>(filter());
+        onOther.put("phoneNumberIds", List.of(number2.getId()));
+        assertThat(report("campaigns", managerToken, onOther).get("rows")).isEmpty();
     }
 
     @Test

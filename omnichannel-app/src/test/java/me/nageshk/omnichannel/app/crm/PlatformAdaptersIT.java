@@ -236,11 +236,11 @@ class PlatformAdaptersIT extends CrmTestBase {
         var sender = new me.nageshk.omnichannel.db.campaign.CampaignSender();
         sender.setWorkspaceId(brand.getId());
         sender.setPhoneNumberId(number.getId());
-        sender = mongo.insert(sender);
+        mongo.insert(sender);
         java.time.Instant now = java.time.Instant.now();
-        var older = campaign("Diwali", now.minus(java.time.Duration.ofDays(5)), sender.getId(), 2, 1);
-        var newer = campaign("Clearance", now.minus(java.time.Duration.ofDays(1)), sender.getId(), 1, 1);
-        campaign("Long ago", now.minus(java.time.Duration.ofDays(40)), sender.getId(), 1, 1);
+        var older = campaign("Diwali", now.minus(java.time.Duration.ofDays(5)), number.getId(), 2, 1);
+        var newer = campaign("Clearance", now.minus(java.time.Duration.ofDays(1)), number.getId(), 1, 1);
+        campaign("Long ago", now.minus(java.time.Duration.ofDays(40)), number.getId(), 1, 1);
         recipient(older.getId(), "ct-1", "919900000101");
         recipient(older.getId(), "ct-2", "919900000102");
         recipient(older.getId(), null, "919900000103");
