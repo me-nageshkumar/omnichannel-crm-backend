@@ -206,4 +206,17 @@ class RemindersIT extends CrmTestBase {
                 "crmTasks").get("reminderSentAt")).isNull();
         assertThat(job.run()).isEqualTo(1);
     }
+
+    @Test
+    void legacyTaskRaisesNoNotice() throws Exception {
+        assignPipelines(agent, salesId());
+        JsonNode t = task(managerToken, agent.getId(), past());
+        // a task written before phase E has none of the delegation fields
+        mongo.updateFirst(new Query(Criteria.where("_id").is(t.get("id").asText())),
+                new Update().unset("assignedBy").unset("assignedAt").unset("assignmentSeenAt"), "crmTasks");
+        send(get(crm() + "/reminders"), agentToken, null).andExpect(jsonPath("$.length()").value(0));
+        assertThat(job.run()).isEqualTo(1);
+        send(get(crm() + "/reminders"), agentToken, null).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].kind").value("DUE"));
+    }
 }

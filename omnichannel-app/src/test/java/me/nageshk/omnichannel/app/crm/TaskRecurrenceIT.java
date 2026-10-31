@@ -164,7 +164,9 @@ class TaskRecurrenceIT extends CrmTestBase {
         List<Document> steps = next.getList("checklist", Document.class);
         assertThat(steps).extracting(d -> d.getString("text")).containsExactly("Count", "Report");
         assertThat(steps).allSatisfy(d -> assertThat(d.getBoolean("done")).isFalse());
-        assertThat(steps.get(0).getString("id")).isNotEqualTo(t.get("checklist").get(0).get("id").asText());
+        // embedded ids are stored as _id (Spring's mapping); the wire name is id
+        assertThat(String.valueOf(steps.get(0).get("_id"))).hasSize(24)
+                .isNotEqualTo(t.get("checklist").get(0).get("id").asText());
         CrmActivity a = mongo.findOne(new Query(Criteria.where("type").is(ActivityType.TASK_CREATED)
                 .and("payload.recurringFromTaskId").is(t.get("id").asText())), CrmActivity.class);
         assertThat(a).isNotNull();
@@ -256,7 +258,18 @@ class TaskRecurrenceIT extends CrmTestBase {
     }
 
     @Test
-    void racingCompletionsScheduleOneOccurrence() throws Exception {
+    void completeOrReopenOnSkippedIs400() throws Exception {
+        JsonNode t = create(managerToken, body("Daily call", Instant.now().plus(1, ChronoUnit.DAYS), daily(1)));
+        send(post(crm() + "/tasks/" + t.get("id").asText() + "/skip"), managerToken, null).andExpect(status().isOk());
+        send(post(crm() + "/tasks/" + t.get("id").asText() + "/complete"), managerToken, null)
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("TASK_NOT_OPEN"));
+        send(post(crm() + "/tasks/" + t.get("id").asText() + "/reopen"), managerToken, null)
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("TASK_NOT_OPEN"));
+        assertThat(occurrencesAfter(t.get("id").asText())).hasSize(1);
+    }
+
+    @Test
+    void secondCompletionIsIdempotent() throws Exception {
         JsonNode t = create(managerToken, body("Daily call", Instant.now().plus(1, ChronoUnit.DAYS), daily(1)));
         JsonNode first = complete(managerToken, t);
         JsonNode second = complete(managerToken, t);

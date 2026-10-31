@@ -152,6 +152,7 @@ public class TaskService {
         CrmTask current = load(ctx, id);
         assertCanWork(ctx, current);
         if (current.getStatus() == TaskStatus.DONE) return views(ctx, List.of(current)).get(0);
+        if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen(); // a skipped occurrence stays skipped
         Instant now = Instant.now(clock);
         CrmTask next = nextOccurrence(ctx, current, now);
         Update u = new Update().set("status", TaskStatus.DONE).set("completedAt", now).set("completedBy", ctx.userId());
@@ -241,6 +242,7 @@ public class TaskService {
         CrmTask current = load(ctx, id);
         assertCanWork(ctx, current);
         if (current.getStatus() == TaskStatus.OPEN) return views(ctx, List.of(current)).get(0);
+        if (current.getStatus() != TaskStatus.DONE) throw TaskErrors.notOpen(); // its series moved on when it was skipped
         CrmTask saved = guarded(ctx, id, current.getVersion(), new Update().set("status", TaskStatus.OPEN)
                 .unset("completedAt").unset("completedBy"));
         counters.recompute(ctx.workspaceId(), saved.getTarget());

@@ -44,7 +44,8 @@ public class ReminderService {
                 .and("status").is(TaskStatus.OPEN);
         Criteria visible = access.visibleCriteria(ctx);
         List<CrmTask> assigned = mongo.find(new Query(new Criteria().andOperator(mine, visible,
-                        Criteria.where("assignedBy").ne(ctx.userId()).and("assignmentSeenAt").is(null)))
+                        // exists: a task written before phase E has no assigner and is not a hand-off
+                        Criteria.where("assignedBy").exists(true).ne(ctx.userId()).and("assignmentSeenAt").is(null)))
                 .with(Sort.by(Sort.Direction.DESC, "assignedAt")).limit(LIMIT), CrmTask.class);
         List<CrmTask> due = mongo.find(new Query(new Criteria().andOperator(mine, visible,
                         Criteria.where("reminderSentAt").ne(null).and("reminderSeenAt").is(null)))

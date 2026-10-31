@@ -194,8 +194,9 @@ class CrmDemoSeederIT {
         org.bson.Document festiveAgain = mongo.findOne(new Query(Criteria.where("_id").is(festive.get("_id"))),
                 org.bson.Document.class, "crmTasks");
         assertThat(festiveAgain.get("assignedAt")).isEqualTo(festive.get("assignedAt"));
-        assertThat(festiveAgain.getList("checklist", org.bson.Document.class).get(0).getString("id"))
-                .isEqualTo(steps.get(0).getString("id"));
+        assertThat(String.valueOf(steps.get(0).get("_id"))).hasSize(24);
+        assertThat(String.valueOf(festiveAgain.getList("checklist", org.bson.Document.class).get(0).get("_id")))
+                .isEqualTo(String.valueOf(steps.get(0).get("_id")));
         // a database seeded before phase E: the fields are missing and get applied
         mongo.updateMulti(new Query(ws), new org.springframework.data.mongodb.core.query.Update().unset("assignedBy")
                 .unset("assignedAt").unset("checklist").unset("recurrence").unset("seriesId").unset("occurrence"), "crmTasks");
