@@ -105,3 +105,11 @@ Small findings from the final reviews of phases D to G, kept here because the le
 - [ ] A failed company lookup in a segment rule shows "Unknown company" for a live company and is not retried
 - [ ] `CrmJobLocks`: a failure giving the lock back hides the job's own exception
 - [ ] A stage of another active pipeline is labelled missing rather than no access
+
+## Found in the phase D and E browser walks, fixed
+
+- [x] `ApiError` lost its prototype at tsconfig target es5, so every `instanceof ApiError` was false in production and every server error read "Something went wrong"
+- [x] "1 CRM contacts" and "1 contacts" in segments and the campaign wizard
+- [x] The repeat unit labels wrapped mid-word in the task form
+- [x] The masthead made every page 464 px wide at phone width
+
