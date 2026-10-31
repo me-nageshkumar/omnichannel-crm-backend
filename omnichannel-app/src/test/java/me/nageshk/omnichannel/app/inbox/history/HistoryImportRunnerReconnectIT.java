@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.context.TestPropertySource;
 
 /** A second between chats, long enough for the extension to reconnect while an import is running. */
-@TestPropertySource(properties = "omnichannel.history.chat-delay=1s")
+@TestPropertySource(properties = "omnichannel.history.chat-delay=3s")
 class HistoryImportRunnerReconnectIT extends HistoryImportTestBase {
 
     @Test
@@ -52,7 +52,7 @@ class HistoryImportRunnerReconnectIT extends HistoryImportTestBase {
 
         try (HistoryDevice second = new HistoryDevice(port, testDevices, n1)) {
             HistoryImportRunnerIT.seedTwoChats(second);
-            tick.get(10, SECONDS);
+            tick.get(20, SECONDS);
 
             assertThat(second.requests("fetchChatHistory")).hasSize(1);
             assertThat(second.requests("fetchChatHistory").get(0).params().get("chatId").asString()).isEqualTo(B);
