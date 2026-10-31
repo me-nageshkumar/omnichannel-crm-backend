@@ -367,9 +367,11 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 | `POST /deals/{id}/move`, `POST /deals/{id}/close` | Move between lanes (`beforeDealId`/`afterDealId`), close WON or LOST (409 `VERSION_CONFLICT` when the deal moved meanwhile) |
 | `GET /activities?targetType=&targetId=`, `POST /activities/log` | Timeline of a record; log a CALL, MEETING or EMAIL |
 | `GET /fields?entityType=&includeInactive=`, `POST /fields`, `PUT\|DELETE /fields/{id}`, `PUT /fields/reorder` | Custom fields of contacts, companies and deals (400 `FIELD_IMMUTABLE`, 409 `LIMIT_REACHED`, `FIELD_KEY_TAKEN`) |
-| `GET /tasks?targetType=&targetId=`, `POST /tasks`, `PUT\|DELETE /tasks/{id}`, `POST /tasks/{id}/complete\|reopen` | Tasks on a contact, company or deal |
-| `GET /tasks/mine?bucket=overdue\|today\|upcoming&tz=`, `GET /tasks/mine/counts?tz=` | My tasks by bucket (`tz` is an IANA zone or offset, default UTC) |
-| `GET /reminders`, `POST /reminders/{taskId}/seen` | Due task reminders of the caller, polled by the console |
+| `GET /tasks?targetType=&targetId=`, `POST /tasks`, `PUT\|DELETE /tasks/{id}`, `POST /tasks/{id}/complete\|reopen\|skip` | Tasks on a contact, company or deal; complete, reopen and skip need `crm:edit` or being the assignee |
+| `POST /tasks/{id}/checklist/{itemId}` `{done}` | Tick or untick one step atomically (400 `TASK_NOT_OPEN`) |
+| `GET /tasks/mine?bucket=overdue\|today\|upcoming&tz=`, `GET /tasks/mine/counts?tz=` | My tasks by bucket (`tz` is an IANA zone or offset, default UTC); counts include `delegated` |
+| `GET /tasks/delegated?status=OPEN\|DONE` | Tasks the caller handed to others |
+| `GET /reminders`, `POST /reminders/{taskId}/seen` | The caller's notices (`kind` DUE or ASSIGNED), polled by the console |
 | `GET /notes?targetType=&targetId=`, `POST /notes`, `PUT\|DELETE /notes/{id}`, `POST /notes/{id}/pin` | Markdown notes; the author or a `crm:delete` holder edits |
 | `POST /notes/{id}/attachments` (multipart `file`), `GET\|DELETE /notes/{id}/attachments/{aid}` | Up to 5 files of 10 MB per note in GridFS (400 `ATTACHMENT_REJECTED`) |
 | `POST /contacts\|companies\|deals/export` | CSV of the list with its search body (`crm:export`) |
@@ -388,6 +390,15 @@ the JVM (`LaneLocks`): enough for the single app instance; running the CRM on se
 - **Tasks and reminders:** a task has a title, optional due time, reminder (not after the due time), priority
   `LOW|NORMAL|HIGH` and assignee; the record shows its next open task's due time. Every minute the reminder job marks
   due reminders, which the console polls from `GET /reminders`; editing `reminderAt` re-arms a reminder.
+- **Delegation, checklists, repeats (phase E):** a task records who assigned it (`assignedBy`); the assignee must be a
+  user of the brand with `crm:view` who can see the record (field errors on `assigneeId`), may complete, reopen, skip
+  and tick their own task with view rights, and gets an ASSIGNED notice on the reminders poll until seen. A task has up
+  to 30 ordered steps (`checklist`), merged by id on save and ticked atomically. A repeating task (`recurrence`:
+  DAILY/WEEKLY/MONTHLY, interval 1–99, weekdays, day of month, IANA zone, `endsAfter` 2–999 or `endsOn`) schedules its
+  next occurrence when completed or skipped: missed dates are skipped, the wall-clock time is kept, the reminder keeps
+  its offset unless that is already past, steps are copied unticked. Skipping cancels the occurrence (`CANCELLED`
+  tasks stay on the record's list, never in buckets). Timeline: `TASK_UPDATED {action: REASSIGNED|SKIPPED}`,
+  `TASK_CREATED` "Next task scheduled".
 - **Notes:** Markdown up to 20,000 characters, pinned notes first; attachments are images, PDF, text, CSV and Office
   files. Deleting a note, deal or company deletes its files.
 - **CSV:** exports are UTF-8 with a BOM, CRLF and RFC 4180 quoting, cells that would run as a formula get a leading
@@ -426,8 +437,9 @@ the JVM (`LaneLocks`): enough for the single app instance; running the CRM on se
 **Demo data:** with `OMNICHANNEL_SEED_DEMO=true`, `CrmDemoSeeder` (after the other demo seeders) switches the CRM on
 for "Demo Fashion" and adds 3 companies, 8 CRM contacts from the demo contacts on the demo number, 10 deals across
 the Sales lanes (one won, one lost, one rotting) and two logged calls, and gives `demo-agent` the Sales pipeline. It
-also adds the DEAL fields `tier` (Gold/Silver) and `budget`, three tasks for `demo-agent` (one overdue, one due
-today, one whose reminder has passed), a pinned note and two segments ("Gold-tier deals in Sales" — the festive
+also adds the DEAL fields `tier` (Gold/Silver) and `budget`, three tasks for `demo-agent` handed over by
+`demo-manager` (one overdue with three steps, one due today repeating weekly, one whose reminder has passed; the
+hand-over is also applied to a brand seeded before it existed), a pinned note and two segments ("Gold-tier deals in Sales" — the festive
 order carries `tier = gold` — and "Quiet contacts"; these two are also added to a brand seeded before they existed),
 and backdates the records (deals created over the last 60
 days, the won and lost deals closed 3 and 10 days ago, stage moves a few days after creation, calls in the last week)
