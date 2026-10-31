@@ -85,7 +85,8 @@ class HistoryDevice implements AutoCloseable {
         }
     }
 
-    private Envelope answer(Envelope req) {
+    /** The answer {@link #chats} gives, for an {@link #override} that answers some requests normally. */
+    Envelope answer(Envelope req) {
         return switch (req.method()) {
             case "listChats" -> Envelope.response(req.id(), listChats());
             case "fetchChatHistory" -> fetchChatHistory(req);

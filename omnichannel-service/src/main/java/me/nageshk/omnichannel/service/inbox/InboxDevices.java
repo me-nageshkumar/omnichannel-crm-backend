@@ -32,7 +32,7 @@ public class InboxDevices {
     }
 
     /** Same as {@link #requireReady(String, WaWebChat)}, for a number that has no chat yet. */
-    DeviceSession requireReady(String workspaceId, String phoneNumberId) {
+    public DeviceSession requireReady(String workspaceId, String phoneNumberId) {
         PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("phone number not found"));
         if (number.getDisabled() != null || !access.isWorkspaceUsable(workspaceId)) {

@@ -2,12 +2,14 @@ package me.nageshk.omnichannel.app.inbox.history;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import me.nageshk.omnichannel.app.support.MutableClock;
 import me.nageshk.omnichannel.app.support.TestDevices;
 import me.nageshk.omnichannel.app.support.TestUsers;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatAction;
+import me.nageshk.omnichannel.db.inbox.HistoryScopeKind;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
@@ -21,6 +23,10 @@ import me.nageshk.omnichannel.db.tenant.Workspace;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.WorkspaceRole;
 import me.nageshk.omnichannel.security.access.BuiltInRoles;
+import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.service.inbox.history.HistoryImportRequest;
+import me.nageshk.omnichannel.service.inbox.history.HistoryImportRequest.ScopeRequest;
+import me.nageshk.omnichannel.service.inbox.history.HistoryImportRunner;
 import me.nageshk.omnichannel.service.inbox.history.HistoryImportService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +39,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -69,6 +77,7 @@ abstract class HistoryImportTestBase {
     @Autowired TestDevices testDevices;
     @Autowired MongoTemplate mongo;
     @Autowired HistoryImportService service;
+    @Autowired HistoryImportRunner runner;
     @Autowired WaWebHistoryImportRepository imports;
     @Autowired WaWebHistoryImportChatRepository items;
     @Autowired WaWebMessageRepository messages;
@@ -120,6 +129,28 @@ abstract class HistoryImportTestBase {
     /** A fresh token: it carries the clock's current time. */
     String token(User u) {
         return testUsers.accessToken(u);
+    }
+
+    /** An import of every chat of {@code n1}, requested by the manager. */
+    WaWebHistoryImport importAll(Instant from, Instant to) {
+        return service.create(new AuthenticatedUser(manager, Set.of()), brand.getId(), n1.getId(),
+                new HistoryImportRequest(new ScopeRequest(HistoryScopeKind.ALL, null, null), from, to)).imp();
+    }
+
+    /** An import of the chats of these phones on {@code n1}, requested by the manager. */
+    WaWebHistoryImport importChats(String... phones) {
+        return service.create(new AuthenticatedUser(manager, Set.of()), brand.getId(), n1.getId(),
+                new HistoryImportRequest(new ScopeRequest(HistoryScopeKind.CHATS, List.of(phones), null), null,
+                        null)).imp();
+    }
+
+    WaWebHistoryImport reload(WaWebHistoryImport imp) {
+        return imports.findById(imp.getId()).orElseThrow();
+    }
+
+    List<WaWebHistoryImportChat> itemsOf(WaWebHistoryImport imp) {
+        return mongo.find(new Query(Criteria.where("importId").is(imp.getId())).with(Sort.by("_id")),
+                WaWebHistoryImportChat.class);
     }
 
     String url(String path) {
