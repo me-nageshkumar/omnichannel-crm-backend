@@ -14,6 +14,8 @@ import me.nageshk.omnichannel.db.user.BrandDisable;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.UserRepository;
 import me.nageshk.omnichannel.db.user.WorkspaceRole;
+import me.nageshk.omnichannel.common.api.NotFoundException;
+import me.nageshk.omnichannel.security.access.AccessService;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -22,11 +24,14 @@ class PeopleDirectoryAdapter implements PeopleDirectory {
     private final TeamRepository teams;
     private final UserRepository users;
     private final WorkspaceRepository workspaces;
+    private final AccessService access;
 
-    PeopleDirectoryAdapter(TeamRepository teams, UserRepository users, WorkspaceRepository workspaces) {
+    PeopleDirectoryAdapter(TeamRepository teams, UserRepository users, WorkspaceRepository workspaces,
+            AccessService access) {
         this.teams = teams;
         this.users = users;
         this.workspaces = workspaces;
+        this.access = access;
     }
 
     @Override
@@ -57,6 +62,16 @@ class PeopleDirectoryAdapter implements PeopleDirectory {
     @Override
     public Optional<PlatformPerson> byUsername(String username) {
         return users.findByUsername(username).map(PeopleDirectoryAdapter::of);
+    }
+
+    @Override
+    public Optional<Set<String>> authoritiesIn(String workspaceId, String userId) {
+        if (!isBrandUser(workspaceId, userId)) return Optional.empty();
+        try {
+            return Optional.of(access.inWorkspace(access.load(users.findById(userId).orElseThrow()), workspaceId));
+        } catch (NotFoundException e) {
+            return Optional.empty();
+        }
     }
 
     private static PlatformPerson of(User u) {

@@ -17,4 +17,10 @@ public interface PeopleDirectory {
     Map<String, PlatformPerson> people(Collection<String> userIds);
 
     Optional<PlatformPerson> byUsername(String username);
+
+    /**
+     * The user's effective authorities in the brand; empty when the user does not exist, is disabled (everywhere or
+     * for the brand) or has no access to the brand at all.
+     */
+    Optional<Set<String>> authoritiesIn(String workspaceId, String userId);
 }

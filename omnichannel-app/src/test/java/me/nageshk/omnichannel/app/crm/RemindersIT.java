@@ -90,8 +90,8 @@ class RemindersIT extends CrmTestBase {
     @Test
     void remindersListsOnlyOwnUnseen() throws Exception {
         task(managerToken, manager.getId(), past());
-        task(managerToken, agent.getId(), past());
         assignPipelines(agent, salesId());
+        task(managerToken, agent.getId(), past());
         job.run();
         send(get(crm() + "/reminders"), managerToken, null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
@@ -104,7 +104,9 @@ class RemindersIT extends CrmTestBase {
 
     @Test
     void reminderOnHiddenDealNotListed() throws Exception {
+        assignPipelines(agent, salesId());
         task(managerToken, agent.getId(), past());
+        assignPipelines(agent); // access withdrawn after the hand-off
         job.run();
         // the agent has no pipeline, so the deal (and its task) is out of sight
         send(get(crm() + "/reminders"), agentToken, null).andExpect(jsonPath("$.length()").value(0));

@@ -135,6 +135,18 @@ class PlatformAdaptersIT extends CrmTestBase {
     }
 
     @Test
+    void authoritiesInReflectsAccess() {
+        assertThat(peopleDirectory.authoritiesIn(brand.getId(), manager.getId())).isPresent()
+                .get().asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.collection(String.class))
+                .contains("crm:edit");
+        assertThat(peopleDirectory.authoritiesIn(brand.getId(), staff.getId())).isEmpty();
+        assertThat(peopleDirectory.authoritiesIn(brand.getId(), "missing")).isEmpty();
+        agent.setDisabled(new Disabled("x", EnableLevel.COMPANY, Instant.now()));
+        userRepository.save(agent);
+        assertThat(peopleDirectory.authoritiesIn(brand.getId(), agent.getId())).isEmpty();
+    }
+
+    @Test
     void findChatIsBrandScoped() {
         Contact c = contact("A", "919900000005");
         WaWebChat chat = chat(c, number, agent, support);

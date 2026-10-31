@@ -123,6 +123,7 @@ class TasksApiIT extends CrmTestBase {
         JsonNode t = create(managerToken, task("DEAL", dealId, "Hidden", Instant.now().minus(1, ChronoUnit.HOURS)));
         Map<String, Object> asAgent = task("DEAL", dealId, "Mine", Instant.now().minus(1, ChronoUnit.HOURS));
         asAgent.put("assigneeId", agent.getId());
+        assignPipelines(agent, salesId()); // the hand-off needs the agent to see the deal (spec E C2)
         create(managerToken, asAgent);
         assignPipelines(agent, secondId);
         send(get(crm() + "/tasks?targetType=DEAL&targetId=" + dealId), agentToken, null)
@@ -170,8 +171,8 @@ class TasksApiIT extends CrmTestBase {
         String dealId = deal.get("id").asText();
         Map<String, Object> mine = task("DEAL", dealId, "Mine", Instant.now().minus(1, ChronoUnit.HOURS));
         mine.put("assigneeId", agent.getId());
-        create(managerToken, mine);
         assignPipelines(agent, salesId());
+        create(managerToken, mine);
         send(get(crm() + "/tasks/mine?bucket=overdue"), agentToken, null).andExpect(jsonPath("$.length()").value(1));
         send(put(crm() + "/deals/" + dealId), managerToken,
                 Map.of("version", deal.get("version").asLong(), "pipelineId", second)).andExpect(status().isOk());

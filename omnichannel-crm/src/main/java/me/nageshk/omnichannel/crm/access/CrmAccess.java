@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.platform.NumberDirectory;
+import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
+import java.util.Optional;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipelineService;
 import me.nageshk.omnichannel.crm.platform.PlatformNumber;
 import me.nageshk.omnichannel.crm.settings.CrmDefaults;
@@ -24,10 +26,13 @@ public class CrmAccess {
     private final PipelineAccessReader assignments;
     private final PipelineIds pipelineIds;
     private final CrmPipelineService pipelineService;
+    private final PeopleDirectory people;
 
     CrmAccess(AccessService access, CrmSettingsService settings, NumberDirectory numbers,
-            PipelineAccessReader assignments, PipelineIds pipelineIds, CrmPipelineService pipelineService) {
+            PipelineAccessReader assignments, PipelineIds pipelineIds, CrmPipelineService pipelineService,
+            PeopleDirectory people) {
         this.pipelineService = pipelineService;
+        this.people = people;
         this.access = access;
         this.settings = settings;
         this.numbers = numbers;
@@ -65,6 +70,28 @@ public class CrmAccess {
         brandNumbers.forEach(n -> chattable.add(n.id()));
         return new CrmContext(workspaceId, customerId, "system", SYSTEM_AUTHORITIES, s, brandNumbers, chattable,
                 PipelineAccess.ALL);
+    }
+
+    /**
+     * Another user's context in the caller's brand (spec E C2), for checking what they could see: their authorities
+     * and pipeline access, the caller's settings and numbers, nothing chattable. Empty when they are not a user of
+     * the brand. Does not require {@code crm:view}; the caller decides what a missing authority means.
+     *
+     * <p>Never a request's own context: it skips the enabled check and the default-pipeline bootstrap.
+     */
+    public Optional<CrmContext> resolveFor(CrmContext caller, String userId) {
+        return people.authoritiesIn(caller.workspaceId(), userId).map(authorities -> {
+            PipelineAccess pipelines;
+            if (authorities.contains("crm:view-all")) {
+                pipelines = PipelineAccess.ALL;
+            } else {
+                Set<String> mine = new HashSet<>(assignments.pipelineIdsOf(caller.workspaceId(), userId));
+                mine.retainAll(pipelineIds.existing(caller.workspaceId()));
+                pipelines = new PipelineAccess(false, mine);
+            }
+            return new CrmContext(caller.workspaceId(), caller.customerId(), userId, authorities, caller.settings(),
+                    caller.numbers(), Set.of(), pipelines);
+        });
     }
 
     private static final Set<String> SYSTEM_AUTHORITIES = Set.of("crm:view", "crm:view-all", "crm:edit",

@@ -54,15 +54,17 @@ public class TaskService {
     private final PeopleDirectory people;
     private final ActivityLog activities;
     private final Clock clock;
+    private final TaskAssigneeCheck assigneeCheck;
 
     TaskService(MongoTemplate mongo, TaskAccess access, TaskCounters counters, PeopleDirectory people,
-            ActivityLog activities, Clock clock) {
+            ActivityLog activities, Clock clock, TaskAssigneeCheck assigneeCheck) {
         this.mongo = mongo;
         this.access = access;
         this.counters = counters;
         this.people = people;
         this.activities = activities;
         this.clock = clock;
+        this.assigneeCheck = assigneeCheck;
     }
 
     // --- writes --------------------------------------------------------------------------------------------
@@ -80,7 +82,13 @@ public class TaskService {
         t.setPipelineId(info.pipelineId());
         t.setPhoneNumberId(info.phoneNumberId());
         f.applyTo(t);
-        t.setAssigneeId(f.assigneeId != null ? f.assigneeId : ctx.userId());
+        String assignee = f.assigneeId != null ? f.assigneeId : ctx.userId();
+        assigneeCheck.assertAssignable(ctx, assignee, t.getTarget());
+        Instant now = Instant.now(clock);
+        t.setAssigneeId(assignee);
+        t.setAssignedBy(ctx.userId());
+        t.setAssignedAt(now);
+        if (assignee.equals(ctx.userId())) t.setAssignmentSeenAt(now);
         t.setStatus(TaskStatus.OPEN);
         t.setCreatedBy(ctx.userId());
         t.setLastModifiedBy(ctx.userId());
@@ -97,15 +105,30 @@ public class TaskService {
         if (req.version() == null) errors.put("version", "is required");
         Fields f = fields(ctx, req, current, errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
+        String assignee = f.assigneeId != null ? f.assigneeId : current.getAssigneeId();
+        boolean reassigned = !java.util.Objects.equals(assignee, current.getAssigneeId());
+        if (reassigned) assigneeCheck.assertAssignable(ctx, assignee, current.getTarget());
         Update u = new Update().set("title", f.title).set("description", f.description).set("type", f.type)
                 .set("priority", f.priority).set("dueAt", f.dueAt).set("reminderAt", f.reminderAt)
-                .set("assigneeId", f.assigneeId != null ? f.assigneeId : current.getAssigneeId());
-        if (!java.util.Objects.equals(f.reminderAt, current.getReminderAt())) {
-            u.unset("reminderSentAt").unset("reminderSeenAt"); // a new reminder time re-arms the reminder
+                .set("assigneeId", assignee);
+        if (!java.util.Objects.equals(f.reminderAt, current.getReminderAt()) || reassigned) {
+            // a new reminder time, or a new person, re-arms the reminder
+            u.unset("reminderSentAt").unset("reminderSeenAt");
+        }
+        if (reassigned) {
+            u.set("assignedBy", ctx.userId()).set("assignedAt", Instant.now(clock)).unset("assignmentSeenAt");
         }
         CrmTask saved = guarded(ctx, id, req.version(), u);
         counters.recompute(ctx.workspaceId(), saved.getTarget());
-        record(ctx, ActivityType.TASK_UPDATED, saved, "Task changed: " + saved.getTitle(), "UPDATED");
+        if (reassigned) {
+            Map<String, Object> handOff = new LinkedHashMap<>();
+            handOff.put("fromAssigneeId", current.getAssigneeId());
+            handOff.put("toAssigneeId", assignee);
+            record(ctx, ActivityType.TASK_UPDATED, saved, "Task reassigned to " + nameOf(assignee) + ": "
+                    + saved.getTitle(), "REASSIGNED", handOff);
+        } else {
+            record(ctx, ActivityType.TASK_UPDATED, saved, "Task changed: " + saved.getTitle(), "UPDATED");
+        }
         return views(ctx, List.of(saved)).get(0);
     }
 
@@ -252,11 +275,23 @@ public class TaskService {
     }
 
     private void record(CrmContext ctx, ActivityType type, CrmTask t, String summary, String action) {
+        record(ctx, type, t, summary, action, Map.of());
+    }
+
+    private void record(CrmContext ctx, ActivityType type, CrmTask t, String summary, String action,
+            Map<String, Object> extra) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("taskId", t.getId());
         if (action != null) payload.put("action", action);
+        payload.putAll(extra);
         activities.record(ctx, type, t.getTarget(), List.of(), t.getPipelineId(), t.getPhoneNumberId(), summary,
                 payload);
+    }
+
+    /** A user's display name, or the id when unknown. */
+    private String nameOf(String userId) {
+        PlatformPerson p = people.people(List.of(userId)).get(userId);
+        return p == null || p.name() == null ? userId : p.name();
     }
 
     /** The validated editable fields of a create or a full update. */
@@ -303,12 +338,7 @@ public class TaskService {
         f.reminderAt = req.reminderAt();
         if (f.dueAt != null && f.reminderAt != null && f.reminderAt.isAfter(f.dueAt))
             errors.put("reminderAt", "must not be after the due time");
-        if (req.assigneeId() != null && !req.assigneeId().isBlank()) {
-            String a = req.assigneeId().trim();
-            if (!(current != null && a.equals(current.getAssigneeId())) && !people.isBrandUser(ctx.workspaceId(), a))
-                errors.put("assigneeId", "must be a user of this brand");
-            f.assigneeId = a;
-        }
+        if (req.assigneeId() != null && !req.assigneeId().isBlank()) f.assigneeId = req.assigneeId().trim();
         if (current != null && req.target() != null && (req.target().type() != current.getTarget().type()
                 || !java.util.Objects.equals(req.target().id(), current.getTarget().id())))
             errors.put("target", "cannot change");
@@ -330,6 +360,8 @@ public class TaskService {
         for (CrmTask t : tasks) {
             if (t.getAssigneeId() != null) users.add(t.getAssigneeId());
             if (t.getCompletedBy() != null) users.add(t.getCompletedBy());
+            if (t.getAssignedBy() != null) users.add(t.getAssignedBy());
+            if (t.getChecklist() != null) t.getChecklist().forEach(i -> { if (i.getDoneBy() != null) users.add(i.getDoneBy()); });
             ids.computeIfAbsent(t.getTarget().type(), k -> new LinkedHashSet<>()).add(t.getTarget().id());
         }
         Map<String, PlatformPerson> who = people.people(users);
@@ -340,10 +372,14 @@ public class TaskService {
         Instant now = Instant.now(clock);
         return tasks.stream().map(t -> new TaskView(t.getId(), t.getTitle(), t.getDescription(), t.getType(),
                 t.getPriority(), t.getDueAt(), t.getReminderAt(), t.getStatus(), t.getCompletedAt(),
-                ref(t.getCompletedBy(), who), ref(t.getAssigneeId(), who),
+                ref(t.getCompletedBy(), who), ref(t.getAssigneeId(), who), ref(t.getAssignedBy(), who),
+                t.getAssignedAt(),
                 new TaskView.Target(t.getTarget().type(), t.getTarget().id(), names.get(t.getTarget().id())),
                 t.getStatus() == TaskStatus.OPEN && t.getDueAt() != null && t.getDueAt().isBefore(now),
-                t.getVersion())).toList();
+                t.getChecklist() == null ? List.of() : t.getChecklist().stream().map(i -> new TaskView.ChecklistItemView(
+                        i.getId(), i.getText(), i.isDone(), i.getDoneAt(), ref(i.getDoneBy(), who))).toList(),
+                t.getRecurrence(), t.getSeriesId(), t.getOccurrence(), t.getRecurringFromTaskId(),
+                t.getNextOccurrenceId(), t.getVersion())).toList();
     }
 
     private void names(CrmContext ctx, Set<String> ids, String collection, Map<String, String> out,

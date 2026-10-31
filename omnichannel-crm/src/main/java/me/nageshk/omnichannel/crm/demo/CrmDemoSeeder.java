@@ -199,13 +199,13 @@ public class CrmDemoSeeder implements ApplicationRunner {
             Instant now = Instant.now();
             CrmTarget festive = new CrmTarget(TargetType.DEAL, dealIds.get(8));
             tasks.create(ctx, new TaskRequest("Send the festive price list", null, "follow_up", "HIGH",
-                    now.minus(1, ChronoUnit.DAYS), null, agentId, festive, null));
+                    now.minus(1, ChronoUnit.DAYS), null, agentId, festive, null, null, null));
             tasks.create(ctx, new TaskRequest("Call about uniform sizes", null, "call", "NORMAL",
                     now.plus(1, ChronoUnit.HOURS), null, agentId, new CrmTarget(TargetType.DEAL, dealIds.get(3)),
-                    null));
+                    null, null, null));
             tasks.create(ctx, new TaskRequest("Confirm the delivery date", null, "call", "NORMAL",
                     now.plus(2, ChronoUnit.DAYS), now.minus(10, ChronoUnit.MINUTES), agentId,
-                    new CrmTarget(TargetType.DEAL, dealIds.get(4)), null));
+                    new CrmTarget(TargetType.DEAL, dealIds.get(4)), null, null, null));
         }
         notes.create(ctx, new NoteRequest(new CrmTarget(TargetType.DEAL, dealIds.get(8)),
                 "**Festive order** - 400 pieces, delivery before Diwali. Prefers cotton blends.", true, null));
