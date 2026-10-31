@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -133,7 +134,11 @@ public class SegmentService {
         CrmSegment s = require(ctx, id);
         List<CampaignRef> using = campaigns.usingSegment(ctx.workspaceId(), id);
         if (!using.isEmpty()) throw SegmentErrors.inUse(using);
-        repository.delete(s);
+        try {
+            repository.delete(s);
+        } catch (OptimisticLockingFailureException stale) {
+            throw versionConflict();
+        }
     }
 
     public SegmentPreviewView preview(CrmContext ctx, SegmentRuleGroup rules) {
@@ -224,7 +229,7 @@ public class SegmentService {
     }
 
     static String nameKey(String name) {
-        return name.trim().toLowerCase();
+        return name.trim().toLowerCase(Locale.ROOT);
     }
 
     static RuntimeException versionConflict() {
@@ -259,7 +264,7 @@ public class SegmentService {
                 m.put("operator", r.operator());
                 m.put("value", r.value());
                 if (scope != null) {
-                    Flag flag = scope.flag(r);
+                    Flag flag = scope.flag(r, g);
                     if (flag == Flag.MISSING) m.put("missing", true);
                     if (flag == Flag.INACCESSIBLE) m.put("inaccessible", true);
                 }

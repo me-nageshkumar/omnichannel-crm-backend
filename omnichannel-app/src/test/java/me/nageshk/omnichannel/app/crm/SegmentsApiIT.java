@@ -320,6 +320,39 @@ class SegmentsApiIT extends CrmTestBase {
     }
 
     @Test
+    void aDeletedPipelineIsMissingNotInaccessibleForAViewAllUser() throws Exception {
+        enableCrm();
+        String second = secondPipeline();
+        Map<String, Object> rules = group("and", false, rule("deal.pipelineId", "is", second));
+        String id = create(managerToken, segment("Second pipeline", rules)).get("id").asText();
+        send(delete(crm() + "/pipelines/" + second), managerToken, null).andExpect(status().is2xxSuccessful());
+        JsonNode rule = json(send(get(segments() + "/" + id), managerToken, null).andExpect(status().isOk()))
+                .get("rules").get("rules").get(0);
+        assertThat(rule.get("missing").asBoolean()).isTrue();
+        assertThat(rule.has("inaccessible")).isFalse();
+    }
+
+    @Test
+    void aRuleOnAnInactivePipelineIsFlaggedAndMatchesNothing() throws Exception {
+        enableCrm();
+        JsonNode second = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
+                .andExpect(status().isCreated()));
+        String secondId = second.get("id").asText();
+        Contact c = contact("Second lead", "919900000942");
+        send(post(crm() + "/contacts/capture"), managerToken, Map.of("chatId", chat(c, number, null, null).getId(),
+                "pipelineId", secondId)).andExpect(status().isOk());
+        Map<String, Object> rules = group("and", false, rule("deal.pipelineId", "is", secondId));
+        String id = create(managerToken, segment("Second pipeline", rules)).get("id").asText();
+        assertThat(preview(managerToken, rules).get("total").asLong()).isEqualTo(1);
+        send(put(crm() + "/pipelines/" + secondId), managerToken, Map.of("name", "Second", "active", false,
+                "version", second.get("version").asLong())).andExpect(status().isOk());
+        JsonNode rule = json(send(get(segments() + "/" + id), managerToken, null).andExpect(status().isOk()))
+                .get("rules").get("rules").get(0);
+        assertThat(rule.get("missing").asBoolean()).isTrue();
+        assertThat(preview(managerToken, rules).get("total").asLong()).isEqualTo(0);
+    }
+
+    @Test
     void missingCustomFieldIsFlagged() throws Exception {
         enableCrm();
         JsonNode tier = tierField("CONTACT");
@@ -358,6 +391,14 @@ class SegmentsApiIT extends CrmTestBase {
         enableCrm();
         send(get(segments()), agentToken, null).andExpect(status().isForbidden());
         send(get(segments() + "/fields"), agentToken, null).andExpect(status().isForbidden());
+        String id = create(managerToken, segment("Theirs", group("and", false, rule("contact.email", "isSet", null))))
+                .get("id").asText();
+        send(get(segments() + "/" + id), agentToken, null).andExpect(status().isForbidden());
+        Map<String, Object> changed = segment("Changed", group("and", false, rule("contact.email", "isSet", null)));
+        changed.put("version", 0);
+        send(put(segments() + "/" + id), agentToken, changed).andExpect(status().isForbidden());
+        send(delete(segments() + "/" + id), agentToken, null).andExpect(status().isForbidden());
+        send(post(segments() + "/" + id + "/preview"), agentToken, null).andExpect(status().isForbidden());
         send(post(segments() + "/preview"), agentToken, Map.of("rules", group("and", false, rule("contact.email", "isSet", null))))
                 .andExpect(status().isForbidden());
         String viewer = tokenWithAuthorities("viewer", "crm:segments");

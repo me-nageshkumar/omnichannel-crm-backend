@@ -77,12 +77,13 @@ public class SegmentResolver {
         Set<String> pipelineIds = new HashSet<>();
         Map<String, Set<String>> stages = new LinkedHashMap<>();
         for (CrmPipeline p : pipelines.list(ctx)) {
+            if (!p.isActive()) continue; // as the catalogue: a rule on one is flagged until it is active again
             pipelineIds.add(p.getId());
             stages.put(p.getId(), p.getStages().stream().map(CrmStage::getId).collect(Collectors.toSet()));
         }
         Set<String> labelIds = channel.labels(ctx.workspaceId()).stream().map(ChannelLabel::id).collect(Collectors.toSet());
         Set<String> accountIds = channel.accounts(ctx.workspaceId()).stream().map(ChannelAccount::id).collect(Collectors.toSet());
-        return new SegmentScope(known, pipelineIds, stages, labelIds, accountIds);
+        return new SegmentScope(known, pipelineIds, stages, labelIds, accountIds, ctx.pipelines().all());
     }
 
     public SegmentMembers resolve(CrmContext ctx, SegmentRuleGroup rules) {
@@ -129,7 +130,7 @@ public class SegmentResolver {
             if (n instanceof SegmentRuleGroup child) {
                 part = group(run, child);
             } else if (n instanceof SegmentRule r) {
-                Flag flag = run.scope.flag(r);
+                Flag flag = run.scope.flag(r, g);
                 boolean deal = SegmentFields.groupOf(r.field()).equals(SegmentFields.DEAL);
                 if (flag != Flag.NONE) {
                     if (deal && and) { deadDealGroup = true; continue; }

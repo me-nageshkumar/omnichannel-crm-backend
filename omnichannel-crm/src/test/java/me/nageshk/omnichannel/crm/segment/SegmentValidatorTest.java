@@ -71,6 +71,17 @@ class SegmentValidatorTest {
     }
 
     @Test
+    void onlyARuleThatChoosesAPipelineCarriesAStage() {
+        SegmentRule stage = rule("deal.stageId", "is", "s1");
+        assertThat(errorsOf(and(rule("deal.pipelineId", "isNotSet", null), stage))).containsKey("rules[1]");
+        assertThat(errorsOf(and(rule("deal.pipelineId", "isSet", null), stage))).containsKey("rules[1]");
+        assertThat(errorsOf(and(rule("deal.pipelineId", "isNot", "p1"), stage))).containsKey("rules[1]");
+        assertThat(errorsOf(and(rule("deal.pipelineId", "notIn", List.of("p1")), stage))).containsKey("rules[1]");
+        assertThatCode(() -> SegmentValidator.validate(and(rule("deal.pipelineId", "in", List.of("p1", "p2")), stage), KNOWN))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void refusesStageWithoutPipelineInSameAndGroup() {
         assertThat(errorsOf(and(rule("deal.stageId", "is", "s1")))).containsEntry("rules[0]",
                 "needs a pipeline rule in the same group");

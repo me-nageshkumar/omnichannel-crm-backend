@@ -6,17 +6,17 @@ Small findings from the final reviews of phases D to G, kept here because the le
 ## Phase D, backend
 
 - [x] `SegmentSets.needsUniverse` is unused by the resolver (only its test calls it).
-- [ ] `SegmentScope.flag` says INACCESSIBLE for a deleted pipeline/stage even for a view-all user, and checks a stage against all accessible stages rather than the group's pipeline.
-- [ ] `SegmentScope` lists inactive pipelines while `SegmentCatalog` offers only active ones; a rule on an inactive pipeline resolves unflagged.
-- [ ] `SegmentValidator.hasPipeline` is satisfied by any `deal.pipelineId` rule in the AND group, including `isNotSet`/`notIn`.
-- [ ] `SegmentService.nameKey` lower-cases with the default locale.
-- [ ] `SegmentService.delete` can answer 500 instead of 409 when the segment changes between read and delete.
+- [x] `SegmentScope.flag` says INACCESSIBLE for a deleted pipeline/stage even for a view-all user, and checks a stage against all accessible stages rather than the group's pipeline.
+- [x] `SegmentScope` lists inactive pipelines while `SegmentCatalog` offers only active ones; a rule on an inactive pipeline resolves unflagged.
+- [x] `SegmentValidator.hasPipeline` is satisfied by any `deal.pipelineId` rule in the AND group, including `isNotSet`/`notIn`.
+- [x] `SegmentService.nameKey` lower-cases with the default locale.
+- [x] `SegmentService.delete` can answer 500 instead of 409 when the segment changes between read and delete.
 - won't fix: `SegmentDates.instantStringCriteria` compares ISO strings lexicographically (zero fractions omitted by `Instant.toString()`); harmless at day boundaries. *Harmless at day boundaries, which is all it is used for.*
 - [x] `CachedCounts.channelAccounts` sum to the loaded members (≤ 50,000) when truncated; document on the record.
 - won't fix: `ActivityLog.append` has a `phoneNumberId` parameter (plan-sanctioned; it writes the phase A field). *Phase A field; existing names are not renamed (phase D C1).*
 - won't fix: `CampaignActivityRecorder.recordSent` runs synchronously on the sender thread. *One insert on the sender thread; moving it off the thread risks losing timeline entries.*
 - [ ] `SegmentService.create` builds the scope twice (caller, then system).
-- [ ] `SegmentsApiIT.needsSegmentsAuthority` does not cover GET /{id}, PUT, DELETE, POST /{id}/preview for the agent.
+- [x] `SegmentsApiIT.needsSegmentsAuthority` does not cover GET /{id}, PUT, DELETE, POST /{id}/preview for the agent.
 
 ## Phase D, console
 
