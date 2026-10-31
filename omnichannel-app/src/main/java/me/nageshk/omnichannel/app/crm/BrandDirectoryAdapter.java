@@ -1,9 +1,11 @@
 package me.nageshk.omnichannel.app.crm;
 
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import me.nageshk.omnichannel.crm.platform.BrandDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformBrand;
+import me.nageshk.omnichannel.service.contact.advanced.WorkspaceZone;
 import me.nageshk.omnichannel.db.tenant.CustomerRepository;
 import me.nageshk.omnichannel.db.tenant.Workspace;
 import me.nageshk.omnichannel.db.tenant.WorkspaceRepository;
@@ -14,10 +16,17 @@ class BrandDirectoryAdapter implements BrandDirectory {
 
     private final WorkspaceRepository workspaces;
     private final CustomerRepository customers;
+    private final WorkspaceZone zones;
 
-    BrandDirectoryAdapter(WorkspaceRepository workspaces, CustomerRepository customers) {
+    BrandDirectoryAdapter(WorkspaceRepository workspaces, CustomerRepository customers, WorkspaceZone zones) {
         this.workspaces = workspaces;
         this.customers = customers;
+        this.zones = zones;
+    }
+
+    @Override
+    public ZoneId zoneOf(String workspaceId) {
+        return zones.zoneOf(workspaceId);
     }
 
     @Override

@@ -59,7 +59,8 @@ public class CampaignsReport {
             PlatformCampaign.Counts n = c.counts();
             rows.add(new CampaignsView.Row(c.id(), c.name(), c.status(), c.startedAt(),
                     c.phoneNumberIds().stream().map(id -> new CampaignsView.Number(id, numberLabels.apply(id))).toList(),
-                    n.total(), n.sent(), n.delivered(), n.read(), n.replied(), n.failed(), reached));
+                    n.total(), n.sent(), n.delivered(), n.read(), n.replied(), n.failed(), reached, c.segmentId(),
+                    c.segmentName()));
         }
         return new CampaignsView(rows, truncated);
     }

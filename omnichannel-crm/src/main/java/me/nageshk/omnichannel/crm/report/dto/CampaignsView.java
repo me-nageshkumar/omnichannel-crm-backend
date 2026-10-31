@@ -8,7 +8,7 @@ public record CampaignsView(List<Row> rows, boolean truncated) {
 
     public record Row(String campaignId, String name, String status, Instant startedAt, List<Number> numbers,
             long recipients, long sent, long delivered, long read, long replied, long failed,
-            long crmContactsReached) {}
+            long crmContactsReached, String segmentId, String segmentName) {}
 
     public record Number(String phoneNumberId, String label) {}
 }

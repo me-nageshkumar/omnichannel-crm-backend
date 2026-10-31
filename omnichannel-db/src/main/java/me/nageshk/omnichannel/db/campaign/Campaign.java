@@ -49,10 +49,14 @@ public class Campaign {
     @Version
     private Long version;
 
-    /** The audience as it was when the campaign was saved: a filter's name and spec are snapshotted, and for an advanced one its stored query and uses. */
+    /**
+     * The audience as it was when the campaign was saved: a filter's name and spec are snapshotted, and for an
+     * advanced one its stored query and uses; a CRM segment's id and name likewise.
+     */
     public record Audience(AudienceKind kind, String filterId, String filterName, ContactFilterSpec filterSpec,
             String csvFileName, List<String> csvHeaders, Integer csvRows, String phoneColumn, String nameColumn,
-            String csvFileId, FilterKind filterKind, String filterQueryJson, Uses uses) {
+            String csvFileId, FilterKind filterKind, String filterQueryJson, Uses uses, String segmentId,
+            String segmentName) {
     }
 
     public record PlaceholderMapping(String name, PlaceholderSource source, String fallback) {

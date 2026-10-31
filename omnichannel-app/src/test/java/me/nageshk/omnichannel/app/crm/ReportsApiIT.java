@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -723,5 +724,24 @@ class ReportsApiIT extends CrmTestBase {
         JsonNode r = report("campaigns", managerToken, filter());
         assertThat(r.get("rows")).isEmpty();
         assertThat(r.get("truncated").asBoolean()).isFalse();
+    }
+
+    @Test
+    void campaignsCardCarriesSegmentColumns() throws Exception {
+        enableCrm();
+        JsonNode a = captured(contact("Asha", "919900000661"), number).get("contact");
+        String plain = campaignWith("Plain", daysAgo(2), List.of(a.get("contactId").asText()));
+        // a SEGMENT audience as phase D's campaigns store it (raw: the kind lands in the host in a later task)
+        mongo.updateFirst(new Query(Criteria.where("_id").is(new ObjectId(plain))), new Update().set("name", "Segmented")
+                .set("audience", new Document("kind", "SEGMENT").append("segmentId", "seg-1").append("segmentName", "Gold tier")),
+                "campaigns");
+        String filterOne = campaignWith("Filtered", daysAgo(3), List.of(a.get("contactId").asText()));
+        JsonNode r = report("campaigns", managerToken, filter());
+        JsonNode seg = row(r.get("rows"), "campaignId", plain);
+        assertThat(seg.get("segmentId").asText()).isEqualTo("seg-1");
+        assertThat(seg.get("segmentName").asText()).isEqualTo("Gold tier");
+        JsonNode f = row(r.get("rows"), "campaignId", filterOne);
+        assertThat(f.get("segmentId").isNull()).isTrue();
+        assertThat(f.get("segmentName").isNull()).isTrue();
     }
 }

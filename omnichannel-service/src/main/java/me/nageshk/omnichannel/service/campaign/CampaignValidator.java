@@ -105,7 +105,7 @@ public class CampaignValidator {
         ContactFilter f = filters.findByIdAndWorkspaceId(a.filterId(), workspaceId)
                 .orElseThrow(() -> new ValidationException("audience.filterId", "unknown filter"));
         return new Campaign.Audience(AudienceKind.FILTER, f.getId(), f.getName(), f.getFilter(), null, null, null,
-                null, null, null, FilterKind.orSimple(f.getKind()), f.getQueryJson(), f.getUses());
+                null, null, null, FilterKind.orSimple(f.getKind()), f.getQueryJson(), f.getUses(), null, null);
     }
 
     /** The CSV audience's columns; the file's name, row count and id are filled in by the service. */
@@ -119,7 +119,7 @@ public class CampaignValidator {
             throw new ValidationException("audience.nameColumn", "is not a column of the file");
         }
         return new Campaign.Audience(AudienceKind.CSV, null, null, null, null, headers, null, phone,
-                name.isEmpty() ? null : name, null, null, null, null);
+                name.isEmpty() ? null : name, null, null, null, null, null, null);
     }
 
     private List<MessageTemplate> templates(String workspaceId, List<String> raw) {

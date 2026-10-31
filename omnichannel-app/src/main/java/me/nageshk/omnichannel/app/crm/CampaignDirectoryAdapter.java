@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import me.nageshk.omnichannel.crm.platform.CampaignDirectory;
+import me.nageshk.omnichannel.crm.platform.CampaignRef;
+import me.nageshk.omnichannel.db.campaign.CampaignStatus;
 import me.nageshk.omnichannel.crm.platform.PlatformCampaign;
 import me.nageshk.omnichannel.db.campaign.Campaign;
 import me.nageshk.omnichannel.db.campaign.CampaignRecipient;
@@ -52,8 +54,17 @@ class CampaignDirectoryAdapter implements CampaignDirectory {
             Campaign.Counts n = c.getCounts() == null ? Campaign.Counts.ZERO : c.getCounts();
             out.add(new PlatformCampaign(c.getId(), c.getName(), c.getStatus() == null ? null : c.getStatus().name(),
                     c.getStartedAt(), numbers, new PlatformCampaign.Counts(n.total(), n.sent(), n.delivered(),
-                            n.read(), n.replied(), n.failed()), contactIds));
+                            n.read(), n.replied(), n.failed()), contactIds, c.getAudience() == null ? null : c.getAudience().segmentId(),
+                    c.getAudience() == null ? null : c.getAudience().segmentName()));
         }
         return out;
+    }
+
+    @Override
+    public List<CampaignRef> usingSegment(String workspaceId, String segmentId) {
+        return mongo.find(new Query(Criteria.where("workspaceId").is(workspaceId)
+                .and("status").in(CampaignStatus.DRAFT, CampaignStatus.RUNNING, CampaignStatus.PAUSED)
+                .and("audience.segmentId").is(segmentId)).with(Sort.by("nameKey")).maxTime(MAX_TIME), Campaign.class)
+                .stream().map(c -> new CampaignRef(c.getId(), c.getName())).toList();
     }
 }
