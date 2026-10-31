@@ -104,6 +104,9 @@ public enum Authority {
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     CRM_EXPORT("crm:export", RoleLevel.BRAND, "Export CRM records to CSV",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    CRM_SEGMENTS("crm:segments", RoleLevel.BRAND,
+            "Build and preview CRM segments and use them as campaign audiences",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     CRM_ENABLE("crm:enable", RoleLevel.PLATFORM, "Switch the CRM on or off for a brand and set its limits",
             ACCOUNT_MANAGER);
 

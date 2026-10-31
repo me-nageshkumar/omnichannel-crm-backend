@@ -40,6 +40,15 @@ class CrmStatusApiIT extends CrmTestBase {
     }
 
     @Test
+    void managerHasSegmentsAuthority() throws Exception {
+        enableCrm();
+        send(get(crm() + "/status"), managerToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.authorities[?(@ == 'crm:segments')]").isNotEmpty());
+        send(get(crm() + "/status"), agentToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.authorities[?(@ == 'crm:segments')]").isEmpty());
+    }
+
+    @Test
     void statusForManagerSaysAll() throws Exception {
         enableCrm();
         send(get(crm() + "/status"), managerToken, null).andExpect(status().isOk())

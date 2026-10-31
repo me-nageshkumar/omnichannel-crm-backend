@@ -62,6 +62,32 @@ public class ActivityLog {
         return saved;
     }
 
+    /**
+     * Appends an entry that is <b>not</b> activity by the record's people: it never raises {@code lastActivityAt}
+     * and never clears rotting (spec D C13 — a campaign landing in someone's inbox says nothing about whether the
+     * team has worked the record). Used for system-written entries such as {@link ActivityType#CAMPAIGN_SENT}.
+     */
+    public CrmActivity append(String workspaceId, String customerId, ActivityType type, CrmTarget target,
+            String pipelineId, String phoneNumberId, String actorId, ActorType actorType, Instant happenedAt,
+            String summary, Map<String, Object> payload) {
+        CrmActivity a = new CrmActivity();
+        a.setWorkspaceId(workspaceId);
+        a.setCustomerId(customerId);
+        a.setType(type);
+        a.setTarget(target);
+        a.setRelatedTargets(new ArrayList<>());
+        a.setPipelineId(pipelineId);
+        a.setPhoneNumberId(phoneNumberId);
+        a.setActorId(actorId);
+        a.setActorType(actorType);
+        a.setHappenedAt(happenedAt == null ? Instant.now(clock) : happenedAt);
+        a.setSummary(summary);
+        a.setPayload(payload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload));
+        a.setCreatedBy(actorId);
+        a.setLastModifiedBy(actorId);
+        return mongo.insert(a);
+    }
+
     private void touch(String workspaceId, CrmTarget t, Instant at) {
         String collection = collectionOf(t.type());
         if (collection == null) return;
