@@ -68,7 +68,7 @@ class RoleSeederIT {
                         "phone-number:manage", "team:manage", "contact:view", "contact:annotate", "contact:edit",
                         "contact:import", "contact:export", "contact:bulk", "contact:delete", "contact-field:manage",
                         "template:view", "template:manage", "inbox:view", "inbox:view-queue", "inbox:view-team",
-                        "inbox:view-all", "inbox:send", "inbox:assign", "inbox:settings", "campaign:view",
+                        "inbox:view-all", "inbox:send", "inbox:assign", "inbox:settings", "inbox:import-history", "campaign:view",
                         "campaign:manage", "campaign:settings", "crm:view", "crm:view-all", "crm:edit", "crm:delete",
                         "crm:settings", "crm:export", "crm:segments");
         assertThat(role(BuiltInRoles.AGENT).getAuthorities())
@@ -116,7 +116,7 @@ class RoleSeederIT {
     void freshDatabaseCreatesDocumentsAndGivesDefaults() {
         clearAll();
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(44)
+        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(45)
                 .allMatch(AuthorityDefinition::isBuiltIn)
                 .allMatch(d -> "system".equals(d.getCreatedBy()));
         AuthorityDefinition cv = authorities.findById("customer:view").orElseThrow();
@@ -135,7 +135,7 @@ class RoleSeederIT {
         mongo.insert(new org.bson.Document("_id", KNOWN).append("codes",
                 Arrays.stream(Authority.values()).map(Authority::code).toList()), "system_state");
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(44);
+        assertThat(authorities.findAll()).hasSize(45);
         assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities()).doesNotContain("user:view");
         assertThat(mongo.findById(KNOWN, org.bson.Document.class, "system_state")).isNull();
     }

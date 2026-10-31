@@ -21,7 +21,7 @@ class TotpServiceTest {
                 null,
                 new OmnichannelProperties.TwoFactor("Omnichannel CRM"),
                 new OmnichannelProperties.Ws("*"),
-                new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)));
+                new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)), null);
         return new TotpService(props, fixed);
     }
 

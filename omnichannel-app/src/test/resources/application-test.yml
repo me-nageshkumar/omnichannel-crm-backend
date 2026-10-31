@@ -9,6 +9,11 @@ omnichannel:
   # tests drive CampaignRunner.tick() themselves
   campaign:
     auto-tick: false
+  # tests drive the history import tick themselves, without waits between pages
+  history:
+    auto-tick: false
+    page-delay: 0ms
+    chat-delay: 0ms
   crm:
     jobs:
       # tests run the CRM jobs themselves

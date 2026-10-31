@@ -82,6 +82,8 @@ public enum Authority {
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     INBOX_SETTINGS("inbox:settings", RoleLevel.BRAND, "Edit a number's routing settings",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    INBOX_IMPORT_HISTORY("inbox:import-history", RoleLevel.BRAND, "Pull chat history from the phone into the inbox",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     CAMPAIGN_VIEW("campaign:view", RoleLevel.BRAND, "See campaigns, their recipients and the senders",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER, AGENT),
     CAMPAIGN_MANAGE("campaign:manage", RoleLevel.BRAND,

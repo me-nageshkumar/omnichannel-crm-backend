@@ -358,7 +358,7 @@ class TemplateMediaIT extends TemplateApiTestBase {
 
     @Test
     void schedulingUsesBootsTaskSchedulerNotTheWebSocketTimer() {
-        assertThat(context.getBeansOfType(TaskScheduler.class)).containsOnlyKeys("taskScheduler", "campaignScheduler");
+        assertThat(context.getBeansOfType(TaskScheduler.class)).containsOnlyKeys("taskScheduler", "campaignScheduler", "historyImportScheduler");
         assertThat(context.getBean(TemplateMediaSweeper.class)).isNotNull();
     }
 }

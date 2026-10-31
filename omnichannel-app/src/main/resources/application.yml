@@ -43,3 +43,13 @@ omnichannel:
   rpc:
     timeout: 30s
     auth-timeout: 5s
+  history:
+    auto-tick: true
+    tick: 5s
+    page-size: 100
+    max-loads: 20
+    page-delay: 400ms
+    chat-delay: 1s
+    max-messages-per-chat: 5000
+    max-empty-pages: 50
+    time-budget: 60s
