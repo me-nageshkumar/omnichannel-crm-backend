@@ -2,6 +2,8 @@ package me.nageshk.omnichannel.crm.contact;
 
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.common.CrmPage;
+import me.nageshk.omnichannel.crm.contact.dto.AddContactRequest;
+import me.nageshk.omnichannel.crm.contact.dto.AddContactResult;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureResult;
 import me.nageshk.omnichannel.crm.contact.dto.CommunicationView;
@@ -82,6 +84,13 @@ public class CrmContactController {
     public CaptureResult create(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @RequestBody CreateRequest request) {
         return capture.create(crmAccess.resolve(me, workspaceId), request);
+    }
+
+    @PostMapping("/add")
+    @PreAuthorize(EDIT)
+    public AddContactResult add(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestBody AddContactRequest request) {
+        return capture.add(crmAccess.resolve(me, workspaceId), request);
     }
 
     @GetMapping("/by-chat/{chatId}/summary")

@@ -362,6 +362,7 @@ Endpoints, all under `/api/workspaces/{ws}/crm` unless noted. Dates are ISO-8601
 | `GET\|PUT /users/{userId}/pipelines` | Pipeline access per user |
 | `POST /contacts/search`, `GET\|PUT /contacts/{id}` | CRM contacts (one per platform contact and number) |
 | `POST /contacts/capture`, `POST /contacts/create` | Turn a chat or a phone number into a CRM contact and open deal |
+| `POST /contacts/add` | Put a brand contact in the CRM on a number, without a deal; answers with the existing CRM contact when there is one (`crm:edit`, all pipelines) |
 | `GET /contacts/{id}/communication`, `POST /contacts/{id}/move-channel`, `GET /contacts/by-chat/{chatId}/summary` | Chat link, channel move (409 `CHANNEL_TAKEN`), inbox side panel |
 | `POST /companies/search`, `GET /companies/typeahead?q=`, `GET\|PUT\|DELETE /companies/{id}`, `GET /companies/{id}/summary`, `POST /companies` | Companies (409 `COMPANY_HAS_OPEN_DEALS`) |
 | `GET /deals/board`, `POST /deals/search`, `GET\|PUT\|DELETE /deals/{id}`, `POST /deals` | Kanban board, deal list, deal CRUD |

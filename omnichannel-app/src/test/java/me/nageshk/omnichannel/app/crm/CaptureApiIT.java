@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
+import me.nageshk.omnichannel.db.user.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -193,5 +194,91 @@ class CaptureApiIT extends CrmTestBase {
         assertThat(b.get("createdContact").asBoolean()).isTrue();
         assertThat(b.get("contact").get("id").asText()).isNotEqualTo(a);
         assertThat(stored()).isEqualTo(2);
+    }
+
+    private Map<String, Object> add(String contactId, String channelAccountId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("contactId", contactId);
+        body.put("channelAccountId", channelAccountId);
+        return body;
+    }
+
+    private long deals() {
+        return mongo.count(new Query(Criteria.where("workspaceId").is(brand.getId())), "crmDeals");
+    }
+
+    @Test
+    void addPutsAChannelContactInTheCrmWithoutADeal() throws Exception {
+        Contact c = contact("Alice", "919811111111");
+        JsonNode v = json(send(post(crm() + "/contacts/add"), managerToken, add(c.getId(), number.getId()))
+                .andExpect(status().isOk()));
+        assertThat(v.get("created").asBoolean()).isTrue();
+        JsonNode k = v.get("contact");
+        assertThat(k.get("contactId").asText()).isEqualTo(c.getId());
+        assertThat(k.get("channel").get("phoneNumberId").asText()).isEqualTo(number.getId());
+        assertThat(k.get("name").asText()).isEqualTo("Alice");
+        assertThat(k.get("phone").asText()).isEqualTo("919811111111");
+        assertThat(k.get("origin").get("kind").asText()).isEqualTo("MANUAL");
+        assertThat(k.get("origin").get("capturedBy").get("id").asText()).isEqualTo(manager.getId());
+        assertThat(k.get("owner").get("id").asText()).isEqualTo(manager.getId());
+        assertThat(k.get("lifecycleStatus").asText()).isEqualTo("lead");
+        assertThat(k.get("openDealCount").asInt()).isZero();
+        assertThat(stored()).isEqualTo(1);
+        assertThat(deals()).isZero();
+        assertThat(mongo.count(new Query(Criteria.where("workspaceId").is(brand.getId()).and("type")
+                .is("RECORD_CREATED")), "crmActivities")).isEqualTo(1);
+    }
+
+    @Test
+    void addGivesBackTheContactAlreadyOnThatNumber() throws Exception {
+        Contact c = contact("Alice", "919811111111");
+        String id = captured(c, number).get("contact").get("id").asText();
+        send(post(crm() + "/contacts/add"), managerToken, add(c.getId(), number.getId())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.created").value(false)).andExpect(jsonPath("$.contact.id").value(id))
+                .andExpect(jsonPath("$.contact.openDealCount").value(1));
+        assertThat(stored()).isEqualTo(1);
+        assertThat(deals()).isEqualTo(1);
+    }
+
+    @Test
+    void addOnAnotherNumberIsASecondCrmContact() throws Exception {
+        Contact c = contact("Alice", "919811111111");
+        String id = captured(c, number).get("contact").get("id").asText();
+        JsonNode v = json(send(post(crm() + "/contacts/add"), managerToken, add(c.getId(), number2.getId()))
+                .andExpect(status().isOk()));
+        assertThat(v.get("created").asBoolean()).isTrue();
+        assertThat(v.get("contact").get("id").asText()).isNotEqualTo(id);
+        assertThat(stored()).isEqualTo(2);
+    }
+
+    @Test
+    void addRefusesAUserLimitedToPipelines() throws Exception {
+        assignPipelines(agent, sales);
+        send(post(crm() + "/contacts/add"), agentToken, add(contact("Alice", "919811111111").getId(), number.getId()))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("NO_PIPELINE_ACCESS"));
+        assertThat(stored()).isZero();
+    }
+
+    @Test
+    void addNeedsEdit() throws Exception {
+        User viewer = brandUserWith("viewer", "CRM_VIEWER", java.util.Set.of("crm:view", "crm:view-all"));
+        send(post(crm() + "/contacts/add"), testUsers.accessToken(viewer),
+                add(contact("Alice", "919811111111").getId(), number.getId())).andExpect(status().isForbidden());
+        assertThat(stored()).isZero();
+    }
+
+    @Test
+    void addChecksTheContactAndTheNumber() throws Exception {
+        String alice = contact("Alice", "919811111111").getId();
+        send(post(crm() + "/contacts/add"), managerToken, add(" ", number.getId()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.contactId").exists());
+        send(post(crm() + "/contacts/add"), managerToken, add("nope", number.getId()))
+                .andExpect(status().isNotFound());
+        send(post(crm() + "/contacts/add"), managerToken,
+                add(contact(other, "Bob", "919822222222").getId(), number.getId())).andExpect(status().isNotFound());
+        send(post(crm() + "/contacts/add"), managerToken, add(alice, otherNumber.getId()))
+                .andExpect(status().isNotFound());
+        send(post(crm() + "/contacts/add"), managerToken, add(alice, null)).andExpect(status().isNotFound());
+        assertThat(stored()).isZero();
     }
 }

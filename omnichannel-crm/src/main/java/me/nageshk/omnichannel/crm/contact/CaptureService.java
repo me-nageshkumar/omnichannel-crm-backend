@@ -15,6 +15,8 @@ import me.nageshk.omnichannel.crm.common.CrmErrors;
 import me.nageshk.omnichannel.crm.common.CrmTarget;
 import me.nageshk.omnichannel.crm.common.PicklistItem;
 import me.nageshk.omnichannel.crm.common.TargetType;
+import me.nageshk.omnichannel.crm.contact.dto.AddContactRequest;
+import me.nageshk.omnichannel.crm.contact.dto.AddContactResult;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureRequest;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureResult;
 import me.nageshk.omnichannel.crm.contact.dto.CreateRequest;
@@ -84,10 +86,7 @@ public class CaptureService {
     public CaptureResult create(CrmContext ctx, CreateRequest req) {
         ctx.require("crm:edit");
         requireAnyPipeline(ctx);
-        if (req.phoneNumberId() == null || !ctx.chattable().contains(req.phoneNumberId())) {
-            throw new NotFoundException("Number not found");
-        }
-        PlatformNumber channel = numberOf(ctx, req.phoneNumberId());
+        PlatformNumber channel = workedNumber(ctx, req.phoneNumberId());
         String pipelineId = resolvePipeline(ctx, req.pipelineId());
         if (req.phone() == null || req.phone().isBlank()) throw new ValidationException("phone", "is required");
         clean(req.dealTitle(), "dealTitle");
@@ -100,6 +99,26 @@ public class CaptureService {
         return findOrCreate(ctx, contact, channel, origin, pipelineId, req.dealTitle(), first, last);
     }
 
+    /**
+     * Puts one of the brand's channel contacts in the CRM on a number, without a deal. Limited to users who see every
+     * pipeline: a contact without a deal is in no pipeline, so anyone else could not see what they added.
+     */
+    public AddContactResult add(CrmContext ctx, AddContactRequest req) {
+        ctx.require("crm:edit");
+        if (!ctx.pipelines().all()) {
+            throw CrmErrors.forbidden("NO_PIPELINE_ACCESS", "Add contacts from a pipeline");
+        }
+        if (req.contactId() == null || req.contactId().isBlank()) {
+            throw new ValidationException("contactId", "is required");
+        }
+        PlatformNumber channel = workedNumber(ctx, req.channelAccountId());
+        PlatformContact contact = contactDirectory.find(ctx.workspaceId(), req.contactId())
+                .orElseThrow(() -> new NotFoundException("Contact not found"));
+        Origin origin = new Origin(OriginKind.MANUAL, channel.id(), null, null, ctx.userId());
+        Placed placed = placed(ctx, contact, channel, origin, null, null);
+        return new AddContactResult(contactService.view(ctx, placed.contact()), placed.created());
+    }
+
     public CaptureResult findOrCreate(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin,
             String pipelineId, String dealTitle) {
         return findOrCreate(ctx, c, channel, origin, pipelineId, dealTitle, null, null);
@@ -108,6 +127,18 @@ public class CaptureService {
     /** As the overload above; a CRM contact created here gets the names. */
     public CaptureResult findOrCreate(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin,
             String pipelineId, String dealTitle, String firstName, String lastName) {
+        Placed placed = placed(ctx, c, channel, origin, firstName, lastName);
+        CaptureDeal deal = deals.createForCapture(ctx, placed.contact(), pipelineId, dealTitle);
+        // read again: the deal has changed the contact's counters and pipelines
+        CrmContact fresh = mongo.findOne(new Query(Criteria.where("_id").is(placed.contact().getId())
+                .and("workspaceId").is(ctx.workspaceId())), CrmContact.class);
+        return new CaptureResult(contactService.view(ctx, fresh == null ? placed.contact() : fresh), deal.deal(),
+                placed.created(), deal.created());
+    }
+
+    /** The contact's CRM contact on the number, made when missing. */
+    private Placed placed(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin, String firstName,
+            String lastName) {
         String ws = ctx.workspaceId();
         Query existing = new Query(Criteria.where("workspaceId").is(ws).and("contactId").is(c.id())
                 .and("channel.phoneNumberId").is(channel.id()));
@@ -140,13 +171,10 @@ public class CaptureService {
                 created = false;
             }
         }
-        CaptureDeal deal = deals.createForCapture(ctx, found, pipelineId, dealTitle);
-        // read again: the deal has changed the contact's counters and pipelines
-        CrmContact fresh = mongo.findOne(new Query(Criteria.where("_id").is(found.getId()).and("workspaceId").is(ws)),
-                CrmContact.class);
-        return new CaptureResult(contactService.view(ctx, fresh == null ? found : fresh), deal.deal(), created,
-                deal.created());
+        return new Placed(found, created);
     }
+
+    private record Placed(CrmContact contact, boolean created) {}
 
     /**
      * Why the caller cannot capture the chat, in the order capture checks it, or null when they can:
@@ -182,10 +210,7 @@ public class CaptureService {
     public PlatformNumber importChannel(CrmContext ctx, String phoneNumberId) {
         ctx.require("crm:edit");
         requireAnyPipeline(ctx);
-        if (phoneNumberId == null || !ctx.chattable().contains(phoneNumberId)) {
-            throw new NotFoundException("Number not found");
-        }
-        return numberOf(ctx, phoneNumberId);
+        return workedNumber(ctx, phoneNumberId);
     }
 
     /** Required for restricted users; view-all users default to the brand's default pipeline. */
@@ -203,6 +228,13 @@ public class CaptureService {
             throw CrmErrors.badRequest("PIPELINE_INACTIVE", "The pipeline is not active");
         }
         return id;
+    }
+
+    private static PlatformNumber workedNumber(CrmContext ctx, String phoneNumberId) {
+        if (phoneNumberId == null || !ctx.chattable().contains(phoneNumberId)) {
+            throw new NotFoundException("Number not found");
+        }
+        return numberOf(ctx, phoneNumberId);
     }
 
     private static PlatformNumber numberOf(CrmContext ctx, String phoneNumberId) {
