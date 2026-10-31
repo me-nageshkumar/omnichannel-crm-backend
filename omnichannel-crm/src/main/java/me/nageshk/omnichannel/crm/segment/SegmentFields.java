@@ -27,8 +27,17 @@ public final class SegmentFields {
     public static final String DEAL_CUSTOM = "deal.custom:";
     public static final String CHANNEL_ATTRIBUTE = "channel.attribute:";
 
-    /** A usable field: its key, value type, group and whether it is a brand-defined (custom or attribute) field. */
-    public record FieldSpec(String key, SegmentValueType type, String group, boolean custom) {}
+    /**
+     * A usable field: its key, value type, group and whether it is a brand-defined (custom or attribute) field;
+     * {@code fieldType} is the custom field's own type (null for built-ins and attributes), which decides how its
+     * values are stored.
+     */
+    public record FieldSpec(String key, SegmentValueType type, String group, boolean custom, FieldType fieldType) {
+
+        public FieldSpec(String key, SegmentValueType type, String group, boolean custom) {
+            this(key, type, group, custom, null);
+        }
+    }
 
     /** What the brand defines right now; anything else under a custom prefix is a missing field. */
     public record Known(Set<String> contactCustomKeys, Map<String, FieldType> contactCustomTypes,
@@ -106,13 +115,13 @@ public final class SegmentFields {
             String k = key.substring(CONTACT_CUSTOM.length());
             FieldType t = known.contactCustomTypes().get(k);
             return k.isEmpty() || t == null || !known.contactCustomKeys().contains(k) ? Optional.empty()
-                    : Optional.of(new FieldSpec(key, typeOfCustom(t), CONTACT, true));
+                    : Optional.of(new FieldSpec(key, typeOfCustom(t), CONTACT, true, t));
         }
         if (key.startsWith(DEAL_CUSTOM)) {
             String k = key.substring(DEAL_CUSTOM.length());
             FieldType t = known.dealCustomTypes().get(k);
             return k.isEmpty() || t == null || !known.dealCustomKeys().contains(k) ? Optional.empty()
-                    : Optional.of(new FieldSpec(key, typeOfCustom(t), DEAL, true));
+                    : Optional.of(new FieldSpec(key, typeOfCustom(t), DEAL, true, t));
         }
         if (key.startsWith(CHANNEL_ATTRIBUTE)) {
             String id = key.substring(CHANNEL_ATTRIBUTE.length());
