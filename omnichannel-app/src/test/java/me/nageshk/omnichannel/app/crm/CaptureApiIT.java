@@ -268,6 +268,20 @@ class CaptureApiIT extends CrmTestBase {
     }
 
     @Test
+    void addRefusesANumberOfTheBrandTheCallerCannotChatFrom() throws Exception {
+        User worker = brandUserWith("worker", "CRM_WORKER", java.util.Set.of("crm:view", "crm:edit", "crm:view-all"));
+        support.getMemberIds().add(worker.getId());
+        teams.save(support);
+        String token = testUsers.accessToken(worker);
+        String alice = contact("Alice", "919811111111").getId();
+        send(post(crm() + "/contacts/add"), token, add(alice, number2.getId())).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Number not found"));
+        assertThat(stored()).isZero();
+        send(post(crm() + "/contacts/add"), token, add(alice, number.getId())).andExpect(status().isOk());
+        assertThat(stored()).isEqualTo(1);
+    }
+
+    @Test
     void addChecksTheContactAndTheNumber() throws Exception {
         String alice = contact("Alice", "919811111111").getId();
         send(post(crm() + "/contacts/add"), managerToken, add(" ", number.getId()))

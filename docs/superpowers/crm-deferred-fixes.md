@@ -66,8 +66,8 @@ Small findings from the final reviews of phases D to G, kept here because the le
 - [x] channel-details emits an attribute with a null value when the host stores one
 - [x] contactNames calls the directory per contact on each contact-list save; CrmContactService.views already batches
 - [x] crm.contact now imports crm.segment.ChannelAccounts for FIELD; the constant would sit better beside Channel
-- [ ] linkedContactIsListedForARestrictedUser uses a contact already in Sales, so it does not pin that linking alone carries the pipeline (verified by reading ContactCounters)
-- [ ] template round trips do not assert stored lifecycle, source, annual revenue, city or country; templateNeedsEdit covers contacts only
+- [x] linkedContactIsListedForARestrictedUser uses a contact already in Sales, so it does not pin that linking alone carries the pipeline (verified by reading ContactCounters)
+- [x] template round trips do not assert stored lifecycle, source, annual revenue, city or country; templateNeedsEdit covers contacts only
 
 ## Phase F, console
 
@@ -88,8 +88,8 @@ Small findings from the final reviews of phases D to G, kept here because the le
 - [ ] The Add contact search shows the first 50 matches with no hint to narrow it down
 - [ ] The "already in the CRM" notice comes back on a refresh, because it lives in history state
 - [ ] A failed Add contact search is shown twice, in the alert and the select
-- [ ] Leftover `CampaignSender` fixture in PlatformAdaptersIT that the adapter no longer reads
-- [ ] No direct `/contacts/add` test for a number in the brand that the caller cannot chat from
+- [x] Leftover `CampaignSender` fixture in PlatformAdaptersIT that the adapter no longer reads
+- [x] No direct `/contacts/add` test for a number in the brand that the caller cannot chat from
 - won't fix: The server's `add` does not check `contact:view` itself *Not a hole: anyone with `crm:edit` can already create a contact by typing a phone.*
 
 ## Not small: also pending

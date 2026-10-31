@@ -202,9 +202,17 @@ class CrmImportIT extends CrmTestBase {
                 "type", "TEXT")).andExpect(status().isCreated());
     }
 
-    private String firstActiveLabel(String picklist) throws Exception {
+    private JsonNode firstActive(String picklist) throws Exception {
         JsonNode list = json(send(get(crm() + "/settings"), managerToken, null)).get(picklist);
-        return list.valueStream().filter(i -> i.get("active").asBoolean()).findFirst().orElseThrow().get("label").asText();
+        return list.valueStream().filter(i -> i.get("active").asBoolean()).findFirst().orElseThrow();
+    }
+
+    private String firstActiveLabel(String picklist) throws Exception {
+        return firstActive(picklist).get("label").asText();
+    }
+
+    private String firstActiveKey(String picklist) throws Exception {
+        return firstActive(picklist).get("key").asText();
     }
 
     @Test
@@ -241,6 +249,8 @@ class CrmImportIT extends CrmTestBase {
         assertThat(asha.get("email").asText()).isEqualTo("asha@example.com");
         assertThat(asha.get("jobTitle").asText()).isEqualTo("Buyer");
         assertThat(asha.at("/company/name").asText()).isEqualTo("Acme Traders");
+        assertThat(asha.get("lifecycleStatus").asText()).isEqualTo(firstActiveKey("lifecycleStatuses"));
+        assertThat(asha.get("source").asText()).isEqualTo(firstActiveKey("dealSources"));
         assertThat(asha.at("/customFields/tier").asText()).isEqualTo("Gold");
     }
 
@@ -263,6 +273,9 @@ class CrmImportIT extends CrmTestBase {
         assertThat(acme.get("industry").asText()).isEqualTo("retail");
         assertThat(acme.get("website").asText()).isEqualTo("https://acme.example");
         assertThat(acme.get("size").asText()).isEqualTo("11-50");
+        assertThat(acme.get("annualRevenue").decimalValue()).isEqualByComparingTo("1000");
+        assertThat(acme.at("/address/city").asText()).isEqualTo("Pune");
+        assertThat(acme.at("/address/country").asText()).isEqualTo("India");
         assertThat(acme.get("phone").asText()).isEqualTo("919900000502");
         assertThat(acme.get("email").asText()).isEqualTo("hi@acme.example");
         assertThat(acme.get("description").asText()).isEqualTo("Makes things");
@@ -274,6 +287,8 @@ class CrmImportIT extends CrmTestBase {
         enableCrm();
         me.nageshk.omnichannel.db.user.User viewer = brandUserWith("viewer", "CRM_VIEWER", java.util.Set.of("crm:view"));
         send(get(crm() + "/contacts/import/template"), testUsers.accessToken(viewer), null)
+                .andExpect(status().isForbidden());
+        send(get(crm() + "/companies/import/template"), testUsers.accessToken(viewer), null)
                 .andExpect(status().isForbidden());
     }
 }
