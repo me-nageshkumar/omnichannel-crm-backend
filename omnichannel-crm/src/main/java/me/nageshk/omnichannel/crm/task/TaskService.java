@@ -31,6 +31,7 @@ import me.nageshk.omnichannel.crm.task.dto.TaskCounts;
 import me.nageshk.omnichannel.crm.task.dto.TaskRequest;
 import me.nageshk.omnichannel.crm.task.dto.TaskView;
 import org.bson.Document;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -154,14 +155,12 @@ public class TaskService {
         if (current.getStatus() == TaskStatus.DONE) return views(ctx, List.of(current)).get(0);
         if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen(); // a skipped occurrence stays skipped
         Instant now = Instant.now(clock);
-        CrmTask next = nextOccurrence(ctx, current, now);
-        Update u = new Update().set("status", TaskStatus.DONE).set("completedAt", now).set("completedBy", ctx.userId());
-        if (next != null) u.set("nextOccurrenceId", next.getId());
-        // a racing second completion fails here on the version, before it could create a second occurrence
-        CrmTask saved = guarded(ctx, id, current.getVersion(), u);
+        Scheduled next = scheduleNext(ctx, current, now);
+        CrmTask saved = close(ctx, id, next, new Update().set("status", TaskStatus.DONE).set("completedAt", now)
+                .set("completedBy", ctx.userId()));
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_COMPLETED, saved, "Task done: " + saved.getTitle(), null);
-        insertNextOccurrence(ctx, next);
+        recordNextOccurrence(ctx, next.task());
         return views(ctx, List.of(saved)).get(0);
     }
 
@@ -174,20 +173,51 @@ public class TaskService {
         assertCanWork(ctx, current);
         if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
         if (current.getRecurrence() == null) throw TaskErrors.notRecurring();
-        CrmTask next = nextOccurrence(ctx, current, Instant.now(clock));
-        Update u = new Update().set("status", TaskStatus.CANCELLED);
-        if (next != null) u.set("nextOccurrenceId", next.getId());
-        CrmTask saved = guarded(ctx, id, current.getVersion(), u);
+        Scheduled next = scheduleNext(ctx, current, Instant.now(clock));
+        CrmTask saved = close(ctx, id, next, new Update().set("status", TaskStatus.CANCELLED));
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_UPDATED, saved, "Task skipped: " + saved.getTitle(), "SKIPPED");
-        CrmTask inserted = insertNextOccurrence(ctx, next);
+        recordNextOccurrence(ctx, next.task());
         return new SkipResult(views(ctx, List.of(saved)).get(0),
-                inserted == null ? null : views(ctx, List.of(inserted)).get(0));
+                next.task() == null ? null : views(ctx, List.of(next.task())).get(0));
+    }
+
+    /** The occurrence stored for a task about to close (null when none is due), and the version it has to close at. */
+    private record Scheduled(CrmTask task, Long taskVersion) {}
+
+    /**
+     * Stores the next occurrence before the current one closes, so that without transactions a crash cannot end a
+     * series and a retry cannot make two: the new id is first claimed on the still-open task (guarded by the version,
+     * so a racing second close fails here, having written nothing), then inserted under that id, and only then does
+     * {@link #close} mark the task. A crash at any point leaves an open task, visibly not done, whose next attempt
+     * reuses the claimed id, so the unique {@code _id} stops a second occurrence and the stored one is adopted.
+     */
+    private Scheduled scheduleNext(CrmContext ctx, CrmTask task, Instant now) {
+        CrmTask next = nextOccurrence(ctx, task, now);
+        if (next == null) return new Scheduled(null, task.getVersion());
+        Long version = task.getVersion();
+        if (task.getPendingNextOccurrenceId() == null) {
+            version = guarded(ctx, task.getId(), version, new Update().set("pendingNextOccurrenceId", next.getId()))
+                    .getVersion();
+        }
+        try {
+            return new Scheduled(mongo.insert(next), version);
+        } catch (DuplicateKeyException stored) {
+            return new Scheduled(mongo.findOne(byId(ctx, next.getId()), CrmTask.class), version);
+        }
+    }
+
+    /** Applies the closing update, turning a claim into {@code nextOccurrenceId}; guarded by the version. */
+    private CrmTask close(CrmContext ctx, String id, Scheduled next, Update u) {
+        u.unset("pendingNextOccurrenceId");
+        if (next.task() != null) u.set("nextOccurrenceId", next.task().getId());
+        return guarded(ctx, id, next.taskVersion(), u);
     }
 
     /**
      * The next occurrence of a repeating task being completed or skipped (spec E C13), not yet stored; null for a
-     * one-off, an undated task, an occurrence already created, or an ended series.
+     * one-off, an undated task, an occurrence already created, or an ended series. An unfinished earlier attempt's
+     * claimed id is reused.
      */
     private CrmTask nextOccurrence(CrmContext ctx, CrmTask task, Instant now) {
         if (task.getRecurrence() == null || task.getNextOccurrenceId() != null || task.getDueAt() == null) return null;
@@ -201,7 +231,8 @@ public class TaskService {
         // the target may have moved (a deal changes pipeline) since the task was written
         TaskAccess.TargetInfo info = access.assertVisible(ctx, task.getTarget());
         CrmTask next = new CrmTask();
-        next.setId(new org.bson.types.ObjectId().toHexString());
+        next.setId(task.getPendingNextOccurrenceId() != null ? task.getPendingNextOccurrenceId()
+                : new org.bson.types.ObjectId().toHexString());
         next.setWorkspaceId(task.getWorkspaceId());
         next.setCustomerId(task.getCustomerId());
         next.setTitle(task.getTitle());
@@ -228,14 +259,11 @@ public class TaskService {
         return next;
     }
 
-    /** Stores a prepared next occurrence and records it; null in, null out. */
-    private CrmTask insertNextOccurrence(CrmContext ctx, CrmTask next) {
-        if (next == null) return null;
-        CrmTask inserted = mongo.insert(next);
-        counters.recompute(ctx.workspaceId(), inserted.getTarget());
-        record(ctx, ActivityType.TASK_CREATED, inserted, "Next task scheduled: " + inserted.getTitle(), null,
-                Map.of("recurringFromTaskId", inserted.getRecurringFromTaskId()));
-        return inserted;
+    /** Puts the stored next occurrence on the timeline; null does nothing. */
+    private void recordNextOccurrence(CrmContext ctx, CrmTask next) {
+        if (next == null) return;
+        record(ctx, ActivityType.TASK_CREATED, next, "Next task scheduled: " + next.getTitle(), null,
+                Map.of("recurringFromTaskId", next.getRecurringFromTaskId()));
     }
 
     public TaskView reopen(CrmContext ctx, String id) {

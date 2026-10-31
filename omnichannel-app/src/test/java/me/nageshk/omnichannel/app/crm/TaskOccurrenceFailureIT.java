@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.mongodb.client.MongoClient;
+import jakarta.servlet.ServletException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -54,8 +55,17 @@ class TaskOccurrenceFailureIT extends CrmTestBase {
     }
 
     private int complete() throws Exception {
-        return send(post(crm() + "/tasks/" + taskId + "/complete"), managerToken, null).andReturn().getResponse()
-                .getStatus();
+        return act("complete");
+    }
+
+    /** The answer; the broken write surfaces as the exception a real server would turn into a 500. */
+    private int act(String action) throws Exception {
+        try {
+            return send(post(crm() + "/tasks/" + taskId + "/" + action), managerToken, null).andReturn().getResponse()
+                    .getStatus();
+        } catch (ServletException broken) {
+            return 500;
+        }
     }
 
     private List<Document> tasks() {
@@ -84,5 +94,44 @@ class TaskOccurrenceFailureIT extends CrmTestBase {
         assertThat(next.getString("status")).isEqualTo("OPEN");
         assertThat(original().getString("status")).isEqualTo("DONE");
         assertThat(original().getString("nextOccurrenceId")).isEqualTo(next.get("_id").toString());
+    }
+
+    @Test
+    void aFailedInsertKeepsTheSeriesAliveAndARetryFinishesIt() throws Exception {
+        MongoTestCommands.failNext(client, mongo.getDb().getName(), "crmTasks", "insert", 1);
+        assertThat(complete()).isEqualTo(500);
+        assertThat(original().getString("status")).as("not done until the next one is stored").isEqualTo("OPEN");
+        assertThat(tasks()).hasSize(1);
+        assertThat(complete()).isEqualTo(200);
+        assertThat(tasks()).hasSize(2);
+        assertThat(original().getString("status")).isEqualTo("DONE");
+        assertThat(original().get("pendingNextOccurrenceId")).isNull();
+        String nextId = original().getString("nextOccurrenceId");
+        assertThat(tasks()).filteredOn(t -> t.get("_id").toString().equals(nextId)).hasSize(1);
+    }
+
+    @Test
+    void aRetryAfterTheInsertDoesNotMakeASecondOccurrence() throws Exception {
+        // the claim goes through, the next occurrence is stored, closing the task fails
+        MongoTestCommands.failAfter(client, mongo.getDb().getName(), "crmTasks", "findAndModify", 1);
+        assertThat(complete()).isEqualTo(500);
+        MongoTestCommands.allowCommands(client);
+        assertThat(tasks()).hasSize(2);
+        assertThat(original().getString("status")).isEqualTo("OPEN");
+        assertThat(complete()).isEqualTo(200);
+        assertThat(tasks()).as("the stored occurrence is adopted").hasSize(2);
+        assertThat(original().getString("status")).isEqualTo("DONE");
+        assertThat(mongo.count(new Query(Criteria.where("workspaceId").is(brand.getId()).and("type").is("TASK_CREATED")
+                .and("payload.recurringFromTaskId").is(taskId)), "crmActivities")).isEqualTo(1);
+    }
+
+    @Test
+    void skippingFinishesTheSameWayAfterAFailure() throws Exception {
+        MongoTestCommands.failNext(client, mongo.getDb().getName(), "crmTasks", "insert", 1);
+        assertThat(act("skip")).isEqualTo(500);
+        assertThat(original().getString("status")).isEqualTo("OPEN");
+        assertThat(act("skip")).isEqualTo(200);
+        assertThat(tasks()).hasSize(2);
+        assertThat(original().getString("status")).isEqualTo("CANCELLED");
     }
 }

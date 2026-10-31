@@ -41,7 +41,7 @@ Small findings from the final reviews of phases D to G, kept here because the le
 - won't fix: catch-up loop in nextDue carries a DST-gap-shifted LocalTime into later steps (reference behaviour) *Same as the reference; only shifts a task inside a DST gap.*
 - [ ] bad enum values in a repeat rule (frequency, weekdays) get the framework's generic 400, not a field error
 - [ ] GET /tasks/delegated?status=foo says "is not a valid value" rather than "must be OPEN or DONE"
-- [ ] nextOccurrenceId is committed before the next occurrence is inserted (no transaction); a crash in between ends the series silently
+- [x] nextOccurrenceId is committed before the next occurrence is inserted (no transaction); a crash in between ends the series silently
 - [x] no test exercises the version-guard race of two simultaneous completions
 - [ ] merging the two notice lists after capping each at 20 can return fewer than 20 entries
 - [ ] if demo-manager is missing the freshly seeded tasks keep assignedBy = "system" and the agent sees nameless ASSIGNED notices
