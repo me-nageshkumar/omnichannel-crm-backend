@@ -113,3 +113,10 @@ Small findings from the final reviews of phases D to G, kept here because the le
 - [x] The repeat unit labels wrapped mid-word in the task form
 - [x] The masthead made every page 464 px wide at phone width
 - [x] A task form problem could sit out of sight at the edge of the scrolling form
+
+## From the review of the last fixes
+
+- [ ] An edit removing a task's repeat rule in the moment a completion is closing it still closes it with the occurrence already stored; only a form opened in that window can do it
+- [ ] Step errors in the task form are `<small>`, so a failed save does not scroll to them; hardly reachable given the length limit
+- [ ] A company lookup failing just as the editor closes makes one stray read
+
