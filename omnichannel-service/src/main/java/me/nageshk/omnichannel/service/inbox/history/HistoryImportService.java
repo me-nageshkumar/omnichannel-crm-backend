@@ -27,6 +27,7 @@ import me.nageshk.omnichannel.db.phone.PhoneNumber;
 import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.contact.Phones;
+import org.bson.types.ObjectId;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -168,28 +169,34 @@ public class HistoryImportService {
         imp.setCounts(new WaWebHistoryImport.Counts(remoteIds.size(), 0, 0, 0, 0, 0, 0));
         imp.setRequestedByUserId(me.userId());
         imp.setRequestedByName(me.getUsername());
+        imp.setId(new ObjectId().toHexString());
+        if (kind == HistoryScopeKind.CHATS) insertItems(imp, number, remoteIds, requestedPhones);
         try {
             imp = imports.insert(imp);
         } catch (DuplicateKeyException e) {
+            items.deleteByImportId(imp.getId());
             return new Created(imports.findByPhoneNumberIdAndScopeKeyAndActiveTrue(number.getId(), scopeKey)
                     .orElseThrow(() -> e), false);
         }
-        if (kind == HistoryScopeKind.CHATS) {
-            List<WaWebHistoryImportChat> rows = new ArrayList<>();
-            for (String remoteId : remoteIds) {
-                WaWebHistoryImportChat row = new WaWebHistoryImportChat();
-                row.setImportId(imp.getId());
-                row.setWorkspaceId(number.getWorkspaceId());
-                row.setPhoneNumberId(number.getId());
-                row.setRemoteId(remoteId);
-                row.setRequestedPhone(requestedPhones.get(remoteId));
-                row.setStatus(HistoryChatStatus.PENDING);
-                row.setCounts(WaWebHistoryImportChat.Counts.ZERO);
-                rows.add(row);
-            }
-            items.insert(rows);
-        }
         return new Created(imp, true);
+    }
+
+    /** The items go in before the import, so a runner never sees a CHATS import without them. */
+    private void insertItems(WaWebHistoryImport imp, PhoneNumber number, List<String> remoteIds,
+            Map<String, String> requestedPhones) {
+        List<WaWebHistoryImportChat> rows = new ArrayList<>();
+        for (String remoteId : remoteIds) {
+            WaWebHistoryImportChat row = new WaWebHistoryImportChat();
+            row.setImportId(imp.getId());
+            row.setWorkspaceId(number.getWorkspaceId());
+            row.setPhoneNumberId(number.getId());
+            row.setRemoteId(remoteId);
+            row.setRequestedPhone(requestedPhones.get(remoteId));
+            row.setStatus(HistoryChatStatus.PENDING);
+            row.setCounts(WaWebHistoryImportChat.Counts.ZERO);
+            rows.add(row);
+        }
+        items.insert(rows);
     }
 
     /** A typed or contact phone: its {@code @c.us} chat, plus the contact's own chat id when it has one. */

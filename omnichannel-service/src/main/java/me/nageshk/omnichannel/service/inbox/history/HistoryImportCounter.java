@@ -1,11 +1,8 @@
 package me.nageshk.omnichannel.service.inbox.history;
 
-import java.util.HashMap;
-import java.util.Map;
 import org.bson.Document;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
-import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChatRepository;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -18,35 +15,41 @@ import org.springframework.stereotype.Component;
 public class HistoryImportCounter {
 
     private final MongoTemplate mongo;
-    private final WaWebHistoryImportChatRepository items;
 
-    HistoryImportCounter(MongoTemplate mongo, WaWebHistoryImportChatRepository items) {
+    HistoryImportCounter(MongoTemplate mongo) {
         this.mongo = mongo;
-        this.items = items;
     }
 
     public WaWebHistoryImport.Counts refresh(String importId) {
-        Map<String, Integer> n = new HashMap<>();
         Aggregation agg = Aggregation.newAggregation(Aggregation.match(Criteria.where("importId").is(importId)),
-                Aggregation.group("status").count().as("n"));
-        for (Document d : mongo.aggregate(agg, WaWebHistoryImportChat.class, Document.class)) {
-            n.put(d.getString("_id"), d.getInteger("n"));
-        }
+                Aggregation.group("status").count().as("n").sum("counts.seen").as("seen")
+                        .sum("counts.inserted").as("inserted").sum("counts.updated").as("updated"));
+        int total = 0;
+        int done = 0;
+        int skipped = 0;
+        int failed = 0;
         long seen = 0;
         long inserted = 0;
         long updated = 0;
-        for (WaWebHistoryImportChat i : mongo.find(new Query(Criteria.where("importId").is(importId)),
-                WaWebHistoryImportChat.class)) {
-            if (i.getCounts() == null) continue;
-            seen += i.getCounts().seen();
-            inserted += i.getCounts().inserted();
-            updated += i.getCounts().updated();
+        for (Document d : mongo.aggregate(agg, WaWebHistoryImportChat.class, Document.class)) {
+            int n = d.getInteger("n");
+            total += n;
+            String status = d.getString("_id");
+            if ("DONE".equals(status)) done = n;
+            else if ("SKIPPED".equals(status)) skipped = n;
+            else if ("FAILED".equals(status)) failed = n;
+            seen += number(d, "seen");
+            inserted += number(d, "inserted");
+            updated += number(d, "updated");
         }
-        WaWebHistoryImport.Counts counts = new WaWebHistoryImport.Counts((int) items.countByImportId(importId),
-                n.getOrDefault("DONE", 0), n.getOrDefault("SKIPPED", 0), n.getOrDefault("FAILED", 0), seen, inserted,
+        WaWebHistoryImport.Counts counts = new WaWebHistoryImport.Counts(total, done, skipped, failed, seen, inserted,
                 updated);
         mongo.updateFirst(new Query(Criteria.where("_id").is(importId)), new Update().set("counts", counts),
                 WaWebHistoryImport.class);
         return counts;
+    }
+
+    private static long number(Document d, String key) {
+        return d.get(key) instanceof Number x ? x.longValue() : 0;
     }
 }

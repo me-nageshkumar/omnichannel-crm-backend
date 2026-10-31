@@ -148,6 +148,17 @@ class HistoryImportServiceIT {
     }
 
     @Test
+    void identicalChatsRequestLeavesNoOrphanItems() {
+        var first = service.create(me, brand.getId(), number.getId(), chatsOf(List.of("919811100003"), null));
+        assertThat(items.countByImportId(first.imp().getId())).isEqualTo(first.imp().getScope().remoteIds().size());
+        long before = items.count();
+        var second = service.create(me, brand.getId(), number.getId(), chatsOf(List.of("919811100003"), null));
+        assertThat(second.created()).isFalse();
+        assertThat(second.imp().getId()).isEqualTo(first.imp().getId());
+        assertThat(items.count()).isEqualTo(before);
+    }
+
+    @Test
     void differentRangeQueuesAnotherImport() {
         var first = service.create(me, brand.getId(), number.getId(), all(null, null));
         var second = service.create(me, brand.getId(), number.getId(), all(Instant.parse("2026-01-01T00:00:00Z"), null));
@@ -243,8 +254,9 @@ class HistoryImportServiceIT {
         item(imp, "1@c.us", HistoryChatStatus.DONE, new WaWebHistoryImportChat.Counts(5, 3, 1));
         item(imp, "2@c.us", HistoryChatStatus.SKIPPED, WaWebHistoryImportChat.Counts.ZERO);
         item(imp, "3@c.us", HistoryChatStatus.PENDING, WaWebHistoryImportChat.Counts.ZERO);
+        item(imp, "4@c.us", HistoryChatStatus.FAILED, null);
         var counts = counter.refresh(imp.getId());
-        assertThat(counts).isEqualTo(new WaWebHistoryImport.Counts(3, 1, 1, 0, 5, 3, 1));
+        assertThat(counts).isEqualTo(new WaWebHistoryImport.Counts(4, 1, 1, 1, 5, 3, 1));
         assertThat(imports.findById(imp.getId()).orElseThrow().getCounts()).isEqualTo(counts);
     }
 

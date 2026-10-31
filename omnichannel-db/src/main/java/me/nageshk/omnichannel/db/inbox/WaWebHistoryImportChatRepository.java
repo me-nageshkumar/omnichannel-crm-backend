@@ -10,5 +10,7 @@ public interface WaWebHistoryImportChatRepository extends MongoRepository<WaWebH
 
     long countByImportId(String importId);
 
+    void deleteByImportId(String importId);
+
     void deleteByPhoneNumberId(String phoneNumberId);
 }
