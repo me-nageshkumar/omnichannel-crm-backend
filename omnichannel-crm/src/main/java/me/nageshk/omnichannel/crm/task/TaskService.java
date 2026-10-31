@@ -89,6 +89,12 @@ public class TaskService {
         t.setAssignedBy(ctx.userId());
         t.setAssignedAt(now);
         if (assignee.equals(ctx.userId())) t.setAssignmentSeenAt(now);
+        if (t.getRecurrence() != null) {
+            String id = new org.bson.types.ObjectId().toHexString();
+            t.setId(id);
+            t.setSeriesId(id);
+            t.setOccurrence(1);
+        }
         t.setStatus(TaskStatus.OPEN);
         t.setCreatedBy(ctx.userId());
         t.setLastModifiedBy(ctx.userId());
@@ -111,6 +117,15 @@ public class TaskService {
         Update u = new Update().set("title", f.title).set("description", f.description).set("type", f.type)
                 .set("priority", f.priority).set("dueAt", f.dueAt).set("reminderAt", f.reminderAt)
                 .set("assigneeId", assignee).set("checklist", f.checklist);
+        if (f.recurrence == null) {
+            u.unset("recurrence"); // a one-off from now on; the series id stays
+        } else {
+            u.set("recurrence", f.recurrence);
+            if (current.getRecurrence() == null) {
+                u.set("seriesId", current.getSeriesId() == null ? id : current.getSeriesId())
+                        .set("occurrence", current.getOccurrence() == null ? 1 : current.getOccurrence());
+            }
+        }
         if (!java.util.Objects.equals(f.reminderAt, current.getReminderAt()) || reassigned) {
             // a new reminder time, or a new person, re-arms the reminder
             u.unset("reminderSentAt").unset("reminderSeenAt");
@@ -363,6 +378,7 @@ public class TaskService {
         Instant reminderAt;
         String assigneeId;
         List<ChecklistItem> checklist;
+        Recurrence recurrence;
 
         void applyTo(CrmTask t) {
             t.setTitle(title);
@@ -372,6 +388,7 @@ public class TaskService {
             t.setDueAt(dueAt);
             t.setReminderAt(reminderAt);
             t.setChecklist(checklist);
+            t.setRecurrence(recurrence);
         }
     }
 
@@ -401,6 +418,7 @@ public class TaskService {
             errors.put("reminderAt", "must not be after the due time");
         if (req.assigneeId() != null && !req.assigneeId().isBlank()) f.assigneeId = req.assigneeId().trim();
         f.checklist = Checklists.merge(current == null ? null : current.getChecklist(), req.checklist(), errors);
+        f.recurrence = req.recurrence() == null ? null : TaskRecurrenceSchedule.normalize(req.recurrence(), f.dueAt, errors);
         if (current != null && req.target() != null && (req.target().type() != current.getTarget().type()
                 || !java.util.Objects.equals(req.target().id(), current.getTarget().id())))
             errors.put("target", "cannot change");
