@@ -208,4 +208,33 @@ class CrmDemoSeederIT {
         assertThat(count("crmContacts", Criteria.where("workspaceId").is(fashion.getId())))
                 .as("the rest of the seed is not repeated").isEqualTo(8);
     }
+
+    @Test
+    void withoutTheManagerTheAgentGetsNoNamelessNotices() {
+        demoSeeder.run(null);
+        contactSeeder.run(null);
+        me.nageshk.omnichannel.db.user.User demoManager = users.findByUsername("demo-manager").orElseThrow();
+        demoManager.setUsername("away");
+        demoManager = users.save(demoManager);
+        seeder.run(null);
+        Customer retail = customers.findAll().stream().filter(x -> x.getName().equals(DemoSeeder.CUSTOMER))
+                .findFirst().orElseThrow();
+        Workspace fashion = workspaces.findByCustomerIdOrderByName(retail.getId()).stream()
+                .filter(w -> w.getName().equals("Demo Fashion")).findFirst().orElseThrow();
+        Criteria ws = Criteria.where("workspaceId").is(fashion.getId());
+        List<org.bson.Document> tasks = mongo.find(new Query(ws), org.bson.Document.class, "crmTasks");
+        assertThat(tasks).hasSize(3);
+        assertThat(tasks).as("seen, so no ASSIGNED notice names nobody").allSatisfy(t -> {
+            assertThat(t.getString("assignedBy")).isEqualTo("system");
+            assertThat(t.get("assignmentSeenAt")).isNotNull();
+        });
+        // the manager turns up: the hand-over happens after all, notice included
+        demoManager.setUsername("demo-manager");
+        String managerId = users.save(demoManager).getId();
+        seeder.run(null);
+        assertThat(mongo.find(new Query(ws), org.bson.Document.class, "crmTasks")).allSatisfy(t -> {
+            assertThat(t.getString("assignedBy")).isEqualTo(managerId);
+            assertThat(t.get("assignmentSeenAt")).isNull();
+        });
+    }
 }

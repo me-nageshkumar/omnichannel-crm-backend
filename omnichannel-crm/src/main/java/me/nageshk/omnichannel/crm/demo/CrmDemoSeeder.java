@@ -233,16 +233,22 @@ public class CrmDemoSeeder implements ApplicationRunner {
      * Phase E §7: the three agent tasks are handed over by {@code demo-manager}; the festive one gets steps (the first
      * ticked), the uniform call repeats weekly. Applied to every demo task whose assigner is still missing or the
      * system actor (the seeder's own creates), so a database seeded
-     * before phase E gains them on the next start and a second run changes nothing.
+     * before phase E gains them on the next start and a second run changes nothing. Without {@code demo-manager} the
+     * tasks stay the system's, marked seen: an ASSIGNED notice would have no name to show.
      */
     private void seedTaskExtras(PlatformBrand brand) {
         if (!settings.find(brand.id()).filter(CrmSettings::isEnabled).isPresent()) return;
         String managerId = people.byUsername(MANAGER).map(p -> p.id()).orElse(null);
-        if (managerId == null) return;
-        List<org.bson.Document> pending = mongo.find(new Query(Criteria.where("workspaceId").is(brand.id())
-                .and("title").in(HANDED_OVER).and("assignedBy").in(null, "system")), org.bson.Document.class, "crmTasks");
-        if (pending.isEmpty()) return;
+        Criteria pendingTasks = Criteria.where("workspaceId").is(brand.id()).and("title").in(HANDED_OVER)
+                .and("assignedBy").in(null, "system");
         Instant now = Instant.now();
+        if (managerId == null) {
+            // nobody to name as the assigner, so no notice; a later run that finds the manager still hands them over
+            mongo.updateMulti(new Query(pendingTasks), new Update().set("assignmentSeenAt", now), "crmTasks");
+            return;
+        }
+        List<org.bson.Document> pending = mongo.find(new Query(pendingTasks), org.bson.Document.class, "crmTasks");
+        if (pending.isEmpty()) return;
         java.time.ZoneId zone = brands.zoneOf(brand.id());
         for (org.bson.Document task : pending) {
             Update u = new Update().set("assignedBy", managerId).set("assignedAt", now).unset("assignmentSeenAt");
