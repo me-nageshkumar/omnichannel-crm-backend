@@ -78,7 +78,6 @@ public class SegmentResolver {
         Set<String> pipelineIds = new HashSet<>();
         Map<String, Set<String>> stages = new LinkedHashMap<>();
         for (CrmPipeline p : pipelines.list(ctx)) {
-            if (!p.isActive()) continue; // as the catalogue: a rule on one is flagged until it is active again
             pipelineIds.add(p.getId());
             stages.put(p.getId(), p.getStages().stream().map(CrmStage::getId).collect(Collectors.toSet()));
         }

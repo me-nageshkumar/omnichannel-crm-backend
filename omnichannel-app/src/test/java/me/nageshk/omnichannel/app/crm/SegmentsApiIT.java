@@ -333,7 +333,7 @@ class SegmentsApiIT extends CrmTestBase {
     }
 
     @Test
-    void aRuleOnAnInactivePipelineIsFlaggedAndMatchesNothing() throws Exception {
+    void aRuleOnAnInactivePipelineKeepsItsContacts() throws Exception {
         enableCrm();
         JsonNode second = json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", "Second"))
                 .andExpect(status().isCreated()));
@@ -348,8 +348,8 @@ class SegmentsApiIT extends CrmTestBase {
                 "version", second.get("version").asLong())).andExpect(status().isOk());
         JsonNode rule = json(send(get(segments() + "/" + id), managerToken, null).andExpect(status().isOk()))
                 .get("rules").get("rules").get(0);
-        assertThat(rule.get("missing").asBoolean()).isTrue();
-        assertThat(preview(managerToken, rules).get("total").asLong()).isEqualTo(0);
+        assertThat(rule.has("missing")).isFalse();
+        assertThat(preview(managerToken, rules).get("total").asLong()).isEqualTo(1);
     }
 
     @Test

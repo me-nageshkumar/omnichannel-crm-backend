@@ -7,7 +7,7 @@ Small findings from the final reviews of phases D to G, kept here because the le
 
 - [x] `SegmentSets.needsUniverse` is unused by the resolver (only its test calls it).
 - [x] `SegmentScope.flag` says INACCESSIBLE for a deleted pipeline/stage even for a view-all user, and checks a stage against all accessible stages rather than the group's pipeline.
-- [x] `SegmentScope` lists inactive pipelines while `SegmentCatalog` offers only active ones; a rule on an inactive pipeline resolves unflagged.
+- won't fix: `SegmentScope` lists inactive pipelines while `SegmentCatalog` offers only active ones; a rule on an inactive pipeline resolves unflagged. *Tried and undone: excluding them made deactivating a pipeline silently shrink campaign audiences and blocked every save of the segment.*
 - [x] `SegmentValidator.hasPipeline` is satisfied by any `deal.pipelineId` rule in the AND group, including `isNotSet`/`notIn`.
 - [x] `SegmentService.nameKey` lower-cases with the default locale.
 - [x] `SegmentService.delete` can answer 500 instead of 409 when the segment changes between read and delete.
@@ -96,3 +96,12 @@ Small findings from the final reviews of phases D to G, kept here because the le
 
 - [x] Segment rules on companies show ids instead of names (console, `SegmentValueEditor`)
 - [x] Job lock: CRM jobs run on every instance unless `omnichannel.crm.jobs.enabled=false`
+
+## From the review of these fixes
+
+- [ ] Completing a repeating task inserts the next occurrence before closing the current one, so a conflict in that two-step window leaves the new occurrence beside the open one until a retry
+- [ ] One shared action under per-row busy in `useTaskActions`: a run on one row clears another row's error
+- [ ] A 404 on deleting a task keeps the dialog open with an error instead of removing the row
+- [ ] A failed company lookup in a segment rule shows "Unknown company" for a live company and is not retried
+- [ ] `CrmJobLocks`: a failure giving the lock back hides the job's own exception
+- [ ] A stage of another active pipeline is labelled missing rather than no access

@@ -9,11 +9,11 @@ import me.nageshk.omnichannel.crm.segment.SegmentFields.FieldSpec;
 import me.nageshk.omnichannel.crm.segment.SegmentFields.Known;
 
 /**
- * What the caller may name in a rule: their active pipelines and those pipelines' stages (what the catalogue offers),
- * the brand's labels and channel accounts, and the brand's custom fields and attributes ({@link Known}). A rule outside
- * it is {@code MISSING} (the thing is gone) or {@code INACCESSIBLE} (a pipeline or stage the caller cannot see) and
- * matches nothing (spec D C4, C8, C13). {@code allPipelines} says the caller sees every pipeline, so what they do not
- * have is gone or inactive; a restricted caller cannot tell that from one they were not given.
+ * What the caller may name in a rule: their pipelines, active or not, and those pipelines' stages, the brand's labels
+ * and channel accounts, and the brand's custom fields and attributes ({@link Known}). A rule outside it is
+ * {@code MISSING} (the thing is gone) or {@code INACCESSIBLE} (a pipeline or stage the caller cannot see) and matches
+ * nothing (spec D C4, C8, C13). {@code allPipelines} says the caller sees every pipeline, so what they do not have is
+ * gone; a restricted caller cannot tell that from one they were not given.
  */
 public record SegmentScope(Known known, Set<String> pipelineIds, Map<String, Set<String>> stageIdsByPipeline,
         Set<String> labelIds, Set<String> channelAccountIds, boolean allPipelines) {
