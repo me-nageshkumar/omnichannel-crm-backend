@@ -1,0 +1,245 @@
+package me.nageshk.omnichannel.app.inbox.history;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import me.nageshk.omnichannel.db.contact.Contact;
+import me.nageshk.omnichannel.db.contact.ContactRepository;
+import me.nageshk.omnichannel.db.inbox.ChatStatus;
+import me.nageshk.omnichannel.db.inbox.MessageDirection;
+import me.nageshk.omnichannel.db.inbox.MessageSource;
+import me.nageshk.omnichannel.db.inbox.MessageStatus;
+import me.nageshk.omnichannel.db.inbox.WaWebChat;
+import me.nageshk.omnichannel.db.inbox.WaWebChatAction;
+import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
+import me.nageshk.omnichannel.db.inbox.WaWebMessage;
+import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
+import me.nageshk.omnichannel.service.events.WhatsAppEvent;
+import me.nageshk.omnichannel.service.inbox.InboxEvents;
+import me.nageshk.omnichannel.service.inbox.InboxIngestService;
+import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
+import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportOutcome;
+import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportResult;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.event.EventListener;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Query;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
+
+@SpringBootTest
+class ImportMessageIT {
+
+    private static final String REMOTE = "919911111111@c.us";
+
+    /** Collects every Spring event of the inbox. */
+    static class Recorder {
+        final List<Object> events = new CopyOnWriteArrayList<>();
+
+        @EventListener
+        void on(InboxEvents.ChatCreated e) {
+            events.add(e);
+        }
+
+        @EventListener
+        void on(InboxEvents.ChatReopened e) {
+            events.add(e);
+        }
+
+        @EventListener
+        void on(InboxEvents.CampaignChatFirstReply e) {
+            events.add(e);
+        }
+
+        @EventListener
+        void on(InboxEvents.MessageUpserted e) {
+            events.add(e);
+        }
+
+        @EventListener
+        void on(InboxEvents.ChatChanged e) {
+            events.add(e);
+        }
+
+        @EventListener
+        void on(InboxEvents.ActionRecorded e) {
+            events.add(e);
+        }
+    }
+
+    @TestConfiguration
+    static class RecorderConfig {
+        @Bean
+        Recorder importRecorder() {
+            return new Recorder();
+        }
+    }
+
+    @Autowired InboxIngestService ingest;
+    @Autowired ContactRepository contacts;
+    @Autowired WaWebChatRepository chats;
+    @Autowired WaWebMessageRepository messages;
+    @Autowired MongoTemplate mongo;
+    @Autowired ObjectMapper mapper;
+    @Autowired Recorder recorder;
+
+    private final ImportContext ctx = new ImportContext("cust-1", "ws-1", "pn-1");
+
+    @BeforeEach
+    void setUp() {
+        clean();
+    }
+
+    @AfterEach
+    void tearDown() {
+        clean();
+    }
+
+    private void clean() {
+        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class, Contact.class))
+            mongo.remove(new Query(), c);
+        recorder.events.clear();
+    }
+
+    private ObjectNode msg(String id, String remote, boolean fromMe, long t, int ack, String body) {
+        ObjectNode p = mapper.createObjectNode();
+        ObjectNode idNode = p.putObject("id");
+        idNode.put("_serialized", id);
+        idNode.put("remote", remote);
+        idNode.put("fromMe", fromMe);
+        p.put("fromMe", fromMe);
+        p.put("body", body);
+        p.put("type", "chat");
+        p.put("timestamp", t);
+        p.put("ack", ack);
+        return p;
+    }
+
+    private WaWebChat onlyChat() {
+        assertThat(chats.count()).isEqualTo(1);
+        return chats.findAll().getFirst();
+    }
+
+    private WaWebMessage onlyMessage() {
+        assertThat(messages.count()).isEqualTo(1);
+        return messages.findAll().getFirst();
+    }
+
+    @Test
+    void insertsMessageAndCreatesClosedChat() {
+        ImportResult r = ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.INSERTED);
+        WaWebChat chat = onlyChat();
+        assertThat(chat.getStatus()).isEqualTo(ChatStatus.CLOSED);
+        assertThat(chat.getUnreadCount()).isZero();
+        assertThat(chat.getLastMessage().text()).isEqualTo("hello");
+        assertThat(chat.getLastInboundAt()).isEqualTo(Instant.ofEpochSecond(100));
+        WaWebMessage m = onlyMessage();
+        assertThat(m.getSource()).isEqualTo(MessageSource.CONTACT);
+        assertThat(m.getDirection()).isEqualTo(MessageDirection.IN);
+        assertThat(m.getStatusTimes()).isNull();
+        assertThat(m.getStatus()).isEqualTo(MessageStatus.PENDING);
+        assertThat(contacts.findByWorkspaceIdAndPhone("ws-1", "919911111111")).isPresent();
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void secondRunIsUnchanged() {
+        ObjectNode p = msg("m1", REMOTE, false, 100, 0, "hello");
+        ingest.importMessage(ctx, p);
+
+        ImportResult r = ingest.importMessage(ctx, p);
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+        assertThat(messages.count()).isEqualTo(1);
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void higherAckUpdatesStatusWithoutTimes() {
+        ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
+
+        ImportResult r = ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 3, "hello"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
+        WaWebMessage m = onlyMessage();
+        assertThat(m.getStatus()).isEqualTo(MessageStatus.READ);
+        assertThat(m.getStatusTimes()).isNull();
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void liveStatusIsKeptWhenImportSeesLower() {
+        ingest.ingestMessage(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
+                msg("m1", REMOTE, true, 100, 3, "hello"), null, null));
+        Instant readAt = onlyMessage().getStatusTimes().getReadAt();
+        recorder.events.clear();
+
+        ImportResult r = ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+        WaWebMessage m = onlyMessage();
+        assertThat(m.getStatus()).isEqualTo(MessageStatus.READ);
+        assertThat(readAt).isNotNull();
+        assertThat(m.getStatusTimes().getReadAt()).isEqualTo(readAt);
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void existingOpenChatKeepsStatusAndUnread() {
+        WaWebChat open = new WaWebChat();
+        open.setCustomerId("cust-1");
+        open.setWorkspaceId("ws-1");
+        open.setPhoneNumberId("pn-1");
+        open.setRemoteId(REMOTE);
+        open.setStatus(ChatStatus.OPEN);
+        open.setUnreadCount(4);
+        chats.save(open);
+
+        ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
+
+        WaWebChat chat = onlyChat();
+        assertThat(chat.getStatus()).isEqualTo(ChatStatus.OPEN);
+        assertThat(chat.getUnreadCount()).isEqualTo(4);
+        assertThat(chat.getLastMessageAt()).isEqualTo(Instant.ofEpochSecond(100));
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void olderMessageDoesNotOverwritePreview() {
+        ingest.importMessage(ctx, msg("m2", REMOTE, false, 200, 0, "new"));
+        ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "old"));
+
+        WaWebChat chat = onlyChat();
+        assertThat(chat.getLastMessage().text()).isEqualTo("new");
+        assertThat(chat.getLastMessageAt()).isEqualTo(Instant.ofEpochSecond(200));
+        assertThat(messages.count()).isEqualTo(2);
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void skipsGroupsAndMissingIds() {
+        ImportResult group = ingest.importMessage(ctx, msg("g1", "120363000000000000@g.us", false, 100, 0, "hi"));
+        ObjectNode noId = msg("m1", REMOTE, false, 100, 0, "hi");
+        noId.remove("id");
+        ImportResult missing = ingest.importMessage(ctx, noId);
+
+        assertThat(group.outcome()).isEqualTo(ImportOutcome.SKIPPED);
+        assertThat(group.chat()).isNull();
+        assertThat(group.message()).isNull();
+        assertThat(missing.outcome()).isEqualTo(ImportOutcome.SKIPPED);
+        assertThat(chats.count()).isZero();
+        assertThat(messages.count()).isZero();
+        assertThat(contacts.count()).isZero();
+        assertThat(recorder.events).isEmpty();
+    }
+}

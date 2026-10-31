@@ -53,6 +53,18 @@ public class InboxIngestService {
             boolean campaignFirstReply) {
     }
 
+    /** The number a history import stores messages for. */
+    public record ImportContext(String customerId, String workspaceId, String phoneNumberId) {
+    }
+
+    public enum ImportOutcome { INSERTED, UPDATED, UNCHANGED, SKIPPED }
+
+    /** {@code chat} and {@code message} are the stored rows; both null when {@code SKIPPED}. */
+    public record ImportResult(ImportOutcome outcome, WaWebChat chat, WaWebMessage message) {
+    }
+
+    private static final ImportResult SKIPPED = new ImportResult(ImportOutcome.SKIPPED, null, null);
+
     private final ContactService contacts;
     private final WaWebChatRepository chats;
     private final WaWebMessageRepository messages;
@@ -98,6 +110,75 @@ public class InboxIngestService {
         } catch (DataAccessException e) {
             throw new IngestionFailedException(event.name(), waMessageId, e);
         }
+    }
+
+    /**
+     * A message read from the phone's history. Unlike {@link #ingestMessage} it publishes no event, never reopens
+     * a chat or counts it unread, creates chats {@code CLOSED} and records no status times; SKIPPED when it is not a
+     * person's chat or has no usable phone or id.
+     */
+    public ImportResult importMessage(ImportContext ctx, JsonNode payload) {
+        if (payload == null || !payload.isObject()) return SKIPPED;
+        String remote = MessagePayloads.remote(payload);
+        boolean lid = remote.endsWith("@lid");
+        if (!lid && !remote.endsWith("@c.us")) return SKIPPED;
+        String waMessageId = MessagePayloads.waMessageId(payload);
+        if (waMessageId.isEmpty()) return SKIPPED;
+        try {
+            return retrying(() -> storeImported(ctx, payload, remote, lid, waMessageId));
+        } catch (DataAccessException e) {
+            throw new IngestionFailedException("history_import", waMessageId, e);
+        }
+    }
+
+    /**
+     * Like {@link #storeMessage}, the chat summary is saved before the message row: a retry after a failed chat save
+     * folds again, and a duplicate key on the insert re-reads the message as existing.
+     */
+    private ImportResult storeImported(ImportContext ctx, JsonNode p, String remote, boolean lid,
+            String waMessageId) {
+        boolean fromMe = MessagePayloads.fromMe(p);
+        Instant at = MessagePayloads.timestamp(p, clock.instant());
+        Contact contact = contacts.upsertFromChat(ctx.workspaceId(), ctx.customerId(), remote,
+                fromMe ? null : MessagePayloads.senderName(p), lid ? MessagePayloads.lidPhone(p) : null, at);
+        if (contact == null) return SKIPPED;
+
+        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(ctx.phoneNumberId(), remote).orElse(null);
+        if (chat == null) {
+            chat = new WaWebChat();
+            chat.setCustomerId(ctx.customerId());
+            chat.setWorkspaceId(ctx.workspaceId());
+            chat.setPhoneNumberId(ctx.phoneNumberId());
+            chat.setRemoteId(remote);
+            chat.setContactId(contact.getId());
+            chat.setStatus(ChatStatus.CLOSED);
+            chat.setUnreadCount(0);
+            chat = chats.save(chat);
+        }
+
+        int ack = MessagePayloads.ack(p);
+        WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(ctx.phoneNumberId(), waMessageId)
+                .orElse(null);
+        if (message != null) {
+            if (!applyAck(message, ack, null)) return new ImportResult(ImportOutcome.UNCHANGED, chat, message);
+            message = messages.save(message);
+            if (isLast(chat, message)) {
+                chat.setLastMessage(withStatus(chat.getLastMessage(), message.getStatus()));
+                chat = chats.save(chat);
+            }
+            return new ImportResult(ImportOutcome.UPDATED, chat, message);
+        }
+
+        message = newMessage(ctx.customerId(), ctx.workspaceId(), ctx.phoneNumberId(), p, chat, waMessageId,
+                fromMe, at);
+        message.setStatus(MessageStatus.ofAck(ack));
+        message.setStatusTimes(null);
+        foldPreview(chat, message, at);
+        if (message.getDirection() == MessageDirection.IN) chat.setLastInboundAt(later(chat.getLastInboundAt(), at));
+        else chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
+        chat = chats.save(chat);
+        message = messages.insert(message);
+        return new ImportResult(ImportOutcome.INSERTED, chat, message);
     }
 
     /** What earlier attempts of one ingestion already persisted, so a retry still reports it. */
@@ -152,7 +233,8 @@ public class InboxIngestService {
         }
 
         if (message == null) {
-            message = newMessage(event, p, chat, waMessageId, fromMe, at);
+            message = newMessage(event.customerId(), event.workspaceId(), event.phoneNumberId(), p, chat,
+                    waMessageId, fromMe, at);
             applyAck(message, MessagePayloads.ack(p), now);
         }
         if (!progress.folded) {
@@ -229,12 +311,12 @@ public class InboxIngestService {
         return Optional.of(new Stored(new Ingested(chat, message, false, false, false), changed, null, false));
     }
 
-    private WaWebMessage newMessage(WhatsAppEvent event, JsonNode p, WaWebChat chat, String waMessageId,
-            boolean fromMe, Instant at) {
+    private static WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId, JsonNode p,
+            WaWebChat chat, String waMessageId, boolean fromMe, Instant at) {
         WaWebMessage m = new WaWebMessage();
-        m.setCustomerId(event.customerId());
-        m.setWorkspaceId(event.workspaceId());
-        m.setPhoneNumberId(event.phoneNumberId());
+        m.setCustomerId(customerId);
+        m.setWorkspaceId(workspaceId);
+        m.setPhoneNumberId(phoneNumberId);
         m.setChatId(chat.getId());
         m.setWaMessageId(waMessageId);
         m.setDirection(fromMe ? MessageDirection.OUT : MessageDirection.IN);
@@ -252,7 +334,8 @@ public class InboxIngestService {
 
     /**
      * Moves the status up (never down; FAILED is reachable from any state and final) and stamps the time the
-     * status was first reached. Returns whether anything changed.
+     * status was first reached, unless {@code now} is null (a history import, which leaves the times as they are).
+     * Returns whether anything changed.
      */
     static boolean applyAck(WaWebMessage message, int ack, Instant now) {
         MessageStatus next = MessageStatus.ofAck(ack);
@@ -261,6 +344,7 @@ public class InboxIngestService {
         if (next != MessageStatus.FAILED && !next.isAtLeast(current)) return false;
         message.setStatus(next);
         message.setAck(ack);
+        if (now == null) return true;
         if (message.getStatusTimes() == null) message.setStatusTimes(new WaWebMessage.StatusTimes());
         WaWebMessage.StatusTimes times = message.getStatusTimes();
         switch (next) {
