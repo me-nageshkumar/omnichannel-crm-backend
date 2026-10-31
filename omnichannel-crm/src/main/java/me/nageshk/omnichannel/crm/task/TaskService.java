@@ -133,8 +133,8 @@ public class TaskService {
     }
 
     public TaskView complete(CrmContext ctx, String id) {
-        ctx.require("crm:edit");
         CrmTask current = load(ctx, id);
+        assertCanWork(ctx, current);
         if (current.getStatus() == TaskStatus.DONE) return views(ctx, List.of(current)).get(0);
         CrmTask saved = guarded(ctx, id, current.getVersion(), new Update().set("status", TaskStatus.DONE)
                 .set("completedAt", Instant.now(clock)).set("completedBy", ctx.userId()));
@@ -144,8 +144,8 @@ public class TaskService {
     }
 
     public TaskView reopen(CrmContext ctx, String id) {
-        ctx.require("crm:edit");
         CrmTask current = load(ctx, id);
+        assertCanWork(ctx, current);
         if (current.getStatus() == TaskStatus.OPEN) return views(ctx, List.of(current)).get(0);
         CrmTask saved = guarded(ctx, id, current.getVersion(), new Update().set("status", TaskStatus.OPEN)
                 .unset("completedAt").unset("completedBy"));
@@ -200,6 +200,39 @@ public class TaskService {
         return views(ctx, out);
     }
 
+    /**
+     * Tasks the caller handed to someone else and can still see (spec E C5): OPEN by due time (undated last) or DONE
+     * by completion, latest first.
+     */
+    public List<TaskView> delegated(CrmContext ctx, TaskStatus status, Integer limit) {
+        if (status != TaskStatus.OPEN && status != TaskStatus.DONE)
+            throw new ValidationException("status", "must be OPEN or DONE");
+        int n = limit == null || limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
+        Criteria base = new Criteria().andOperator(delegatedBy(ctx).and("status").is(status),
+                access.visibleCriteria(ctx));
+        List<CrmTask> out = new ArrayList<>();
+        if (status == TaskStatus.DONE) {
+            out.addAll(mongo.find(new Query(base).with(Sort.by(Sort.Direction.DESC, "completedAt")).limit(n),
+                    CrmTask.class));
+        } else {
+            out.addAll(find(new Criteria().andOperator(base, Criteria.where("dueAt").ne(null)), n));
+            if (out.size() < n) out.addAll(find(new Criteria().andOperator(base, Criteria.where("dueAt").is(null)),
+                    n - out.size()));
+        }
+        return views(ctx, out);
+    }
+
+    private Criteria delegatedBy(CrmContext ctx) {
+        return Criteria.where("workspaceId").is(ctx.workspaceId()).and("assignedBy").is(ctx.userId())
+                .and("assigneeId").ne(ctx.userId());
+    }
+
+    /** The assignee may work their own task with view rights; anyone else needs {@code crm:edit} (spec E C3). */
+    void assertCanWork(CrmContext ctx, CrmTask t) {
+        if (!ctx.can("crm:edit") && !ctx.userId().equals(t.getAssigneeId()))
+            throw new ForbiddenException("requires crm:edit or being the assignee");
+    }
+
     public TaskCounts counts(CrmContext ctx, ZoneId zone, String assigneeId) {
         String who = assignee(ctx, assigneeId);
         Buckets b = Buckets.of(Instant.now(clock), zone);
@@ -210,7 +243,10 @@ public class TaskService {
                 Criteria.where("dueAt").gte(b.now()).lt(b.tomorrowStart()))), CrmTask.class);
         long upcoming = mongo.count(new Query(new Criteria().andOperator(base, new Criteria().orOperator(
                 Criteria.where("dueAt").gte(b.tomorrowStart()), Criteria.where("dueAt").is(null)))), CrmTask.class);
-        return new TaskCounts(overdue, today, upcoming);
+        // always the caller's own hand-offs, whoever's buckets were asked for
+        long delegated = mongo.count(new Query(new Criteria().andOperator(delegatedBy(ctx).and("status")
+                .is(TaskStatus.OPEN), access.visibleCriteria(ctx))), CrmTask.class);
+        return new TaskCounts(overdue, today, upcoming, delegated);
     }
 
     /** The earliest open task on the contact or one of the given (already visible) deals, or null. */

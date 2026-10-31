@@ -135,4 +135,75 @@ class RemindersIT extends CrmTestBase {
         // the test profile sets omnichannel.crm.jobs.enabled=false, so no scheduled ticker exists
         assertThat(context.getBeanNamesForType(CrmJobsTicker.class)).isEmpty();
     }
+
+    // --- assignment notices (spec E C4, C20, C21) -------------------------------------------------------
+
+    @Test
+    void assignmentNoticeListedUntilSeen() throws Exception {
+        assignPipelines(agent, salesId());
+        JsonNode t = task(managerToken, agent.getId(), null);
+        send(get(crm() + "/reminders"), agentToken, null).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].kind").value("ASSIGNED"))
+                .andExpect(jsonPath("$[0].assignedBy.id").value(manager.getId()))
+                .andExpect(jsonPath("$[0].taskId").value(t.get("id").asText()));
+        send(get(crm() + "/reminders"), managerToken, null).andExpect(jsonPath("$.length()").value(0));
+        send(post(crm() + "/reminders/" + t.get("id").asText() + "/seen"), agentToken, null)
+                .andExpect(status().isNoContent());
+        send(get(crm() + "/reminders"), agentToken, null).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void selfAssignedTaskHasNoNotice() throws Exception {
+        task(managerToken, manager.getId(), null);
+        task(managerToken, null, null);
+        send(get(crm() + "/reminders"), managerToken, null).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void reassignmentReArmsNotice() throws Exception {
+        assignPipelines(agent, salesId());
+        assignPipelines(agent2, salesId());
+        JsonNode t = task(managerToken, agent.getId(), null);
+        send(post(crm() + "/reminders/" + t.get("id").asText() + "/seen"), agentToken, null)
+                .andExpect(status().isNoContent());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("title", t.get("title").asText());
+        body.put("dueAt", t.get("dueAt").asText());
+        body.put("assigneeId", agent2.getId());
+        body.put("version", t.get("version").asLong());
+        send(put(crm() + "/tasks/" + t.get("id").asText()), managerToken, body).andExpect(status().isOk());
+        send(get(crm() + "/reminders"), agent2Token, null).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].kind").value("ASSIGNED"));
+        send(get(crm() + "/reminders"), agentToken, null).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void seenMarksBothNotices() throws Exception {
+        assignPipelines(agent, salesId());
+        JsonNode t = task(managerToken, agent.getId(), past());
+        assertThat(job.run()).isEqualTo(1);
+        send(get(crm() + "/reminders"), agentToken, null).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].kind").value("ASSIGNED"));
+        send(post(crm() + "/reminders/" + t.get("id").asText() + "/seen"), agentToken, null)
+                .andExpect(status().isNoContent());
+        send(get(crm() + "/reminders"), agentToken, null).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void reassignmentReArmsReminder() throws Exception {
+        assignPipelines(agent, salesId());
+        assignPipelines(agent2, salesId());
+        JsonNode t = task(managerToken, agent.getId(), past());
+        assertThat(job.run()).isEqualTo(1);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("title", t.get("title").asText());
+        body.put("dueAt", t.get("dueAt").asText());
+        body.put("reminderAt", t.get("reminderAt").asText());
+        body.put("assigneeId", agent2.getId());
+        body.put("version", t.get("version").asLong());
+        send(put(crm() + "/tasks/" + t.get("id").asText()), managerToken, body).andExpect(status().isOk());
+        assertThat(mongo.findOne(new Query(Criteria.where("_id").is(t.get("id").asText())), org.bson.Document.class,
+                "crmTasks").get("reminderSentAt")).isNull();
+        assertThat(job.run()).isEqualTo(1);
+    }
 }

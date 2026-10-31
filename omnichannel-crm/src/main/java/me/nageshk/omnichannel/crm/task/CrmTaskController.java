@@ -60,6 +60,14 @@ public class CrmTaskController {
                 zone(tz), assigneeId, limit);
     }
 
+    @GetMapping("/delegated")
+    @PreAuthorize(VIEW)
+    public List<TaskView> delegated(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @RequestParam(defaultValue = "OPEN") String status, @RequestParam(required = false) Integer limit) {
+        return service.delegated(crmAccess.resolve(me, workspaceId), TaskService.parse(TaskStatus.class, status, "status"),
+                limit);
+    }
+
     @GetMapping("/mine/counts")
     @PreAuthorize(VIEW)
     public TaskCounts counts(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
@@ -82,14 +90,14 @@ public class CrmTaskController {
     }
 
     @PostMapping("/{id}/complete")
-    @PreAuthorize(EDIT)
+    @PreAuthorize(VIEW) // the assignee may complete their own task; the service checks crm:edit for others
     public TaskView complete(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String id) {
         return service.complete(crmAccess.resolve(me, workspaceId), id);
     }
 
     @PostMapping("/{id}/reopen")
-    @PreAuthorize(EDIT)
+    @PreAuthorize(VIEW)
     public TaskView reopen(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String id) {
         return service.reopen(crmAccess.resolve(me, workspaceId), id);
