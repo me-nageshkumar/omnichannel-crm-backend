@@ -323,4 +323,118 @@ class TimelineApiIT extends CrmTestBase {
         Document relocated = stageChanges(otherId).get(0).get("payload", Document.class);
         assertThat(((java.util.Date) relocated.get("fromStageEnteredAt")).toInstant()).isEqualTo(beforeRemoval);
     }
+
+    // --- redaction of moves through hidden pipelines (spec F C19, C21, C22) ----------------------------------
+
+    private String pipeline(String name) throws Exception {
+        return json(send(post(crm() + "/pipelines"), managerToken, Map.of("name", name))
+                .andExpect(status().is2xxSuccessful())).get("id").asText();
+    }
+
+    private void relocate(String dealId, String pipelineId) throws Exception {
+        send(put(crm() + "/deals/" + dealId), managerToken, body("version", version(dealId), "pipelineId", pipelineId))
+                .andExpect(status().isOk());
+    }
+
+    private void moveTo(String dealId, String stageId) throws Exception {
+        send(post(crm() + "/deals/" + dealId + "/move"), managerToken, body("stageId", stageId))
+                .andExpect(status().isOk());
+    }
+
+    private List<String> moves(JsonNode page) {
+        return page.get("items").valueStream().filter(i -> i.get("type").asText().equals("STAGE_CHANGED"))
+                .map(i -> i.get("summary").asText()).toList();
+    }
+
+    /** A contact seen in Sales through its captured deal, and its second deal in a hidden pipeline. */
+    private String[] dealInHiddenPipeline(String name, String phone, String hiddenName) throws Exception {
+        String crmId = captured(contact(name, phone), number).get("contact").get("id").asText();
+        String hidden = pipeline(hiddenName);
+        String deal = createDeal(body("title", "Travels", "pipelineId", hidden, "primaryCrmContactId", crmId))
+                .get("id").asText();
+        assignPipelines(agent, sales);
+        return new String[] {crmId, hidden, deal};
+    }
+
+    @Test
+    void moveOutOfHiddenPipelineIsRedacted() throws Exception {
+        String[] d = dealInHiddenPipeline("Asha", "919811111201", "Secret");
+        relocate(d[2], sales);
+        JsonNode mine = timeline(agentToken, "DEAL", d[2]);
+        assertThat(moves(mine)).hasSize(1);
+        assertThat(moves(mine).get(0)).endsWith("(" + "Sales" + ") from another pipeline").startsWith("Moved into ");
+        assertThat(mine.toString()).doesNotContain("Secret").doesNotContain("fromStageName").doesNotContain(d[1]);
+        assertThat(moves(timeline(managerToken, "DEAL", d[2])).get(0)).contains("Secret");
+    }
+
+    @Test
+    void historyInsideAHiddenPipelineIsRedacted() throws Exception {
+        String[] d = dealInHiddenPipeline("Ravi", "919811111202", "Secret");
+        Map<String, String> hiddenStages = stages(d[1]);
+        String next = hiddenStages.values().stream().skip(1).findFirst().orElseThrow();
+        moveTo(d[2], next);
+        String stageName = hiddenStages.entrySet().stream().filter(e -> e.getValue().equals(next)).findFirst()
+                .orElseThrow().getKey();
+        relocate(d[2], sales);
+        JsonNode mine = timeline(agentToken, "DEAL", d[2]);
+        assertThat(moves(mine)).hasSize(2);
+        assertThat(moves(mine).get(1)).isEqualTo("Moved within another pipeline");
+        assertThat(moves(mine).get(0)).endsWith("from another pipeline");
+        assertThat(mine.toString()).doesNotContain("Secret").doesNotContain(next).doesNotContain(stageName);
+        assertThat(moves(timeline(managerToken, "DEAL", d[2])).get(1)).contains(stageName);
+    }
+
+    @Test
+    void moveThroughAHiddenPipelineIsRedacted() throws Exception {
+        String[] d = dealInHiddenPipeline("Lata", "919811111203", "Secret");
+        relocate(d[2], sales);
+        relocate(d[2], d[1]);
+        relocate(d[2], sales);
+        List<String> mine = moves(timeline(agentToken, "DEAL", d[2]));
+        assertThat(mine).hasSize(3);
+        assertThat(mine.get(1)).startsWith("Moved from ").endsWith(" to another pipeline");
+        assertThat(String.join(" ", mine)).doesNotContain("Secret");
+    }
+
+    @Test
+    void contactAndCompanyTimelinesAreRedactedToo() throws Exception {
+        String[] d = dealInHiddenPipeline("Tara", "919811111204", "Secret");
+        String company = json(send(post(crm() + "/companies"), managerToken, Map.of("name", "Acme Ltd"))
+                .andExpect(status().is2xxSuccessful())).get("id").asText();
+        send(put(crm() + "/deals/" + d[2]), managerToken, body("version", version(d[2]), "companyId", company))
+                .andExpect(status().isOk());
+        relocate(d[2], sales);
+        JsonNode contactSeen = timeline(agentToken, "CONTACT", d[0]);
+        JsonNode companySeen = timeline(agentToken, "COMPANY", company);
+        assertThat(moves(contactSeen)).isNotEmpty();
+        assertThat(moves(companySeen)).isNotEmpty();
+        assertThat(contactSeen.toString()).doesNotContain("Secret").doesNotContain(d[1]);
+        assertThat(companySeen.toString()).doesNotContain("Secret").doesNotContain(d[1]);
+    }
+
+    @Test
+    void visibleMoveStaysComplete() throws Exception {
+        String[] d = dealInHiddenPipeline("Om", "919811111205", "Shared");
+        assignPipelines(agent, sales, d[1]);
+        relocate(d[2], sales);
+        JsonNode mine = timeline(agentToken, "DEAL", d[2]);
+        assertThat(moves(mine).get(0)).contains("Shared");
+        assertThat(mine.toString()).contains("fromStageName");
+    }
+
+    @Test
+    void stageRemovedFromAVisiblePipelineKeepsItsHistory() throws Exception {
+        assignPipelines(agent, sales);
+        String crmId = captured(contact("Ria", "919811111206"), number).get("contact").get("id").asText();
+        String deal = createDeal(body("title", "Stays", "pipelineId", sales, "primaryCrmContactId", crmId))
+                .get("id").asText();
+        moveTo(deal, stages(sales).values().stream().skip(1).findFirst().orElseThrow());
+        // the stage it left has since been removed: its id is in no pipeline any more
+        mongo.updateFirst(new Query(Criteria.where("target.id").is(deal).and("type").is("STAGE_CHANGED")),
+                new org.springframework.data.mongodb.core.query.Update().set("payload.fromStageId", "removed-stage"),
+                "crmActivities");
+        JsonNode mine = timeline(agentToken, "DEAL", deal);
+        assertThat(mine.toString()).contains("fromStageName");
+        assertThat(moves(mine).get(0)).startsWith("Moved from ").doesNotContain("another pipeline");
+    }
 }

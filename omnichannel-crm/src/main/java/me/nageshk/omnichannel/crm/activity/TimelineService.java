@@ -25,6 +25,7 @@ import me.nageshk.omnichannel.crm.contact.CrmContactService;
 import me.nageshk.omnichannel.crm.deal.DealService;
 import me.nageshk.omnichannel.crm.deal.dto.DealSearchRequest;
 import me.nageshk.omnichannel.crm.deal.dto.DealView;
+import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
 import me.nageshk.omnichannel.crm.platform.ContactNoteDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformNote;
@@ -68,7 +69,8 @@ public class TimelineService {
      * Newest first. A CONTACT's timeline holds its own entries, entries that list it as related and those of its
      * accessible deals; a COMPANY's its own and its accessible deals'; a DEAL's its own. Restricted callers lose the
      * entries of pipelines outside their access. The contact's legacy inbox notes ({@code LEGACY_NOTE}) are merged
-     * by time on page 0 only, all of them; {@code total} counts the stored activities only, never the notes.
+     * by time on page 0 only, all of them; {@code total} counts the stored activities only, never the notes. Stage
+     * moves through a pipeline the caller cannot see are redacted ({@link StageMoveRedaction}).
      *
      * @throws NotFoundException when the target is not visible to the caller
      */
@@ -124,8 +126,9 @@ public class TimelineService {
         });
         Map<String, PlatformPerson> persons = actorIds.isEmpty() ? Map.of() : people.people(actorIds);
 
+        Set<String> hiddenStages = hiddenStageIds(ctx, found);
         List<ActivityView> items = new ArrayList<>();
-        found.forEach(a -> items.add(view(a, persons)));
+        found.forEach(a -> items.add(StageMoveRedaction.redact(view(a, persons), ctx.pipelines(), hiddenStages)));
         for (PlatformNote n : legacy) {
             items.add(new ActivityView(n.id(), "LEGACY_NOTE", new CrmTarget(TargetType.CONTACT, id), n.text(),
                     Map.of(), new Ref(null, n.createdByName()), ActorType.USER.name(), n.at()));
@@ -205,6 +208,24 @@ public class TimelineService {
                 phoneNumberId, summary, payload);
         Map<String, PlatformPerson> me = people.people(List.of(ctx.userId()));
         return view(saved, me);
+    }
+
+    /**
+     * The stages of the brand's pipelines outside the caller's access; read only for restricted callers with a stage
+     * move on the page. A stage in no pipeline any more is not hidden, so removing one keeps its history readable.
+     */
+    private Set<String> hiddenStageIds(CrmContext ctx, List<CrmActivity> page) {
+        if (ctx.pipelines().all() || page.stream().noneMatch(a -> a.getType() == ActivityType.STAGE_CHANGED)) {
+            return Set.of();
+        }
+        Set<String> hidden = new LinkedHashSet<>();
+        Set<String> visible = new LinkedHashSet<>();
+        for (CrmPipeline p : mongo.find(new Query(Criteria.where("workspaceId").is(ctx.workspaceId())), CrmPipeline.class)) {
+            Set<String> into = ctx.pipelines().allows(p.getId()) ? visible : hidden;
+            p.getStages().forEach(s -> into.add(s.getId()));
+        }
+        hidden.removeAll(visible);
+        return hidden;
     }
 
     private static Criteria own(TargetType type, String id) {
