@@ -11,7 +11,8 @@ public interface WaWebHistoryImportRepository extends MongoRepository<WaWebHisto
 
     Optional<WaWebHistoryImport> findByPhoneNumberIdAndScopeKeyAndActiveTrue(String phoneNumberId, String scopeKey);
 
-    List<WaWebHistoryImport> findByActiveTrueOrderByCreationTimeAsc();
+    /** Oldest first; the id breaks ties between imports created in the same millisecond. */
+    List<WaWebHistoryImport> findByActiveTrueOrderByCreationTimeAscIdAsc();
 
     void deleteByPhoneNumberId(String phoneNumberId);
 }

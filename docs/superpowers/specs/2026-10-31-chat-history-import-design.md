@@ -111,7 +111,7 @@ Indexes: unique partial `(phoneNumberId, scopeKey)` where `{active: true}`; `(ph
 id, importId, workspaceId, phoneNumberId, remoteId, requestedPhone?, chatName?
 status: PENDING | RUNNING | DONE | SKIPPED | FAILED ; skipReason: NO_CHAT ; error
 cursor { beforeT: Long?, excludeIds: [..] }   // saved after every page
-counts { seen, inserted, updated } ; capped: boolean ; emptyPages: int
+counts { seen, inserted, updated } ; capped: boolean ; emptyPages: int ; timeouts: int
 attemptedAt, finishedAt
 ```
 Indexes: unique `(importId, remoteId)`; `(importId, status, _id)`; `(status, attemptedAt)`.
@@ -122,18 +122,22 @@ Deleting a phone number deletes both (`InboxCleanup`).
 
 - Own scheduler `historyImportScheduler` (2 threads). Tick every `omnichannel.history.tick` (5 s), behind
   `omnichannel.history.auto-tick`. At startup: items `RUNNING → PENDING` (cursor kept).
-- Tick: for each number with an active import (oldest QUEUED/RUNNING first, one per number), skip if busy, else run
-  `process(import)` on the pool.
+- Tick: for each number with an active import (oldest QUEUED/RUNNING first by `creationTime`, then `_id`; one per
+  number), skip if busy, else run `process(import)` on the pool.
 - `process`: `InboxDevices.requireReady` → on `NoDeviceException` set `waiting`, return. Else clear `waiting`,
   `QUEUED → RUNNING` (+`startedAt`). `ALL` with no items yet → `listChats` → one PENDING item per row
-  (duplicates ignored), `counts.chatsTotal`. Then claim PENDING items (`findAndModify` → RUNNING) and run
-  `importChat` until none left, the import stops being RUNNING (cancel), the device fails, or the `timeBudget`
-  (60 s) is spent. No PENDING/RUNNING items left → `COMPLETED`, `active=false`, `finishedAt`.
+  (duplicates ignored), `counts.chatsTotal`. Then, before every chat, resolve the device again (`requireReady`; the
+  extension may have reconnected with a new session, or gone: set `waiting` and stop), claim the PENDING item
+  attempted least recently (`findAndModify` → RUNNING, sort `attemptedAt` asc then `_id`, so never-attempted items go
+  first) and run `importChat` until none left, the import stops being RUNNING (cancel), the device fails, or the
+  `timeBudget` (60 s) is spent. No PENDING/RUNNING items left → `COMPLETED`, `active=false`, `finishedAt`.
 - `importChat`: loop `fetchChatHistory(remoteId, cursor, range, pageSize)`; ingest each message (ascending);
   conditional write (item still RUNNING) of cursor + counts; stop on `hasMore=false`, `seen >= maxMessagesPerChat`
   (`capped`), `emptyPages >= maxEmptyPages` (`FAILED NO_PROGRESS`), or cancel. `CHAT_NOT_FOUND` → `SKIPPED NO_CHAT`;
-  `DEVICE_DISCONNECTED` / `WHATSAPP_NOT_READY` / timeout → item back to PENDING (cursor kept), `waiting` set,
-  return; other `RpcException` → item `FAILED` with the code, next chat. On DONE/SKIPPED/FAILED publish one
+  `DEVICE_DISCONNECTED` / `SEND_FAILED` (the session closed between pages) / `WHATSAPP_NOT_READY` → item back to
+  PENDING (cursor and `attemptedAt` kept), `waiting` set, return; a timeout increments the item's `timeouts` and does
+  the same, except that at `maxTimeoutsPerChat` (3) the item is `FAILED TIMEOUT` instead, so one chat that never
+  answers cannot stall the import; other `RpcException` → item `FAILED` with the code, next chat. On DONE/SKIPPED/FAILED publish one
   `ChatChanged` if a chat row exists. `pageDelay` between pages, `chatDelay` between chats.
 
 ## 6. Ingest (`InboxIngestService.importMessage`)
@@ -177,5 +181,5 @@ requestedBy{id,name}, creationTime, startedAt, finishedAt, progressPercent}`; `p
 ## 9. Configuration
 
 `omnichannel.history`: `auto-tick true`, `tick 5s`, `page-size 100`, `max-loads 20`, `page-delay 400ms`,
-`chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 50`, `time-budget 60s`. Tests: `auto-tick false`,
+`chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 50`, `time-budget 60s`, `max-timeouts-per-chat 3`. Tests: `auto-tick false`,
 delays `0`.

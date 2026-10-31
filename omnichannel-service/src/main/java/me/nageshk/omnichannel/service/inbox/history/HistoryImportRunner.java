@@ -113,7 +113,7 @@ public class HistoryImportRunner {
         try {
             Set<String> numbers = new HashSet<>();
             List<CompletableFuture<Void>> started = new ArrayList<>();
-            for (WaWebHistoryImport imp : imports.findByActiveTrueOrderByCreationTimeAsc()) {
+            for (WaWebHistoryImport imp : imports.findByActiveTrueOrderByCreationTimeAscIdAsc()) {
                 String number = imp.getPhoneNumberId();
                 if (!numbers.add(number) || !busy.add(number)) continue;
                 try {
@@ -174,11 +174,22 @@ public class HistoryImportRunner {
             }
             Instant deadline = clock.instant().plus(settings.timeBudget());
             while (clock.instant().isBefore(deadline)) {
+                // the extension may have reconnected (a new session) or gone since the last chat
+                DeviceSession current;
+                try {
+                    current = devices.requireReady(imp.getWorkspaceId(), imp.getPhoneNumberId());
+                } catch (NoDeviceException e) {
+                    setWaiting(id, waitingFor(e));
+                    break;
+                } catch (NotFoundException e) {
+                    failImport(id, "NUMBER_GONE");
+                    return;
+                }
                 WaWebHistoryImportChat item = claim(id);
                 if (item == null) break;
                 boolean deviceOk;
                 try {
-                    deviceOk = importChat(imp, item, device);
+                    deviceOk = importChat(imp, item, current);
                 } finally {
                     counter.refresh(id);
                 }
@@ -231,10 +242,14 @@ public class HistoryImportRunner {
         return true;
     }
 
-    /** The first PENDING chat of the import, now RUNNING; null when none is left. */
+    /**
+     * The PENDING chat of the import attempted least recently (never attempted first: Mongo sorts a missing
+     * {@code attemptedAt} first), now RUNNING; null when none is left. A chat that keeps timing out so goes to the
+     * back instead of holding up the others.
+     */
     private WaWebHistoryImportChat claim(String importId) {
         Query q = new Query(Criteria.where("importId").is(importId).and("status").is(HistoryChatStatus.PENDING))
-                .with(Sort.by("_id"));
+                .with(Sort.by(Sort.Order.asc("attemptedAt"), Sort.Order.asc("_id")));
         Update u = new Update().set("status", HistoryChatStatus.RUNNING).set("attemptedAt", clock.instant());
         return mongo.findAndModify(q, u, FindAndModifyOptions.options().returnNew(true),
                 WaWebHistoryImportChat.class);
@@ -322,6 +337,17 @@ public class HistoryImportRunner {
                         .set("skipReason", HistorySkipReason.NO_CHAT));
                 return true;
             }
+            if (cause instanceof TimeoutException) {
+                int timeouts = item.getTimeouts() + 1;
+                if (timeouts >= settings.maxTimeoutsPerChat()) {
+                    finish(item, chat, new Update().set("status", HistoryChatStatus.FAILED).set("error", "TIMEOUT")
+                            .set("timeouts", timeouts));
+                    return true;
+                }
+                whileRunning(item, new Update().set("status", HistoryChatStatus.PENDING).set("timeouts", timeouts));
+                setWaiting(imp.getId(), HistoryWaiting.WHATSAPP_NOT_READY);
+                return false;
+            }
             HistoryWaiting waiting = deviceFailure(cause);
             if (waiting != null) {
                 release(item);
@@ -355,9 +381,9 @@ public class HistoryImportRunner {
         return matched;
     }
 
-    /** Back to PENDING with its cursor, for the next tick. */
+    /** Back to PENDING with its cursor, for the next tick; {@code attemptedAt} stays, so it is claimed last. */
     private void release(WaWebHistoryImportChat item) {
-        whileRunning(item, new Update().set("status", HistoryChatStatus.PENDING).unset("attemptedAt"));
+        whileRunning(item, new Update().set("status", HistoryChatStatus.PENDING));
     }
 
     // ---- helpers ----
@@ -402,7 +428,10 @@ public class HistoryImportRunner {
     /** Why the device cannot serve pages now; null when the failure is not the device's. */
     private static HistoryWaiting deviceFailure(Throwable cause) {
         if (cause instanceof RpcException rpc) {
-            if (RpcException.DEVICE_DISCONNECTED.equals(rpc.code())) return HistoryWaiting.NO_DEVICE;
+            // SEND_FAILED: the session closed between pages, the request never left
+            if (RpcException.DEVICE_DISCONNECTED.equals(rpc.code()) || RpcException.SEND_FAILED.equals(rpc.code())) {
+                return HistoryWaiting.NO_DEVICE;
+            }
             if (RpcException.WHATSAPP_NOT_READY.equals(rpc.code())) return HistoryWaiting.WHATSAPP_NOT_READY;
             return null;
         }

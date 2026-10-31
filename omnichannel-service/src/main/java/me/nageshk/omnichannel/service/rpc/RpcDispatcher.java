@@ -42,7 +42,8 @@ public class RpcDispatcher {
                 .whenComplete((result, error) -> pending.remove(id));
         try {
             device.send(Envelope.request(id, method, params));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // a session closing under us throws unchecked (Tomcat: IllegalStateException); either way nothing was sent
             future.completeExceptionally(new RpcException(RpcException.SEND_FAILED, e.getMessage()));
         }
         return future;

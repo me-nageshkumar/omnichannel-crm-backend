@@ -38,6 +38,8 @@ public class WaWebHistoryImportChat {
     /** True when the per-chat message cap stopped the import of this chat. */
     private boolean capped;
     private int emptyPages;
+    /** Pages of this chat that timed out; at {@code maxTimeoutsPerChat} the chat fails as TIMEOUT. */
+    private int timeouts;
     private Instant attemptedAt;
     private Instant finishedAt;
 

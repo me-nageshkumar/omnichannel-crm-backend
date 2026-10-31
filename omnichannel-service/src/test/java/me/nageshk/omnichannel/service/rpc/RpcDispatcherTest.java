@@ -115,4 +115,14 @@ class RpcDispatcherTest {
         assertThatThrownBy(future::join).cause().isInstanceOf(RpcException.class)
                 .satisfies(e -> assertThat(((RpcException) e).code()).isEqualTo(RpcException.SEND_FAILED));
     }
+
+    @Test
+    void uncheckedSendFailureCompletesExceptionally() throws IOException {
+        doThrow(new IllegalStateException("closing")).when(wsSession).sendMessage(any());
+        CompletableFuture<JsonNode> future = dispatcher.call(device, "a", null);
+
+        assertThatThrownBy(future::join).cause().isInstanceOf(RpcException.class)
+                .satisfies(e -> assertThat(((RpcException) e).code()).isEqualTo(RpcException.SEND_FAILED));
+        assertThat(dispatcher.pendingCount()).isZero();
+    }
 }

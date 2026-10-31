@@ -17,6 +17,9 @@ import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.rpc.Envelope;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import tools.jackson.databind.JsonNode;
 
 /** The history import runner with the default settings: one page per chat, no message cap in reach. */
@@ -165,8 +168,17 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
         try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
             seedTwoChats(device);
             WaWebHistoryImport first = importAll(null, null);
-            Thread.sleep(5);
             WaWebHistoryImport second = importAll(Instant.ofEpochSecond(50), null);
+            assertThat(first.getId()).isLessThan(second.getId());
+            // same creation time, and the first stored after the second: only the id can order them
+            Instant created = Instant.parse("2026-10-21T05:00:00Z");
+            WaWebHistoryImport stored = reload(first);
+            stored.setCreationTime(created);
+            mongo.remove(stored);
+            mongo.updateFirst(new Query(Criteria.where("_id").is(second.getId())),
+                    new Update().set("creationTime", created), WaWebHistoryImport.class);
+            mongo.insert(stored);
+            assertThat(reload(first).getCreationTime()).isEqualTo(reload(second).getCreationTime());
 
             runner.tick().get(10, SECONDS);
 
@@ -177,6 +189,42 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
 
             assertThat(reload(second).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
             assertThat(messages.count()).isEqualTo(5);
+        }
+    }
+
+    @Test
+    void timeoutsAreBoundedAndDoNotHoldUpOtherChats() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            seedTwoChats(device);
+            // A sorts first and never answers; B answers
+            device.override = req -> "fetchChatHistory".equals(req.method())
+                    && A.equals(req.params().path("chatId").asString()) ? null : device.answer(req);
+            WaWebHistoryImport imp = importChats("919811100001", "919811100002");
+
+            runner.tick().get(10, SECONDS);
+
+            WaWebHistoryImportChat a = item(imp, A);
+            assertThat(a.getStatus()).isEqualTo(HistoryChatStatus.PENDING);
+            assertThat(a.getTimeouts()).isEqualTo(1);
+            assertThat(a.getAttemptedAt()).isNotNull();
+            assertThat(item(imp, B).getStatus()).isEqualTo(HistoryChatStatus.PENDING);
+
+            runner.tick().get(10, SECONDS);
+
+            // B was never attempted, so it is claimed before A
+            assertThat(item(imp, B).getStatus()).isEqualTo(HistoryChatStatus.DONE);
+            assertThat(item(imp, A).getTimeouts()).isEqualTo(2);
+            assertThat(item(imp, A).getStatus()).isEqualTo(HistoryChatStatus.PENDING);
+
+            runner.tick().get(10, SECONDS);
+
+            a = item(imp, A);
+            assertThat(a.getStatus()).isEqualTo(HistoryChatStatus.FAILED);
+            assertThat(a.getError()).isEqualTo("TIMEOUT");
+            assertThat(a.getTimeouts()).isEqualTo(3);
+            WaWebHistoryImport done = reload(imp);
+            assertThat(done.getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+            assertThat(done.getCounts().chatsFailed()).isEqualTo(1);
         }
     }
 

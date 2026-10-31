@@ -97,4 +97,25 @@ class HistoryImportRunnerPagingIT extends HistoryImportTestBase {
             assertThat(done.getCounts().messagesInserted()).isEqualTo(5);
         }
     }
+
+    @Test
+    void sendFailedLeavesCursorAndWaits() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, 100, 1, "m1"),
+                    HistoryDevice.msg(A, false, 200, 1, "m2"), HistoryDevice.msg(A, false, 300, 1, "m3")));
+            AtomicInteger fetches = new AtomicInteger();
+            device.override = req -> !"fetchChatHistory".equals(req.method()) || fetches.incrementAndGet() == 1
+                    ? device.answer(req) : Envelope.errorResponse(req.id(), "SEND_FAILED", "socket closed");
+            WaWebHistoryImport imp = importChats("919811100001");
+
+            runner.tick().get(10, SECONDS);
+
+            WaWebHistoryImportChat item = itemsOf(imp).get(0);
+            assertThat(item.getStatus()).isEqualTo(HistoryChatStatus.PENDING);
+            assertThat(item.getCursor().beforeT()).isEqualTo(200L);
+            WaWebHistoryImport waiting = reload(imp);
+            assertThat(waiting.getStatus()).isEqualTo(HistoryImportStatus.RUNNING);
+            assertThat(waiting.getWaiting()).isEqualTo(HistoryWaiting.NO_DEVICE);
+        }
+    }
 }
