@@ -298,4 +298,13 @@ class CrmContactsApiIT extends CrmTestBase {
                 Map.of("q", "Mira", "channelAccountId", number2.getId())));
         assertThat(onSecond.get("items").valueStream().map(i -> i.get("id").asText()).toList()).containsExactly(second);
     }
+
+    @Test
+    void channelDetailsFollowContactAccess() throws Exception {
+        Contact asha = contact("Asha", "919833330011");
+        String id = captureAs(asha, number);
+        send(get(crm() + "/contacts/" + id + "/channel-details"), managerToken, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.labels").isArray()).andExpect(jsonPath("$.attributes").isArray());
+        send(get(crm() + "/contacts/" + id + "/channel-details"), agentToken, null).andExpect(status().isNotFound());
+    }
 }

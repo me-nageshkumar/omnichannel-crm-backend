@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.crm.platform.ChannelAccount;
 import me.nageshk.omnichannel.crm.platform.ChannelAttribute;
+import me.nageshk.omnichannel.crm.platform.ChannelAttributeValue;
+import me.nageshk.omnichannel.crm.platform.ChannelContactDetails;
 import me.nageshk.omnichannel.crm.platform.ChannelContactQuery;
 import me.nageshk.omnichannel.crm.platform.ChannelKind;
 import me.nageshk.omnichannel.crm.platform.ChannelLabel;
@@ -25,6 +27,7 @@ import me.nageshk.omnichannel.service.contact.ContactQuery;
 import me.nageshk.omnichannel.service.contact.advanced.AdvancedFilters;
 import me.nageshk.omnichannel.service.contact.advanced.WorkspaceZone;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 
@@ -68,6 +71,19 @@ class ChannelContactQueryAdapter implements ChannelContactQuery {
     public List<ChannelAttribute> attributes(String workspaceId) {
         return attributes.findByWorkspaceIdOrderByNameKey(workspaceId).stream()
                 .map(a -> new ChannelAttribute(a.getId(), a.getName())).toList();
+    }
+
+    @Override
+    public ChannelContactDetails details(String workspaceId, String contactId) {
+        Contact c = mongo.findOne(new Query(Criteria.where("_id").is(contactId).and("workspaceId").is(workspaceId)),
+                Contact.class);
+        if (c == null) return new ChannelContactDetails(List.of(), List.of());
+        // the repositories answer in name order, so the two lists come out sorted
+        List<ChannelLabel> named = labels(workspaceId).stream().filter(l -> c.getLabels().contains(l.id())).toList();
+        List<ChannelAttributeValue> values = attributes(workspaceId).stream()
+                .filter(a -> c.getAttributes().containsKey(a.id()))
+                .map(a -> new ChannelAttributeValue(a.name(), c.getAttributes().get(a.id()))).toList();
+        return new ChannelContactDetails(named, values);
     }
 
     @Override
