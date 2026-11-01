@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
@@ -9,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -17,7 +20,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Rebuilds chat previews saved when they were cut to 120 characters, which also held the start of a media thumbnail.
- * Calls saved as "Unsupported message" get their label the same way.
+ * Calls and WhatsApp's notices saved as "Unsupported message" get their label the same way.
  * Only the preview changes, and only when it belongs to the chat's newest message. Idempotent; every profile. A
  * failure is logged and does not stop the application, as a preview is only a copy.
  */
@@ -42,7 +45,7 @@ public class ChatPreviewBackfill implements ApplicationRunner {
         try {
             Query stale = new Query(new Criteria().orOperator(
                     Criteria.where(TEXT).regex("^[\\s\\S]{" + CUT_LENGTH + "}$"),
-                    Criteria.where("lastMessage.type").is("call_log").and(TEXT).is("Unsupported message")));
+                    Criteria.where(TEXT).is("Unsupported message").and("lastMessage.type").in(labelled())));
             long n = mongo.find(stale, WaWebChat.class).stream().filter(this::rebuild).count();
             if (n > 0) log.info("rebuilt the preview of {} chat(s)", n);
         } catch (RuntimeException e) {
@@ -50,8 +53,31 @@ public class ChatPreviewBackfill implements ApplicationRunner {
         }
     }
 
+    /** A notice no longer counts as the chat's last message: the real one before it takes the preview, time unchanged. */
+    private boolean showRealMessage(WaWebChat chat) {
+        WaWebMessage real = mongo.findOne(new Query(Criteria.where("chatId").is(chat.getId()).and("type")
+                .nin(MessagePayloads.NOTICE_TYPES)).with(Sort.by(Sort.Direction.DESC, "timestamp", "_id")),
+                WaWebMessage.class);
+        if (real == null) return false;
+        WaWebChat.LastMessage shown = new WaWebChat.LastMessage(real.getDirection(), real.getType(),
+                InboxIngestService.preview(real.getType(), real.getBody(),
+                        real.getMedia() == null ? null : real.getMedia().filename()),
+                real.getStatus());
+        return mongo.updateFirst(new Query(Criteria.where("_id").is(chat.getId()).and("lastMessage.type")
+                .is(chat.getLastMessage().type())), new Update().set("lastMessage", shown), WaWebChat.class)
+                .getModifiedCount() > 0;
+    }
+
+    /** The types that were saved as "Unsupported message" and now have a label of their own. */
+    private static List<String> labelled() {
+        List<String> types = new ArrayList<>(MessagePayloads.NOTICE_TYPES);
+        types.add("call_log");
+        return types;
+    }
+
     private boolean rebuild(WaWebChat chat) {
         WaWebChat.LastMessage last = chat.getLastMessage();
+        if (MessagePayloads.isNoticeType(last.type()) && showRealMessage(chat)) return true;
         WaWebMessage newest = messages.findFirstByChatIdOrderByTimestampDescIdDesc(chat.getId()).orElse(null);
         if (newest == null || !Objects.equals(newest.getTimestamp(), chat.getLastMessageAt())
                 || !Objects.equals(newest.getType(), last.type())) {

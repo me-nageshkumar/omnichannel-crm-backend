@@ -106,6 +106,12 @@ public class InboxIngestService {
         String remote = MessagePayloads.remote(p);
         boolean lid = remote.endsWith("@lid");
         if (!lid && !remote.endsWith("@c.us")) return Optional.empty();
+        if (MessagePayloads.isNotice(p)) {
+            // names only: which notices arrive, and what they carry, is not published
+            log.info("skipping WhatsApp notice {}, subtype {}, fields {}", MessagePayloads.type(p),
+                    p.path("subtype").asString(""), new TreeSet<>(p.propertyNames()));
+            return Optional.empty();
+        }
         String waMessageId = MessagePayloads.waMessageId(p);
         if (waMessageId.isEmpty()) return Optional.empty();
         Progress progress = new Progress();
@@ -135,7 +141,7 @@ public class InboxIngestService {
      * contact; SKIPPED when it is not a person's chat or has no usable phone or id.
      */
     public ImportResult importMessage(ImportContext ctx, JsonNode payload) {
-        if (payload == null || !payload.isObject()) return SKIPPED;
+        if (payload == null || !payload.isObject() || MessagePayloads.isNotice(payload)) return SKIPPED;
         // names only: what a call log really carries is not published, see MessagePayloads.call
         if ("call_log".equals(MessagePayloads.type(payload)) && callFieldsLogged.compareAndSet(false, true)) {
             log.info("call_log fields: {}", new TreeSet<>(payload.propertyNames()));
@@ -459,6 +465,7 @@ public class InboxIngestService {
 
     /** A label for body-less or non-text types, else the whole body (the caption); the console cuts it to fit. */
     static String preview(String type, String body, String filename) {
+        if (MessagePayloads.isNoticeType(type)) return "WhatsApp notice";
         String text = MessageBodies.readable(type, body);
         if (!labelFirst(type) && text != null && !text.isBlank()) return text;
         return switch (type == null ? "" : type) {

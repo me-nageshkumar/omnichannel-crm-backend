@@ -18,6 +18,28 @@ class MessagePayloadsTest {
     }
 
     @Test
+    void whatsAppsOwnNoticesAreNotices() {
+        assertThat(MessagePayloads.isNotice(message("notification_template"))).isTrue();
+        assertThat(MessagePayloads.isNotice(message("e2e_notification"))).isTrue();
+        assertThat(MessagePayloads.isNotice(message("notification"))).isTrue();
+        assertThat(MessagePayloads.isNotice(message("group_notification"))).isTrue();
+        assertThat(MessagePayloads.isNotice(message("broadcast_notification"))).isTrue();
+    }
+
+    @Test
+    void aFlagAloneDropsNothing() {
+        assertThat(MessagePayloads.isNotice(message("something_new").put("isNotification", true))).isFalse();
+        assertThat(MessagePayloads.isNotice(message("chat").put("isNotification", true))).isFalse();
+    }
+
+    @Test
+    void whatPeopleSendIsNoNotice() {
+        for (String type : new String[] {"chat", "image", "call_log", "poll_creation", "location", "revoked"}) {
+            assertThat(MessagePayloads.isNotice(message(type))).isFalse();
+        }
+    }
+
+    @Test
     void onlyACallLogHasACall() {
         assertThat(MessagePayloads.call(message("chat").put("duration", 30))).isNull();
     }

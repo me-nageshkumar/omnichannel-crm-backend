@@ -229,6 +229,53 @@ class WaWebInboxListenerIT {
         assertThat(onlyMessage().getPollVotes()).isNull();
     }
 
+    // ---- WhatsApp's own notices ----
+
+    private ObjectNode notice(String remote, long epochSeconds) {
+        ObjectNode p = message(remote, false, epochSeconds);
+        p.put("type", "notification_template");
+        p.remove("body");
+        return p;
+    }
+
+    @Test
+    void aNoticeStartsNoChat() {
+        create(notice("919911111111@c.us", T));
+
+        assertThat(chats.count()).isZero();
+        assertThat(messages.count()).isZero();
+        assertThat(contacts.count()).isZero();
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void aNoticeLeavesAChatAsItWas() {
+        create(message("919911111111@c.us", false, T));
+        WaWebChat before = onlyChat();
+        recorder.events.clear();
+
+        create(notice("919911111111@c.us", T + 1));
+
+        WaWebChat after = onlyChat();
+        assertThat(after.getUnreadCount()).isEqualTo(before.getUnreadCount());
+        assertThat(after.getLastMessage()).isEqualTo(before.getLastMessage());
+        assertThat(after.getLastMessageAt()).isEqualTo(before.getLastMessageAt());
+        assertThat(messages.count()).isEqualTo(1);
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void aNoticeDoesNotReopenAChat() {
+        create(message("919911111111@c.us", false, T));
+        WaWebChat chat = onlyChat();
+        chat.setStatus(ChatStatus.CLOSED);
+        chats.save(chat);
+
+        create(notice("919911111111@c.us", T + 1));
+
+        assertThat(onlyChat().getStatus()).isEqualTo(ChatStatus.CLOSED);
+    }
+
     // ---- calls ----
 
     @Test

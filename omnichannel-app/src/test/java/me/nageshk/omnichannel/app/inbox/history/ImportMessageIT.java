@@ -152,6 +152,13 @@ class ImportMessageIT {
     }
 
     @Test
+    void aNoticeIsNotImported() {
+        ObjectNode p = msg("n1", "919811100001@c.us", false, 100, 0, null).put("type", "notification_template");
+        assertThat(ingest.importMessage(ctx, p).outcome()).isEqualTo(ImportOutcome.SKIPPED);
+        assertThat(messages.count()).isZero();
+    }
+
+    @Test
     void aCallIsStoredWithWhatIsKnownOfIt() {
         ingest.importMessage(ctx, call("c1", "miss"));
         assertThat(onlyMessage().getCall()).isEqualTo(new WaWebMessage.Call(false, true, null));
