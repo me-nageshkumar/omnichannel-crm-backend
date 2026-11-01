@@ -289,7 +289,8 @@ public class HistoryImportRunner {
 
     /** Imports one claimed chat page by page; false when the device failed and the import must stop for now. */
     boolean importChat(WaWebHistoryImport imp, WaWebHistoryImportChat item, DeviceSession device) {
-        ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId());
+        ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId(),
+                personName(item.getChatName()));
         WaWebHistoryImport.Range range = imp.getRange();
         Long from = range == null || range.from() == null ? null : range.from().getEpochSecond();
         Long to = until(imp);
@@ -465,6 +466,14 @@ public class HistoryImportRunner {
         WaWebHistoryImport.Range range = imp.getRange();
         if (range == null || range.from() == null) return null;
         return range.from().minus(ACTIVITY_MARGIN).getEpochSecond();
+    }
+
+    /** The chat's listed name, unless it is only a phone number, which WhatsApp lists when it knows no name. */
+    private static String personName(String listed) {
+        if (listed == null || listed.isBlank()) return null;
+        // digits and no letters: WhatsApp formats a number with spacing and marks that vary by locale
+        boolean number = listed.chars().anyMatch(Character::isDigit) && listed.chars().noneMatch(Character::isLetter);
+        return number ? null : listed.strip();
     }
 
     private boolean isRunning(String importId) {
