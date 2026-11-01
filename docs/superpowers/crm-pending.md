@@ -117,6 +117,14 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 - Imported rows have `statusTimes` null; the console must tolerate it.
 - An ALL import whose `listChats` item insert fails partway is never re-listed.
 
+### Raw WhatsApp model fields the backend does not read yet
+
+The page sends the raw model from `getMessageModel`, not the whatsapp-web.js `Message` class, so fields named after
+that class are absent. `t` and `directPath` are handled. Two remain, found in the review of the inbox preview work:
+- Location: the raw model has top-level `lat`, `lng` and `loc`; `MessagePayloads.location` reads `location` and `_data`,
+  so a real location message shows as unsupported.
+- Polls: the question is in `pollName`, so the bubble shows only "Poll".
+
 ## 3. Rules the user set
 
 - Merge, push and restart only when asked. `--no-ff` merges; push the feature branch with `main`.

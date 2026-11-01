@@ -173,6 +173,10 @@ new message → `statusTimes` null, status from `ack`; fold `lastMessage*` / `la
 (`foldPreview` already ignores older messages); no `unreadCount++`, no reopen, no `REOPENED` action, no campaign
 first-reply detection, no events. Wrapped in `retrying`; `DataAccessException` → `IngestionFailedException`.
 
+A message's time is the raw model's `t`, in seconds. The page sends the raw model, not the whatsapp-web.js `Message`
+class, so test fixtures use that shape: `HistoryDevice` and `ImportMessageIT` once carried the class's `timestamp`,
+which the page never sends, and that hid every imported message taking the import's own time.
+
 ## 7. API (`/api/workspaces/{ws}/inbox`, authority `inbox:import-history`)
 
 | | |

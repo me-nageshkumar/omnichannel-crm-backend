@@ -70,7 +70,7 @@ Web numbers; Cloud API numbers get their own later, so names carry the `wa_web_`
 | `assignedUserId`, `assignedTeamId` | either, both or neither; `assignedAt` set on change |
 | `unreadCount` | inbound messages since the chat was last opened in the console |
 | `lastMessageAt` | timestamp of the newest message |
-| `lastMessage` | embedded preview: `direction`, `type`, `text` (first 120 chars of body or a type label), `status` |
+| `lastMessage` | embedded preview: `direction`, `type`, `text` (the whole body or a type label; the console cuts it to one line), `status` |
 | `lastInboundAt`, `lastOutboundAt` | |
 | `creationTime`, `lastUpdateTime`, `version` (@Version) | |
 

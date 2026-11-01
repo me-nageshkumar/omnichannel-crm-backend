@@ -239,6 +239,19 @@ class InboxApiIT extends InboxApiTestBase {
     }
 
     @Test
+    void threadHidesAThumbnailStoredAsBody() throws Exception {
+        WaWebChat c = chat("Alice", "911", 1, agent, null);
+        var stored = message(c, 10, "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof".repeat(10));
+        stored.setType("image");
+        messages.save(stored);
+
+        JsonNode page = json(send(get(inbox() + "/chats/" + c.getId() + "/thread"), agentToken, null)
+                .andExpect(status().isOk()));
+
+        assertThat(page.get("items").get(0).get("message").path("body").isNull()).isTrue();
+    }
+
+    @Test
     void threadOnlyHoldsItsOwnChat() throws Exception {
         WaWebChat c = chat("Alice", "911", 1, agent, null);
         WaWebChat d = chat("Dan", "912", 2, agent, null);

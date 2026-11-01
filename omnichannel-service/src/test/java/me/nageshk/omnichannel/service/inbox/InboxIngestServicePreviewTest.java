@@ -25,4 +25,30 @@ class InboxIngestServicePreviewTest {
         assertThat(InboxIngestService.preview("document", "report", "a.pdf")).isEqualTo("report");
         assertThat(InboxIngestService.preview("chat", "hello", null)).isEqualTo("hello");
     }
+
+    @Test
+    void previewKeepsTheWholeBody() {
+        String whole = "x".repeat(300);
+        assertThat(InboxIngestService.preview("chat", whole, null)).isEqualTo(whole);
+    }
+
+    @Test
+    void thumbnailOfAnyNonTextTypeIsNotShown() {
+        String thumbnail = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof".repeat(10);
+        assertThat(InboxIngestService.preview("product", thumbnail, null)).isEqualTo("Unsupported message");
+    }
+
+    @Test
+    void longTokenCaptionIsKept() {
+        String hash = "a3f9".repeat(16);
+        assertThat(InboxIngestService.preview("document", hash, "a.pdf")).isEqualTo(hash);
+    }
+
+    @Test
+    void thumbnailBodyPreviewsAsTheLabel() {
+        String thumbnail = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof".repeat(10);
+        assertThat(InboxIngestService.preview("image", thumbnail, null)).isEqualTo("📷 Photo");
+        assertThat(InboxIngestService.preview("video", thumbnail, null)).isEqualTo("🎥 Video");
+        assertThat(InboxIngestService.preview("document", thumbnail, "a.pdf")).isEqualTo("📄 a.pdf");
+    }
 }

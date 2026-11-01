@@ -37,8 +37,12 @@ final class MessagePayloads {
         return t == null ? "chat" : t;
     }
 
+    /** What the sender wrote: the caption of a media message, else the body unless it is the media's thumbnail. */
     static String body(JsonNode p) {
-        return p.path("body").isTextual() ? p.path("body").asString() : null;
+        String type = type(p);
+        String caption = text(p.path("caption"));
+        if (caption != null && !MessageBodies.isText(type)) return caption;
+        return MessageBodies.readable(type, p.path("body").isTextual() ? p.path("body").asString() : null);
     }
 
     /** WhatsApp's time in seconds, else the capture time of the event, else now. */
@@ -46,9 +50,9 @@ final class MessagePayloads {
         return timestamp(p, event.ts() == null ? Instant.now() : Instant.ofEpochMilli(event.ts()));
     }
 
-    /** WhatsApp's time in seconds, else {@code fallback}. */
+    /** WhatsApp's time in seconds: {@code t} on the page's raw model, {@code timestamp} elsewhere; else {@code fallback}. */
     static Instant timestamp(JsonNode p, Instant fallback) {
-        long seconds = p.path("timestamp").asLong(0);
+        long seconds = p.path("t").asLong(p.path("timestamp").asLong(0));
         return seconds > 0 ? Instant.ofEpochSecond(seconds) : fallback;
     }
 
@@ -56,8 +60,9 @@ final class MessagePayloads {
         return p.path("ack").asInt(0);
     }
 
+    /** {@code hasMedia} is whatsapp-web.js's name for a {@code directPath}, which is what the page actually sends. */
     static boolean hasMedia(JsonNode p) {
-        return p.path("hasMedia").asBoolean(false);
+        return p.path("hasMedia").asBoolean(false) || text(p.path("directPath")) != null;
     }
 
     /** {@code mimetype/filename/size} from the top level, falling back to {@code _data}; null without media. */

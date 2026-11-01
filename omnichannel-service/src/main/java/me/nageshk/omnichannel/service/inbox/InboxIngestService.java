@@ -38,7 +38,6 @@ import tools.jackson.databind.JsonNode;
 public class InboxIngestService {
 
     private static final Logger log = LoggerFactory.getLogger(InboxIngestService.class);
-    private static final int PREVIEW_LENGTH = 120;
 
     /** What an event changed; {@code chat} and {@code message} are the stored rows after the change. */
     public record Ingested(WaWebChat chat, WaWebMessage message, boolean chatCreated, boolean reopened,
@@ -403,12 +402,10 @@ public class InboxIngestService {
         }
     }
 
-    /** A label for body-less or non-text types, else the first 120 characters of the body (the caption). */
+    /** A label for body-less or non-text types, else the whole body (the caption); the console cuts it to fit. */
     static String preview(String type, String body, String filename) {
-        if (!labelFirst(type) && body != null && !body.isBlank()) {
-            if (body.codePointCount(0, body.length()) <= PREVIEW_LENGTH) return body;
-            return body.substring(0, body.offsetByCodePoints(0, PREVIEW_LENGTH));
-        }
+        String text = MessageBodies.readable(type, body);
+        if (!labelFirst(type) && text != null && !text.isBlank()) return text;
         return switch (type == null ? "" : type) {
             case "image" -> "📷 Photo";
             case "video" -> "🎥 Video";

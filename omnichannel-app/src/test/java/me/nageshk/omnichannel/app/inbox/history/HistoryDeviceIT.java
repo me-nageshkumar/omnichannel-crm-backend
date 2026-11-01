@@ -32,8 +32,8 @@ class HistoryDeviceIT extends HistoryImportTestBase {
             var page = client.fetchChatHistory(session, new FetchRequest(remote, null, List.of(), null, null, 2, 20))
                     .get(2, SECONDS);
             assertThat(page.messages()).hasSize(2);
-            assertThat(page.messages().get(0).path("timestamp").asLong()).isEqualTo(200L);
-            assertThat(page.messages().get(1).path("timestamp").asLong()).isEqualTo(300L);
+            assertThat(page.messages().get(0).path("t").asLong()).isEqualTo(200L);
+            assertThat(page.messages().get(1).path("t").asLong()).isEqualTo(300L);
             assertThat(page.hasMore()).isTrue();
             assertThat(page.oldestT()).isEqualTo(200L);
             assertThat(device.requests("fetchChatHistory")).hasSize(1);
