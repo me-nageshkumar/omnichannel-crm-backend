@@ -48,6 +48,13 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
     }
 
     @Test
+    void aNoticeShownAsUnsupportedGetsItsLabel() {
+        WaWebChat c = chatWith("notification_template", "", "Unsupported message", AT_LAST_MESSAGE);
+        backfill.run(null);
+        assertThat(reload(c).getLastMessage().text()).isEqualTo("WhatsApp notice");
+    }
+
+    @Test
     void anotherUnsupportedMessageIsLeftAlone() {
         WaWebChat c = chatWith("whatever", null, "Unsupported message", AT_LAST_MESSAGE);
         backfill.run(null);

@@ -42,3 +42,14 @@ the phone only. A fetch also spent its last 20 seconds retrying pages that could
   was merely slow ends the chat early, and a repeat fetch is free.
 - The end of such a fetch reads "Reached the oldest message WhatsApp Web would load", because it cannot tell the start
   of a chat from a slow load.
+
+## WhatsApp's own notices
+
+- Added 2026-11-01, my call as the request skipped the questions. `notification_template` rows came in on the live path
+  only: a fetch has always left out what WhatsApp marks as a notification. Three arrived in half a second when a
+  business first wrote, with no text and no WhatsApp timestamp, because the phone draws the words itself. They added
+  three to the chat's unread count and took over its preview from the photo that came with them.
+- A notice is now skipped on both paths: no row, no chat, no unread, no reopen, no routing. The phone still has it.
+- The rows already stored are kept, as deleting needs asking, and show as a quiet "WhatsApp notice" line.
+- Showing the real words is not built: it needs a table of `subtype`s, which are not published. Each skipped notice logs
+  its subtype and field names.

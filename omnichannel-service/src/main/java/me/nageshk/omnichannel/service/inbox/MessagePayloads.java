@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.events.LoggingEventListener;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
@@ -15,6 +16,8 @@ final class MessagePayloads {
     private static final String LOCATION_TYPE = "location";
     private static final String POLL_TYPE = "poll_creation";
     private static final String CALL_TYPE = "call_log";
+    static final Set<String> NOTICE_TYPES = Set.of("notification_template", "e2e_notification", "notification",
+            "group_notification", "broadcast_notification");
 
     private MessagePayloads() {
     }
@@ -184,5 +187,18 @@ final class MessagePayloads {
 
     private static String lowerText(JsonNode n) {
         return n.isString() ? n.asString().toLowerCase(Locale.ROOT) : "";
+    }
+
+    /** True for a type WhatsApp uses for its own notices, such as "this chat is with a business". */
+    static boolean isNoticeType(String type) {
+        return type != null && NOTICE_TYPES.contains(type);
+    }
+
+    /**
+     * True for WhatsApp's own notice rather than something a person sent. It has no text, as the phone draws the words
+     * itself, and is not part of the conversation, so a fetch has always left these out.
+     */
+    static boolean isNotice(JsonNode p) {
+        return p.path("isNotification").asBoolean(false) || isNoticeType(type(p));
     }
 }

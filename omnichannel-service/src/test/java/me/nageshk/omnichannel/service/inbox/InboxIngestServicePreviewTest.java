@@ -19,6 +19,7 @@ class InboxIngestServicePreviewTest {
         assertThat(InboxIngestService.preview("vcard", null, null)).isEqualTo("👤 Contact card");
         assertThat(InboxIngestService.preview("poll_creation", null, null)).isEqualTo("📊 Poll");
         assertThat(InboxIngestService.preview("call_log", null, null)).isEqualTo("📞 Call");
+        assertThat(InboxIngestService.preview("notification_template", "", null)).isEqualTo("WhatsApp notice");
         assertThat(InboxIngestService.preview("revoked", null, null)).isEqualTo("This message was deleted");
         assertThat(InboxIngestService.preview("whatever", null, null)).isEqualTo("Unsupported message");
         assertThat(InboxIngestService.preview("multi_vcard", null, null)).isEqualTo("👤 Contact card");
