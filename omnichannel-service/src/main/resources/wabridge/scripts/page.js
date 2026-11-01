@@ -1776,8 +1776,10 @@
             if (chat.msgs.msgLoadState?.noEarlierMsgs === false) break;
             exhausted = true;
           } else {
-            loaded = true;
+            const held = all.length;
             all = chat.msgs.getModelsArray();
+            if (all.length <= held) break;
+            loaded = true;
             pastFrom = from != null && oldestLoaded() < from;
           }
         }
@@ -1892,7 +1894,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "73b8a5e4cf3c" : "dev";
+  var BUILD = true ? "67a9bf64723b" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
