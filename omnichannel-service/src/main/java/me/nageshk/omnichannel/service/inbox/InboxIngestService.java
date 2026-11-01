@@ -330,6 +330,7 @@ public class InboxIngestService {
         m.setBody(MessagePayloads.body(p));
         m.setMedia(MessagePayloads.media(p));
         m.setLocation(MessagePayloads.location(p));
+        m.setPollOptions(MessagePayloads.pollOptions(p));
         m.setTimestamp(at);
         m.setStatus(MessageStatus.PENDING);
         m.setAck(MessagePayloads.ack(p));

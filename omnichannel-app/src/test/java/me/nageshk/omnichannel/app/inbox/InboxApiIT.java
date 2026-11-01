@@ -252,6 +252,22 @@ class InboxApiIT extends InboxApiTestBase {
     }
 
     @Test
+    void threadCarriesPollOptions() throws Exception {
+        WaWebChat c = chat("Alice", "911", 1, agent, null);
+        var stored = message(c, 10, "Lunch where?");
+        stored.setType("poll_creation");
+        stored.setPollOptions(List.of("Pizza", "Sushi"));
+        messages.save(stored);
+
+        JsonNode page = json(send(get(inbox() + "/chats/" + c.getId() + "/thread"), agentToken, null)
+                .andExpect(status().isOk()));
+
+        JsonNode options = page.get("items").get(0).get("message").get("pollOptions");
+        assertThat(options.get(0).asString()).isEqualTo("Pizza");
+        assertThat(options.get(1).asString()).isEqualTo("Sushi");
+    }
+
+    @Test
     void threadOnlyHoldsItsOwnChat() throws Exception {
         WaWebChat c = chat("Alice", "911", 1, agent, null);
         WaWebChat d = chat("Dan", "912", 2, agent, null);

@@ -117,13 +117,12 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 - Imported rows have `statusTimes` null; the console must tolerate it.
 - An ALL import whose `listChats` item insert fails partway is never re-listed.
 
-### Raw WhatsApp model fields the backend does not read yet
+### G. Location and poll messages, not yet seen on a real device
 
-The page sends the raw model from `getMessageModel`, not the whatsapp-web.js `Message` class, so fields named after
-that class are absent. `t` and `directPath` are handled. Two remain, found in the review of the inbox preview work:
-- Location: the raw model has top-level `lat`, `lng` and `loc`; `MessagePayloads.location` reads `location` and `_data`,
-  so a real location message shows as unsupported.
-- Polls: the question is in `pollName`, so the bubble shows only "Poll".
+The fixes follow the code of whatsapp-web.js; no real location or poll has passed through them. Before relying on
+polls, send one real poll template to a recipient the user names: console polls used to go out with plain-string
+options, and what WhatsApp did with those was never seen. Also cosmetic: a location template joins name and address
+with ", " where whatsapp-web.js uses a line break, so the recipient may see both as the title.
 
 ## 3. Rules the user set
 

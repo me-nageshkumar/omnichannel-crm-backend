@@ -90,6 +90,7 @@ Indexes: unique `(phoneNumberId, remoteId)`; `(phoneNumberId, lastMessageAt desc
 | `body` | text, or the caption of a media message, or the vCard text |
 | `media` | `{mimetype, filename, size, mediaId, downloadedAt}`; `mediaId` is the `chatMedia` GridFS id once fetched, else null |
 | `location` | `{latitude, longitude, description}` for `location` |
+| `pollOptions` | the choices of a `poll_creation`, whose `body` is the question; else null |
 | `timestamp` | WhatsApp's message time (seconds → Instant) |
 | `status` | `PENDING`, `SENT`, `DELIVERED`, `READ`, `PLAYED`, `FAILED` — the highest reached |
 | `statusTimes` | `{sentAt, deliveredAt, readAt, playedAt, failedAt}`; each set once, when first reached |
@@ -189,7 +190,7 @@ Borrowed from the reference's `inboxSetting` + `ChatAssignmentService`, simplifi
     DOCUMENT → `options.sendMediaAsDocument = true`. The bytes are also copied into
     `chatMedia` and linked from the stored message.
   - LOCATION → content "", `options.location = {latitude, longitude, description: name + ", " + address}`.
-  - POLL → content "", `options.poll = {pollName: question, pollOptions: options, options: {allowMultipleAnswers}}`.
+  - POLL → content "", `options.poll = {pollName: question, pollOptions: [{name, localId}], options: {allowMultipleAnswers}}`; the extension passes `options` straight to WhatsApp, so the shape must be the one the whatsapp-web.js `Poll` class builds.
   - CONTACT_CARD → 400 VALIDATION `templateId: "contact cards cannot be sent from the inbox yet"`.
   These `options` keys are what `window.WWebJS.sendMessage` in whatsapp-web.js
   (`src/util/Injected/Utils.js`) reads; the extension's `sendMessage` page method passes

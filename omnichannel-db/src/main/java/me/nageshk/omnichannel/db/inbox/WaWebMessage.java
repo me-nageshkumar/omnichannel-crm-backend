@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.db.inbox;
 
 import java.time.Instant;
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
@@ -35,6 +36,8 @@ public class WaWebMessage {
     private String body;
     private Media media;
     private Location location;
+    /** The choices of a poll, else null; the question is the body. */
+    private List<String> pollOptions;
     /** WhatsApp's message time. */
     private Instant timestamp;
     /** The highest status reached. */

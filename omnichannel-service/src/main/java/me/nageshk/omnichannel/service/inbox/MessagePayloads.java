@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.service.inbox;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.events.LoggingEventListener;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
@@ -8,6 +10,9 @@ import tools.jackson.databind.JsonNode;
 
 /** Reads the fields of a whatsapp-web.js message payload; every helper tolerates missing nodes. */
 final class MessagePayloads {
+
+    private static final String LOCATION_TYPE = "location";
+    private static final String POLL_TYPE = "poll_creation";
 
     private MessagePayloads() {
     }
@@ -37,12 +42,17 @@ final class MessagePayloads {
         return t == null ? "chat" : t;
     }
 
-    /** What the sender wrote: the caption of a media message, else the body unless it is the media's thumbnail. */
+    /**
+     * What the sender wrote: the caption of a media message, the question of a poll, else the body unless it is the
+     * media's thumbnail.
+     */
     static String body(JsonNode p) {
         String type = type(p);
         String caption = text(p.path("caption"));
         if (caption != null && !MessageBodies.isText(type)) return caption;
-        return MessageBodies.readable(type, p.path("body").isTextual() ? p.path("body").asString() : null);
+        String body = MessageBodies.readable(type, p.path("body").isTextual() ? p.path("body").asString() : null);
+        String question = POLL_TYPE.equals(type) && (body == null || body.isEmpty()) ? text(p.path("pollName")) : null;
+        return question != null ? question : body;
     }
 
     /** WhatsApp's time in seconds, else the capture time of the event, else now. */
@@ -81,14 +91,33 @@ final class MessagePayloads {
         return new WaWebMessage.Media(mimetype, filename, size, null, null);
     }
 
-    /** {@code location.latitude/longitude/description}, else {@code _data.lat/lng/loc}; null when absent. */
+    /**
+     * {@code location.latitude/longitude/description}, else the raw model's {@code lat/lng/loc} on a location message,
+     * else {@code _data.lat/lng/loc}; null when absent.
+     */
     static WaWebMessage.Location location(JsonNode p) {
         JsonNode loc = p.path("location");
         JsonNode data = p.path("_data");
-        Double lat = number(loc.path("latitude"), data.path("lat"));
-        Double lng = number(loc.path("longitude"), data.path("lng"));
+        JsonNode raw = LOCATION_TYPE.equals(type(p)) ? p : data;
+        Double lat = number(loc.path("latitude"), raw.path("lat"), data.path("lat"));
+        Double lng = number(loc.path("longitude"), raw.path("lng"), data.path("lng"));
         if (lat == null || lng == null) return null;
-        return new WaWebMessage.Location(lat, lng, firstText(loc.path("description"), data.path("loc")));
+        return new WaWebMessage.Location(lat, lng,
+                firstText(loc.path("description"), raw.path("loc"), data.path("loc")));
+    }
+
+    /**
+     * The choices of a poll; null on any other message or when there are none. They are raw {@code {name, localId}}
+     * objects, or plain strings on a poll the console sent before it used that shape.
+     */
+    static List<String> pollOptions(JsonNode p) {
+        if (!POLL_TYPE.equals(type(p))) return null;
+        List<String> names = new ArrayList<>();
+        for (JsonNode option : p.path("pollOptions")) {
+            String name = text(option.isObject() ? option.path("name") : option);
+            if (name != null && !name.isBlank()) names.add(name);
+        }
+        return names.isEmpty() ? null : names;
     }
 
     static String senderName(JsonNode p) {
