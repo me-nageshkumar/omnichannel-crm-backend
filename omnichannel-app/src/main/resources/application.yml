@@ -51,6 +51,6 @@ omnichannel:
     page-delay: 400ms
     chat-delay: 1s
     max-messages-per-chat: 5000
-    max-empty-pages: 50
+    max-empty-pages: 3
     time-budget: 60s
     max-timeouts-per-chat: 3

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Rebuilds chat previews saved when they were cut to 120 characters, which also held the start of a media thumbnail.
+ * Calls saved as "Unsupported message" get their label the same way.
  * Only the preview changes, and only when it belongs to the chat's newest message. Idempotent; every profile. A
  * failure is logged and does not stop the application, as a preview is only a copy.
  */
@@ -39,8 +40,10 @@ public class ChatPreviewBackfill implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         try {
-            Query cut = new Query(Criteria.where(TEXT).regex("^[\\s\\S]{" + CUT_LENGTH + "}$"));
-            long n = mongo.find(cut, WaWebChat.class).stream().filter(this::rebuild).count();
+            Query stale = new Query(new Criteria().orOperator(
+                    Criteria.where(TEXT).regex("^[\\s\\S]{" + CUT_LENGTH + "}$"),
+                    Criteria.where("lastMessage.type").is("call_log").and(TEXT).is("Unsupported message")));
+            long n = mongo.find(stale, WaWebChat.class).stream().filter(this::rebuild).count();
             if (n > 0) log.info("rebuilt the preview of {} chat(s)", n);
         } catch (RuntimeException e) {
             log.warn("could not rebuild chat previews", e);

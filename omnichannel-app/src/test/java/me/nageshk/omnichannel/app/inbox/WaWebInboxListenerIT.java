@@ -160,6 +160,89 @@ class WaWebInboxListenerIT {
         return messages.findAll().getFirst();
     }
 
+    // ---- poll votes ----
+
+    private WaWebMessage poll() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "poll_creation").put("pollName", "Lunch?");
+        p.putArray("pollOptions").addObject().put("name", "Yes").put("localId", 0);
+        create(p);
+        recorder.events.clear();
+        return onlyMessage();
+    }
+
+    private void vote(String pollId, String voter, long at, int... options) {
+        ObjectNode p = mapper.createObjectNode().put("pollMessageId", pollId).put("voter", voter)
+                .put("fromMe", false).put("at", at);
+        var list = p.putArray("options");
+        for (int o : options) list.add(o);
+        publish("vote_update", p);
+    }
+
+    @Test
+    void aVoteLandsOnThePollAndReachesTheOpenThread() {
+        WaWebMessage poll = poll();
+
+        vote(poll.getWaMessageId(), "1@lid", 5000, 0);
+
+        assertThat(onlyMessage().getPollVotes())
+                .containsExactly(new WaWebMessage.PollVote("1@lid", false, List.of(0), Instant.ofEpochMilli(5000)));
+        assertThat(recorder.of(InboxEvents.MessageUpserted.class)).singleElement()
+                .satisfies(e -> assertThat(e.inserted()).isFalse());
+    }
+
+    @Test
+    void aVoteIsNotANewMessage() {
+        WaWebMessage poll = poll();
+        WaWebChat before = onlyChat();
+
+        vote(poll.getWaMessageId(), "1@lid", 5000, 0);
+
+        WaWebChat after = onlyChat();
+        assertThat(after.getUnreadCount()).isEqualTo(before.getUnreadCount());
+        assertThat(after.getLastMessageAt()).isEqualTo(before.getLastMessageAt());
+        assertThat(recorder.of(InboxEvents.ChatChanged.class)).isEmpty();
+    }
+
+    @Test
+    void aReplayedVoteChangesNothingAndTellsNobody() {
+        WaWebMessage poll = poll();
+        vote(poll.getWaMessageId(), "1@lid", 5000, 0);
+        recorder.events.clear();
+
+        vote(poll.getWaMessageId(), "1@lid", 5000, 0);
+
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void aVoteOnAnUnknownPollIsDropped() {
+        assertThatCode(() -> vote("nope", "1@lid", 5000, 0)).doesNotThrowAnyException();
+        assertThat(messages.count()).isZero();
+    }
+
+    @Test
+    void aVoteWithoutAVoterIsDropped() {
+        WaWebMessage poll = poll();
+        ObjectNode p = mapper.createObjectNode().put("pollMessageId", poll.getWaMessageId()).put("at", 1);
+        publish("vote_update", p);
+        assertThat(onlyMessage().getPollVotes()).isNull();
+    }
+
+    // ---- calls ----
+
+    @Test
+    void aCallIsStoredWithWhatIsKnownOfIt() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "call_log").put("subtype", "miss_video");
+        p.remove("body");
+
+        create(p);
+
+        assertThat(onlyMessage().getCall()).isEqualTo(new WaWebMessage.Call(true, true, null));
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📞 Call");
+    }
+
     // ---- chats and messages ----
 
     @Test

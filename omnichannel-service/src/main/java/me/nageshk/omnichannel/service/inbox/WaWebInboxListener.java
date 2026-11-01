@@ -29,6 +29,7 @@ public class WaWebInboxListener {
             switch (event.name()) {
                 case "message_create" -> ingest.ingestMessage(event);
                 case "message_ack" -> ingest.ingestAck(event);
+                case "vote_update" -> ingest.ingestPollVote(event);
                 default -> { }
             }
         } catch (IngestionFailedException e) {

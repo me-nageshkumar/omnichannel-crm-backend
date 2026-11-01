@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.service.inbox;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.events.LoggingEventListener;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
@@ -13,6 +14,7 @@ final class MessagePayloads {
 
     private static final String LOCATION_TYPE = "location";
     private static final String POLL_TYPE = "poll_creation";
+    private static final String CALL_TYPE = "call_log";
 
     private MessagePayloads() {
     }
@@ -154,5 +156,33 @@ final class MessagePayloads {
             if (n.isNumber()) return n.asDouble();
         }
         return null;
+    }
+
+    /**
+     * What the payload says of a call; null unless it is a {@code call_log}. Only {@code subtype} and {@code duration}
+     * are in the published model of WhatsApp Web; the other fields are read in case a build sends them, and a call
+     * saying none of this is still a call.
+     */
+    static WaWebMessage.Call call(JsonNode p) {
+        if (!CALL_TYPE.equals(type(p))) return null;
+        String subtype = lowerText(p.path("subtype"));
+        boolean video = p.path("isVideoCall").asBoolean(false) || subtype.contains("video");
+        boolean missed = subtype.contains("miss") || lowerText(p.path("callOutcome")).contains("miss");
+        int seconds = Math.max(p.path("callDuration").asInt(0), p.path("duration").asInt(0));
+        return new WaWebMessage.Call(video, missed, seconds > 0 ? seconds : null);
+    }
+
+    /** The votes sent with a fetched poll; empty for anything else. */
+    static List<WaWebMessage.PollVote> pollVotes(JsonNode p) {
+        List<WaWebMessage.PollVote> votes = new ArrayList<>();
+        p.path("pollVotes").forEach(v -> {
+            WaWebMessage.PollVote vote = PollVotes.parse(v);
+            if (vote != null) votes.add(vote);
+        });
+        return votes;
+    }
+
+    private static String lowerText(JsonNode n) {
+        return n.isString() ? n.asString().toLowerCase(Locale.ROOT) : "";
     }
 }

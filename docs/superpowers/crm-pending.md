@@ -119,12 +119,19 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 - Never read `m.id._serialized` from a live message model: use `messageKey` (`page/model.js`). Newer WhatsApp Web builds mangle it, and it reads as undefined rather than failing.
 - An ALL import whose `listChats` item insert fails partway is never re-listed.
 
-### G. Location and poll messages
+### G. Location, poll and call messages
 
 Tested on a real phone on 2026-11-01: a shared location and a poll coming in, and a poll template sent from the console,
-whose options show and can be tapped on the phone. Still open:
-- Votes are not built: a tap on a poll option shows on the phone only, and the console never shows results.
-- Not seen on a real phone: a location with a place name, and a location template sent from the console.
+whose options show and can be tapped on the phone. Votes, the poll card and call lines are built (spec
+`2026-11-01-calls-and-poll-votes-design.md`). Still open:
+- Not seen on a real phone: a live vote, a stored vote fetched from WhatsApp's votes table, a location with a place name,
+  a location template sent from the console.
+- Which fields a `call_log` really carries is unconfirmed: `subtype` and `duration` are published, the rest are guesses
+  read defensively. The first call fetched after a start logs `call_log fields: [...]` (names only). Check it, correct
+  `MessagePayloads.call`, then delete that log line and its flag in `InboxIngestService.importMessage`.
+- `vote_update` joined `DURABLE_EVENTS`, which ships in the extension package: until the extension is reloaded a vote
+  made while the backend is down is lost, though a later fetch recovers it.
+- The console cannot vote on a poll, only show votes.
 - Cosmetic: a location template joins name and address with ", " where whatsapp-web.js uses a line break, so the
   recipient may see both as the title.
 

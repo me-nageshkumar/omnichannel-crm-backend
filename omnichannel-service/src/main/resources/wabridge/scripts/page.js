@@ -1438,7 +1438,8 @@
   var DURABLE_EVENTS = /* @__PURE__ */ new Set([
     import_Constants.Events.MESSAGE_RECEIVED,
     import_Constants.Events.MESSAGE_CREATE,
-    import_Constants.Events.MESSAGE_ACK
+    import_Constants.Events.MESSAGE_ACK,
+    import_Constants.Events.VOTE_UPDATE
   ]);
   var response = (id, result) => ({ type: "response", id, result });
   var errorResponse = (id, code, message) => ({
@@ -1523,6 +1524,35 @@
     const key = messageKey(model.id);
     if (key) model.id._serialized = key;
     return model;
+  }
+
+  // src/page/polls.js
+  function optionPositions(selected, options) {
+    if (selected == null) return [];
+    const ids = Array.from(new Uint8Array(selected));
+    if (!Array.isArray(options) || options.length === 0) return ids;
+    return ids.map((id) => options.findIndex((option) => option.localId === id)).filter((position) => position >= 0);
+  }
+  var isFromMe = (key) => typeof key === "string" ? key.startsWith("true_") : Boolean(key?.fromMe);
+  function voteOf(vote, pollMessageId, options) {
+    const voter = vote.author ?? vote.from ?? vote.sender;
+    return {
+      pollMessageId,
+      voter: voter?._serialized ?? voter ?? null,
+      fromMe: isFromMe(vote.id ?? vote.msgKey),
+      options: optionPositions(vote.selectedOptionLocalIds, options),
+      at: Number(vote.senderTimestampMs ?? vote.t ?? 0)
+    };
+  }
+  async function storedVotes(msg) {
+    const key = messageKey(msg.id);
+    try {
+      const rows = await window.require("WAWebPollsVotesSchema").getTable().equals(["parentMsgKey"], key);
+      return rows.map((row) => voteOf(row, key, msg.pollOptions));
+    } catch (err) {
+      console.warn("[wabridge] could not read poll votes", err);
+      return [];
+    }
   }
 
   // src/page/methods.js
@@ -1735,9 +1765,9 @@
         const load = window.require("WAWebChatLoadMessages");
         let all = chat.msgs.getModelsArray();
         let exhausted = false;
-        let pastFrom = false;
         let loads = 0;
         const oldestLoaded = () => all.reduce((min, m) => m.t < min ? m.t : min, Infinity);
+        let pastFrom = from != null && oldestLoaded() < from;
         while (all.filter(keep).length < limit && !exhausted && !pastFrom && loads < maxLoads) {
           loads++;
           const more = await load.loadEarlierMsgs({ chat });
@@ -1758,8 +1788,16 @@
           oldest = { t: page[0].t, ids };
         }
         return {
-          messages: page.map(
-            (m) => normalizeMessageModel(window.WWebJS.getMessageModel(m))
+          messages: await Promise.all(
+            page.map(async (m) => {
+              const model = normalizeMessageModel(
+                window.WWebJS.getMessageModel(m)
+              );
+              if (m.type === "poll_creation") {
+                model.pollVotes = await storedVotes(m);
+              }
+              return model;
+            })
           ),
           oldest,
           hasMore: kept.length > limit || !exhausted && !pastFrom
@@ -1811,12 +1849,38 @@
         emit(import_Constants.Events.STATE_CHANGED, { state });
       })
     );
+    const onVote = async (vote) => {
+      const pollId = messageKey(vote.pollUpdateParentKey);
+      const poll = Msg.get(pollId) ?? (await Msg.getMessagesById([pollId]))?.messages?.[0];
+      emit(import_Constants.Events.VOTE_UPDATE, voteOf(vote, pollId, poll?.pollOptions));
+    };
+    window._wabridgeVotes = (votes) => {
+      for (const vote of votes) {
+        onVote(vote).catch(
+          (err) => console.error("[wabridge] poll vote failed:", err)
+        );
+      }
+    };
+    if (!window._wabridgeVoteHook) {
+      window._wabridgeVoteHook = true;
+      window.WWebJS.injectToFunction(
+        {
+          module: "WAWebAddonPollVoteTableMode",
+          function: "pollVoteTableMode.bulkUpsert"
+        },
+        (module, original, ...args) => {
+          window._wabridgeVotes?.(args[0]);
+          return original.apply(module, args);
+        }
+      );
+    }
     window._wwjsListeners = registered;
     return () => {
       for (const [target, name, handler] of registered)
         target.off(name, handler);
       registered.length = 0;
       window._wwjsListeners = [];
+      window._wabridgeVotes = null;
     };
   }
 
@@ -1824,7 +1888,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "983b3cd523a6" : "dev";
+  var BUILD = true ? "4321faa143c0" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {

@@ -157,8 +157,10 @@ Deleting a phone number deletes both (`InboxCleanup`).
   live path's; ingest each message (ascending);
   write of cursor + counts unless the item has ended (not "while RUNNING": a stop hands the item back while its page
   is on the way, and that page is stored and counted), refresh the import's counts, announce the page; stop on
-  `hasMore=false`, `seen >= maxMessagesPerChat` (`capped`), `emptyPages >= maxEmptyPages` (`DONE`, `olderUnavailable`:
-  WhatsApp Web stopped giving older messages without saying there are none, which is no failure of what was stored),
+  `hasMore=false`, `seen >= maxMessagesPerChat` (`capped`), `emptyPages >= maxEmptyPages` (3; `DONE`, `olderUnavailable`:
+  WhatsApp Web stopped giving older messages without saying there are none, which is no failure of what was stored;
+  on the real phone its "no earlier messages" flag stayed false at the true start of a chat, so this is how an
+  all-time fetch normally ends),
   or a pause or stop. A page that leaves the cursor where it was counts as empty and stores nothing, so a repeating
   page cannot loop or inflate `seen`. `CHAT_NOT_FOUND` → `SKIPPED NO_CHAT`;
   `DEVICE_DISCONNECTED` / `SEND_FAILED` (the session closed between pages) / `WHATSAPP_NOT_READY` → item back to

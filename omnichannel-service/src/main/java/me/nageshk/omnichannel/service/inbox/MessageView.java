@@ -23,7 +23,9 @@ public record MessageView(
         WaWebMessage.StatusTimes statusTimes,
         ChatView.Ref sentBy,
         String templateId,
-        List<String> pollOptions) {
+        List<String> pollOptions,
+        List<WaWebMessage.PollVote> pollVotes,
+        WaWebMessage.Call call) {
 
     /** {@code available} is true once the bytes are cached, so the console can show a thumbnail at once. */
     public record MediaView(String mimetype, String filename, Long size, boolean available) {

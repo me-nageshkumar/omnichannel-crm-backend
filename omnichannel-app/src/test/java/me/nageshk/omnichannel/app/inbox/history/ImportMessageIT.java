@@ -124,6 +124,23 @@ class ImportMessageIT {
         return p;
     }
 
+    private ObjectNode call(String id, String subtype) {
+        ObjectNode p = msg(id, "919811100001@c.us", false, 100, 0, null).put("type", "call_log");
+        p.remove("body");
+        if (subtype != null) p.put("subtype", subtype);
+        return p;
+    }
+
+    private ObjectNode poll(String id, long votedAt) {
+        ObjectNode p = msg(id, "919811100001@c.us", true, 100, 1, null).put("type", "poll_creation")
+                .put("pollName", "Lunch?");
+        p.putArray("pollOptions").addObject().put("name", "Yes").put("localId", 0);
+        ObjectNode vote = p.putArray("pollVotes").addObject().put("pollMessageId", id).put("voter", "1@lid")
+                .put("fromMe", false).put("at", votedAt);
+        vote.putArray("options").add(0);
+        return p;
+    }
+
     private WaWebChat onlyChat() {
         assertThat(chats.count()).isEqualTo(1);
         return chats.findAll().getFirst();
@@ -132,6 +149,62 @@ class ImportMessageIT {
     private WaWebMessage onlyMessage() {
         assertThat(messages.count()).isEqualTo(1);
         return messages.findAll().getFirst();
+    }
+
+    @Test
+    void aCallIsStoredWithWhatIsKnownOfIt() {
+        ingest.importMessage(ctx, call("c1", "miss"));
+        assertThat(onlyMessage().getCall()).isEqualTo(new WaWebMessage.Call(false, true, null));
+    }
+
+    @Test
+    void aCallStoredBeforeCallsWereReadIsFilledIn() {
+        ingest.importMessage(ctx, call("c1", "miss"));
+        WaWebMessage stored = onlyMessage();
+        stored.setCall(null);
+        messages.save(stored);
+
+        ImportResult r = ingest.importMessage(ctx, call("c1", "miss"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
+        assertThat(onlyMessage().getCall()).isEqualTo(new WaWebMessage.Call(false, true, null));
+    }
+
+    @Test
+    void aCallAlreadyFilledInIsUnchanged() {
+        ingest.importMessage(ctx, call("c1", "miss"));
+        assertThat(ingest.importMessage(ctx, call("c1", "miss")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+    }
+
+    @Test
+    void aFetchedPollBringsItsVotes() {
+        ingest.importMessage(ctx, poll("p1", 5000));
+        assertThat(onlyMessage().getPollVotes()).extracting(WaWebMessage.PollVote::voter).containsExactly("1@lid");
+    }
+
+    @Test
+    void aFetchOfAStoredPollAddsItsVotes() {
+        ObjectNode bare = poll("p1", 5000);
+        bare.remove("pollVotes");
+        ingest.importMessage(ctx, bare);
+
+        ImportResult r = ingest.importMessage(ctx, poll("p1", 5000));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
+        assertThat(onlyMessage().getPollVotes()).hasSize(1);
+    }
+
+    @Test
+    void aFetchOfAPollWithTheSameVotesIsUnchanged() {
+        ingest.importMessage(ctx, poll("p1", 5000));
+        assertThat(ingest.importMessage(ctx, poll("p1", 5000)).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+    }
+
+    @Test
+    void anOlderFetchDoesNotUndoALaterVote() {
+        ingest.importMessage(ctx, poll("p1", 9000));
+        ingest.importMessage(ctx, poll("p1", 5000));
+        assertThat(onlyMessage().getPollVotes().getFirst().at()).isEqualTo(java.time.Instant.ofEpochMilli(9000));
     }
 
     @Test
