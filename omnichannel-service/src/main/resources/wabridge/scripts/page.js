@@ -1527,7 +1527,7 @@
   }
 
   // src/page/names.js
-  var isNumberOnly = (title) => /^\+?[\d\s()-]+$/.test(title);
+  var isNumberOnly = (title) => /\d/.test(title) && !new RegExp("\\p{L}", "u").test(title);
   function chatName(chat) {
     const title = chat.formattedTitle ?? chat.name ?? null;
     if (title && !isNumberOnly(title)) return title;
@@ -1910,7 +1910,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "7d226e1ea94e" : "dev";
+  var BUILD = true ? "af2965c5d240" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {

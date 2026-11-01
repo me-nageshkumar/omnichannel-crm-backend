@@ -170,9 +170,9 @@ public class InboxIngestService {
             String waMessageId) {
         boolean fromMe = MessagePayloads.fromMe(p);
         Instant at = MessagePayloads.timestamp(p, clock.instant());
-        // the import walks backwards, so a push name it reads is older than the one the contact has; the name
-        // WhatsApp lists the chat under is current, and serves a chat we only wrote to
-        String senderName = ctx.chatName() != null ? ctx.chatName() : fromMe ? null : MessagePayloads.senderName(p);
+        // the import walks backwards, so a push name it reads is older than the one the contact has; the name WhatsApp
+        // lists the chat under is current, serves a chat we only wrote to, and goes on below as a name of record
+        String senderName = ctx.chatName() != null || fromMe ? null : MessagePayloads.senderName(p);
         if (senderName != null) {
             Contact known = contacts.findForChat(ctx.workspaceId(), remote);
             if (known != null && known.getName() != null) senderName = null;
@@ -180,6 +180,10 @@ public class InboxIngestService {
         Contact contact = contacts.upsertFromChat(ctx.workspaceId(), ctx.customerId(), remote, senderName,
                 lid ? MessagePayloads.lidPhone(p) : null, at);
         if (contact == null) return SKIPPED;
+        // not over a name cleared by hand; of record, or the contact's next push name would replace it
+        if (ctx.chatName() != null && !contact.isNameEdited()) {
+            contacts.nameIfBlank(ctx.workspaceId(), contact.getId(), ctx.chatName());
+        }
 
         WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(ctx.phoneNumberId(), remote).orElse(null);
         if (chat == null) {
