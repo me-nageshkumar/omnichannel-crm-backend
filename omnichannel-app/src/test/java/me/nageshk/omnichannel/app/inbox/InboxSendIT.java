@@ -234,6 +234,58 @@ class InboxSendIT extends InboxApiTestBase {
     }
 
     @Test
+    void pollEventBeforeTheRpcResultKeepsTheQuestionAndOptions() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        TemplateContent c = new TemplateContent();
+        c.setQuestion("Lunch?");
+        c.setOptions(List.of("Pizza", "Sushi"));
+        c.setAllowMultiple(false);
+        String id = template("Poll first", TemplateType.POLL, c, null);
+        String serialized = "true_" + chat.getRemoteId() + "_21";
+        ObjectNode raw = model(chat, serialized, "", "poll_creation", 1);
+        raw.put("pollName", "Lunch?");
+        raw.putArray("pollOptions").add(raw.objectNode().put("name", "Pizza").put("localId", 0))
+                .add(raw.objectNode().put("name", "Sushi").put("localId", 1));
+
+        Exchange ex = viaDevice(managerToken, chat, Map.of("templateId", id), req -> {
+            publisher.publishEvent(new WhatsAppEvent(this, number.getId(), brand.getId(), acme.getId(),
+                    "message_create", raw, null, System.currentTimeMillis()));
+            return Envelope.response(req.id(), raw);
+        });
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        WaWebMessage stored = only(chat);
+        assertThat(stored.getBody()).isEqualTo("Lunch?");
+        assertThat(stored.getPollOptions()).containsExactly("Pizza", "Sushi");
+        assertThat(stored.getSource()).isEqualTo(MessageSource.CONSOLE);
+    }
+
+    @Test
+    void locationEventBeforeTheRpcResultKeepsTheLocation() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        TemplateContent c = new TemplateContent();
+        c.setLatitude(12.5);
+        c.setLongitude(77.25);
+        c.setName("Head office");
+        String id = template("Location first", TemplateType.LOCATION, c, null);
+        String serialized = "true_" + chat.getRemoteId() + "_22";
+        ObjectNode raw = model(chat, serialized, "", "location", 1);
+        raw.put("lat", 12.5).put("lng", 77.25).put("loc", "Head office");
+
+        Exchange ex = viaDevice(managerToken, chat, Map.of("templateId", id), req -> {
+            publisher.publishEvent(new WhatsAppEvent(this, number.getId(), brand.getId(), acme.getId(),
+                    "message_create", raw, null, System.currentTimeMillis()));
+            return Envelope.response(req.id(), raw);
+        });
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        WaWebMessage stored = only(chat);
+        assertThat(stored.getLocation().latitude()).isEqualTo(12.5);
+        assertThat(stored.getLocation().description()).isEqualTo("Head office");
+        assertThat(stored.getSource()).isEqualTo(MessageSource.CONSOLE);
+    }
+
+    @Test
     void nullResultStoresAPendingPlaceholder() throws Exception {
         WaWebChat chat = chatWithAarav();
         Exchange ex = sendOk(managerToken, chat, Map.of("text", "console says hi"), mapper.nullNode());
@@ -492,9 +544,13 @@ class InboxSendIT extends InboxApiTestBase {
         assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode poll = ex.request().params().get("options").get("poll");
         assertThat(poll.get("pollName").asString()).isEqualTo("Lunch?");
-        assertThat(poll.get("pollOptions").get(0).asString()).isEqualTo("Pizza");
-        assertThat(poll.get("pollOptions").get(1).asString()).isEqualTo("Sushi");
+        assertThat(poll.get("pollOptions").get(0).get("name").asString()).isEqualTo("Pizza");
+        assertThat(poll.get("pollOptions").get(0).get("localId").asInt()).isEqualTo(0);
+        assertThat(poll.get("pollOptions").get(1).get("name").asString()).isEqualTo("Sushi");
+        assertThat(poll.get("pollOptions").get(1).get("localId").asInt()).isEqualTo(1);
         assertThat(poll.get("options").get("allowMultipleAnswers").asBoolean()).isTrue();
+        assertThat(messages.findByPhoneNumberIdAndWaMessageId(chat.getPhoneNumberId(),
+                "true_" + chat.getRemoteId() + "_11").orElseThrow().getPollOptions()).containsExactly("Pizza", "Sushi");
         assertThat(only(chat).getType()).isEqualTo("poll_creation");
     }
 

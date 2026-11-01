@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.service.inbox;
 
 import java.time.Instant;
+import java.util.List;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageSource;
 import me.nageshk.omnichannel.db.inbox.MessageStatus;
@@ -21,7 +22,8 @@ public record MessageView(
         MessageStatus status,
         WaWebMessage.StatusTimes statusTimes,
         ChatView.Ref sentBy,
-        String templateId) {
+        String templateId,
+        List<String> pollOptions) {
 
     /** {@code available} is true once the bytes are cached, so the console can show a thumbnail at once. */
     public record MediaView(String mimetype, String filename, Long size, boolean available) {

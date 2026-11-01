@@ -86,7 +86,7 @@ class InboxStreamBrokerTest {
 
     private static MessageView messageView() {
         return new MessageView("m1", "c1", "wa1", MessageDirection.IN, MessageSource.CONTACT, "chat", "hi",
-                null, null, null, MessageStatus.SENT, null, null, null);
+                null, null, null, MessageStatus.SENT, null, null, null, null);
     }
 
     private static ActionView actionView() {

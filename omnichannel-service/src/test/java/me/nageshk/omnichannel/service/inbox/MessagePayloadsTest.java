@@ -70,6 +70,79 @@ class MessagePayloadsTest {
     }
 
     @Test
+    void locationIsReadFromTheRawModel() {
+        var location = MessagePayloads.location(message("location").put("lat", 12.5).put("lng", 77.25)
+                .put("loc", "Blue Cafe\nMG Road"));
+        assertThat(location.latitude()).isEqualTo(12.5);
+        assertThat(location.longitude()).isEqualTo(77.25);
+        assertThat(location.description()).isEqualTo("Blue Cafe\nMG Road");
+    }
+
+    @Test
+    void locationWithoutAPlaceNameHasNoDescription() {
+        assertThat(MessagePayloads.location(message("location").put("lat", 12.5).put("lng", 77.25)).description())
+                .isNull();
+    }
+
+    @Test
+    void locationAtZeroIsStillALocation() {
+        assertThat(MessagePayloads.location(message("location").put("lat", 0.0).put("lng", 0.0))).isNotNull();
+    }
+
+    @Test
+    void messageWithoutCoordinatesHasNoLocation() {
+        assertThat(MessagePayloads.location(message("location"))).isNull();
+    }
+
+    @Test
+    void coordinatesOnAnotherTypeAreNotALocation() {
+        assertThat(MessagePayloads.location(message("chat").put("lat", 12.5).put("lng", 77.25))).isNull();
+    }
+
+    @Test
+    void pollQuestionIsTheRawPollName() {
+        assertThat(MessagePayloads.body(message("poll_creation").put("pollName", "Lunch where?")))
+                .isEqualTo("Lunch where?");
+        assertThat(MessagePayloads.body(message("poll_creation").put("body", "").put("pollName", "Lunch where?")))
+                .isEqualTo("Lunch where?");
+    }
+
+    @Test
+    void pollNameIsIgnoredOnOtherTypes() {
+        assertThat(MessagePayloads.body(message("chat").put("body", "").put("pollName", "ignored"))).isEmpty();
+    }
+
+    @Test
+    void pollOptionsAreReadFromRawObjects() {
+        ObjectNode p = message("poll_creation");
+        p.putArray("pollOptions").add(p.objectNode().put("name", "Pizza").put("localId", 0))
+                .add(p.objectNode().put("name", "Sushi").put("localId", 1));
+        assertThat(MessagePayloads.pollOptions(p)).containsExactly("Pizza", "Sushi");
+    }
+
+    @Test
+    void pollOptionsMayBePlainStrings() {
+        ObjectNode p = message("poll_creation");
+        p.putArray("pollOptions").add("Pizza").add("Sushi");
+        assertThat(MessagePayloads.pollOptions(p)).containsExactly("Pizza", "Sushi");
+    }
+
+    @Test
+    void optionsOnAnotherTypeAreNotAPoll() {
+        ObjectNode p = message("chat");
+        p.putArray("pollOptions").add("Pizza");
+        assertThat(MessagePayloads.pollOptions(p)).isNull();
+    }
+
+    @Test
+    void messageWithoutOptionsHasNone() {
+        assertThat(MessagePayloads.pollOptions(message("poll_creation"))).isNull();
+        ObjectNode blank = message("poll_creation");
+        blank.putArray("pollOptions").add(" ");
+        assertThat(MessagePayloads.pollOptions(blank)).isNull();
+    }
+
+    @Test
     void directPathMeansTheMessageHasMedia() {
         ObjectNode p = message("image").put("directPath", "/v/t62/abc").put("mimetype", "image/jpeg");
         assertThat(MessagePayloads.hasMedia(p)).isTrue();

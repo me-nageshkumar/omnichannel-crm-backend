@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
@@ -60,7 +61,13 @@ public class InboxSendService {
 
     /** What goes to the device and what is stored for it; {@code body} may be null. */
     private record Outgoing(String content, ObjectNode options, String type, String body,
-            WaWebMessage.Media media, byte[] mediaBytes, WaWebMessage.Location location, String templateId) {
+            WaWebMessage.Media media, byte[] mediaBytes, WaWebMessage.Location location, String templateId,
+            List<String> pollOptions) {
+
+        Outgoing(String content, ObjectNode options, String type, String body, WaWebMessage.Media media,
+                byte[] mediaBytes, WaWebMessage.Location location, String templateId) {
+            this(content, options, type, body, media, mediaBytes, location, templateId, null);
+        }
     }
 
     /** The stored message and the chat after it; {@code inserted} is false when the ingest listener got there first. */
@@ -206,9 +213,13 @@ public class InboxSendService {
                 ObjectNode poll = options.putObject("poll");
                 poll.put("pollName", c.getQuestion());
                 ArrayNode choices = poll.putArray("pollOptions");
-                c.getOptions().forEach(choices::add);
+                // the extension hands this to WhatsApp as it is, so it has the shape of the whatsapp-web.js Poll class
+                for (int i = 0; i < c.getOptions().size(); i++) {
+                    choices.addObject().put("name", c.getOptions().get(i).strip()).put("localId", i);
+                }
                 poll.putObject("options").put("allowMultipleAnswers", Boolean.TRUE.equals(c.getAllowMultiple()));
-                return new Outgoing("", options, "poll_creation", c.getQuestion(), null, null, null, templateId);
+                return new Outgoing("", options, "poll_creation", c.getQuestion(), null, null, null, templateId,
+                        c.getOptions());
             }
             default -> throw new IllegalStateException("cannot send a " + r.type() + " template");
         }
@@ -369,6 +380,7 @@ public class InboxSendService {
         }
         if (message.getMedia() == null) message.setMedia(out.media());
         if (message.getLocation() == null) message.setLocation(out.location());
+        if (message.getPollOptions() == null) message.setPollOptions(out.pollOptions());
         message.setSource(actor.source());
         message.setSentByUserId(actor.userId());
         message.setSentByName(actor.displayName());

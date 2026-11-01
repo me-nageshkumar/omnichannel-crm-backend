@@ -523,6 +523,39 @@ class WaWebInboxListenerIT {
     }
 
     @Test
+    void rawLocationIsStored() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "location");
+        p.put("lat", 12.5);
+        p.put("lng", 77.25);
+        p.put("loc", "Blue Cafe\nMG Road");
+        p.put("body", "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof");
+        create(p);
+
+        WaWebMessage.Location l = onlyMessage().getLocation();
+        assertThat(l.latitude()).isEqualTo(12.5);
+        assertThat(l.longitude()).isEqualTo(77.25);
+        assertThat(l.description()).isEqualTo("Blue Cafe\nMG Road");
+        assertThat(onlyMessage().getBody()).isNull();
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📍 Location");
+    }
+
+    @Test
+    void rawPollQuestionIsStored() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "poll_creation");
+        p.put("body", "");
+        p.put("pollName", "Lunch where?");
+        p.putArray("pollOptions").add(p.objectNode().put("name", "Pizza").put("localId", 0))
+                .add(p.objectNode().put("name", "Sushi").put("localId", 1));
+        create(p);
+
+        assertThat(onlyMessage().getBody()).isEqualTo("Lunch where?");
+        assertThat(onlyMessage().getPollOptions()).containsExactly("Pizza", "Sushi");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📊 Poll");
+    }
+
+    @Test
     void locationFallsBackToData() {
         ObjectNode p = message("919911111111@c.us", false, T);
         p.put("type", "location");
