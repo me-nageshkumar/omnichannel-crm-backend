@@ -1771,13 +1771,15 @@
         let pastFrom = from != null && oldestLoaded() < from;
         while (all.filter(keep).length < limit && !exhausted && !pastFrom && loads < maxLoads) {
           loads++;
+          const known = new Set(all.map((m) => messageKey(m.id)));
           const more = await load.loadEarlierMsgs({ chat });
           if (!more || !more.length) {
             if (chat.msgs.msgLoadState?.noEarlierMsgs === false) break;
             exhausted = true;
           } else {
-            loaded = true;
             all = chat.msgs.getModelsArray();
+            if (all.every((m) => known.has(messageKey(m.id)))) break;
+            loaded = true;
             pastFrom = from != null && oldestLoaded() < from;
           }
         }
@@ -1892,7 +1894,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "73b8a5e4cf3c" : "dev";
+  var BUILD = true ? "e3287e0eafb3" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {

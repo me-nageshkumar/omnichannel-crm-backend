@@ -46,7 +46,7 @@ the phone only. A fetch also spent its last 20 seconds retrying pages that could
 ## WhatsApp's own notices
 
 - Added 2026-11-01, my call as the request skipped the questions. `notification_template` rows came in on the live path
-  only: a fetch has always left out what WhatsApp marks as a notification. Three arrived in half a second when a
+  and, as a real month-long fetch showed, through a fetch too: the page's `isNotification` filter does not catch them. Three arrived in half a second when a
   business first wrote, with no text and no WhatsApp timestamp, because the phone draws the words itself. They added
   three to the chat's unread count and took over its preview from the photo that came with them.
 - A notice is now skipped on both paths: no row, no chat, no unread, no reopen, no routing. The phone still has it.
