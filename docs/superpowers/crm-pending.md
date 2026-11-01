@@ -108,6 +108,8 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 
 ### F. Chat history import
 
+- Whether `chat.t` always covers a chat's newest message is unconfirmed: a chat it lags on by over a day is left out of a dated fetch. See the spec, section 5.
+- On a real phone chats stalled after one message with the cursor on 20 Oct 12:12: `loadEarlierMsgs` is believed to hand back what is already loaded, which is inferred, not seen.
 - `@c.us` / `@lid` duplicate-chat limitation (inherited): the same person can end up as two chats.
 - `console:<id>` duplicate limitation (inherited).
 - Pending real-number spike: see spec `2026-10-31-chat-history-import-design.md` §3, "Pending verification".

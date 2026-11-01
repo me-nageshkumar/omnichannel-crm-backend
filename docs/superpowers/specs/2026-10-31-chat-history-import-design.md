@@ -137,6 +137,9 @@ Deleting a phone number deletes both (`InboxCleanup`).
 - Tick: for each number with an active import (oldest QUEUED/RUNNING first by `creationTime`, then `_id`; one per
   number), skip if busy, else run `process(import)` on the pool. A PAUSED import is skipped and does not hold up its
   number.
+- `listChats` leaves out chats last active more than a day before `from`: they cannot hold anything in range, and each
+  would cost a `chatDelay`. The day is a margin, as `chat.t` is WhatsApp's own; a chat with no time is kept, and an
+  all-time fetch skips nothing.
 - `process` first puts the import's items left `RUNNING` back to `PENDING` (cursor and `attemptedAt` kept): only one
   worker serves a number (`busy`), so such an item was left behind by an earlier pass whose write failed (a DB blip)
   or by the last shutdown, and would otherwise stall the number until a restart. This also covers a first tick that
@@ -157,7 +160,7 @@ Deleting a phone number deletes both (`InboxCleanup`).
   live path's; ingest each message (ascending);
   write of cursor + counts unless the item has ended (not "while RUNNING": a stop hands the item back while its page
   is on the way, and that page is stored and counted), refresh the import's counts, announce the page; stop on
-  `hasMore=false`, `seen >= maxMessagesPerChat` (`capped`), `emptyPages >= maxEmptyPages` (3; a page that loaded messages but kept none is progress and resets the count; `DONE`, `olderUnavailable`:
+  `hasMore=false`, `seen >= maxMessagesPerChat` (`capped`), `emptyPages >= maxEmptyPages` (3; a page that loaded messages but kept none is progress and resets the count) or `maxIdlePages` (200) pages in a row storing nothing, loaded or not, as nothing WhatsApp reports may hold an import (`DONE`, `olderUnavailable`:
   WhatsApp Web stopped giving older messages without saying there are none, which is no failure of what was stored;
   on the real phone its "no earlier messages" flag stayed false at the true start of a chat, so this is how an
   all-time fetch normally ends),
@@ -226,7 +229,7 @@ requestedBy{id,name}, creationTime, startedAt, finishedAt, progressPercent}`; `p
 ## 9. Configuration
 
 `omnichannel.history`: `auto-tick true`, `tick 5s`, `page-size 100`, `max-loads 20`, `page-delay 400ms`,
-`chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 3`, `time-budget 60s`, `max-timeouts-per-chat 3`. Tests: `auto-tick false`,
+`chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 3`, `max-idle-pages 200`, `time-budget 60s`, `max-timeouts-per-chat 3`. Tests: `auto-tick false`,
 delays `0`.
 
 ## 10. Pause, play and stop (added 2026-11-01; my calls, the request skipped the questions)

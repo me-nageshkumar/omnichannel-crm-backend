@@ -68,6 +68,8 @@ public class HistoryImportRunner {
 
     private static final Logger log = LoggerFactory.getLogger(HistoryImportRunner.class);
     private static final List<HistoryChatStatus> OPEN = List.of(HistoryChatStatus.PENDING, HistoryChatStatus.RUNNING);
+    /** A chat's last-activity time is WhatsApp's own and unconfirmed, so a little earlier than the range is kept. */
+    private static final Duration ACTIVITY_MARGIN = Duration.ofDays(1);
 
     private final MongoTemplate mongo;
     private final WaWebHistoryImportRepository imports;
@@ -230,8 +232,11 @@ public class HistoryImportRunner {
             }
             throw cause instanceof RuntimeException r ? r : new IllegalStateException(cause);
         }
+        Long activeSince = activeSince(imp);
         for (ChatRow row : rows) {
             if (row.id() == null) continue;
+            // nothing in it can be in range: most chats of a dated fetch, and each would cost a chatDelay
+            if (activeSince != null && row.t() != null && row.t() < activeSince) continue;
             WaWebHistoryImportChat item = new WaWebHistoryImportChat();
             item.setImportId(imp.getId());
             item.setWorkspaceId(imp.getWorkspaceId());
@@ -289,6 +294,8 @@ public class HistoryImportRunner {
         long inserted = start.inserted();
         long updated = start.updated();
         int emptyPages = item.getEmptyPages();
+        // pages in a row that stored nothing, loaded or not: WhatsApp's word that it loaded cannot be all that holds us
+        int idlePages = 0;
         // consecutive timeouts: a page that arrives resets the count
         int timeouts = item.getTimeouts();
         WaWebChat chat = null;
@@ -318,6 +325,7 @@ public class HistoryImportRunner {
                 }
                 // a page that only loaded walked further towards the range: only standing still counts
                 emptyPages = moved || page.loaded() ? 0 : emptyPages + 1;
+                idlePages = moved ? 0 : idlePages + 1;
                 timeouts = 0;
                 if (!whileOpen(item, new Update().set("cursor", cursor)
                         .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated))
@@ -337,7 +345,7 @@ public class HistoryImportRunner {
                     finish(item, new Update().set("status", HistoryChatStatus.DONE).set("capped", true));
                     return true;
                 }
-                if (emptyPages >= settings.maxEmptyPages()) {
+                if (emptyPages >= settings.maxEmptyPages() || idlePages >= settings.maxIdlePages()) {
                     finish(item, new Update().set("status", HistoryChatStatus.DONE).set("olderUnavailable", true));
                     return true;
                 }
@@ -441,6 +449,13 @@ public class HistoryImportRunner {
         if (imp.getCreationTime() == null) return to;
         long created = imp.getCreationTime().getEpochSecond();
         return to == null ? created : Math.min(to, created);
+    }
+
+    /** Chats last active before this cannot hold anything in range; null when any chat can. */
+    private static Long activeSince(WaWebHistoryImport imp) {
+        WaWebHistoryImport.Range range = imp.getRange();
+        if (range == null || range.from() == null) return null;
+        return range.from().minus(ACTIVITY_MARGIN).getEpochSecond();
     }
 
     private boolean isRunning(String importId) {
