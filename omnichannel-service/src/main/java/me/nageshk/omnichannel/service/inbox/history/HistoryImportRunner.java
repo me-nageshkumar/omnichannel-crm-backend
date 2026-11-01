@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 import me.nageshk.omnichannel.common.api.NoDeviceException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.config.OmnichannelProperties;
@@ -68,6 +69,7 @@ public class HistoryImportRunner {
 
     private static final Logger log = LoggerFactory.getLogger(HistoryImportRunner.class);
     private static final List<HistoryChatStatus> OPEN = List.of(HistoryChatStatus.PENDING, HistoryChatStatus.RUNNING);
+    private static final Pattern NUMBER_ONLY = Pattern.compile("\\+?[\\d\\s()-]+");
     /** A chat's last-activity time is WhatsApp's own and unconfirmed, so a little earlier than the range is kept. */
     private static final Duration ACTIVITY_MARGIN = Duration.ofDays(1);
 
@@ -289,7 +291,8 @@ public class HistoryImportRunner {
 
     /** Imports one claimed chat page by page; false when the device failed and the import must stop for now. */
     boolean importChat(WaWebHistoryImport imp, WaWebHistoryImportChat item, DeviceSession device) {
-        ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId());
+        ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId(),
+                personName(item.getChatName()));
         WaWebHistoryImport.Range range = imp.getRange();
         Long from = range == null || range.from() == null ? null : range.from().getEpochSecond();
         Long to = until(imp);
@@ -465,6 +468,11 @@ public class HistoryImportRunner {
         WaWebHistoryImport.Range range = imp.getRange();
         if (range == null || range.from() == null) return null;
         return range.from().minus(ACTIVITY_MARGIN).getEpochSecond();
+    }
+
+    /** The chat's listed name, unless it is only a phone number, which WhatsApp lists when it knows no name. */
+    private static String personName(String listed) {
+        return listed == null || listed.isBlank() || NUMBER_ONLY.matcher(listed).matches() ? null : listed.strip();
     }
 
     private boolean isRunning(String importId) {

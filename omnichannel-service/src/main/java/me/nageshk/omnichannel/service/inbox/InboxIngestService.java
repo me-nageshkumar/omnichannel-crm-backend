@@ -56,7 +56,11 @@ public class InboxIngestService {
     }
 
     /** The number a history import stores messages for. */
-    public record ImportContext(String customerId, String workspaceId, String phoneNumberId) {
+    public record ImportContext(String customerId, String workspaceId, String phoneNumberId, String chatName) {
+
+        public ImportContext(String customerId, String workspaceId, String phoneNumberId) {
+            this(customerId, workspaceId, phoneNumberId, null);
+        }
     }
 
     public enum ImportOutcome { INSERTED, UPDATED, UNCHANGED, SKIPPED }
@@ -166,8 +170,9 @@ public class InboxIngestService {
             String waMessageId) {
         boolean fromMe = MessagePayloads.fromMe(p);
         Instant at = MessagePayloads.timestamp(p, clock.instant());
-        // the import walks backwards, so a push name it reads is older than the one the contact has
-        String senderName = fromMe ? null : MessagePayloads.senderName(p);
+        // the import walks backwards, so a push name it reads is older than the one the contact has; the name
+        // WhatsApp lists the chat under is current, and serves a chat we only wrote to
+        String senderName = ctx.chatName() != null ? ctx.chatName() : fromMe ? null : MessagePayloads.senderName(p);
         if (senderName != null) {
             Contact known = contacts.findForChat(ctx.workspaceId(), remote);
             if (known != null && known.getName() != null) senderName = null;

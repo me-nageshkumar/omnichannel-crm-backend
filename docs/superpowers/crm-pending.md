@@ -108,6 +108,7 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 
 ### F. Chat history import
 
+- A contact with no name takes the name WhatsApp lists its chat under: the title, or for a business or a person not in the phone's contacts the verified name, then the profile name (`page/names.js`). A contact with a name keeps it. Only an all-chats fetch has these names, and 46 chats had just a number as their title. Whether `WAWebContactGetters` gives a verified name for a `@lid` chat is not yet seen on a real phone.
 - Whether `chat.t` always covers a chat's newest message is unconfirmed: a chat it lags on by over a day is left out of a dated fetch. See the spec, section 5.
 - On a real phone 5 chats stalled after one message with the cursor on 20 Oct 12:12, none of which was stored, so most likely a WhatsApp notice sent to many chats. `loadEarlierMsgs` is believed to hand back what is already loaded, which is inferred, not seen. The page now compares message ids, and `max-idle-pages` bounds a chat whatever the cause.
 - `interactive` business messages show their text and file, drawn by mimetype. Their buttons are not stored, so they do not show, and it is not known which fields carry them.

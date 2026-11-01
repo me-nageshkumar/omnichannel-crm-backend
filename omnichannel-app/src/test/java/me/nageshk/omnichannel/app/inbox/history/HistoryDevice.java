@@ -31,6 +31,8 @@ class HistoryDevice implements AutoCloseable {
     private static final AtomicInteger SERIAL = new AtomicInteger();
 
     final Map<String, List<ObjectNode>> chats = new ConcurrentHashMap<>();
+    /** The name {@code listChats} gives a chat; none when absent. */
+    final Map<String, String> names = new ConcurrentHashMap<>();
     volatile Function<Envelope, Envelope> override = null;
 
     private final FakeDevice device;
@@ -98,7 +100,8 @@ class HistoryDevice implements AutoCloseable {
         ArrayNode rows = MAPPER.createArrayNode();
         chats.forEach((id, list) -> {
             ObjectNode row = rows.addObject().put("id", id);
-            row.putNull("name");
+            if (names.containsKey(id)) row.put("name", names.get(id));
+            else row.putNull("name");
             Long t = list.stream().map(HistoryDevice::t).max(Long::compare).orElse(null);
             if (t == null) row.putNull("t");
             else row.put("t", t);

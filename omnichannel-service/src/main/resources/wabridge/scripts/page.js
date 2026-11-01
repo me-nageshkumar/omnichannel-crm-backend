@@ -1526,6 +1526,22 @@
     return model;
   }
 
+  // src/page/names.js
+  var isNumberOnly = (title) => /^\+?[\d\s()-]+$/.test(title);
+  function chatName(chat) {
+    const title = chat.formattedTitle ?? chat.name ?? null;
+    if (title && !isNumberOnly(title)) return title;
+    try {
+      const { Contact } = window.require("WAWebCollections");
+      const contact = chat.contact ?? Contact?.get(chat.id);
+      if (!contact) return title;
+      const getters = window.require("WAWebContactGetters");
+      return getters.getVerifiedName(contact) || getters.getPushname(contact) || title;
+    } catch {
+      return title;
+    }
+  }
+
   // src/page/polls.js
   function optionPositions(selected, options) {
     if (selected == null) return [];
@@ -1709,7 +1725,7 @@
         (chat) => !chat.isPSA && chat.id._serialized !== "0@c.us" && !own.has(chat.id._serialized) && (chat.id.server === "c.us" || chat.id.server === "lid") && !chat.isGroup && !chat.isNewsletter && !chat.isBroadcast && chat.id._serialized !== "status@broadcast"
       ).map((chat) => ({
         id: chat.id._serialized,
-        name: chat.formattedTitle ?? chat.name ?? null,
+        name: chatName(chat),
         t: typeof chat.t === "number" ? chat.t : null,
         unreadCount: chat.unreadCount ?? 0
       }));
@@ -1894,7 +1910,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "e3287e0eafb3" : "dev";
+  var BUILD = true ? "7d226e1ea94e" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
