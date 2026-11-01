@@ -77,6 +77,18 @@ class HistoryImportSpeedIT extends HistoryImportTestBase {
     }
 
     @Test
+    void aLastActivityTimeOfZeroMeansNoneAndTheChatIsStillFetched() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, 0, 1, "no time")));
+            importSince(FROM);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(fetched(device)).containsExactly(A);
+        }
+    }
+
+    @Test
     void anAllTimeFetchSkipsNothing() throws Exception {
         try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
             device.chats.put(A, List.of(HistoryDevice.msg(A, false, 100, 1, "very old")));
@@ -108,6 +120,23 @@ class HistoryImportSpeedIT extends HistoryImportTestBase {
         result.putNull("oldest");
         result.put("hasMore", true).put("loaded", true);
         return Envelope.response(req.id(), result);
+    }
+
+    @Test
+    void idlePagesFromAnEarlierPassStillCount() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of());
+            device.override = req -> "fetchChatHistory".equals(req.method()) ? alwaysLoading(req) : device.answer(req);
+            WaWebHistoryImport imp = importChats("919811100001");
+            WaWebHistoryImportChat item = itemsOf(imp).get(0);
+            item.setIdlePages(3);
+            items.save(item);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(device.requests("fetchChatHistory")).hasSize(1);
+            assertThat(itemsOf(imp).get(0).getStatus()).isEqualTo(HistoryChatStatus.DONE);
+        }
     }
 
     @Test

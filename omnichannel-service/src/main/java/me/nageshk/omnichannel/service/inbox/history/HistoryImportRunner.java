@@ -233,10 +233,14 @@ public class HistoryImportRunner {
             throw cause instanceof RuntimeException r ? r : new IllegalStateException(cause);
         }
         Long activeSince = activeSince(imp);
+        int inactive = 0;
         for (ChatRow row : rows) {
             if (row.id() == null) continue;
             // nothing in it can be in range: most chats of a dated fetch, and each would cost a chatDelay
-            if (activeSince != null && row.t() != null && row.t() < activeSince) continue;
+            if (activeSince != null && row.t() != null && row.t() > 0 && row.t() < activeSince) {
+                inactive++;
+                continue;
+            }
             WaWebHistoryImportChat item = new WaWebHistoryImportChat();
             item.setImportId(imp.getId());
             item.setWorkspaceId(imp.getWorkspaceId());
@@ -251,6 +255,8 @@ public class HistoryImportRunner {
                 // listed twice, or an earlier tick got this far
             }
         }
+        log.info("history import {}: {} chats listed, {} left out as last active before the range", imp.getId(),
+                rows.size(), inactive);
         counter.refresh(imp.getId());
         return true;
     }
@@ -295,7 +301,7 @@ public class HistoryImportRunner {
         long updated = start.updated();
         int emptyPages = item.getEmptyPages();
         // pages in a row that stored nothing, loaded or not: WhatsApp's word that it loaded cannot be all that holds us
-        int idlePages = 0;
+        int idlePages = item.getIdlePages();
         // consecutive timeouts: a page that arrives resets the count
         int timeouts = item.getTimeouts();
         WaWebChat chat = null;
@@ -329,7 +335,7 @@ public class HistoryImportRunner {
                 timeouts = 0;
                 if (!whileOpen(item, new Update().set("cursor", cursor)
                         .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated))
-                        .set("emptyPages", emptyPages).set("timeouts", 0))) {
+                        .set("emptyPages", emptyPages).set("idlePages", idlePages).set("timeouts", 0))) {
                     return true;
                 }
                 counter.refresh(imp.getId());
@@ -346,6 +352,9 @@ public class HistoryImportRunner {
                     return true;
                 }
                 if (emptyPages >= settings.maxEmptyPages() || idlePages >= settings.maxIdlePages()) {
+                    if (idlePages >= settings.maxIdlePages()) {
+                        log.warn("history import chat {} stored nothing in {} pages, ending it", item.getId(), idlePages);
+                    }
                     finish(item, new Update().set("status", HistoryChatStatus.DONE).set("olderUnavailable", true));
                     return true;
                 }

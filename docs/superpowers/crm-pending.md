@@ -109,7 +109,8 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 ### F. Chat history import
 
 - Whether `chat.t` always covers a chat's newest message is unconfirmed: a chat it lags on by over a day is left out of a dated fetch. See the spec, section 5.
-- On a real phone chats stalled after one message with the cursor on 20 Oct 12:12: `loadEarlierMsgs` is believed to hand back what is already loaded, which is inferred, not seen.
+- On a real phone 5 chats stalled after one message with the cursor on 20 Oct 12:12, none of which was stored, so most likely a WhatsApp notice sent to many chats. `loadEarlierMsgs` is believed to hand back what is already loaded, which is inferred, not seen. The page now compares message ids, and `max-idle-pages` bounds a chat whatever the cause.
+- `interactive` (23 rows with real text), `vcard`, `biz_content_placeholder`, `unknown` and `newsletter_follower_invite` still show as "Unsupported message" in the thread.
 - `@c.us` / `@lid` duplicate-chat limitation (inherited): the same person can end up as two chats.
 - `console:<id>` duplicate limitation (inherited).
 - Pending real-number spike: see spec `2026-10-31-chat-history-import-design.md` §3, "Pending verification".

@@ -24,7 +24,7 @@ class HistoryImportConfigIT {
         assertThat(props.history().pageSize()).isEqualTo(100);
         assertThat(props.history().maxMessagesPerChat()).isEqualTo(5000);
         assertThat(props.history().maxEmptyPages()).isEqualTo(3);
-        assertThat(props.history().maxIdlePages()).isEqualTo(200);
+        assertThat(props.history().maxIdlePages()).isEqualTo(25);
         assertThat(props.history().autoTick()).isFalse();
         assertThat(props.history().pageDelay()).isEqualTo(Duration.ZERO);
     }
