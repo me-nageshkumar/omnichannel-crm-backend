@@ -66,7 +66,12 @@ public class HistoryDeviceClient {
         if (oldest != null && oldest.isObject()) {
             oldestT = longOrNull(oldest, "t");
             JsonNode ids = oldest.get("ids");
-            if (ids != null && ids.isArray()) ids.forEach(i -> oldestIds.add(i.asString()));
+            // a lost id is left out: as "" it would look like a real id to exclude
+            if (ids != null && ids.isArray()) {
+                ids.forEach(i -> {
+                    if (i.isString() && !i.asString().isEmpty()) oldestIds.add(i.asString());
+                });
+            }
         }
         return new HistoryPage(messages, oldestT, oldestIds, result != null && result.path("hasMore").asBoolean(false));
     }

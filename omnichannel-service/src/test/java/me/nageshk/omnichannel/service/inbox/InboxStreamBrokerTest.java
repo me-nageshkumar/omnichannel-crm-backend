@@ -67,6 +67,20 @@ class InboxStreamBrokerTest {
         return new InboxStreamBroker.Viewer(mine(userId), Set.of(numbers));
     }
 
+    @Test
+    void historyGoesOnlyToViewersWhoSeeTheChat() {
+        broker.subscribe(WS, () -> viewer("u1"));
+        broker.subscribe(WS, () -> viewer("u2"));
+
+        WaWebChat chat = chatAssignedTo("u1");
+        chat.setId("c1");
+        broker.pushHistory(WS, chat);
+
+        assertThat(created.get(0).events).hasSize(1);
+        assertThat(created.get(0).events.get(0)).contains("\"chatId\":\"c1\"");
+        assertThat(created.get(1).events).isEmpty();
+    }
+
     private static WaWebChat chatAssignedTo(String userId) {
         return chatAssignedTo(userId, PN);
     }

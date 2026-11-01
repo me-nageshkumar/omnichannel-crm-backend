@@ -6,12 +6,13 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatAction;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 
 /**
- * Spring events of the inbox. {@link InboxIngestService} publishes all six; routing publishes {@code ActionRecorded};
+ * Spring events of the inbox. {@link InboxIngestService} publishes all but {@code HistoryStored}, which the history
+ * import publishes after {@code ChatChanged} for every page that stored something; routing publishes {@code ActionRecorded};
  * assignment publishes {@code ChatChanged} and {@code ActionRecorded}; a console or campaign send publishes
  * {@code MessageUpserted} then {@code ChatChanged}; the media cache publishes {@code MessageUpserted} alone; marking a
  * chat read publishes {@code ChatChanged}. Routing subscribes to {@code ChatCreated}, {@code ChatReopened} and
  * {@code CampaignChatFirstReply}; the live streams subscribe to {@code MessageUpserted} (the message only),
- * {@code ChatChanged} (the chat row, once per change) and {@code ActionRecorded}.
+ * {@code ChatChanged} (the chat row, once per change), {@code HistoryStored} and {@code ActionRecorded}.
  */
 public final class InboxEvents {
 
@@ -43,5 +44,9 @@ public final class InboxEvents {
 
     /** The chat's summary changed (preview, counts, status). */
     public record ChatChanged(WaWebChat chat) {
+    }
+
+    /** A page of a history import stored messages in the chat; an open thread should fetch them. */
+    public record HistoryStored(WaWebChat chat) {
     }
 }

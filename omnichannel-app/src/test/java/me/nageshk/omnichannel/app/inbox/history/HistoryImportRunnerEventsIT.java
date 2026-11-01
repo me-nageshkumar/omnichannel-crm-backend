@@ -16,8 +16,10 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
+import org.springframework.test.context.TestPropertySource;
 
-/** What the import publishes: one {@code ChatChanged} per finished chat and nothing else. */
+/** What the import publishes: for every page that stored something, {@code ChatChanged} then {@code HistoryStored}. */
+@TestPropertySource(properties = "omnichannel.history.page-size=2")
 @Import(HistoryImportRunnerEventsIT.RecorderConfig.class)
 class HistoryImportRunnerEventsIT extends HistoryImportTestBase {
 
@@ -45,6 +47,11 @@ class HistoryImportRunnerEventsIT extends HistoryImportTestBase {
         }
 
         @EventListener
+        void on(InboxEvents.HistoryStored e) {
+            events.add(e);
+        }
+
+        @EventListener
         void on(InboxEvents.ActionRecorded e) {
             events.add(e);
         }
@@ -61,7 +68,7 @@ class HistoryImportRunnerEventsIT extends HistoryImportTestBase {
     @Autowired Recorder recorder;
 
     @Test
-    void finishedChatPublishesChatChangedOnce() throws Exception {
+    void everyPageThatStoredSomethingIsAnnounced() throws Exception {
         try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
             HistoryImportRunnerIT.seedTwoChats(device);
             WaWebHistoryImport imp = importAll(null, null);
@@ -70,9 +77,30 @@ class HistoryImportRunnerEventsIT extends HistoryImportTestBase {
             runner.tick().get(10, SECONDS);
 
             assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
-            assertThat(recorder.events).hasSize(2).allMatch(e -> e instanceof InboxEvents.ChatChanged);
-            assertThat(recorder.events).extracting(e -> ((InboxEvents.ChatChanged) e).chat().getRemoteId())
-                    .containsExactlyInAnyOrder(A, B);
+            // A has three messages: two pages. B has two: one page.
+            assertThat(recorder.events).hasSize(6);
+            assertThat(recorder.events.stream().filter(e -> e instanceof InboxEvents.ChatChanged)
+                    .map(e -> ((InboxEvents.ChatChanged) e).chat().getRemoteId()))
+                    .containsExactlyInAnyOrder(A, A, B);
+            assertThat(recorder.events.stream().filter(e -> e instanceof InboxEvents.HistoryStored)
+                    .map(e -> ((InboxEvents.HistoryStored) e).chat().getRemoteId()))
+                    .containsExactlyInAnyOrder(A, A, B);
+        }
+    }
+
+    @Test
+    void aSecondRunThatStoresNothingAnnouncesNothing() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            HistoryImportRunnerIT.seedTwoChats(device);
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+            WaWebHistoryImport again = importAll(null, null);
+            recorder.events.clear();
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(reload(again).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+            assertThat(recorder.events).isEmpty();
         }
     }
 }

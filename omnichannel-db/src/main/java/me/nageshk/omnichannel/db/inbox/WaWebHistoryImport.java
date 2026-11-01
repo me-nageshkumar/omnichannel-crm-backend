@@ -33,7 +33,7 @@ public class WaWebHistoryImport {
     private Range range;
     /** Identifies the scope, so two active imports of the same chats on one number are rejected. */
     private String scopeKey;
-    /** True while the import is queued or running; the unique index covers active imports only. */
+    /** True while the import is queued, running or paused; the unique index covers active imports only. */
     private boolean active;
     private HistoryImportStatus status;
     private HistoryWaiting waiting;

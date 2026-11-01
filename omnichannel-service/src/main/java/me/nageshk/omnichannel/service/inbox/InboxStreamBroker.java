@@ -133,6 +133,14 @@ public class InboxStreamBroker {
         });
     }
 
+    /** A history import stored messages in the chat: viewers with it open fetch them. */
+    public void pushHistory(String workspaceId, WaWebChat chat) {
+        forEach(workspaceId, (s, viewer) -> {
+            if (!viewer.sees(chat) || !viewer.scope().covers(chat)) return;
+            send(workspaceId, s, "history", Map.of("chatId", chat.getId()));
+        });
+    }
+
     @Scheduled(fixedRate = 25_000)
     public void ping() {
         subscribers.forEach((workspaceId, set) -> set.forEach(s -> {

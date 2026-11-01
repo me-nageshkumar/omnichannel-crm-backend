@@ -46,6 +46,14 @@ class HistoryDeviceClientTest {
     }
 
     @Test
+    void pageDropsIdsTheExtensionLost() {
+        ObjectNode r = mapper.createObjectNode();
+        r.putArray("messages");
+        r.putObject("oldest").put("t", 50L).putArray("ids").addNull().add("").add("a");
+        assertThat(HistoryDeviceClient.page(r).oldestIds()).containsExactly("a");
+    }
+
+    @Test
     void pageWithoutOldest() {
         ObjectNode r = mapper.createObjectNode();
         r.putArray("messages");

@@ -41,7 +41,8 @@ public class HistoryImportViews {
             String chatId = chats.findByPhoneNumberIdAndRemoteId(r.getPhoneNumberId(), r.getRemoteId())
                     .map(WaWebChat::getId).orElse(null);
             return new HistoryChatView(r.getId(), r.getRemoteId(), r.getRequestedPhone(), r.getChatName(), chatId,
-                    r.getStatus(), r.getSkipReason(), r.getError(), r.getCounts(), r.isCapped(), r.getAttemptedAt(),
+                    r.getStatus(), r.getSkipReason(), r.getError(), r.getCounts(), r.isCapped(), r.isOlderUnavailable(),
+                    r.getAttemptedAt(),
                     r.getFinishedAt());
         }).toList();
     }

@@ -111,6 +111,54 @@ class HistoryImportApiIT extends InboxApiTestBase {
     }
 
     @Test
+    void pauseThenPlay() throws Exception {
+        String id = createAll().get("id").asString();
+        JsonNode paused = json(send(post(inbox() + "/history-imports/" + id + "/pause"), managerToken, null)
+                .andExpect(status().isOk()));
+        assertThat(paused.get("status").asString()).isEqualTo("PAUSED");
+        JsonNode played = json(send(post(inbox() + "/history-imports/" + id + "/resume"), managerToken, null)
+                .andExpect(status().isOk()));
+        assertThat(played.get("status").asString()).isEqualTo("QUEUED");
+    }
+
+    @Test
+    void pauseOfAStoppedImportIs409() throws Exception {
+        String id = createAll().get("id").asString();
+        send(post(inbox() + "/history-imports/" + id + "/cancel"), managerToken, null).andExpect(status().isOk());
+        send(post(inbox() + "/history-imports/" + id + "/pause"), managerToken, null)
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void pauseAndPlayNeedTheAuthority() throws Exception {
+        String id = createAll().get("id").asString();
+        send(post(inbox() + "/history-imports/" + id + "/pause"), agentToken, null).andExpect(status().isForbidden());
+        send(post(inbox() + "/history-imports/" + id + "/resume"), agentToken, null).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void activeForAChatIsTheImportThatNamesIt() throws Exception {
+        String chatId = chat("Ann", "919811100001", 1).getId();
+        String url = inbox() + "/chats/" + chatId + "/history-imports";
+        send(get(url + "/active"), managerToken, null).andExpect(status().isNoContent());
+
+        String id = json(send(post(url), managerToken, Map.of()).andExpect(status().isCreated())).get("id").asString();
+        send(post(inbox() + "/history-imports/" + id + "/pause"), managerToken, null).andExpect(status().isOk());
+
+        JsonNode v = json(send(get(url + "/active"), managerToken, null).andExpect(status().isOk()));
+        assertThat(v.get("id").asString()).isEqualTo(id);
+        assertThat(v.get("status").asString()).isEqualTo("PAUSED");
+    }
+
+    @Test
+    void activeForAChatThatIsNotThereIs404() throws Exception {
+        send(get(inbox() + "/chats/nope/history-imports/active"), managerToken, null)
+                .andExpect(status().isNotFound());
+        send(get(inbox() + "/chats/nope/history-imports/active"), agentToken, null)
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void unknownIdIs404() throws Exception {
         send(get(inbox() + "/history-imports/nope"), managerToken, null).andExpect(status().isNotFound());
     }

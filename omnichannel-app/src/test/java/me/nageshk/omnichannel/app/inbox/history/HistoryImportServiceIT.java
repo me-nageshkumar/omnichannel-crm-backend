@@ -266,6 +266,88 @@ class HistoryImportServiceIT {
                 .isInstanceOfSatisfying(CodedException.class, e -> assertThat(e.code()).isEqualTo("HISTORY_IMPORT_STATE"));
     }
 
+    private WaWebChat chatOn(String remoteId) {
+        WaWebChat chat = new WaWebChat();
+        chat.setCustomerId(acme.getId());
+        chat.setWorkspaceId(brand.getId());
+        chat.setPhoneNumberId(number.getId());
+        chat.setRemoteId(remoteId);
+        return chats.save(chat);
+    }
+
+    @Test
+    void activeForChatFindsAPausedImportOfTheChat() {
+        WaWebChat chat = chatOn("5555@lid");
+        WaWebHistoryImport imp = service.createForChat(me, brand.getId(), chat.getId(), null, null).imp();
+        service.pause(brand.getId(), imp.getId());
+        assertThat(service.activeForChat(brand.getId(), chat.getId())).get()
+                .extracting(WaWebHistoryImport::getId).isEqualTo(imp.getId());
+    }
+
+    @Test
+    void activeForChatIgnoresStoppedImportsAndOtherChats() {
+        WaWebChat chat = chatOn("5555@lid");
+        WaWebChat otherChat = chatOn("6666@lid");
+        WaWebHistoryImport imp = service.createForChat(me, brand.getId(), chat.getId(), null, null).imp();
+        assertThat(service.activeForChat(brand.getId(), otherChat.getId())).isEmpty();
+        service.cancel(brand.getId(), imp.getId());
+        assertThat(service.activeForChat(brand.getId(), chat.getId())).isEmpty();
+    }
+
+    @Test
+    void activeForChatIgnoresAnImportOfAllChats() {
+        WaWebChat chat = chatOn("5555@lid");
+        service.create(me, brand.getId(), number.getId(), all(null, null));
+        assertThat(service.activeForChat(brand.getId(), chat.getId())).isEmpty();
+    }
+
+    @Test
+    void pauseOfQueuedPlaysBackToQueued() {
+        WaWebHistoryImport imp = service.create(me, brand.getId(), number.getId(), all(null, null)).imp();
+        WaWebHistoryImport paused = service.pause(brand.getId(), imp.getId());
+        assertThat(paused.getStatus()).isEqualTo(HistoryImportStatus.PAUSED);
+        assertThat(paused.isActive()).isTrue();
+        assertThat(service.resume(brand.getId(), imp.getId()).getStatus()).isEqualTo(HistoryImportStatus.QUEUED);
+    }
+
+    @Test
+    void pauseOfRunningPlaysBackToRunning() {
+        WaWebHistoryImport imp = service.create(me, brand.getId(), number.getId(), all(null, null)).imp();
+        imp.setStatus(HistoryImportStatus.RUNNING);
+        imp.setStartedAt(Instant.now());
+        imports.save(imp);
+        service.pause(brand.getId(), imp.getId());
+        assertThat(service.resume(brand.getId(), imp.getId()).getStatus()).isEqualTo(HistoryImportStatus.RUNNING);
+    }
+
+    @Test
+    void pausedImportCanBeStopped() {
+        WaWebHistoryImport imp = service.create(me, brand.getId(), number.getId(), all(null, null)).imp();
+        service.pause(brand.getId(), imp.getId());
+        WaWebHistoryImport stopped = service.cancel(brand.getId(), imp.getId());
+        assertThat(stopped.getStatus()).isEqualTo(HistoryImportStatus.CANCELLED);
+        assertThat(stopped.isActive()).isFalse();
+    }
+
+    @Test
+    void pausedImportIsReturnedForAnIdenticalRequest() {
+        WaWebHistoryImport imp = service.create(me, brand.getId(), number.getId(), all(null, null)).imp();
+        service.pause(brand.getId(), imp.getId());
+        HistoryImportService.Created again = service.create(me, brand.getId(), number.getId(), all(null, null));
+        assertThat(again.created()).isFalse();
+        assertThat(again.imp().getId()).isEqualTo(imp.getId());
+    }
+
+    @Test
+    void pauseOrPlayInTheWrongStateIsConflict() {
+        WaWebHistoryImport imp = service.create(me, brand.getId(), number.getId(), all(null, null)).imp();
+        assertThatThrownBy(() -> service.resume(brand.getId(), imp.getId()))
+                .isInstanceOfSatisfying(CodedException.class, e -> assertThat(e.code()).isEqualTo("HISTORY_IMPORT_STATE"));
+        service.cancel(brand.getId(), imp.getId());
+        assertThatThrownBy(() -> service.pause(brand.getId(), imp.getId()))
+                .isInstanceOfSatisfying(CodedException.class, e -> assertThat(e.code()).isEqualTo("HISTORY_IMPORT_STATE"));
+    }
+
     @Test
     void listFiltersByNumberAndStatus() {
         service.create(me, brand.getId(), number.getId(), all(null, null));
