@@ -340,13 +340,14 @@ public class HistoryImportRunner {
                     finish(item, new Update().set("status", HistoryChatStatus.DONE).set("olderUnavailable", true));
                     return true;
                 }
-                if (!isRunning(imp.getId())) {
-                    release(item);
-                    return true;
-                }
                 if (!pause(settings.pageDelay())) {
                     release(item);
                     return false;
+                }
+                // after the wait, which is where most pauses and stops land: no page is asked for after one
+                if (!isRunning(imp.getId())) {
+                    release(item);
+                    return true;
                 }
             }
         } catch (InterruptedException e) {

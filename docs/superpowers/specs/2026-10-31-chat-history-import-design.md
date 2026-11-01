@@ -167,8 +167,8 @@ Deleting a phone number deletes both (`InboxCleanup`).
   answers cannot stall the import. `timeouts` counts consecutive timeouts: every page that arrives resets it to 0 (in
   the same conditional write as the cursor), so a chat that times out now and then but keeps making progress is not
   failed. A device that stops answering with its socket open ends each chat `FAILED TIMEOUT` after
-  `maxTimeoutsPerChat` rounds and the import `COMPLETED`; a probe-before-charging refinement is pending; other `RpcException` → item `FAILED` with the code, next chat. On DONE/SKIPPED/FAILED publish one
-  `ChatChanged` if a chat row exists. `pageDelay` between pages, `chatDelay` between chats.
+  `maxTimeoutsPerChat` rounds and the import `COMPLETED`; a probe-before-charging refinement is pending; other `RpcException` → item `FAILED` with the code, next chat. `pageDelay` between pages, `chatDelay`
+  between chats; pause and stop are checked after the wait, so no page is asked for after a click.
 
 ## 6. Ingest (`InboxIngestService.importMessage`)
 
@@ -238,5 +238,6 @@ delays `0`.
   number, so another import there may run meanwhile.
 - The chat header shows only imports that name the chat. Pausing an ALL import from one chat's header would stop every
   other chat, so that is done on the imports page.
-- An open thread merges the newest page per stored page. A page landing between two stretches already loaded by "Load
-  earlier" stays out of view until the thread reloads, which it does when the import completes.
+- An open thread takes the newest page each time a page is stored, and drops what was shown behind it, so messages
+  imported between two stored stretches cannot end up out of reach of "Load earlier". A reader who has loaded earlier
+  pages keeps them, so such a gap can stay until the thread reloads.
