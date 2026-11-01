@@ -39,6 +39,25 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
     }
 
     @Test
+    void importedMessagesKeepWhatsAppsTime() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            String remote = "919811100001@c.us";
+            device.chats.put(remote, List.of(HistoryDevice.msg(remote, false, 1_700_000_100L, 0, "oldest"),
+                    HistoryDevice.msg(remote, false, 1_700_000_200L, 0, "middle"),
+                    HistoryDevice.msg(remote, false, 1_700_000_300L, 0, "newest")));
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(messages.findAll()).extracting(m -> m.getTimestamp().getEpochSecond())
+                    .containsExactlyInAnyOrder(1_700_000_100L, 1_700_000_200L, 1_700_000_300L);
+            WaWebChat chat = chats.findAll().get(0);
+            assertThat(chat.getLastMessageAt().getEpochSecond()).isEqualTo(1_700_000_300L);
+            assertThat(chat.getLastMessage().text()).isEqualTo("newest");
+        }
+    }
+
+    @Test
     void importsAllChatsAndCompletes() throws Exception {
         try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
             seedTwoChats(device);

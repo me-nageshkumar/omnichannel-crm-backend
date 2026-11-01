@@ -119,7 +119,7 @@ class ImportMessageIT {
         p.put("fromMe", fromMe);
         p.put("body", body);
         p.put("type", "chat");
-        p.put("timestamp", t);
+        p.put("t", t);
         p.put("ack", ack);
         return p;
     }

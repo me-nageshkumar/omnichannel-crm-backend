@@ -55,7 +55,7 @@ class HistoryDevice implements AutoCloseable {
                 .put("_serialized", (fromMe ? "true_" : "false_") + remote + "_"
                         + Integer.toHexString(SERIAL.incrementAndGet()).toUpperCase())
                 .put("fromMe", fromMe).put("remote", remote));
-        m.put("fromMe", fromMe).put("body", body).put("type", "chat").put("timestamp", t).put("ack", ack);
+        m.put("fromMe", fromMe).put("body", body).put("type", "chat").put("t", t).put("ack", ack);
         return m;
     }
 
@@ -148,7 +148,7 @@ class HistoryDevice implements AutoCloseable {
     }
 
     private static long t(ObjectNode m) {
-        return m.get("timestamp").asLong();
+        return m.get("t").asLong();
     }
 
     private static String id(ObjectNode m) {

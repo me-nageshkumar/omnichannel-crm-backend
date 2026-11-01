@@ -50,7 +50,7 @@ public class InboxViews {
         WaWebMessage.Media media = m.getMedia();
         WaWebMessage.Location loc = m.getLocation();
         return new MessageView(m.getId(), m.getChatId(), m.getWaMessageId(), m.getDirection(), m.getSource(),
-                m.getType(), m.getBody(),
+                m.getType(), MessageBodies.readable(m.getType(), m.getBody()),
                 media == null ? null
                         : new MessageView.MediaView(media.mimetype(), media.filename(), media.size(),
                                 media.mediaId() != null),

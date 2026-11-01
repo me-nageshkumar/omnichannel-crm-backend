@@ -58,7 +58,7 @@ public class WaWebChat {
     @Version
     private Long version;
 
-    /** Preview of the newest message; {@code text} is the first 120 characters of the body or a type label. */
+    /** Preview of the newest message; {@code text} is the whole body or a type label. */
     public record LastMessage(MessageDirection direction, String type, String text, MessageStatus status) {
     }
 }

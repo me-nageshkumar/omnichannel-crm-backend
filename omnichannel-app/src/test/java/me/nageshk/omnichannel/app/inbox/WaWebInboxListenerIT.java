@@ -535,12 +535,46 @@ class WaWebInboxListenerIT {
     }
 
     @Test
-    void longBodyIsCutInThePreviewOnly() {
+    void longBodyIsKeptWholeInThePreview() {
         ObjectNode p = message("919911111111@c.us", false, T);
         p.put("body", "x".repeat(300));
         create(p);
-        assertThat(onlyChat().getLastMessage().text()).hasSize(120);
+        assertThat(onlyChat().getLastMessage().text()).hasSize(300);
         assertThat(onlyMessage().getBody()).hasSize(300);
+    }
+
+    @Test
+    void rawModelTimeIsTheMessageTime() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.remove("timestamp");
+        p.put("t", 1_600_000_000L);
+        create(p);
+        assertThat(onlyMessage().getTimestamp()).isEqualTo(Instant.ofEpochSecond(1_600_000_000L));
+    }
+
+    @Test
+    void imageThumbnailIsNotStoredAsText() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "image");
+        p.put("directPath", "/v/t62/abc");
+        p.put("mimetype", "image/jpeg");
+        p.put("body", "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof".repeat(10));
+        create(p);
+        assertThat(onlyMessage().getBody()).isNull();
+        assertThat(onlyMessage().getMedia().mimetype()).isEqualTo("image/jpeg");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📷 Photo");
+    }
+
+    @Test
+    void imageCaptionIsStoredAsText() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "image");
+        p.put("directPath", "/v/t62/abc");
+        p.put("body", "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof".repeat(10));
+        p.put("caption", "Look at this");
+        create(p);
+        assertThat(onlyMessage().getBody()).isEqualTo("Look at this");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("Look at this");
     }
 
     @Test
@@ -551,7 +585,7 @@ class WaWebInboxListenerIT {
         p.putObject("location").put("latitude", 12.5).put("longitude", 77.25);
         create(p);
         assertThat(onlyChat().getLastMessage().text()).isEqualTo("📍 Location");
-        assertThat(onlyMessage().getBody()).startsWith("/9j/");
+        assertThat(onlyMessage().getBody()).isNull();
     }
 
     @Test
