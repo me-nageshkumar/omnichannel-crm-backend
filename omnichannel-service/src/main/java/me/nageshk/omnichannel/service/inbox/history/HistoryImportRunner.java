@@ -316,7 +316,8 @@ public class HistoryImportRunner {
                     }
                     cursor = new WaWebHistoryImportChat.Cursor(page.oldestT(), page.oldestIds());
                 }
-                emptyPages = moved ? 0 : emptyPages + 1;
+                // a page that only loaded walked further towards the range: only standing still counts
+                emptyPages = moved || page.loaded() ? 0 : emptyPages + 1;
                 timeouts = 0;
                 if (!whileOpen(item, new Update().set("cursor", cursor)
                         .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated))

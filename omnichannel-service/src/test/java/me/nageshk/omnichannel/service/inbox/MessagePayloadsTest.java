@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.service.inbox;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -14,6 +15,44 @@ class MessagePayloadsTest {
 
     private static ObjectNode message(String type) {
         return new ObjectMapper().createObjectNode().put("type", type);
+    }
+
+    @Test
+    void onlyACallLogHasACall() {
+        assertThat(MessagePayloads.call(message("chat").put("duration", 30))).isNull();
+    }
+
+    @Test
+    void aCallLogSayingNothingIsStillACall() {
+        assertThat(MessagePayloads.call(message("call_log"))).isEqualTo(new WaWebMessage.Call(false, false, null));
+    }
+
+    @Test
+    void aMissedCallComesFromTheSubtype() {
+        assertThat(MessagePayloads.call(message("call_log").put("subtype", "miss")))
+                .isEqualTo(new WaWebMessage.Call(false, true, null));
+        assertThat(MessagePayloads.call(message("call_log").put("subtype", "miss_video")))
+                .isEqualTo(new WaWebMessage.Call(true, true, null));
+    }
+
+    @Test
+    void aCallCanSayItIsVideoAndHowLongItRan() {
+        assertThat(MessagePayloads.call(message("call_log").put("isVideoCall", true).put("callDuration", 125)))
+                .isEqualTo(new WaWebMessage.Call(true, false, 125));
+        assertThat(MessagePayloads.call(message("call_log").put("duration", 30)))
+                .isEqualTo(new WaWebMessage.Call(false, false, 30));
+    }
+
+    @Test
+    void aMissedOutcomeIsMissed() {
+        assertThat(MessagePayloads.call(message("call_log").put("callOutcome", "MISSED")))
+                .isEqualTo(new WaWebMessage.Call(false, true, null));
+    }
+
+    @Test
+    void aDurationOfZeroIsNoDuration() {
+        assertThat(MessagePayloads.call(message("call_log").put("duration", 0)))
+                .isEqualTo(new WaWebMessage.Call(false, false, null));
     }
 
     @Test

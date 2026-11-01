@@ -38,6 +38,10 @@ public class WaWebMessage {
     private Location location;
     /** The choices of a poll, else null; the question is the body. */
     private List<String> pollOptions;
+    /** Who has voted on a poll, one entry per voter; else null. */
+    private List<PollVote> pollVotes;
+    /** What is known of a call, for a {@code call_log}; else null. */
+    private Call call;
     /** WhatsApp's message time. */
     private Instant timestamp;
     /** The highest status reached. */
@@ -69,5 +73,13 @@ public class WaWebMessage {
         private Instant readAt;
         private Instant playedAt;
         private Instant failedAt;
+    }
+
+    /** One voter's current choice on a poll. {@code options} are positions in {@link #pollOptions}. */
+    public record PollVote(String voter, boolean fromMe, List<Integer> options, Instant at) {
+    }
+
+    /** {@code durationSeconds} is null when WhatsApp gave none. */
+    public record Call(boolean video, boolean missed, Integer durationSeconds) {
     }
 }

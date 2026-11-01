@@ -3,7 +3,10 @@ package me.nageshk.omnichannel.service.inbox;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.List;
 import java.util.Optional;
+import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import me.nageshk.omnichannel.common.events.IngestionFailedException;
 import me.nageshk.omnichannel.db.contact.Contact;
@@ -64,6 +67,7 @@ public class InboxIngestService {
 
     private static final ImportResult SKIPPED = new ImportResult(ImportOutcome.SKIPPED, null, null);
 
+    private final AtomicBoolean callFieldsLogged = new AtomicBoolean();
     private final ContactService contacts;
     private final WaWebChatRepository chats;
     private final WaWebMessageRepository messages;
@@ -79,6 +83,20 @@ public class InboxIngestService {
         this.actions = actions;
         this.publisher = publisher;
         this.clock = clock;
+    }
+
+    /** A {@code vote_update} event; empty when the poll is not stored or the vote names no voter. */
+    public Optional<Ingested> ingestPollVote(WhatsAppEvent event) {
+        JsonNode p = event.payload();
+        if (p == null || !p.isObject() || !p.path("pollMessageId").isString()) return Optional.empty();
+        String pollId = p.path("pollMessageId").asString();
+        WaWebMessage.PollVote vote = PollVotes.parse(p);
+        if (vote == null) return Optional.empty();
+        try {
+            return retrying(() -> storeVote(event, pollId, vote));
+        } catch (DataAccessException e) {
+            throw new IngestionFailedException(event.name(), pollId, e);
+        }
     }
 
     /** A {@code message_create} event; empty when it is not a person's chat or has no usable phone or id. */
@@ -118,6 +136,10 @@ public class InboxIngestService {
      */
     public ImportResult importMessage(ImportContext ctx, JsonNode payload) {
         if (payload == null || !payload.isObject()) return SKIPPED;
+        // names only: what a call log really carries is not published, see MessagePayloads.call
+        if ("call_log".equals(MessagePayloads.type(payload)) && callFieldsLogged.compareAndSet(false, true)) {
+            log.info("call_log fields: {}", new TreeSet<>(payload.propertyNames()));
+        }
         String remote = MessagePayloads.remote(payload);
         boolean lid = remote.endsWith("@lid");
         if (!lid && !remote.endsWith("@c.us")) return SKIPPED;
@@ -165,7 +187,8 @@ public class InboxIngestService {
         WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(ctx.phoneNumberId(), waMessageId)
                 .orElse(null);
         if (message != null) {
-            if (!applyAck(message, ack, null)) return new ImportResult(ImportOutcome.UNCHANGED, chat, message);
+            boolean acked = applyAck(message, ack, null);
+            if (!fillIn(message, p) && !acked) return new ImportResult(ImportOutcome.UNCHANGED, chat, message);
             message = messages.save(message);
             if (isLast(chat, message)) {
                 chat.setLastMessage(withStatus(chat.getLastMessage(), message.getStatus()));
@@ -178,12 +201,25 @@ public class InboxIngestService {
                 fromMe, at);
         message.setStatus(MessageStatus.ofAck(ack));
         message.setStatusTimes(null);
+        fillIn(message, p);
         foldPreview(chat, message, at);
         if (message.getDirection() == MessageDirection.IN) chat.setLastInboundAt(later(chat.getLastInboundAt(), at));
         else chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         chat = chats.save(chat);
         message = messages.insert(message);
         return new ImportResult(ImportOutcome.INSERTED, chat, message);
+    }
+
+    /** Takes what only a fetch tells: the votes on a poll, and a call stored before calls were read. */
+    private static boolean fillIn(WaWebMessage message, JsonNode p) {
+        WaWebMessage.Call call = MessagePayloads.call(p);
+        boolean changed = call != null && !call.equals(message.getCall());
+        if (changed) message.setCall(call);
+        List<WaWebMessage.PollVote> votes = message.getPollVotes();
+        for (WaWebMessage.PollVote vote : MessagePayloads.pollVotes(p)) votes = PollVotes.merged(votes, vote);
+        if (votes == message.getPollVotes()) return changed;
+        message.setPollVotes(votes);
+        return true;
     }
 
     /** What earlier attempts of one ingestion already persisted, so a retry still reports it. */
@@ -316,6 +352,23 @@ public class InboxIngestService {
         return Optional.of(new Stored(new Ingested(chat, message, false, false, false), changed, null, false));
     }
 
+    private Optional<Ingested> storeVote(WhatsAppEvent event, String pollId, WaWebMessage.PollVote vote) {
+        WaWebMessage poll = messages.findByPhoneNumberIdAndWaMessageId(event.phoneNumberId(), pollId).orElse(null);
+        WaWebChat chat = poll == null ? null : chats.findById(poll.getChatId()).orElse(null);
+        if (chat == null) {
+            log.debug("dropping vote on unknown poll {} of {}", pollId, event.phoneNumberId());
+            return Optional.empty();
+        }
+        List<WaWebMessage.PollVote> merged = PollVotes.merged(poll.getPollVotes(), vote);
+        if (merged != poll.getPollVotes()) {
+            poll.setPollVotes(merged);
+            poll = messages.save(poll);
+            // the message only, like the media cache: a vote moves neither the chat's preview nor its unread count
+            publisher.publishEvent(new InboxEvents.MessageUpserted(chat, poll, false));
+        }
+        return Optional.of(new Ingested(chat, poll, false, false, false));
+    }
+
     private static WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId, JsonNode p,
             WaWebChat chat, String waMessageId, boolean fromMe, Instant at) {
         WaWebMessage m = new WaWebMessage();
@@ -331,6 +384,7 @@ public class InboxIngestService {
         m.setMedia(MessagePayloads.media(p));
         m.setLocation(MessagePayloads.location(p));
         m.setPollOptions(MessagePayloads.pollOptions(p));
+        m.setCall(MessagePayloads.call(p));
         m.setTimestamp(at);
         m.setStatus(MessageStatus.PENDING);
         m.setAck(MessagePayloads.ack(p));
@@ -416,6 +470,7 @@ public class InboxIngestService {
             case "location" -> "📍 Location";
             case "vcard", "multi_vcard" -> "👤 Contact card";
             case "poll_creation" -> "📊 Poll";
+            case "call_log" -> "📞 Call";
             case "revoked" -> "This message was deleted";
             default -> "Unsupported message";
         };

@@ -157,8 +157,10 @@ Deleting a phone number deletes both (`InboxCleanup`).
   live path's; ingest each message (ascending);
   write of cursor + counts unless the item has ended (not "while RUNNING": a stop hands the item back while its page
   is on the way, and that page is stored and counted), refresh the import's counts, announce the page; stop on
-  `hasMore=false`, `seen >= maxMessagesPerChat` (`capped`), `emptyPages >= maxEmptyPages` (`DONE`, `olderUnavailable`:
-  WhatsApp Web stopped giving older messages without saying there are none, which is no failure of what was stored),
+  `hasMore=false`, `seen >= maxMessagesPerChat` (`capped`), `emptyPages >= maxEmptyPages` (3; a page that loaded messages but kept none is progress and resets the count; `DONE`, `olderUnavailable`:
+  WhatsApp Web stopped giving older messages without saying there are none, which is no failure of what was stored;
+  on the real phone its "no earlier messages" flag stayed false at the true start of a chat, so this is how an
+  all-time fetch normally ends),
   or a pause or stop. A page that leaves the cursor where it was counts as empty and stores nothing, so a repeating
   page cannot loop or inflate `seen`. `CHAT_NOT_FOUND` → `SKIPPED NO_CHAT`;
   `DEVICE_DISCONNECTED` / `SEND_FAILED` (the session closed between pages) / `WHATSAPP_NOT_READY` → item back to
@@ -224,7 +226,7 @@ requestedBy{id,name}, creationTime, startedAt, finishedAt, progressPercent}`; `p
 ## 9. Configuration
 
 `omnichannel.history`: `auto-tick true`, `tick 5s`, `page-size 100`, `max-loads 20`, `page-delay 400ms`,
-`chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 50`, `time-budget 60s`, `max-timeouts-per-chat 3`. Tests: `auto-tick false`,
+`chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 3`, `time-budget 60s`, `max-timeouts-per-chat 3`. Tests: `auto-tick false`,
 delays `0`.
 
 ## 10. Pause, play and stop (added 2026-11-01; my calls, the request skipped the questions)

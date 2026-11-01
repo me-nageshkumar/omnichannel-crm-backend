@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import me.nageshk.omnichannel.db.inbox.HistoryChatStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryImportStatus;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
@@ -193,6 +194,32 @@ class HistoryImportPauseIT extends HistoryImportTestBase {
             assertThat(item.getCounts().seen()).isEqualTo(1);
             assertThat(device.requests("fetchChatHistory")).hasSize(4);
             assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+        }
+    }
+
+    @Test
+    void pagesThatKeepNothingButLoadedMoreKeepTheFetchGoing() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            seedFive(device);
+            WaWebHistoryImport imp = importChats("919811100001");
+            AtomicInteger walking = new AtomicInteger(5);
+            device.override = req -> {
+                if (!"fetchChatHistory".equals(req.method()) || walking.getAndDecrement() <= 0) {
+                    return device.answer(req);
+                }
+                ObjectNode result = MAPPER.createObjectNode();
+                result.putArray("messages");
+                result.putNull("oldest");
+                result.put("hasMore", true).put("loaded", true);
+                return Envelope.response(req.id(), result);
+            };
+
+            runner.tick().get(10, SECONDS);
+
+            WaWebHistoryImportChat item = itemsOf(imp).get(0);
+            assertThat(item.isOlderUnavailable()).isFalse();
+            assertThat(item.getCounts().seen()).isEqualTo(5);
+            assertThat(stored()).hasSize(5);
         }
     }
 

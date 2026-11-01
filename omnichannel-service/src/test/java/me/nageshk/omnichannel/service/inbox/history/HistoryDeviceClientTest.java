@@ -46,6 +46,12 @@ class HistoryDeviceClientTest {
     }
 
     @Test
+    void pageSaysWhetherItLoadedAnything() {
+        assertThat(HistoryDeviceClient.page(mapper.createObjectNode().put("loaded", true)).loaded()).isTrue();
+        assertThat(HistoryDeviceClient.page(mapper.createObjectNode()).loaded()).isFalse();
+    }
+
+    @Test
     void pageDropsIdsTheExtensionLost() {
         ObjectNode r = mapper.createObjectNode();
         r.putArray("messages");

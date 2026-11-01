@@ -41,6 +41,20 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
     }
 
     @Test
+    void aCallShownAsUnsupportedGetsItsLabel() {
+        WaWebChat c = chatWith("call_log", null, "Unsupported message", AT_LAST_MESSAGE);
+        backfill.run(null);
+        assertThat(reload(c).getLastMessage().text()).isEqualTo("📞 Call");
+    }
+
+    @Test
+    void anotherUnsupportedMessageIsLeftAlone() {
+        WaWebChat c = chatWith("whatever", null, "Unsupported message", AT_LAST_MESSAGE);
+        backfill.run(null);
+        assertThat(reload(c).getLastMessage().text()).isEqualTo("Unsupported message");
+    }
+
+    @Test
     void cutPreviewGetsTheWholeMessage() {
         String whole = "x".repeat(300);
         WaWebChat c = chatWith("chat", whole, whole.substring(0, 120), AT_LAST_MESSAGE);

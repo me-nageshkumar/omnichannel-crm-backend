@@ -23,7 +23,9 @@ public class HistoryDeviceClient {
     public record FetchRequest(String chatId, Long before, List<String> excludeIds, Long from, Long to, int limit,
             int maxLoads) {}
 
-    public record HistoryPage(List<JsonNode> messages, Long oldestT, List<String> oldestIds, boolean hasMore) {}
+    /** {@code loaded}: the page brought older messages into WhatsApp Web, whether or not any were kept. */
+    public record HistoryPage(List<JsonNode> messages, Long oldestT, List<String> oldestIds, boolean hasMore,
+            boolean loaded) {}
 
     private final RpcDispatcher dispatcher;
     private final ObjectMapper mapper;
@@ -73,7 +75,8 @@ public class HistoryDeviceClient {
                 });
             }
         }
-        return new HistoryPage(messages, oldestT, oldestIds, result != null && result.path("hasMore").asBoolean(false));
+        return new HistoryPage(messages, oldestT, oldestIds, result != null && result.path("hasMore").asBoolean(false),
+                result != null && result.path("loaded").asBoolean(false));
     }
 
     private static String text(JsonNode n, String field) {
