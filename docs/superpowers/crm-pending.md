@@ -117,12 +117,14 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 - Imported rows have `statusTimes` null; the console must tolerate it.
 - An ALL import whose `listChats` item insert fails partway is never re-listed.
 
-### G. Location and poll messages, not yet seen on a real device
+### G. Location and poll messages
 
-The fixes follow the code of whatsapp-web.js; no real location or poll has passed through them. Before relying on
-polls, send one real poll template to a recipient the user names: console polls used to go out with plain-string
-options, and what WhatsApp did with those was never seen. Also cosmetic: a location template joins name and address
-with ", " where whatsapp-web.js uses a line break, so the recipient may see both as the title.
+Tested on a real phone on 2026-11-01: a shared location and a poll coming in, and a poll template sent from the console,
+whose options show and can be tapped on the phone. Still open:
+- Votes are not built: a tap on a poll option shows on the phone only, and the console never shows results.
+- Not seen on a real phone: a location with a place name, and a location template sent from the console.
+- Cosmetic: a location template joins name and address with ", " where whatsapp-web.js uses a line break, so the
+  recipient may see both as the title.
 
 ## 3. Rules the user set
 
