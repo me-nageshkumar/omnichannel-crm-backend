@@ -37,5 +37,8 @@ the phone only. A fetch also spent its last 20 seconds retrying pages that could
 - A dated fetch noticed it had passed the range only after a load, so with older messages already in memory it never
   did. It now checks before loading, and ends with no empty page.
 - An all-time fetch ends on empty pages, because WhatsApp's flag stayed false at the true start of a chat.
-  `max-empty-pages` goes from 50 to 3: about one second. A load that was merely slow ends the chat early, and a repeat
-  fetch is free.
+  `max-empty-pages` goes from 50 to 3: about one second. Only a page that loaded nothing counts: the page now reports
+  `loaded`, so a range far back keeps walking through pages it keeps nothing from. A load that came back empty when it
+  was merely slow ends the chat early, and a repeat fetch is free.
+- The end of such a fetch reads "Reached the oldest message WhatsApp Web would load", because it cannot tell the start
+  of a chat from a slow load.

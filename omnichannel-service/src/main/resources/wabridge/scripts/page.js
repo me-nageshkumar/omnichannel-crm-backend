@@ -1765,6 +1765,7 @@
         const load = window.require("WAWebChatLoadMessages");
         let all = chat.msgs.getModelsArray();
         let exhausted = false;
+        let loaded = false;
         let loads = 0;
         const oldestLoaded = () => all.reduce((min, m) => m.t < min ? m.t : min, Infinity);
         let pastFrom = from != null && oldestLoaded() < from;
@@ -1775,6 +1776,7 @@
             if (chat.msgs.msgLoadState?.noEarlierMsgs === false) break;
             exhausted = true;
           } else {
+            loaded = true;
             all = chat.msgs.getModelsArray();
             pastFrom = from != null && oldestLoaded() < from;
           }
@@ -1800,6 +1802,8 @@
             })
           ),
           oldest,
+          // a page with nothing to keep can still be progress: it walked further back
+          loaded,
           hasMore: kept.length > limit || !exhausted && !pastFrom
         };
       }
@@ -1888,7 +1892,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "4321faa143c0" : "dev";
+  var BUILD = true ? "73b8a5e4cf3c" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
