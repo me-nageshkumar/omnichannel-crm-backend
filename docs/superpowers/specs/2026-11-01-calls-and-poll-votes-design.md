@@ -50,6 +50,9 @@ the phone only. A fetch also spent its last 20 seconds retrying pages that could
   business first wrote, with no text and no WhatsApp timestamp, because the phone draws the words itself. They added
   three to the chat's unread count and took over its preview from the photo that came with them.
 - A notice is now skipped on both paths: no row, no chat, no unread, no reopen, no routing. The phone still has it.
-- The rows already stored are kept, as deleting needs asking, and show as a quiet "WhatsApp notice" line.
+- By type only, not by WhatsApp's `isNotification` flag: skipping drops the row for good, so a flag on a type not known
+  here must not.
+- The rows already stored are kept, as deleting needs asking, and show as a quiet "WhatsApp notice" line. A chat whose
+  preview was a notice shows the real message before it instead.
 - Showing the real words is not built: it needs a table of `subtype`s, which are not published. Each skipped notice logs
   its subtype and field names.

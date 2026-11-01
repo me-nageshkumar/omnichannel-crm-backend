@@ -22,16 +22,19 @@ class MessagePayloadsTest {
         assertThat(MessagePayloads.isNotice(message("notification_template"))).isTrue();
         assertThat(MessagePayloads.isNotice(message("e2e_notification"))).isTrue();
         assertThat(MessagePayloads.isNotice(message("notification"))).isTrue();
+        assertThat(MessagePayloads.isNotice(message("group_notification"))).isTrue();
+        assertThat(MessagePayloads.isNotice(message("broadcast_notification"))).isTrue();
     }
 
     @Test
-    void whateverWhatsAppMarksAsANotificationIsANotice() {
-        assertThat(MessagePayloads.isNotice(message("something_new").put("isNotification", true))).isTrue();
+    void aFlagAloneDropsNothing() {
+        assertThat(MessagePayloads.isNotice(message("something_new").put("isNotification", true))).isFalse();
+        assertThat(MessagePayloads.isNotice(message("chat").put("isNotification", true))).isFalse();
     }
 
     @Test
     void whatPeopleSendIsNoNotice() {
-        for (String type : new String[] {"chat", "image", "call_log", "poll_creation", "location"}) {
+        for (String type : new String[] {"chat", "image", "call_log", "poll_creation", "location", "revoked"}) {
             assertThat(MessagePayloads.isNotice(message(type))).isFalse();
         }
     }

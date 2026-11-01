@@ -103,15 +103,15 @@ public class InboxIngestService {
     public Optional<Ingested> ingestMessage(WhatsAppEvent event) {
         JsonNode p = event.payload();
         if (p == null || !p.isObject()) return Optional.empty();
+        String remote = MessagePayloads.remote(p);
+        boolean lid = remote.endsWith("@lid");
+        if (!lid && !remote.endsWith("@c.us")) return Optional.empty();
         if (MessagePayloads.isNotice(p)) {
             // names only: which notices arrive, and what they carry, is not published
             log.info("skipping WhatsApp notice {}, subtype {}, fields {}", MessagePayloads.type(p),
                     p.path("subtype").asString(""), new TreeSet<>(p.propertyNames()));
             return Optional.empty();
         }
-        String remote = MessagePayloads.remote(p);
-        boolean lid = remote.endsWith("@lid");
-        if (!lid && !remote.endsWith("@c.us")) return Optional.empty();
         String waMessageId = MessagePayloads.waMessageId(p);
         if (waMessageId.isEmpty()) return Optional.empty();
         Progress progress = new Progress();

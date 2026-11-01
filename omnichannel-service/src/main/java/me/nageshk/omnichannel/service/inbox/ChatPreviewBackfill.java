@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -52,6 +53,21 @@ public class ChatPreviewBackfill implements ApplicationRunner {
         }
     }
 
+    /** A notice no longer counts as the chat's last message: the real one before it takes the preview, time unchanged. */
+    private boolean showRealMessage(WaWebChat chat) {
+        WaWebMessage real = mongo.findOne(new Query(Criteria.where("chatId").is(chat.getId()).and("type")
+                .nin(MessagePayloads.NOTICE_TYPES)).with(Sort.by(Sort.Direction.DESC, "timestamp", "_id")),
+                WaWebMessage.class);
+        if (real == null) return false;
+        WaWebChat.LastMessage shown = new WaWebChat.LastMessage(real.getDirection(), real.getType(),
+                InboxIngestService.preview(real.getType(), real.getBody(),
+                        real.getMedia() == null ? null : real.getMedia().filename()),
+                real.getStatus());
+        return mongo.updateFirst(new Query(Criteria.where("_id").is(chat.getId()).and("lastMessage.type")
+                .is(chat.getLastMessage().type())), new Update().set("lastMessage", shown), WaWebChat.class)
+                .getModifiedCount() > 0;
+    }
+
     /** The types that were saved as "Unsupported message" and now have a label of their own. */
     private static List<String> labelled() {
         List<String> types = new ArrayList<>(MessagePayloads.NOTICE_TYPES);
@@ -61,6 +77,7 @@ public class ChatPreviewBackfill implements ApplicationRunner {
 
     private boolean rebuild(WaWebChat chat) {
         WaWebChat.LastMessage last = chat.getLastMessage();
+        if (MessagePayloads.isNoticeType(last.type()) && showRealMessage(chat)) return true;
         WaWebMessage newest = messages.findFirstByChatIdOrderByTimestampDescIdDesc(chat.getId()).orElse(null);
         if (newest == null || !Objects.equals(newest.getTimestamp(), chat.getLastMessageAt())
                 || !Objects.equals(newest.getType(), last.type())) {

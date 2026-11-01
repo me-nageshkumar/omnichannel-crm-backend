@@ -133,6 +133,7 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
   made while the backend is down is lost, though a later fetch recovers it.
 - The console cannot vote on a poll, only show votes.
 - WhatsApp's own notices (`notification_template` and the like) are no longer stored: they have no text, because the phone draws the words itself. Rows from before this show as "WhatsApp notice". Showing the real words would need a table of `subtype`s, and each skipped notice logs its subtype and field names, which is where to start.
+- A first message arriving as `ciphertext` is dropped by the page (`events.js`), which is older than the notices work. A chat used to appear anyway when a notice came with it; now it appears with the next real message.
 - Cosmetic: a location template joins name and address with ", " where whatsapp-web.js uses a line break, so the
   recipient may see both as the title.
 

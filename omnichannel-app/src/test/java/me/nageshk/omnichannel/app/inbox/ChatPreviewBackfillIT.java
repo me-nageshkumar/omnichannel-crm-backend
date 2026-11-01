@@ -55,6 +55,22 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
     }
 
     @Test
+    void aNoticeGivesWayToTheRealMessageBeforeIt() {
+        WaWebChat c = chatWith("notification_template", "", "Unsupported message", AT_LAST_MESSAGE);
+        WaWebMessage photo = message(c, AT_LAST_MESSAGE - 1, THUMBNAIL);
+        photo.setType("image");
+        messages.save(photo);
+        java.time.Instant at = reload(c).getLastMessageAt();
+
+        backfill.run(null);
+
+        WaWebChat after = reload(c);
+        assertThat(after.getLastMessage().text()).isEqualTo("📷 Photo");
+        assertThat(after.getLastMessage().type()).isEqualTo("image");
+        assertThat(after.getLastMessageAt()).isEqualTo(at);
+    }
+
+    @Test
     void anotherUnsupportedMessageIsLeftAlone() {
         WaWebChat c = chatWith("whatever", null, "Unsupported message", AT_LAST_MESSAGE);
         backfill.run(null);

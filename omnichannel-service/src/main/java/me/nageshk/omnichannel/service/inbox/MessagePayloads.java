@@ -196,9 +196,10 @@ final class MessagePayloads {
 
     /**
      * True for WhatsApp's own notice rather than something a person sent. It has no text, as the phone draws the words
-     * itself, and is not part of the conversation, so a fetch has always left these out.
+     * itself, and is not part of the conversation. By type only: this drops the row for good, so a flag on a type not
+     * known here must not.
      */
     static boolean isNotice(JsonNode p) {
-        return p.path("isNotification").asBoolean(false) || isNoticeType(type(p));
+        return isNoticeType(type(p));
     }
 }
