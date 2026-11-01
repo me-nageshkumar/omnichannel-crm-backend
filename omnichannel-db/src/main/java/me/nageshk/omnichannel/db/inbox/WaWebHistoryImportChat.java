@@ -37,6 +37,8 @@ public class WaWebHistoryImportChat {
     private Counts counts;
     /** True when the per-chat message cap stopped the import of this chat. */
     private boolean capped;
+    /** True when WhatsApp Web stopped giving older messages although it did not say there are none. */
+    private boolean olderUnavailable;
     private int emptyPages;
     /** Pages of this chat that timed out; at {@code maxTimeoutsPerChat} the chat fails as TIMEOUT. */
     private int timeouts;

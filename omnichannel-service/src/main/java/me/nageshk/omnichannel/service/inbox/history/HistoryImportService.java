@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeSet;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
@@ -110,13 +111,35 @@ public class HistoryImportService {
         return create(me, number, HistoryScopeKind.CHATS, List.of(chat.getRemoteId()), List.of(), Map.of(), from, to);
     }
 
-    public WaWebHistoryImport cancel(String workspaceId, String id) {
-        WaWebHistoryImport imp = require(workspaceId, id);
-        if (imp.getStatus() != HistoryImportStatus.QUEUED && imp.getStatus() != HistoryImportStatus.RUNNING) {
-            throw HistoryImportErrors.state("cancelled");
-        }
+    /**
+     * Stops the import from asking the phone for more. A page already on its way is still stored, then the runner hands
+     * its chat back with the cursor.
+     */
+    public WaWebHistoryImport pause(String workspaceId, String id) {
+        require(workspaceId, id);
         long changed = mongo.updateFirst(new Query(Criteria.where("_id").is(id).and("status")
                 .in(HistoryImportStatus.QUEUED, HistoryImportStatus.RUNNING)),
+                new Update().set("status", HistoryImportStatus.PAUSED).set("waiting", null),
+                WaWebHistoryImport.class).getModifiedCount();
+        if (changed == 0) throw HistoryImportErrors.state("paused");
+        return require(workspaceId, id);
+    }
+
+    /** Back to where it was: RUNNING if it had started, else QUEUED. The next tick picks it up from its cursor. */
+    public WaWebHistoryImport resume(String workspaceId, String id) {
+        WaWebHistoryImport imp = require(workspaceId, id);
+        HistoryImportStatus next = imp.getStartedAt() == null ? HistoryImportStatus.QUEUED : HistoryImportStatus.RUNNING;
+        long changed = mongo.updateFirst(new Query(Criteria.where("_id").is(id).and("status")
+                .is(HistoryImportStatus.PAUSED)),
+                new Update().set("status", next).set("waiting", null), WaWebHistoryImport.class).getModifiedCount();
+        if (changed == 0) throw HistoryImportErrors.state("resumed");
+        return require(workspaceId, id);
+    }
+
+    public WaWebHistoryImport cancel(String workspaceId, String id) {
+        require(workspaceId, id);
+        long changed = mongo.updateFirst(new Query(Criteria.where("_id").is(id).and("status")
+                .in(HistoryImportStatus.QUEUED, HistoryImportStatus.RUNNING, HistoryImportStatus.PAUSED)),
                 new Update().set("status", HistoryImportStatus.CANCELLED).set("active", false)
                         .set("finishedAt", Instant.now()).set("waiting", null),
                 WaWebHistoryImport.class).getModifiedCount();
@@ -129,6 +152,16 @@ public class HistoryImportService {
     public WaWebHistoryImport require(String workspaceId, String id) {
         return imports.findByIdAndWorkspaceId(id, workspaceId)
                 .orElseThrow(() -> new NotFoundException("history import not found"));
+    }
+
+    /** The newest queued, running or paused import that names this chat; an import of all chats does not. */
+    public Optional<WaWebHistoryImport> activeForChat(String workspaceId, String chatId) {
+        WaWebChat chat = chats.findByIdAndWorkspaceId(chatId, workspaceId)
+                .orElseThrow(() -> new NotFoundException("chat not found"));
+        Query q = new Query(Criteria.where("workspaceId").is(workspaceId).and("phoneNumberId")
+                .is(chat.getPhoneNumberId()).and("active").is(true).and("scope.remoteIds").is(chat.getRemoteId()))
+                .with(Sort.by(Sort.Order.desc("creationTime"), Sort.Order.desc("_id")));
+        return Optional.ofNullable(mongo.findOne(q, WaWebHistoryImport.class));
     }
 
     public ImportPage list(String workspaceId, String phoneNumberId, HistoryImportStatus status, int page) {

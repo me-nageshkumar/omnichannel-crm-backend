@@ -44,7 +44,7 @@ does not disturb the live inbox.
 | Why pull, not push | RPC responses are bounded (30 s timeout, 24 MB frame) and resumable by cursor; the outbox cap (10 000) would make a push model lossy for "all chats". |
 | Job state | `waWebHistoryImports` (one per request) + `waWebHistoryImportChats` (one per chat), like `campaigns` / `campaignRecipients`. |
 | Idempotency | (1) unique `(phoneNumberId, waMessageId)` on `waWebMessages`; (2) a request identical in `(phoneNumberId, scope, range)` to an active import returns that import (partial unique index on `scopeKey` where `active`); (3) items unique on `(importId, remoteId)`, runner writes conditional on item status. |
-| Ingest side effects | A separate ingest path: no `unreadCount++`, no reopen, no `ChatCreated` (no routing), no `MessageUpserted` (no campaign listener, no per-message SSE). One `ChatChanged` per chat when its import finishes. |
+| Ingest side effects | A separate ingest path: no `unreadCount++`, no reopen, no `ChatCreated` (no routing), no `MessageUpserted` (no campaign listener, no per-message SSE). Every page that stored something publishes one `ChatChanged` and one `HistoryStored` (the `history` stream event), so a chat fills up as pages land and a pause or a stop shows what arrived. |
 | Chats created by the import | `CLOSED`, unassigned, `unreadCount 0`. A later inbound message reopens and routes through the existing path. Existing chats keep their status. |
 | Contact names | An import never renames a contact that already has a name: it walks backwards, so the push names it reads are older than the contact's. It names only a contact without a name. |
 | "All chats" | WhatsApp's own chat list on the phone, filtered to `@c.us` / `@lid`. Unknown contacts and chats are created. |
@@ -94,7 +94,7 @@ Pending verification (as of 2026-11-01; the real-number spike has not run, it is
 - `loadEarlierMsgs` results have `isNewMsg === false` so the live `Msg.add` handler stays silent; if not, the fallback is to filter the live emitter by chat id + message id, never to mute all `Msg.add`.
 - `chat.msgs.msgLoadState.noEarlierMsgs` exists and means what §3 assumes.
 - The lid fallback in the non-creating chat lookup finds chats keyed by lid on current WhatsApp Web builds.
-- Whether WhatsApp trims `chat.msgs` between calls (a deep cursor would then yield empty pages until `FAILED NO_PROGRESS`).
+- Whether WhatsApp trims `chat.msgs` between calls (a deep cursor would then yield empty pages until the chat ends `DONE` with `olderUnavailable`).
 - Memory growth in the tab during an ALL import.
 - The own account's lid (`getMaybeMeLidUser`) is not yet excluded from `listChats`.
 
@@ -106,8 +106,8 @@ id, customerId, workspaceId, phoneNumberId
 scope { kind: ALL | CHATS, remoteIds: [..] (CHATS), phones: [..] (as requested) }
 range { from: Instant?, to: Instant? }
 scopeKey: sha-256 hex of "phoneNumberId|kind|sorted remoteIds joined by ,|from|to"
-active: boolean            // true while QUEUED or RUNNING; drives the partial unique index
-status: QUEUED | RUNNING | COMPLETED | CANCELLED | FAILED
+active: boolean            // true while QUEUED, RUNNING or PAUSED; drives the partial unique index
+status: QUEUED | RUNNING | PAUSED | COMPLETED | CANCELLED | FAILED
 waiting: null | NO_DEVICE | WHATSAPP_NOT_READY
 counts { chatsTotal, chatsDone, chatsSkipped, chatsFailed, messagesSeen, messagesInserted, messagesUpdated }
 requestedByUserId, requestedByName, error
@@ -135,7 +135,8 @@ Deleting a phone number deletes both (`InboxCleanup`).
 - Own scheduler `historyImportScheduler` (2 threads). Tick every `omnichannel.history.tick` (5 s), behind
   `omnichannel.history.auto-tick`. At startup: items `RUNNING → PENDING` (cursor kept, `attemptedAt` cleared).
 - Tick: for each number with an active import (oldest QUEUED/RUNNING first by `creationTime`, then `_id`; one per
-  number), skip if busy, else run `process(import)` on the pool.
+  number), skip if busy, else run `process(import)` on the pool. A PAUSED import is skipped and does not hold up its
+  number.
 - `process` first puts the import's items left `RUNNING` back to `PENDING` (cursor and `attemptedAt` kept): only one
   worker serves a number (`busy`), so such an item was left behind by an earlier pass whose write failed (a DB blip)
   or by the last shutdown, and would otherwise stall the number until a restart. This also covers a first tick that
@@ -145,16 +146,21 @@ Deleting a phone number deletes both (`InboxCleanup`).
   (duplicates ignored), `counts.chatsTotal`. Then, before every chat, resolve the device again (`requireReady`; the
   extension may have reconnected with a new session, or gone: set `waiting` and stop), claim the PENDING item
   attempted least recently (`findAndModify` → RUNNING, sort `attemptedAt` asc then `_id`, so never-attempted items go
-  first) and run `importChat` until none left, the import stops being RUNNING (cancel), the device fails, or the
-  `timeBudget` (60 s) is spent. No PENDING/RUNNING items left → `COMPLETED`, `active=false`, `finishedAt`.
+  first) and run `importChat` until none left, the import stops being RUNNING (pause or stop), the device fails, or the
+  `timeBudget` (60 s) is spent. No PENDING/RUNNING items left → `COMPLETED` (also from PAUSED: a pause on the last page), `active=false`,
+  `finishedAt`.
 - `importChat`: loop `fetchChatHistory(remoteId, cursor, range, pageSize)`, with `to` clamped to
   `min(range.to, creationTime)` in epoch seconds (the creation time alone when `range.to` is null). The first page
   has no `before`, so without the clamp it holds the newest messages; one stored by the import before its live
   `message_create` is processed (typical while a reconnecting extension replays its outbox) would be an existing row
   to the live path, which would then skip `unreadCount++`, reopen and routing. Anything newer than the request is the
   live path's; ingest each message (ascending);
-  conditional write (item still RUNNING) of cursor + counts; stop on `hasMore=false`, `seen >= maxMessagesPerChat`
-  (`capped`), `emptyPages >= maxEmptyPages` (`FAILED NO_PROGRESS`), or cancel. `CHAT_NOT_FOUND` → `SKIPPED NO_CHAT`;
+  write of cursor + counts unless the item has ended (not "while RUNNING": a stop hands the item back while its page
+  is on the way, and that page is stored and counted), refresh the import's counts, announce the page; stop on
+  `hasMore=false`, `seen >= maxMessagesPerChat` (`capped`), `emptyPages >= maxEmptyPages` (`DONE`, `olderUnavailable`:
+  WhatsApp Web stopped giving older messages without saying there are none, which is no failure of what was stored),
+  or a pause or stop. A page that leaves the cursor where it was counts as empty and stores nothing, so a repeating
+  page cannot loop or inflate `seen`. `CHAT_NOT_FOUND` → `SKIPPED NO_CHAT`;
   `DEVICE_DISCONNECTED` / `SEND_FAILED` (the session closed between pages) / `WHATSAPP_NOT_READY` → item back to
   PENDING (cursor and `attemptedAt` kept), `waiting` set, return; a timeout increments the item's `timeouts` and does
   the same, except that at `maxTimeoutsPerChat` (3) the item is `FAILED TIMEOUT` instead, so one chat that never
@@ -186,7 +192,10 @@ which the page never sends, and that hid every imported message taking the impor
 | `GET /history-imports?phoneNumberId=&status=&page=` | `{items, total, page}` |
 | `GET /history-imports/{id}` | view with fresh counts |
 | `GET /history-imports/{id}/chats?status=&page=` | `{items, total, page}` |
-| `POST /history-imports/{id}/cancel` | view; 409 `HISTORY_IMPORT_STATE` unless QUEUED/RUNNING |
+| `POST /history-imports/{id}/pause` | view, PAUSED; 409 `HISTORY_IMPORT_STATE` unless QUEUED/RUNNING |
+| `POST /history-imports/{id}/resume` | view, back to RUNNING if it had started, else QUEUED; 409 unless PAUSED |
+| `POST /history-imports/{id}/cancel` | the Stop button; view; 409 `HISTORY_IMPORT_STATE` unless QUEUED/RUNNING/PAUSED |
+| `GET /chats/{chatId}/history-imports/active` | the newest active import that names the chat, or 204; an ALL import does not count |
 
 Validation (400 `VALIDATION`): `from` after `to`; CHATS with neither phones nor contactIds; more than 500 resolved
 chats; an invalid phone (`Phones.MESSAGE`); a number that is not WhatsApp Web (`phoneNumberId`: "only WhatsApp Web
@@ -202,15 +211,32 @@ requestedBy{id,name}, creationTime, startedAt, finishedAt, progressPercent}`; `p
 - Phone numbers page: kebab "Import chat history…" (with `inbox:import-history`) → modal: All chats / Specific
   contacts (phone numbers, one per line), optional From / To dates, Start → navigates to `/inbox/history-imports`.
 - Chat header: "Fetch history" button → the same modal in chat mode (dates only). While that import runs the header
-  shows "Importing history… N messages so far"; on completion the thread reloads.
+  shows "Importing history… N messages so far" with Pause and Stop, or "History import paused: N messages so far" with
+  Play and Stop; it finds an import already going when a chat opens. An open thread merges each page as it lands (the
+  `history` stream event); on completion the thread reloads.
 - `/inbox/history-imports` (nav "History imports" under Inbox): list with status, progress bar, counts, waiting
-  reason ("Waiting for the extension to connect"), Cancel; polling every 5 s while anything is QUEUED/RUNNING;
+  reason ("Waiting for the extension to connect"), Pause / Play and Stop; polling every 5 s while anything is
+  QUEUED/RUNNING/PAUSED, and once more after a stop because the page on its way still lands;
   expandable row with the chat items.
-- Copy: "Import chat history", "All chats", "Specific contacts", "From", "To", "Start import", "Cancel import",
-  statuses "Queued", "Running", "Completed", "Cancelled", "Failed".
+- Copy: "Import chat history", "All chats", "Specific contacts", "From", "To", "Start import", "Pause", "Play", "Stop",
+  statuses "Queued", "Running", "Paused", "Completed", "Stopped", "Failed".
 
 ## 9. Configuration
 
 `omnichannel.history`: `auto-tick true`, `tick 5s`, `page-size 100`, `max-loads 20`, `page-delay 400ms`,
 `chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 50`, `time-budget 60s`, `max-timeouts-per-chat 3`. Tests: `auto-tick false`,
 delays `0`.
+
+## 10. Pause, play and stop (added 2026-11-01; my calls, the request skipped the questions)
+
+- A pause never drops a page. A page already asked for is stored, counted and announced; the runner then hands the chat
+  back with its cursor. So pages, not single messages, are the unit: with `pageSize` 100 a pause lands up to one page
+  after the click. The rule that holds is that what the console counts is what the inbox has.
+- Stop is the existing cancel under a new name. It asks for no confirmation, unlike the Cancel it replaces: what was
+  fetched stays and the same fetch can be started again, re-reading at no cost.
+- A paused import stays `active`, so an identical request returns it instead of starting another. It does not hold its
+  number, so another import there may run meanwhile.
+- The chat header shows only imports that name the chat. Pausing an ALL import from one chat's header would stop every
+  other chat, so that is done on the imports page.
+- An open thread merges the newest page per stored page. A page landing between two stretches already loaded by "Load
+  earlier" stays out of view until the thread reloads, which it does when the import completes.

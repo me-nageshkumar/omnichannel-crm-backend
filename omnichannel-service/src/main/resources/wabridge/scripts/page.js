@@ -25,9 +25,9 @@
     mod
   ));
 
-  // ../whatsapp-web.js/src/util/Injected/Utils.js
+  // ../../../whatsapp-web.js/src/util/Injected/Utils.js
   var require_Utils = __commonJS({
-    "../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
+    "../../../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
       "use strict";
       exports.LoadUtils = () => {
         window.WWebJS = {};
@@ -1263,9 +1263,9 @@
     }
   });
 
-  // ../whatsapp-web.js/src/util/Constants.js
+  // ../../../whatsapp-web.js/src/util/Constants.js
   var require_Constants = __commonJS({
-    "../whatsapp-web.js/src/util/Constants.js"(exports) {
+    "../../../whatsapp-web.js/src/util/Constants.js"(exports) {
       "use strict";
       exports.WhatsWebURL = "https://web.whatsapp.com/";
       exports.DefaultOptions = {
@@ -1504,23 +1504,24 @@
 
   // src/page/model.js
   var serializedOf = (wid) => wid && typeof wid === "object" ? wid._serialized : wid;
-  function normalizeMessageModel(model) {
-    if (!model || typeof model !== "object" || !model.id || typeof model.id !== "object")
-      return model;
-    const id = model.id;
-    if (typeof id._serialized === "string" && id._serialized) return model;
+  function messageKey(id) {
+    if (!id || typeof id !== "object") return null;
+    if (typeof id._serialized === "string" && id._serialized)
+      return id._serialized;
     const mangled = Object.entries(id).find(
       ([key, value]) => key !== "_serialized" && typeof value === "string" && /^(true|false)_.+_[0-9A-F]+/i.test(value)
     );
-    if (mangled) {
-      id._serialized = mangled[1];
-      return model;
-    }
+    if (mangled) return mangled[1];
     const remote = serializedOf(id.remote);
-    if (remote && id.id !== void 0) {
-      const participant = serializedOf(id.participant);
-      id._serialized = `${Boolean(id.fromMe)}_${remote}_${id.id}${participant ? `_${participant}` : ""}`;
-    }
+    if (!remote || id.id === void 0) return null;
+    const participant = serializedOf(id.participant);
+    return `${Boolean(id.fromMe)}_${remote}_${id.id}${participant ? `_${participant}` : ""}`;
+  }
+  function normalizeMessageModel(model) {
+    if (!model || typeof model !== "object" || !model.id || typeof model.id !== "object")
+      return model;
+    const key = messageKey(model.id);
+    if (key) model.id._serialized = key;
     return model;
   }
 
@@ -1730,7 +1731,7 @@
           );
         }
         const exclude = new Set(excludeIds);
-        const keep = (m) => !m.isNotification && m.type !== "ciphertext" && (before == null || m.t <= before) && !exclude.has(m.id?._serialized) && (to == null || m.t <= to) && (from == null || m.t >= from);
+        const keep = (m) => !m.isNotification && m.type !== "ciphertext" && (before == null || m.t <= before) && !exclude.has(messageKey(m.id)) && (to == null || m.t <= to) && (from == null || m.t >= from);
         const load = window.require("WAWebChatLoadMessages");
         let all = chat.msgs.getModelsArray();
         let exhausted = false;
@@ -1752,7 +1753,7 @@
         const page = kept.slice(-limit);
         let oldest = null;
         if (page.length) {
-          const pageIds = page.filter((m) => m.t === page[0].t).map((m) => m.id._serialized);
+          const pageIds = page.filter((m) => m.t === page[0].t).map((m) => messageKey(m.id)).filter(Boolean);
           const ids = before != null && page[0].t === before ? [.../* @__PURE__ */ new Set([...excludeIds, ...pageIds])] : pageIds;
           oldest = { t: page[0].t, ids };
         }
@@ -1823,7 +1824,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "2b68afab80a7" : "dev";
+  var BUILD = true ? "38d46714e5a8" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {

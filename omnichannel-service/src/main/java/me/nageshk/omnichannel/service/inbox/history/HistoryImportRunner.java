@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -57,9 +58,10 @@ import tools.jackson.databind.JsonNode;
 /**
  * Runs the active history imports, the oldest per number, on {@code historyImportScheduler}: claims each chat in turn
  * and walks its history backwards page by page, saving the cursor after every page, so a stop at any point (cancel,
- * disconnect, restart, time budget) resumes where it left off. One page is in flight per device. Every write to a chat
- * item after a device call is conditional on the item still being RUNNING, so a cancel or release that got there
- * first wins. The only event published is one {@code ChatChanged} per finished chat.
+ * disconnect, restart, time budget) resumes where it left off. One page is in flight per device. What a page brought
+ * is stored, counted and announced before anything else is looked at, so a pause or a stop never loses a page that was
+ * on its way: every page that stored something publishes {@code ChatChanged} and {@code HistoryStored}, and nothing
+ * else is published.
  */
 @Service
 public class HistoryImportRunner {
@@ -114,6 +116,8 @@ public class HistoryImportRunner {
             Set<String> numbers = new HashSet<>();
             List<CompletableFuture<Void>> started = new ArrayList<>();
             for (WaWebHistoryImport imp : imports.findByActiveTrueOrderByCreationTimeAscIdAsc()) {
+                // paused imports stay active, but must not hold up the number
+                if (imp.getStatus() == HistoryImportStatus.PAUSED) continue;
                 String number = imp.getPhoneNumberId();
                 if (!numbers.add(number) || !busy.add(number)) continue;
                 try {
@@ -259,10 +263,11 @@ public class HistoryImportRunner {
                 WaWebHistoryImportChat.class);
     }
 
-    /** A RUNNING import without a PENDING or RUNNING chat is COMPLETED. */
+    /** A RUNNING import without a PENDING or RUNNING chat is COMPLETED; so is one paused on its last page. */
     private void completeIfDone(String importId) {
         if (items.existsByImportIdAndStatusIn(importId, OPEN)) return;
-        boolean completed = mongo.updateFirst(byIdIn(importId, HistoryImportStatus.RUNNING),
+        boolean completed = mongo.updateFirst(new Query(Criteria.where("_id").is(importId).and("status")
+                .in(HistoryImportStatus.RUNNING, HistoryImportStatus.PAUSED)),
                 new Update().set("status", HistoryImportStatus.COMPLETED).set("active", false)
                         .set("finishedAt", clock.instant()).set("waiting", null),
                 WaWebHistoryImport.class).getMatchedCount() > 0;
@@ -287,6 +292,8 @@ public class HistoryImportRunner {
         // consecutive timeouts: a page that arrives resets the count
         int timeouts = item.getTimeouts();
         WaWebChat chat = null;
+        // something was stored that the open consoles have not been told about
+        boolean unannounced = false;
         try {
             while (true) {
                 // never past the cap: the page holds the newest messages before the cursor
@@ -294,34 +301,43 @@ public class HistoryImportRunner {
                 HistoryPage page = client.fetchChatHistory(device, new FetchRequest(item.getRemoteId(),
                         cursor == null ? null : cursor.beforeT(), cursor == null ? List.of() : cursor.excludeIds(),
                         from, to, limit, settings.maxLoads())).get();
-                for (JsonNode m : page.messages()) {
-                    ImportResult r = ingest.importMessage(ctx, m);
-                    seen++;
-                    if (r.outcome() == ImportOutcome.INSERTED) inserted++;
-                    else if (r.outcome() == ImportOutcome.UPDATED) updated++;
-                    if (r.chat() != null) chat = r.chat();
-                }
-                // an empty page that may have more repeats the same cursor
-                if (!page.messages().isEmpty()) {
+                // a page that leaves the cursor where it was holds what the last one held: it is no progress
+                boolean moved = !page.messages().isEmpty() && !repeats(page, cursor);
+                if (moved) {
+                    for (JsonNode m : page.messages()) {
+                        ImportResult r = ingest.importMessage(ctx, m);
+                        seen++;
+                        if (r.outcome() == ImportOutcome.INSERTED) inserted++;
+                        else if (r.outcome() == ImportOutcome.UPDATED) updated++;
+                        if (r.outcome() == ImportOutcome.INSERTED || r.outcome() == ImportOutcome.UPDATED) {
+                            unannounced = true;
+                        }
+                        if (r.chat() != null) chat = r.chat();
+                    }
                     cursor = new WaWebHistoryImportChat.Cursor(page.oldestT(), page.oldestIds());
                 }
-                emptyPages = page.messages().isEmpty() ? emptyPages + 1 : 0;
+                emptyPages = moved ? 0 : emptyPages + 1;
                 timeouts = 0;
-                if (!whileRunning(item, new Update().set("cursor", cursor)
+                if (!whileOpen(item, new Update().set("cursor", cursor)
                         .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated))
                         .set("emptyPages", emptyPages).set("timeouts", 0))) {
                     return true;
                 }
+                counter.refresh(imp.getId());
+                if (unannounced) {
+                    announce(item, chat);
+                    unannounced = false;
+                }
                 if (!page.hasMore()) {
-                    finish(item, chat, new Update().set("status", HistoryChatStatus.DONE));
+                    finish(item, new Update().set("status", HistoryChatStatus.DONE));
                     return true;
                 }
                 if (seen >= settings.maxMessagesPerChat()) {
-                    finish(item, chat, new Update().set("status", HistoryChatStatus.DONE).set("capped", true));
+                    finish(item, new Update().set("status", HistoryChatStatus.DONE).set("capped", true));
                     return true;
                 }
                 if (emptyPages >= settings.maxEmptyPages()) {
-                    finish(item, chat, new Update().set("status", HistoryChatStatus.FAILED).set("error", "NO_PROGRESS"));
+                    finish(item, new Update().set("status", HistoryChatStatus.DONE).set("olderUnavailable", true));
                     return true;
                 }
                 if (!isRunning(imp.getId())) {
@@ -340,18 +356,18 @@ public class HistoryImportRunner {
         } catch (ExecutionException | RuntimeException e) {
             Throwable cause = unwrap(e);
             if (cause instanceof RpcException rpc && RpcException.CHAT_NOT_FOUND.equals(rpc.code())) {
-                finish(item, chat, new Update().set("status", HistoryChatStatus.SKIPPED)
+                finish(item, new Update().set("status", HistoryChatStatus.SKIPPED)
                         .set("skipReason", HistorySkipReason.NO_CHAT));
                 return true;
             }
             if (cause instanceof TimeoutException) {
                 int count = timeouts + 1;
                 if (count >= settings.maxTimeoutsPerChat()) {
-                    finish(item, chat, new Update().set("status", HistoryChatStatus.FAILED).set("error", "TIMEOUT")
+                    finish(item, new Update().set("status", HistoryChatStatus.FAILED).set("error", "TIMEOUT")
                             .set("timeouts", count));
                     return true;
                 }
-                whileRunning(item, new Update().set("status", HistoryChatStatus.PENDING).set("timeouts", count));
+                whileOpen(item, new Update().set("status", HistoryChatStatus.PENDING).set("timeouts", count));
                 setWaiting(imp.getId(), HistoryWaiting.WHATSAPP_NOT_READY);
                 return false;
             }
@@ -366,31 +382,49 @@ public class HistoryImportRunner {
             if (!(cause instanceof RpcException)) {
                 log.warn("history import of chat {} failed", item.getId(), cause);
             }
-            finish(item, chat, new Update().set("status", HistoryChatStatus.FAILED).set("error", error)
+            finish(item, new Update().set("status", HistoryChatStatus.FAILED).set("error", error)
                     .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated)));
             return true;
+        } finally {
+            // a page that failed half way stored what it stored
+            if (unannounced) announce(item, chat);
         }
     }
 
-    /** Records the item's end and announces its chat once, if the import made or found one. */
-    private void finish(WaWebHistoryImportChat item, WaWebChat seen, Update update) {
-        if (!whileRunning(item, update.set("finishedAt", clock.instant()))) return;
-        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(item.getPhoneNumberId(), item.getRemoteId())
-                .orElse(seen);
-        if (chat != null) events.publishEvent(new InboxEvents.ChatChanged(chat));
+    /** True when the page ends where the cursor already is, which only a repeat of the last page can. */
+    private static boolean repeats(HistoryPage page, WaWebHistoryImportChat.Cursor cursor) {
+        if (cursor == null || !Objects.equals(cursor.beforeT(), page.oldestT())) return false;
+        Set<String> seenIds = cursor.excludeIds() == null ? Set.of() : new HashSet<>(cursor.excludeIds());
+        return seenIds.equals(new HashSet<>(page.oldestIds()));
     }
 
-    /** Applies the update if the item is still RUNNING; false when a cancel or release got there first. */
-    private boolean whileRunning(WaWebHistoryImportChat item, Update update) {
-        boolean matched = mongo.updateFirst(new Query(Criteria.where("_id").is(item.getId()).and("status")
-                .is(HistoryChatStatus.RUNNING)), update, WaWebHistoryImportChat.class).getMatchedCount() > 0;
-        if (!matched) log.info("history import chat {} is no longer RUNNING", item.getId());
+    private void finish(WaWebHistoryImportChat item, Update update) {
+        whileOpen(item, update.set("finishedAt", clock.instant()));
+    }
+
+    /** Tells the open consoles the chat changed, and that an open thread has new messages to fetch. */
+    private void announce(WaWebHistoryImportChat item, WaWebChat seen) {
+        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(item.getPhoneNumberId(), item.getRemoteId())
+                .orElse(seen);
+        if (chat == null) return;
+        events.publishEvent(new InboxEvents.ChatChanged(chat));
+        events.publishEvent(new InboxEvents.HistoryStored(chat));
+    }
+
+    /**
+     * Applies the update unless the item has ended. A stop hands the item back while its page is still on the way, so
+     * this does not ask for RUNNING: that page is stored, and its cursor and counts must be kept with it.
+     */
+    private boolean whileOpen(WaWebHistoryImportChat item, Update update) {
+        boolean matched = mongo.updateFirst(new Query(Criteria.where("_id").is(item.getId()).and("status").in(OPEN)),
+                update, WaWebHistoryImportChat.class).getMatchedCount() > 0;
+        if (!matched) log.info("history import chat {} has ended", item.getId());
         return matched;
     }
 
     /** Back to PENDING with its cursor, for the next tick; {@code attemptedAt} stays, so it is claimed last. */
     private void release(WaWebHistoryImportChat item) {
-        whileRunning(item, new Update().set("status", HistoryChatStatus.PENDING));
+        whileOpen(item, new Update().set("status", HistoryChatStatus.PENDING));
     }
 
     // ---- helpers ----

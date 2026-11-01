@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.service.inbox.InboxEvents.ActionRecorded;
 import me.nageshk.omnichannel.service.inbox.InboxEvents.ChatChanged;
+import me.nageshk.omnichannel.service.inbox.InboxEvents.HistoryStored;
 import me.nageshk.omnichannel.service.inbox.InboxEvents.MessageUpserted;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -46,6 +47,19 @@ public class InboxPushListener {
             broker.push(chat.getWorkspaceId(), chat, views.chat(chat));
         } catch (RuntimeException e) {
             log.warn("Could not push chat {} to the inbox stream", event.chat().getId(), e);
+        }
+    }
+
+    @EventListener
+    public void on(HistoryStored event) {
+        try {
+            WaWebChat chat = event.chat();
+            if (broker.subscribers(chat.getWorkspaceId()) == 0) {
+                return;
+            }
+            broker.pushHistory(chat.getWorkspaceId(), chat);
+        } catch (RuntimeException e) {
+            log.warn("Could not push the history of chat {} to the inbox stream", event.chat().getId(), e);
         }
     }
 

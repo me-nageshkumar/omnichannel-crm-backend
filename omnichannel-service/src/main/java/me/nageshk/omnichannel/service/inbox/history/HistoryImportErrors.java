@@ -9,7 +9,7 @@ public final class HistoryImportErrors {
     private HistoryImportErrors() {
     }
 
-    /** {@code verb} is cancelled. */
+    /** {@code verb} is what could not be done: cancelled, paused or resumed. */
     public static CodedException state(String verb) {
         return new CodedException(HttpStatus.CONFLICT, "HISTORY_IMPORT_STATE", null,
                 "This import cannot be " + verb + " now.");

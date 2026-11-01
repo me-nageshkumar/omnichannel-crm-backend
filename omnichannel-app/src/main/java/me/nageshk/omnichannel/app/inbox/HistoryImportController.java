@@ -57,6 +57,13 @@ class HistoryImportController {
         return respond(service.createForChat(me, workspaceId, chatId, req.from(), req.to()));
     }
 
+    @GetMapping("/chats/{chatId}/history-imports/active")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:import-history')")
+    ResponseEntity<HistoryImportView> activeForChat(@PathVariable String workspaceId, @PathVariable String chatId) {
+        return service.activeForChat(workspaceId, chatId).map(views::view).map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
     @GetMapping("/history-imports")
     @PreAuthorize("@access.has(#workspaceId, 'inbox:import-history')")
     HistoryImportService.ImportPage list(@PathVariable String workspaceId,
@@ -79,6 +86,18 @@ class HistoryImportController {
     HistoryImportService.ChatPage chats(@PathVariable String workspaceId, @PathVariable String id,
             @RequestParam(required = false) HistoryChatStatus status, @RequestParam(defaultValue = "0") int page) {
         return service.chats(workspaceId, id, status, page);
+    }
+
+    @PostMapping("/history-imports/{id}/pause")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:import-history')")
+    HistoryImportView pause(@PathVariable String workspaceId, @PathVariable String id) {
+        return views.view(service.pause(workspaceId, id));
+    }
+
+    @PostMapping("/history-imports/{id}/resume")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:import-history')")
+    HistoryImportView resume(@PathVariable String workspaceId, @PathVariable String id) {
+        return views.view(service.resume(workspaceId, id));
     }
 
     @PostMapping("/history-imports/{id}/cancel")

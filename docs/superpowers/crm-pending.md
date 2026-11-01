@@ -115,6 +115,8 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 - The claim sort `(attemptedAt, _id)` has no dedicated index: `(importId, status, _id)` serves the claim filter and the PENDING items of one import are sorted in memory. The `(status, attemptedAt)` index serves `releaseStuck`, not the claim.
 - `HistoryImportViews` does N+1 lookups (phone number per import, chat per item).
 - Imported rows have `statusTimes` null; the console must tolerate it.
+- A chat that ends with "WhatsApp Web gave no older messages" (`olderUnavailable`) shows it only in the chat's row on the imports page, not in the chat header, and costs `max-empty-pages` retries (about 20 s) first. Whether older messages exist on the phone in that case is unknown.
+- Never read `m.id._serialized` from a live message model: use `messageKey` (`page/model.js`). Newer WhatsApp Web builds mangle it, and it reads as undefined rather than failing.
 - An ALL import whose `listChats` item insert fails partway is never re-listed.
 
 ### G. Location and poll messages
