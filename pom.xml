@@ -34,6 +34,13 @@
     <totp.version>1.7.1</totp.version>
     <jmustache.version>1.16</jmustache.version>
     <flapdoodle.version>4.33.0</flapdoodle.version>
+    <!--
+      Test classes run in this many processes at once, each with its own Spring contexts and embedded MongoDB, so they
+      cannot see each other's data. Threads in one process would not do: tests wipe whole collections in their setup.
+      Measured on 2,052 tests, 12 cores, 16 GB: 1 process 13.7 min, 4 processes 5.1 min, 6 processes 4.2 min for 1 GB
+      more. -DforkCount=1 runs them one at a time, which is easier to read when debugging.
+    -->
+    <forkCount>4</forkCount>
     <!-- Only omnichannel-app has a main class; ./mvnw -pl omnichannel-app -am spring-boot:run skips the others. -->
     <spring-boot.run.skip>true</spring-boot.run.skip>
   </properties>

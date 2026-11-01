@@ -170,7 +170,8 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
 B=/Users/nagesh/Projects/WhatsAppWebJS/SCM/omnichannel-crm-backend
 F=/Users/nagesh/Projects/WhatsAppWebJS/SCM/omnichannel-crm-frontend
 
-# Backend tests (embedded Mongo), from the repo or worktree root
+# Backend tests (embedded Mongo), from the repo or worktree root. Runs in 4 processes (`forkCount` in the pom), about 5 min;
+# run it once before a merge, and only the tests that matter while fixing. -DforkCount=1 runs one class at a time.
 ./mvnw -q verify
 ./mvnw -q -pl omnichannel-app -am test -Dtest=SomeIT -Dsurefire.failIfNoSpecifiedTests=false
 ./mvnw -q -pl omnichannel-app -am test '-Dtest=**/crm/**/*' -Dsurefire.failIfNoSpecifiedTests=false
