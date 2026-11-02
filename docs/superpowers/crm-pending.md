@@ -172,9 +172,8 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
 - **A judgement call:** chats a fetch creates start CLOSED and unassigned, so a fetch never sends old conversations to
   agents. After the inbox reset that left the Open tab empty. Making them land in Open is small, but every fetched chat
   would then look like work to do. The user wants to talk about it next.
-- **A judgement call:** on 2026-10-31 the history import was fast-forwarded into `main` and its branches deleted unpushed,
-  against the `--no-ff` rule. Fixing it means rewriting pushed history, so it waits on the user, who wants to talk
-  about it next.
+- Decided 2026-11-02: the history import that was fast-forwarded into `main` on 2026-10-31 (about 20 backend, 8 console
+  and 3 extension commits with no merge commit) **stays as it is**. The user chose not to rewrite pushed history.
 - The user's rule for a fetch (2026-11-02): it syncs the inbox with WhatsApp Web **keeping the database's state**. A
   stored message keeps its sender, source and text; only its status moves up and missing details are filled in. A
   stored chat keeps its status, agent, team and unread count. Pinned by `ImportMessageIT`
