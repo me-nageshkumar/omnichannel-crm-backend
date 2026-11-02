@@ -24,8 +24,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * When a fetch of a chat ends, opens the chat and routes it like a new one if it waits on us: the fetch created it,
- * the page says it is not with an official business (enterprise, or verified high; a shop on the Business app is
- * not), the fetch reaches the time it was asked for, the contact wrote within {@code waitingWindow}, and it is unread
+ * the page says it is not with an official business (on the business API, or a bot; no one on the Business app is), the fetch reaches the time it was asked for, the contact wrote within {@code waitingWindow}, and it is unread
  * on the phone or the contact wrote last. Anything else stays as the fetch left it: a created chat Closed and
  * unassigned, an existing one in whatever state the inbox gave it.
  */

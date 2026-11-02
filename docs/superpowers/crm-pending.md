@@ -171,8 +171,11 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
 
 - Decided and built 2026-11-02: a chat a fetch **creates** lands in Open and is routed like a new chat when it waits on
   us: unread on the phone (a chat marked unread by hand counts) or the contact wrote last, the contact wrote within 7
-  days (`waiting-window`), and it is not an official business (an enterprise account, or verified "high"; a shop on
-  the WhatsApp Business app counts as a person, the user's choice). Else it stays
+  days (`waiting-window`), and it is not an official business: an account on the business API (enterprise) or a bot
+  such as Meta AI. Anyone on the WhatsApp Business app counts as a person, even verified high (Meta Verified), by the
+  user's choice. On the real phone on 2026-11-02: 276 of 653 person chats official (206 verified high, 66 medium, 3
+  unverified, all enterprise; plus Meta AI); 4 Business-app users verified high and 78 others count as people. Else it
+  stays
   Closed and unassigned. Decided once, when the chat's fetch ends DONE; a stopped or failed chat is not decided, and a
   chat that existed before the fetch is never touched. The "Routed" line says "fetched from WhatsApp, waiting for a
   reply". Opens nothing when the page does not say the chat is a person (a page script from before), nor when the

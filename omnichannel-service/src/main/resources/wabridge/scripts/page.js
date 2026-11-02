@@ -1548,9 +1548,9 @@
       if (!contact) return false;
       if (contact.isEnterprise === true) return true;
       const getters = window.require("WAWebContactGetters");
-      if (getters.getIsEnterprise?.(contact)) return true;
-      const level = getters.getVerifiedLevel?.(contact);
-      return level === 2 || String(level).toLowerCase() === "high";
+      return Boolean(
+        getters.getIsEnterprise?.(contact) || getters.getIsBot?.(contact)
+      );
     } catch {
       return false;
     }
@@ -1929,7 +1929,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "96193b71c953" : "dev";
+  var BUILD = true ? "6d4028227cba" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
