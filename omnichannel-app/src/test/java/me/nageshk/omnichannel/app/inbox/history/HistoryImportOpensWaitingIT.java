@@ -197,4 +197,77 @@ class HistoryImportOpensWaitingIT extends HistoryImportTestBase {
             assertThat(theChat().getStatus()).isEqualTo(ChatStatus.CLOSED);
         }
     }
+
+    private static final String L = "157891872989380@lid";
+
+    private WaWebChat chatOf(String remote) {
+        return chats.findByPhoneNumberIdAndRemoteId(n1.getId(), remote).orElseThrow();
+    }
+
+    @Test
+    void aChatUnreadOnThePhoneOpensThoughWeWroteLast() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, ago(Duration.ofHours(3)), 1, "price?"),
+                    HistoryDevice.msg(A, true, ago(Duration.ofHours(2)), 3, "Rs 500")));
+            device.unread.put(A, 1);
+
+            fetchAll();
+
+            WaWebChat chat = theChat();
+            assertThat(chat.getStatus()).isEqualTo(ChatStatus.OPEN);
+            assertThat(chat.getUnreadCount()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void theChatTheFetchStoredUnderAnotherIdIsTheOneOpened() throws Exception {
+        // the person is listed under their number, but WhatsApp keeps their messages under their lid
+        WaWebChat old = new WaWebChat();
+        old.setCustomerId(acme.getId());
+        old.setWorkspaceId(brand.getId());
+        old.setPhoneNumberId(n1.getId());
+        old.setRemoteId(A);
+        old.setStatus(ChatStatus.CLOSED);
+        old.setLastInboundAt(START.minus(Duration.ofHours(5)));
+        old.setLastMessageAt(START.minus(Duration.ofHours(5)));
+        old.setLastMessage(new WaWebChat.LastMessage(me.nageshk.omnichannel.db.inbox.MessageDirection.IN, "chat",
+                "earlier", null));
+        chats.save(old);
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of(HistoryDevice.msg(L, false, ago(Duration.ofHours(1)), 1, "hello")));
+            device.unread.put(A, 1);
+
+            fetchAll();
+
+            assertThat(chatOf(L).getStatus()).isEqualTo(ChatStatus.OPEN);
+            assertThat(chatOf(A).getStatus()).isEqualTo(ChatStatus.CLOSED);
+        }
+    }
+
+    @Test
+    void aPageScriptThatDoesNotSayWhetherItIsABusinessOpensNothing() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, ago(Duration.ofHours(1)), 1, "Your OTP is 1234")));
+            device.oldPageScript = true;
+
+            fetchAll();
+
+            assertThat(theChat().getStatus()).isEqualTo(ChatStatus.CLOSED);
+        }
+    }
+
+    @Test
+    void aFetchThatEndsBeforeNowOpensNothing() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            // our reply of an hour ago is after the range, so the fetch cannot see it
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, ago(Duration.ofDays(2)), 1, "price?"),
+                    HistoryDevice.msg(A, true, ago(Duration.ofHours(1)), 3, "Rs 500")));
+            device.unread.put(A, 0);
+
+            importAll(null, START.minus(Duration.ofDays(1)));
+            runner.tick().get(10, SECONDS);
+
+            assertThat(theChat().getStatus()).isEqualTo(ChatStatus.CLOSED);
+        }
+    }
 }

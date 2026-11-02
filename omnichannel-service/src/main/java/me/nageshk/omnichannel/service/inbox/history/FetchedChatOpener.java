@@ -8,12 +8,14 @@ import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.RoutedReason;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
+import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
 import me.nageshk.omnichannel.service.inbox.ChatRoutingService;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -22,8 +24,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * When a fetch of a chat ends, opens the chat and routes it like a new one if it waits on us: the fetch created it,
- * it is not with a business, the contact wrote within {@code waitingWindow}, and it is unread on the phone or the
- * contact wrote last. Anything else stays as the fetch left it: a created chat Closed and unassigned, an existing one
+ * the page says it is not with a business, the fetch reaches the time it was asked for, the contact wrote within
+ * {@code waitingWindow}, and it is unread on the phone or the contact wrote last. Anything else stays as the fetch left it: a created chat Closed and unassigned, an existing one
  * in whatever state the inbox gave it.
  */
 @Component
@@ -48,11 +50,13 @@ class FetchedChatOpener {
         this.settings = props.history();
     }
 
-    /** {@code item} as it stands when its chat's fetch ended DONE. */
-    void openIfWaiting(WaWebHistoryImportChat item) {
-        if (!item.isChatCreated() || Boolean.TRUE.equals(item.getBusiness())) return;
-        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(item.getPhoneNumberId(), item.getRemoteId())
-                .orElse(null);
+    /** {@code item} as it stands when its chat's fetch, part of {@code imp}, ended DONE. */
+    void openIfWaiting(WaWebHistoryImport imp, WaWebHistoryImportChat item) {
+        // a page script that does not say it is a person may be a business: it stays closed
+        if (item.getCreatedChatId() == null || !Boolean.FALSE.equals(item.getBusiness())) return;
+        // a fetch that ends before it was asked for cannot see what came after, our replies included
+        if (endsBeforeNow(imp)) return;
+        WaWebChat chat = chats.findById(item.getCreatedChatId()).orElse(null);
         if (chat == null || !waits(chat, item.getPhoneUnread())) return;
         int unread = item.getPhoneUnread() == null ? 0 : Math.max(0, item.getPhoneUnread());
         // only as the fetch left it: a live message may have opened or routed it meanwhile
@@ -61,14 +65,37 @@ class FetchedChatOpener {
                 new Update().set("status", ChatStatus.OPEN).set("unreadCount", unread), WaWebChat.class)
                 .getModifiedCount() > 0;
         if (!opened) return;
-        WaWebChat open = chats.findById(chat.getId()).orElse(chat);
-        try {
-            open = routing.route(open, RoutedReason.FETCHED);
-        } catch (RuntimeException e) {
-            // like a live chat: a routing failure leaves it open and unassigned
-            log.warn("routing fetched chat {} failed", open.getId(), e);
+        route(chat.getId());
+        chats.findById(chat.getId()).ifPresent(stored -> events.publishEvent(new InboxEvents.ChatChanged(stored)));
+    }
+
+    private static boolean endsBeforeNow(WaWebHistoryImport imp) {
+        Instant to = imp.getRange() == null ? null : imp.getRange().to();
+        return to != null && imp.getCreationTime() != null && to.isBefore(imp.getCreationTime());
+    }
+
+    /**
+     * Routes the open chat as stored. A live message saved in between makes the routing's save fail on the version;
+     * the live path routes no open chat, so this reads it again and tries once more.
+     */
+    private void route(String chatId) {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            WaWebChat open = chats.findById(chatId).orElse(null);
+            if (open == null || open.getStatus() != ChatStatus.OPEN || open.getAssignedUserId() != null
+                    || open.getAssignedTeamId() != null) {
+                return;
+            }
+            try {
+                routing.route(open, RoutedReason.FETCHED);
+                return;
+            } catch (OptimisticLockingFailureException e) {
+                log.info("fetched chat {} changed while it was routed, routing it again", chatId);
+            } catch (RuntimeException e) {
+                // like a live chat: a routing failure leaves it open and unassigned
+                log.warn("routing fetched chat {} failed", chatId, e);
+                return;
+            }
         }
-        events.publishEvent(new InboxEvents.ChatChanged(open));
     }
 
     private boolean waits(WaWebChat chat, Integer phoneUnread) {

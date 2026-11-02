@@ -37,6 +37,8 @@ class HistoryDevice implements AutoCloseable {
     final Map<String, Integer> unread = new ConcurrentHashMap<>();
     /** The chats {@code fetchChatHistory} says are with a business. */
     final Set<String> business = ConcurrentHashMap.newKeySet();
+    /** True to answer like a page script from before {@code unreadCount} and {@code business}. */
+    volatile boolean oldPageScript = false;
     volatile Function<Envelope, Envelope> override = null;
 
     private final FakeDevice device;
@@ -151,8 +153,10 @@ class HistoryDevice implements AutoCloseable {
             ids.forEach(idArray::add);
         }
         result.put("hasMore", kept.size() > limit);
-        result.put("unreadCount", unread.getOrDefault(chatId, 0));
-        result.put("business", business.contains(chatId));
+        if (!oldPageScript) {
+            result.put("unreadCount", unread.getOrDefault(chatId, 0));
+            result.put("business", business.contains(chatId));
+        }
         return Envelope.response(req.id(), result);
     }
 

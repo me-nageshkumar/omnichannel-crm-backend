@@ -174,8 +174,16 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
   days (`waiting-window`), and it is not a business (verified name, business or enterprise account). Else it stays
   Closed and unassigned. Decided once, when the chat's fetch ends DONE; a stopped or failed chat is not decided, and a
   chat that existed before the fetch is never touched. The "Routed" line says "fetched from WhatsApp, waiting for a
-  reply". Needs the page script of this change; a page from before sends neither field, and only "the contact wrote
-  last" can open a chat then.
+  reply". Opens nothing when the page does not say the chat is a person (a page script from before), nor when the
+  fetch's "To" date is before it was asked for (it cannot see our later replies). Opens the chat the fetch created by
+  its id: WhatsApp may keep a chat listed under a number under the person's lid.
+  Left as they are (review of 2026-11-02):
+  - "Business" includes anyone on the WhatsApp Business app (`contact.isBusiness`), small shops among them, so their
+    chats stay Closed. Narrowing it to official accounts (`verifiedLevel` high, or enterprise) waits on the user.
+  - A crash after a page created the chat and before its progress was saved loses `createdChatId`: that chat stays
+    Closed (fails safe). Marking the chat itself at creation would make it exact.
+  - A Stop lets the page already on its way finish; if it ends the chat DONE, the chat is still decided.
+  - A routing retry after a collision has already moved the round-robin cursor once.
 - Decided 2026-11-02: the history import that was fast-forwarded into `main` on 2026-10-31 (about 20 backend, 8 console
   and 3 extension commits with no merge commit) **stays as it is**. The user chose not to rewrite pushed history.
 - The user's rule for a fetch (2026-11-02): it syncs the inbox with WhatsApp Web **keeping the database's state**. A

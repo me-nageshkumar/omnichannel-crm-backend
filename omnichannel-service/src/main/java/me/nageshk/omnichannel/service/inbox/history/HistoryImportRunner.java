@@ -307,7 +307,7 @@ public class HistoryImportRunner {
         int idlePages = item.getIdlePages();
         // consecutive timeouts: a page that arrives resets the count
         int timeouts = item.getTimeouts();
-        boolean chatCreated = item.isChatCreated();
+        String createdChatId = item.getCreatedChatId();
         WaWebChat chat = null;
         // something was stored that the open consoles have not been told about
         boolean unannounced = false;
@@ -330,7 +330,7 @@ public class HistoryImportRunner {
                             unannounced = true;
                         }
                         if (r.chat() != null) chat = r.chat();
-                        if (r.chatCreated()) chatCreated = true;
+                        if (r.chatCreated()) createdChatId = r.chat().getId();
                     }
                     cursor = new WaWebHistoryImportChat.Cursor(page.oldestT(), page.oldestIds());
                 }
@@ -340,8 +340,8 @@ public class HistoryImportRunner {
                 timeouts = 0;
                 Update progress = new Update().set("cursor", cursor)
                         .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated))
-                        .set("emptyPages", emptyPages).set("idlePages", idlePages).set("timeouts", 0)
-                        .set("chatCreated", chatCreated);
+                        .set("emptyPages", emptyPages).set("idlePages", idlePages).set("timeouts", 0);
+                if (createdChatId != null) progress.set("createdChatId", createdChatId);
                 if (page.unreadCount() != null) progress.set("phoneUnread", page.unreadCount());
                 if (page.business() != null) progress.set("business", page.business());
                 if (!whileOpen(item, progress)) return true;
@@ -351,18 +351,18 @@ public class HistoryImportRunner {
                     unannounced = false;
                 }
                 if (!page.hasMore()) {
-                    done(item, new Update());
+                    done(imp, item, new Update());
                     return true;
                 }
                 if (seen >= settings.maxMessagesPerChat()) {
-                    done(item, new Update().set("capped", true));
+                    done(imp, item, new Update().set("capped", true));
                     return true;
                 }
                 if (emptyPages >= settings.maxEmptyPages() || idlePages >= settings.maxIdlePages()) {
                     if (idlePages >= settings.maxIdlePages()) {
                         log.warn("history import chat {} stored nothing in {} pages, ending it", item.getId(), idlePages);
                     }
-                    done(item, new Update().set("olderUnavailable", true));
+                    done(imp, item, new Update().set("olderUnavailable", true));
                     return true;
                 }
                 if (!pause(settings.pageDelay())) {
@@ -429,12 +429,12 @@ public class HistoryImportRunner {
     }
 
     /** Ends the chat DONE and, the first time only, opens it if it waits on us. */
-    private void done(WaWebHistoryImportChat item, Update update) {
+    private void done(WaWebHistoryImport imp, WaWebHistoryImportChat item, Update update) {
         if (!finish(item, update.set("status", HistoryChatStatus.DONE))) return;
         WaWebHistoryImportChat ended = items.findById(item.getId()).orElse(null);
         if (ended == null) return;
         try {
-            opener.openIfWaiting(ended);
+            opener.openIfWaiting(imp, ended);
         } catch (RuntimeException e) {
             log.warn("could not open fetched chat {}", item.getRemoteId(), e);
         }
