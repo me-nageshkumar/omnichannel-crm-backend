@@ -83,6 +83,7 @@ public class HistoryImportRunner {
     private final Clock clock;
     private final Executor executor;
     private final OmnichannelProperties.History settings;
+    private final FetchedChatOpener opener;
     /** Numbers whose import of an earlier tick is still running. */
     private final Set<String> busy = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean ticking = new AtomicBoolean();
@@ -91,7 +92,7 @@ public class HistoryImportRunner {
             WaWebHistoryImportChatRepository items, WaWebChatRepository chats, InboxDevices devices,
             HistoryDeviceClient client, InboxIngestService ingest, HistoryImportCounter counter,
             ApplicationEventPublisher events, Clock clock, @Qualifier("historyImportScheduler") Executor executor,
-            OmnichannelProperties props) {
+            OmnichannelProperties props, FetchedChatOpener opener) {
         this.mongo = mongo;
         this.imports = imports;
         this.items = items;
@@ -104,6 +105,7 @@ public class HistoryImportRunner {
         this.clock = clock;
         this.executor = executor;
         this.settings = props.history();
+        this.opener = opener;
     }
 
     // ---- the tick ----
@@ -305,6 +307,7 @@ public class HistoryImportRunner {
         int idlePages = item.getIdlePages();
         // consecutive timeouts: a page that arrives resets the count
         int timeouts = item.getTimeouts();
+        boolean chatCreated = item.isChatCreated();
         WaWebChat chat = null;
         // something was stored that the open consoles have not been told about
         boolean unannounced = false;
@@ -327,6 +330,7 @@ public class HistoryImportRunner {
                             unannounced = true;
                         }
                         if (r.chat() != null) chat = r.chat();
+                        if (r.chatCreated()) chatCreated = true;
                     }
                     cursor = new WaWebHistoryImportChat.Cursor(page.oldestT(), page.oldestIds());
                 }
@@ -334,29 +338,31 @@ public class HistoryImportRunner {
                 emptyPages = moved || page.loaded() ? 0 : emptyPages + 1;
                 idlePages = moved ? 0 : idlePages + 1;
                 timeouts = 0;
-                if (!whileOpen(item, new Update().set("cursor", cursor)
+                Update progress = new Update().set("cursor", cursor)
                         .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated))
-                        .set("emptyPages", emptyPages).set("idlePages", idlePages).set("timeouts", 0))) {
-                    return true;
-                }
+                        .set("emptyPages", emptyPages).set("idlePages", idlePages).set("timeouts", 0)
+                        .set("chatCreated", chatCreated);
+                if (page.unreadCount() != null) progress.set("phoneUnread", page.unreadCount());
+                if (page.business() != null) progress.set("business", page.business());
+                if (!whileOpen(item, progress)) return true;
                 counter.refresh(imp.getId());
                 if (unannounced) {
                     announce(item, chat);
                     unannounced = false;
                 }
                 if (!page.hasMore()) {
-                    finish(item, new Update().set("status", HistoryChatStatus.DONE));
+                    done(item, new Update());
                     return true;
                 }
                 if (seen >= settings.maxMessagesPerChat()) {
-                    finish(item, new Update().set("status", HistoryChatStatus.DONE).set("capped", true));
+                    done(item, new Update().set("capped", true));
                     return true;
                 }
                 if (emptyPages >= settings.maxEmptyPages() || idlePages >= settings.maxIdlePages()) {
                     if (idlePages >= settings.maxIdlePages()) {
                         log.warn("history import chat {} stored nothing in {} pages, ending it", item.getId(), idlePages);
                     }
-                    finish(item, new Update().set("status", HistoryChatStatus.DONE).set("olderUnavailable", true));
+                    done(item, new Update().set("olderUnavailable", true));
                     return true;
                 }
                 if (!pause(settings.pageDelay())) {
@@ -418,8 +424,20 @@ public class HistoryImportRunner {
         return seenIds.equals(new HashSet<>(page.oldestIds()));
     }
 
-    private void finish(WaWebHistoryImportChat item, Update update) {
-        whileOpen(item, update.set("finishedAt", clock.instant()));
+    private boolean finish(WaWebHistoryImportChat item, Update update) {
+        return whileOpen(item, update.set("finishedAt", clock.instant()));
+    }
+
+    /** Ends the chat DONE and, the first time only, opens it if it waits on us. */
+    private void done(WaWebHistoryImportChat item, Update update) {
+        if (!finish(item, update.set("status", HistoryChatStatus.DONE))) return;
+        WaWebHistoryImportChat ended = items.findById(item.getId()).orElse(null);
+        if (ended == null) return;
+        try {
+            opener.openIfWaiting(ended);
+        } catch (RuntimeException e) {
+            log.warn("could not open fetched chat {}", item.getRemoteId(), e);
+        }
     }
 
     /** Tells the open consoles the chat changed, and that an open thread has new messages to fetch. */

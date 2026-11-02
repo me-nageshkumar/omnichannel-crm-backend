@@ -41,5 +41,6 @@ public record OmnichannelProperties(
             @DefaultValue("3") int maxEmptyPages,
             @DefaultValue("25") int maxIdlePages,
             @DefaultValue("60s") Duration timeBudget,
-            @DefaultValue("3") int maxTimeoutsPerChat) {}
+            @DefaultValue("3") int maxTimeoutsPerChat,
+            @DefaultValue("7d") Duration waitingWindow) {}
 }

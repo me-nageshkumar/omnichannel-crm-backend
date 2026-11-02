@@ -24,8 +24,12 @@ public class HistoryDeviceClient {
             int maxLoads) {}
 
     /** {@code loaded}: the page brought older messages into WhatsApp Web, whether or not any were kept. */
+    /**
+     * {@code unreadCount} (on the phone) and {@code business} tell whether the chat waits on us; null from a page
+     * script older than them.
+     */
     public record HistoryPage(List<JsonNode> messages, Long oldestT, List<String> oldestIds, boolean hasMore,
-            boolean loaded) {}
+            boolean loaded, Integer unreadCount, Boolean business) {}
 
     private final RpcDispatcher dispatcher;
     private final ObjectMapper mapper;
@@ -75,8 +79,12 @@ public class HistoryDeviceClient {
                 });
             }
         }
+        JsonNode unread = result == null ? null : result.get("unreadCount");
+        JsonNode business = result == null ? null : result.get("business");
         return new HistoryPage(messages, oldestT, oldestIds, result != null && result.path("hasMore").asBoolean(false),
-                result != null && result.path("loaded").asBoolean(false));
+                result != null && result.path("loaded").asBoolean(false),
+                unread != null && unread.isNumber() ? unread.asInt() : null,
+                business != null && business.isBoolean() ? business.asBoolean() : null);
     }
 
     private static String text(JsonNode n, String field) {

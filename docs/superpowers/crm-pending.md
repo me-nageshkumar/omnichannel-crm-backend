@@ -169,9 +169,13 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
 
 ### H. Open since 2026-11-01
 
-- **A judgement call:** chats a fetch creates start CLOSED and unassigned, so a fetch never sends old conversations to
-  agents. After the inbox reset that left the Open tab empty. Making them land in Open is small, but every fetched chat
-  would then look like work to do. The user wants to talk about it next.
+- Decided and built 2026-11-02: a chat a fetch **creates** lands in Open and is routed like a new chat when it waits on
+  us: unread on the phone (a chat marked unread by hand counts) or the contact wrote last, the contact wrote within 7
+  days (`waiting-window`), and it is not a business (verified name, business or enterprise account). Else it stays
+  Closed and unassigned. Decided once, when the chat's fetch ends DONE; a stopped or failed chat is not decided, and a
+  chat that existed before the fetch is never touched. The "Routed" line says "fetched from WhatsApp, waiting for a
+  reply". Needs the page script of this change; a page from before sends neither field, and only "the contact wrote
+  last" can open a chat then.
 - Decided 2026-11-02: the history import that was fast-forwarded into `main` on 2026-10-31 (about 20 backend, 8 console
   and 3 extension commits with no merge commit) **stays as it is**. The user chose not to rewrite pushed history.
 - The user's rule for a fetch (2026-11-02): it syncs the inbox with WhatsApp Web **keeping the database's state**. A

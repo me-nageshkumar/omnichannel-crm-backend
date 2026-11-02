@@ -44,6 +44,12 @@ public class WaWebHistoryImportChat {
     private int idlePages;
     /** Pages of this chat that timed out; at {@code maxTimeoutsPerChat} the chat fails as TIMEOUT. */
     private int timeouts;
+    /** True once this import created the chat: only such a chat may open when it ends. */
+    private boolean chatCreated;
+    /** The chat's unread count on the phone, from the newest page; null from an older page script. */
+    private Integer phoneUnread;
+    /** Whether the chat is with a business, from the newest page; null from an older page script. */
+    private Boolean business;
     private Instant attemptedAt;
     private Instant finishedAt;
 

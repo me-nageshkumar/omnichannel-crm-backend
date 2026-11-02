@@ -1541,6 +1541,21 @@
       return title;
     }
   }
+  function isBusinessChat(chat) {
+    try {
+      const { Contact } = window.require("WAWebCollections");
+      const contact = chat.contact ?? Contact?.get(chat.id);
+      if (!contact) return false;
+      if (contact.isBusiness === true || contact.isEnterprise === true)
+        return true;
+      const getters = window.require("WAWebContactGetters");
+      return Boolean(
+        getters.getIsEnterprise?.(contact) || getters.getVerifiedName?.(contact)
+      );
+    } catch {
+      return false;
+    }
+  }
 
   // src/page/polls.js
   function optionPositions(selected, options) {
@@ -1822,7 +1837,11 @@
           oldest,
           // a page with nothing to keep can still be progress: it walked further back
           loaded,
-          hasMore: kept.length > limit || !exhausted && !pastFrom
+          hasMore: kept.length > limit || !exhausted && !pastFrom,
+          // whether the chat waits on us, as the inbox decides for a chat a fetch creates;
+          // -1 is a chat marked as unread by hand: one unread
+          unreadCount: chat.unreadCount < 0 ? 1 : chat.unreadCount ?? 0,
+          business: isBusinessChat(chat)
         };
       }
     );
@@ -1910,7 +1929,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "af2965c5d240" : "dev";
+  var BUILD = true ? "960e787c0fef" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
