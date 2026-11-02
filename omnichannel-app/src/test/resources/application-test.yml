@@ -3,6 +3,10 @@ de:
     mongodb:
       embedded:
         version: 7.0.12
+# the tests call localhost; a server on every address can share its port with a program on 127.0.0.1 alone, which
+# then answers instead (TestServerAddressIT)
+server:
+  address: 127.0.0.1
 omnichannel:
   super-admin:
     password: ""

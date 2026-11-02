@@ -169,12 +169,25 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
 
 ### H. Open since 2026-11-01
 
-- **A judgement call:** chats a fetch creates start CLOSED and unassigned, so a fetch never sends old conversations to
-  agents. After the inbox reset that left the Open tab empty. Making them land in Open is small, but every fetched chat
-  would then look like work to do. The user wants to talk about it next.
-- **A judgement call:** on 2026-10-31 the history import was fast-forwarded into `main` and its branches deleted unpushed,
-  against the `--no-ff` rule. Fixing it means rewriting pushed history, so it waits on the user, who wants to talk
-  about it next.
+- Decided and built 2026-11-02: a chat a fetch **creates** lands in Open and is routed like a new chat when it waits on
+  us: unread on the phone (a chat marked unread by hand counts) or the contact wrote last, the contact wrote within 7
+  days (`waiting-window`), and it is not an official business: an account on the business API (enterprise) or a bot
+  such as Meta AI. Anyone on the WhatsApp Business app counts as a person, even verified high (Meta Verified), by the
+  user's choice. On the real phone on 2026-11-02: 276 of 653 person chats official (206 verified high, 66 medium, 3
+  unverified, all enterprise; plus Meta AI); 4 Business-app users verified high and 78 others count as people. Else it
+  stays
+  Closed and unassigned. Decided once, when the chat's fetch ends DONE; a stopped or failed chat is not decided, and a
+  chat that existed before the fetch is never touched. The "Routed" line says "fetched from WhatsApp, waiting for a
+  reply". Opens nothing when the page does not say the chat is a person (a page script from before), nor when the
+  fetch's "To" date is before it was asked for (it cannot see our later replies). Opens the chat the fetch created by
+  its id: WhatsApp may keep a chat listed under a number under the person's lid.
+  Left as they are (review of 2026-11-02):
+  - A crash after a page created the chat and before its progress was saved loses `createdChatId`: that chat stays
+    Closed (fails safe). Marking the chat itself at creation would make it exact.
+  - A Stop lets the page already on its way finish; if it ends the chat DONE, the chat is still decided.
+  - A routing retry after a collision has already moved the round-robin cursor once.
+- Decided 2026-11-02: the history import that was fast-forwarded into `main` on 2026-10-31 (about 20 backend, 8 console
+  and 3 extension commits with no merge commit) **stays as it is**. The user chose not to rewrite pushed history.
 - The user's rule for a fetch (2026-11-02): it syncs the inbox with WhatsApp Web **keeping the database's state**. A
   stored message keeps its sender, source and text; only its status moves up and missing details are filled in. A
   stored chat keeps its status, agent, team and unread count. Pinned by `ImportMessageIT`
@@ -184,8 +197,10 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
   rows sent from the console or a campaign, 5 were fetched again and lost their sender (counted 2026-11-02). Copying
   `source` and `sentBy*` back by `(phoneNumberId, waMessageId)` would restore them, if the user wants it.
 - A full backend run in 4 processes peaks at about 6 GB; the user chose to keep 4 processes for now.
-- Once, a full backend run failed two tests in `HistoryImportRunnerEventsIT`: the fake device got a 404 on `/ws`. Not
-  reproduced since: 5 more runs of the class alone and 2 more full runs in 4 processes on 2026-11-02. Left alone, per the user.
+- Solved 2026-11-02, the "unexplained 404" of the tests: a test server bound its random port on every address while
+  VS Code's helper held the same port on 127.0.0.1 alone, which macOS allows; the tests' calls to localhost reached
+  VS Code, so a whole class (`InboxSendIT` that time, `HistoryImportRunnerEventsIT` before) got 404s. Test servers now
+  listen on 127.0.0.1 (`server.address` in `application-test.yml`), pinned by `TestServerAddressIT`.
 
 ## 3. Rules the user set
 

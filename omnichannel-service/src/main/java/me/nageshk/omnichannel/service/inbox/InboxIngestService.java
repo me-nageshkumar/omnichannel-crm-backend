@@ -65,8 +65,14 @@ public class InboxIngestService {
 
     public enum ImportOutcome { INSERTED, UPDATED, UNCHANGED, SKIPPED }
 
-    /** {@code chat} and {@code message} are the stored rows; both null when {@code SKIPPED}. */
-    public record ImportResult(ImportOutcome outcome, WaWebChat chat, WaWebMessage message) {
+    /**
+     * {@code chat} and {@code message} are the stored rows; both null when {@code SKIPPED}. {@code chatCreated} is
+     * true when this message created the chat.
+     */
+    public record ImportResult(ImportOutcome outcome, WaWebChat chat, WaWebMessage message, boolean chatCreated) {
+        public ImportResult(ImportOutcome outcome, WaWebChat chat, WaWebMessage message) {
+            this(outcome, chat, message, false);
+        }
     }
 
     private static final ImportResult SKIPPED = new ImportResult(ImportOutcome.SKIPPED, null, null);
@@ -186,6 +192,7 @@ public class InboxIngestService {
         }
 
         WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(ctx.phoneNumberId(), remote).orElse(null);
+        boolean created = chat == null;
         if (chat == null) {
             chat = new WaWebChat();
             chat.setCustomerId(ctx.customerId());
@@ -223,7 +230,7 @@ public class InboxIngestService {
         else chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         chat = chats.save(chat);
         message = messages.insert(message);
-        return new ImportResult(ImportOutcome.INSERTED, chat, message);
+        return new ImportResult(ImportOutcome.INSERTED, chat, message, created);
     }
 
     /**

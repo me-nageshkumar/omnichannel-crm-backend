@@ -83,6 +83,12 @@ public class ChatRoutingService {
         return team == null ? chat : route(chat, team, RoutingOptions.DEFAULT);
     }
 
+    /** As {@link #route(WaWebChat)}, recording {@code reason} on the action. */
+    public WaWebChat route(WaWebChat chat, RoutedReason reason) {
+        Team team = owningTeam(chat);
+        return team == null ? chat : route(chat, team, new RoutingOptions(null, true, reason));
+    }
+
     /** Routes under {@code team}'s effective setting; the chat is saved only when the setting assigns something. */
     public WaWebChat route(WaWebChat chat, Team team, RoutingOptions options) {
         InboxSetting setting = settings.effective(chat.getWorkspaceId(), team.getId());

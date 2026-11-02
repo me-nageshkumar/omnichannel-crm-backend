@@ -55,3 +55,5 @@ omnichannel:
     max-idle-pages: 25
     time-budget: 60s
     max-timeouts-per-chat: 3
+    # a chat a fetch creates opens and is routed when the contact wrote within this window and it waits on us
+    waiting-window: 7d

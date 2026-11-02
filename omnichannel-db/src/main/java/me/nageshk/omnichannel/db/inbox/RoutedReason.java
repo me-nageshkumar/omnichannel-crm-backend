@@ -9,5 +9,7 @@ public enum RoutedReason {
     /** The number's owning team changed; the chat was re-routed under the new team (§3.1). */
     OWNER_CHANGED,
     /** The assignee left the team; the chat was re-routed without them (§3.1). */
-    MEMBER_REMOVED
+    MEMBER_REMOVED,
+    /** A history fetch created the chat and found it waiting on us. */
+    FETCHED
 }

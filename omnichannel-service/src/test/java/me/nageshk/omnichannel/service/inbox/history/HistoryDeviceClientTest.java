@@ -52,6 +52,20 @@ class HistoryDeviceClientTest {
     }
 
     @Test
+    void pageTellsTheUnreadCountOnThePhoneAndWhetherTheChatIsABusiness() {
+        HistoryPage p = HistoryDeviceClient.page(mapper.createObjectNode().put("unreadCount", 3).put("business", true));
+        assertThat(p.unreadCount()).isEqualTo(3);
+        assertThat(p.business()).isTrue();
+    }
+
+    @Test
+    void anOlderPageScriptTellsNeither() {
+        HistoryPage p = HistoryDeviceClient.page(mapper.createObjectNode());
+        assertThat(p.unreadCount()).isNull();
+        assertThat(p.business()).isNull();
+    }
+
+    @Test
     void pageDropsIdsTheExtensionLost() {
         ObjectNode r = mapper.createObjectNode();
         r.putArray("messages");
