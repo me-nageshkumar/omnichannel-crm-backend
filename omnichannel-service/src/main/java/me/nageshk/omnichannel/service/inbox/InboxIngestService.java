@@ -484,10 +484,14 @@ public class InboxIngestService {
             case "document" -> "📄 " + (filename == null || filename.isBlank() ? "Document" : filename);
             case "sticker" -> "Sticker";
             case "location" -> "📍 Location";
-            case "vcard", "multi_vcard" -> "👤 Contact card";
+            case "vcard", "multi_vcard" -> ContactCards.preview(text);
             case "poll_creation" -> "📊 Poll";
             case "call_log" -> "📞 Call";
             case "revoked" -> "This message was deleted";
+            // WhatsApp Web itself cannot show these, so neither can we; the phone can
+            case "biz_content_placeholder" -> "💼 Business message";
+            case "unknown" -> "Message to view on the phone";
+            case "newsletter_follower_invite" -> "📢 Channel invite";
             default -> "Unsupported message";
         };
     }

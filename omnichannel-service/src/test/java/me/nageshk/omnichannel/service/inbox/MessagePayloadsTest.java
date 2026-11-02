@@ -18,6 +18,20 @@ class MessagePayloadsTest {
     }
 
     @Test
+    void severalContactCardsAreTheBodyOneAfterTheOther() {
+        ObjectNode p = message("multi_vcard");
+        p.putArray("vcardList").add(new ObjectMapper().createObjectNode().put("displayName", "A").put("vcard", "CARD A"))
+                .add(new ObjectMapper().createObjectNode().put("displayName", "B").put("vcard", "CARD B"));
+        assertThat(MessagePayloads.body(p)).isEqualTo("CARD A\nCARD B");
+    }
+
+    @Test
+    void aContactCardIsItsBody() {
+        assertThat(MessagePayloads.body(message("vcard").put("body", "BEGIN:VCARD\nFN:A\nEND:VCARD")))
+                .isEqualTo("BEGIN:VCARD\nFN:A\nEND:VCARD");
+    }
+
+    @Test
     void whatsAppsOwnNoticesAreNotices() {
         assertThat(MessagePayloads.isNotice(message("notification_template"))).isTrue();
         assertThat(MessagePayloads.isNotice(message("e2e_notification"))).isTrue();

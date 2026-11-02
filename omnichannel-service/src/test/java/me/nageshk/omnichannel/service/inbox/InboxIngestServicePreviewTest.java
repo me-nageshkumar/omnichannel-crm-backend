@@ -28,6 +28,33 @@ class InboxIngestServicePreviewTest {
         assertThat(InboxIngestService.preview("chat", "hello", null)).isEqualTo("hello");
     }
 
+    private static final String WIFE = "BEGIN:VCARD\nVERSION:3.0\nN:;Wife;;;\nFN:Wife\n"
+            + "TEL;type=CELL;waid=919799750743:+91 97997 50743\nEND:VCARD";
+    private static final String ASHA = "BEGIN:VCARD\nVERSION:3.0\nFN:Asha\nTEL:+91 98100 00001\nEND:VCARD";
+
+    @Test
+    void aContactCardPreviewsAsTheNameOnIt() {
+        assertThat(InboxIngestService.preview("vcard", WIFE, null)).isEqualTo("👤 Wife");
+    }
+
+    @Test
+    void severalContactCardsPreviewAsHowMany() {
+        assertThat(InboxIngestService.preview("multi_vcard", WIFE + "\n" + ASHA, null)).isEqualTo("👤 2 contacts");
+    }
+
+    @Test
+    void aCardWithoutANamePreviewsAsAContactCard() {
+        assertThat(InboxIngestService.preview("vcard", "BEGIN:VCARD\nTEL:+1\nEND:VCARD", null))
+                .isEqualTo("👤 Contact card");
+    }
+
+    @Test
+    void whatWhatsAppWebCannotShowHasALabel() {
+        assertThat(InboxIngestService.preview("biz_content_placeholder", null, null)).isEqualTo("💼 Business message");
+        assertThat(InboxIngestService.preview("unknown", null, null)).isEqualTo("Message to view on the phone");
+        assertThat(InboxIngestService.preview("newsletter_follower_invite", null, null)).isEqualTo("📢 Channel invite");
+    }
+
     @Test
     void previewKeepsTheWholeBody() {
         String whole = "x".repeat(300);

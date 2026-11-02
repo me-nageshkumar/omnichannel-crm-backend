@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.StringJoiner;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.events.LoggingEventListener;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
@@ -15,6 +16,7 @@ final class MessagePayloads {
 
     private static final String LOCATION_TYPE = "location";
     private static final String POLL_TYPE = "poll_creation";
+    private static final String MULTI_VCARD_TYPE = "multi_vcard";
     private static final String CALL_TYPE = "call_log";
     static final Set<String> NOTICE_TYPES = Set.of("notification_template", "e2e_notification", "notification",
             "group_notification", "broadcast_notification");
@@ -53,11 +55,22 @@ final class MessagePayloads {
      */
     static String body(JsonNode p) {
         String type = type(p);
+        if (MULTI_VCARD_TYPE.equals(type) && p.path("vcardList").isArray()) return vcards(p.path("vcardList"));
         String caption = text(p.path("caption"));
         if (caption != null && !MessageBodies.isText(type)) return caption;
         String body = MessageBodies.readable(type, p.path("body").isTextual() ? p.path("body").asString() : null);
         String question = POLL_TYPE.equals(type) && (body == null || body.isEmpty()) ? text(p.path("pollName")) : null;
         return question != null ? question : body;
+    }
+
+    /** The cards of a {@code multi_vcard}, one after the other, as a {@code vcard} holds its one card in its body. */
+    private static String vcards(JsonNode list) {
+        StringJoiner cards = new StringJoiner("\n");
+        for (JsonNode card : list) {
+            String vcard = text(card.path("vcard"));
+            if (vcard != null) cards.add(vcard);
+        }
+        return cards.length() == 0 ? null : cards.toString();
     }
 
     /** WhatsApp's time in seconds, else the capture time of the event, else now. */

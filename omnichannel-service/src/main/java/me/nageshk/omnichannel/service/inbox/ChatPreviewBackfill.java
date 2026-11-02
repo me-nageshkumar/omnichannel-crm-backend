@@ -20,7 +20,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Rebuilds chat previews saved when they were cut to 120 characters, which also held the start of a media thumbnail.
- * Calls and WhatsApp's notices saved as "Unsupported message" get their label the same way.
+ * Calls, WhatsApp's notices and what WhatsApp Web cannot show, saved as "Unsupported message", get their label the
+ * same way, and a contact card the name on it.
  * Only the preview changes, and only when it belongs to the chat's newest message. Idempotent; every profile. A
  * failure is logged and does not stop the application, as a preview is only a copy.
  */
@@ -45,7 +46,8 @@ public class ChatPreviewBackfill implements ApplicationRunner {
         try {
             Query stale = new Query(new Criteria().orOperator(
                     Criteria.where(TEXT).regex("^[\\s\\S]{" + CUT_LENGTH + "}$"),
-                    Criteria.where(TEXT).is("Unsupported message").and("lastMessage.type").in(labelled())));
+                    Criteria.where(TEXT).is("Unsupported message").and("lastMessage.type").in(labelled()),
+                    Criteria.where(TEXT).is("👤 Contact card").and("lastMessage.type").is("vcard")));
             long n = mongo.find(stale, WaWebChat.class).stream().filter(this::rebuild).count();
             if (n > 0) log.info("rebuilt the preview of {} chat(s)", n);
         } catch (RuntimeException e) {
@@ -71,7 +73,7 @@ public class ChatPreviewBackfill implements ApplicationRunner {
     /** The types that were saved as "Unsupported message" and now have a label of their own. */
     private static List<String> labelled() {
         List<String> types = new ArrayList<>(MessagePayloads.NOTICE_TYPES);
-        types.add("call_log");
+        types.addAll(List.of("call_log", "biz_content_placeholder", "unknown", "newsletter_follower_invite"));
         return types;
     }
 

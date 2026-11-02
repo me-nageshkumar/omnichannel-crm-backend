@@ -48,6 +48,20 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
     }
 
     @Test
+    void aBusinessMessageShownAsUnsupportedGetsItsLabel() {
+        WaWebChat c = chatWith("biz_content_placeholder", null, "Unsupported message", AT_LAST_MESSAGE);
+        backfill.run(null);
+        assertThat(reload(c).getLastMessage().text()).isEqualTo("💼 Business message");
+    }
+
+    @Test
+    void aContactCardShownByTypeGetsTheNameOnIt() {
+        WaWebChat c = chatWith("vcard", "BEGIN:VCARD\nFN:Wife\nEND:VCARD", "👤 Contact card", AT_LAST_MESSAGE);
+        backfill.run(null);
+        assertThat(reload(c).getLastMessage().text()).isEqualTo("👤 Wife");
+    }
+
+    @Test
     void aNoticeShownAsUnsupportedGetsItsLabel() {
         WaWebChat c = chatWith("notification_template", "", "Unsupported message", AT_LAST_MESSAGE);
         backfill.run(null);
