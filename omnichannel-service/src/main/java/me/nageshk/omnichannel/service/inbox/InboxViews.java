@@ -56,7 +56,8 @@ public class InboxViews {
                                 media.mediaId() != null),
                 loc == null ? null : new MessageView.Location(loc.latitude(), loc.longitude(), loc.description()),
                 m.getTimestamp(), m.getStatus(), m.getStatusTimes(),
-                sentBy(m), m.getTemplateId(), m.getPollOptions(), m.getPollVotes(), m.getCall());
+                sentBy(m), m.getTemplateId(), m.getPollOptions(), m.getPollVotes(), m.getCall(),
+                m.getBusinessTag());
     }
 
     public ActionView action(WaWebChatAction a) {

@@ -18,6 +18,42 @@ class MessagePayloadsTest {
     }
 
     @Test
+    void aChannelInviteIsTheNameOfTheChannel() {
+        ObjectNode p = message("newsletter_follower_invite");
+        p.putObject("newsletterFollowerInviteInfo").put("newsletterName", "Speak English")
+                .put("inviteMessage", "Invitation to follow the channel “Speak English”");
+        assertThat(MessagePayloads.body(p)).isEqualTo("Speak English");
+    }
+
+    @Test
+    void aChannelNameOnAnotherTypeIsIgnored() {
+        ObjectNode p = message("chat").put("body", "hi");
+        p.putObject("newsletterFollowerInviteInfo").put("newsletterName", "Speak English");
+        assertThat(MessagePayloads.body(p)).isEqualTo("hi");
+    }
+
+    @Test
+    void theBusinessTagIsWhatsAppsTemplateTag() {
+        assertThat(MessagePayloads.businessTag(message("biz_content_placeholder").put("hsmTag", "AUTHENTICATION")))
+                .isEqualTo("AUTHENTICATION");
+        assertThat(MessagePayloads.businessTag(message("chat"))).isNull();
+    }
+
+    @Test
+    void severalContactCardsAreTheBodyOneAfterTheOther() {
+        ObjectNode p = message("multi_vcard");
+        p.putArray("vcardList").add(new ObjectMapper().createObjectNode().put("displayName", "A").put("vcard", "CARD A"))
+                .add(new ObjectMapper().createObjectNode().put("displayName", "B").put("vcard", "CARD B"));
+        assertThat(MessagePayloads.body(p)).isEqualTo("CARD A\nCARD B");
+    }
+
+    @Test
+    void aContactCardIsItsBody() {
+        assertThat(MessagePayloads.body(message("vcard").put("body", "BEGIN:VCARD\nFN:A\nEND:VCARD")))
+                .isEqualTo("BEGIN:VCARD\nFN:A\nEND:VCARD");
+    }
+
+    @Test
     void whatsAppsOwnNoticesAreNotices() {
         assertThat(MessagePayloads.isNotice(message("notification_template"))).isTrue();
         assertThat(MessagePayloads.isNotice(message("e2e_notification"))).isTrue();

@@ -268,6 +268,20 @@ class InboxApiIT extends InboxApiTestBase {
     }
 
     @Test
+    void threadCarriesTheBusinessTag() throws Exception {
+        WaWebChat c = chat("Alice", "911", 1, agent, null);
+        var stored = message(c, 10, null);
+        stored.setType("biz_content_placeholder");
+        stored.setBusinessTag("AUTHENTICATION");
+        messages.save(stored);
+
+        JsonNode page = json(send(get(inbox() + "/chats/" + c.getId() + "/thread"), agentToken, null)
+                .andExpect(status().isOk()));
+
+        assertThat(page.get("items").get(0).get("message").path("businessTag").asString()).isEqualTo("AUTHENTICATION");
+    }
+
+    @Test
     void threadOnlyHoldsItsOwnChat() throws Exception {
         WaWebChat c = chat("Alice", "911", 1, agent, null);
         WaWebChat d = chat("Dan", "912", 2, agent, null);

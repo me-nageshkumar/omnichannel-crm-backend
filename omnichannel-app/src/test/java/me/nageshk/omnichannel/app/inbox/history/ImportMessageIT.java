@@ -276,6 +276,105 @@ class ImportMessageIT {
     }
 
     @Test
+    void aFetchKeepsWhoSentAStoredMessage() {
+        ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
+        WaWebMessage stored = onlyMessage();
+        stored.setSource(MessageSource.CONSOLE);
+        stored.setSentByUserId("user-7");
+        stored.setSentByName("Asha");
+        messages.save(stored);
+
+        ImportResult r = ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 3, "hello again"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
+        WaWebMessage m = onlyMessage();
+        assertThat(m.getSource()).isEqualTo(MessageSource.CONSOLE);
+        assertThat(m.getSentByUserId()).isEqualTo("user-7");
+        assertThat(m.getSentByName()).isEqualTo("Asha");
+        assertThat(m.getBody()).isEqualTo("hello");
+        assertThat(m.getStatus()).isEqualTo(MessageStatus.READ);
+    }
+
+    @Test
+    void anAssignedChatStaysWithItsAgent() {
+        WaWebChat open = new WaWebChat();
+        open.setCustomerId("cust-1");
+        open.setWorkspaceId("ws-1");
+        open.setPhoneNumberId("pn-1");
+        open.setRemoteId(REMOTE);
+        open.setStatus(ChatStatus.OPEN);
+        open.setAssignedUserId("agent-1");
+        open.setAssignedTeamId("team-1");
+        chats.save(open);
+
+        ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
+
+        WaWebChat chat = onlyChat();
+        assertThat(chat.getStatus()).isEqualTo(ChatStatus.OPEN);
+        assertThat(chat.getAssignedUserId()).isEqualTo("agent-1");
+        assertThat(chat.getAssignedTeamId()).isEqualTo("team-1");
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void severalContactCardsAreStoredAsTheirCards() {
+        ObjectNode p = msg("v1", REMOTE, false, 100, 0, "").put("type", "multi_vcard");
+        p.putArray("vcardList").add(mapper.createObjectNode().put("vcard", "BEGIN:VCARD\nFN:A\nEND:VCARD"))
+                .add(mapper.createObjectNode().put("vcard", "BEGIN:VCARD\nFN:B\nEND:VCARD"));
+
+        ingest.importMessage(ctx, p);
+
+        assertThat(onlyMessage().getBody()).isEqualTo("BEGIN:VCARD\nFN:A\nEND:VCARD\nBEGIN:VCARD\nFN:B\nEND:VCARD");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("👤 2 contacts");
+    }
+
+    private ObjectNode invite(String id, String channel) {
+        ObjectNode p = msg(id, REMOTE, false, 100, 0, null).put("type", "newsletter_follower_invite");
+        p.remove("body");
+        if (channel != null) p.putObject("newsletterFollowerInviteInfo").put("newsletterName", channel);
+        return p;
+    }
+
+    @Test
+    void aChannelInviteIsStoredWithTheChannelName() {
+        ingest.importMessage(ctx, invite("i1", "Speak English"));
+        assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📢 Channel invite: Speak English");
+    }
+
+    @Test
+    void aFetchFillsInTheChannelNameOfAnInviteStoredWithout() {
+        ingest.importMessage(ctx, invite("i1", null));
+
+        ImportResult r = ingest.importMessage(ctx, invite("i1", "Speak English"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
+        assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📢 Channel invite: Speak English");
+    }
+
+    @Test
+    void aFetchFillsInTheBusinessTagOfAPlaceholderStoredWithout() {
+        ObjectNode bare = msg("b1", REMOTE, false, 100, 0, null).put("type", "biz_content_placeholder");
+        bare.remove("body");
+        ingest.importMessage(ctx, bare);
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("💼 Business message");
+
+        ImportResult r = ingest.importMessage(ctx, bare.deepCopy().put("hsmTag", "AUTHENTICATION"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
+        assertThat(onlyMessage().getBusinessTag()).isEqualTo("AUTHENTICATION");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("🔒 Verification code");
+    }
+
+    @Test
+    void aFetchDoesNotReplaceATextAlreadyStored() {
+        ingest.importMessage(ctx, invite("i1", "Speak English"));
+        assertThat(ingest.importMessage(ctx, invite("i1", "Renamed")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+        assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
+    }
+
+    @Test
     void existingOpenChatKeepsStatusAndUnread() {
         WaWebChat open = new WaWebChat();
         open.setCustomerId("cust-1");

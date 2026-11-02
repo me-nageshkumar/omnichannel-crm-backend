@@ -752,12 +752,12 @@ class WaWebInboxListenerIT {
     }
 
     @Test
-    void vcardPreviewIgnoresTheCardText() {
+    void vcardPreviewIsTheNameOnTheCard() {
         ObjectNode p = message("919911111111@c.us", false, T);
         p.put("type", "vcard");
         p.put("body", "BEGIN:VCARD\nVERSION:3.0\nFN:Asha\nEND:VCARD");
         create(p);
-        assertThat(onlyChat().getLastMessage().text()).isEqualTo("👤 Contact card");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("👤 Asha");
     }
 
     // ---- a failure midway through is retried without losing the summary or the events ----

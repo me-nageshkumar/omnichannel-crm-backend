@@ -14,12 +14,14 @@ below is optional or waits on a decision.
 |---|---|---|---|
 | Repo | `omnichannel-crm-backend` | `omnichannel-crm-frontend` | `whatsapp-web-extension` |
 | Remote | `git@github.com:me-nageshkumar/omnichannel-crm-backend.git` | `git@github.com:me-nageshkumar/omnichannel-crm-frontend.git` | `git@github-yassg:me-nageshkumar/whatsapp-web-extension.git` |
-| `main` | `442d7d7` | `ae24a7c` | `c002372` |
-| Tests | `./mvnw -q verify` passes, 2052 tests, about 5 min | `npx vitest run` passes, 1436 tests; lint, `tsc`, build clean | `npm test` passes, 175 tests |
+| `main` | `b38b64d` | `ae24a7c` | `c002372` |
+| Tests | `./mvnw -q verify` passes, 2073 tests, about 5 min | `npx vitest run` passes, 1444 tests; lint, `tsc` clean | `npm test` passes, 175 tests |
 
-- All three repos have only `main`, locally and on GitHub, in step with each other, no worktrees. Merged feature
-  branches were deleted from both on 2026-11-01.
-- The app on port 8089 was stopped at the user's request; section 4 starts it. The dev console on port 9000 may still
+- Branch `message-types` in the backend and the console, in `.worktrees/message-types`, is done and not merged yet:
+  contact cards, verification codes, channel invites and phone-only messages (section 2F). The test counts above are
+  on it. Merging it needs the app rebuilt for the console to show them.
+- Otherwise only `main`, plus `pending-update` on the backend, locally and on GitHub.
+- The app runs on port 8089 from `main` (started 2026-11-02). The dev console on port 9000 may still
   run from the console's main checkout.
 - The extension's page script is served by the backend and picked up by hash, so a backend deploy updates it without
   an extension reload. A reload is still owed once, for `vote_update` to become a durable event (section 2G).
@@ -121,7 +123,18 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 - On a real phone 5 chats stalled after one message with the cursor on 20 Oct 12:12, none of which was stored, so most likely a WhatsApp notice sent to many chats. `loadEarlierMsgs` is believed to hand back what is already loaded, which is inferred, not seen. The page now compares message ids, and `max-idle-pages` bounds a chat whatever the cause. The next dated fetch on the real phone took 81 s with no stall; those 5 chats were left out as inactive.
 - A dated fetch leaves out chats last active over a day before its range (585 of 650 on the real phone). An all-time fetch skips nothing and still takes about 12 minutes: `chat-delay` (1 s) follows every chat, though most only read what is already in the browser. Skipping the pause for a chat that made no load would bring it near a minute.
 - `interactive` business messages show their text and file, drawn by mimetype. Their buttons are not stored, so they do not show, and it is not known which fields carry them.
-- `vcard`, `biz_content_placeholder`, `unknown` and `newsletter_follower_invite` still show as "Unsupported message" in the thread.
+- Read on the real phone on 2026-11-02 (`Msg.get(id).serialize()` in the WhatsApp Web tab, which the user moved into the
+  Claude tab group) and shown since:
+  - `vcard` / `multi_vcard`: each card's name, numbers and emails; the preview is the name, or "2 contacts". A
+    `multi_vcard` stores its `vcardList` cards one after the other as its body.
+  - `biz_content_placeholder`: tagged `hsmTag` AUTHENTICATION, a verification code WhatsApp keeps off linked devices;
+    `bizContentPlaceholderType` 0. Stored as `businessTag`; "A verification code only the phone can show".
+  - `newsletter_follower_invite`: `newsletterFollowerInviteInfo.newsletterName` is the body; "An invitation to follow
+    the channel “…”".
+  - `unknown`: subtype `phone_only_feature`, a MARKETING template with an image, no text anywhere on the model, not
+    even in `futureproofParams`. "A message only the phone can show".
+  - The 6 rows stored before this lack the tag and the channel name; the next fetch of their chats fills them in.
+    A fetch fills in only what is missing (`fillIn`), never replacing what is stored.
 - `@c.us` / `@lid` duplicate-chat limitation (inherited): the same person can end up as two chats.
 - `console:<id>` duplicate limitation (inherited).
 - Pending real-number spike: see spec `2026-10-31-chat-history-import-design.md` §3, "Pending verification".
@@ -158,15 +171,21 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
 
 - **A judgement call:** chats a fetch creates start CLOSED and unassigned, so a fetch never sends old conversations to
   agents. After the inbox reset that left the Open tab empty. Making them land in Open is small, but every fetched chat
-  would then look like work to do.
+  would then look like work to do. The user wants to talk about it next.
 - **A judgement call:** on 2026-10-31 the history import was fast-forwarded into `main` and its branches deleted unpushed,
-  against the `--no-ff` rule. Fixing it means rewriting pushed history, so it waits on the user.
-- 4 chats preview "Unsupported message": the types in 2F.
-- Messages sent from the console or a campaign that were fetched again after the reset show "WhatsApp Web" as their
-  sender: who sent them was on the deleted rows.
+  against the `--no-ff` rule. Fixing it means rewriting pushed history, so it waits on the user, who wants to talk
+  about it next.
+- The user's rule for a fetch (2026-11-02): it syncs the inbox with WhatsApp Web **keeping the database's state**. A
+  stored message keeps its sender, source and text; only its status moves up and missing details are filled in. A
+  stored chat keeps its status, agent, team and unread count. Pinned by `ImportMessageIT`
+  (`aFetchKeepsWhoSentAStoredMessage`, `anAssignedChatStaysWithItsAgent`).
+- Messages sent from the console or a campaign before the 2026-11-01 reset and fetched again since show "WhatsApp
+  Web" as their sender: who sent them was on the deleted rows. Only the backup in section 2E still has it: of its 15
+  rows sent from the console or a campaign, 5 were fetched again and lost their sender (counted 2026-11-02). Copying
+  `source` and `sentBy*` back by `(phoneNumberId, waMessageId)` would restore them, if the user wants it.
+- A full backend run in 4 processes peaks at about 6 GB; the user chose to keep 4 processes for now.
 - Once, a full backend run failed two tests in `HistoryImportRunnerEventsIT`: the fake device got a 404 on `/ws`. Not
-  seen again in three runs of that class alone and four full runs, two of them in 4 processes. Cause unknown.
-- A full backend run in 4 processes peaks at about 6 GB; the 16 GB Mac's swap was nearly full during it.
+  reproduced since: 5 more runs of the class alone and 2 more full runs in 4 processes on 2026-11-02. Left alone, per the user.
 
 ## 3. Rules the user set
 

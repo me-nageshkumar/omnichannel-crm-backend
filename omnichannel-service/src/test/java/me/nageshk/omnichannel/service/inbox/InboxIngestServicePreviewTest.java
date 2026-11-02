@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.service.inbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import org.junit.jupiter.api.Test;
 
 class InboxIngestServicePreviewTest {
@@ -26,6 +27,49 @@ class InboxIngestServicePreviewTest {
         assertThat(InboxIngestService.preview("image", "caption", null)).isEqualTo("caption");
         assertThat(InboxIngestService.preview("document", "report", "a.pdf")).isEqualTo("report");
         assertThat(InboxIngestService.preview("chat", "hello", null)).isEqualTo("hello");
+    }
+
+    private static final String WIFE = "BEGIN:VCARD\nVERSION:3.0\nN:;Wife;;;\nFN:Wife\n"
+            + "TEL;type=CELL;waid=919799750743:+91 97997 50743\nEND:VCARD";
+    private static final String ASHA = "BEGIN:VCARD\nVERSION:3.0\nFN:Asha\nTEL:+91 98100 00001\nEND:VCARD";
+
+    @Test
+    void aContactCardPreviewsAsTheNameOnIt() {
+        assertThat(InboxIngestService.preview("vcard", WIFE, null)).isEqualTo("👤 Wife");
+    }
+
+    @Test
+    void severalContactCardsPreviewAsHowMany() {
+        assertThat(InboxIngestService.preview("multi_vcard", WIFE + "\n" + ASHA, null)).isEqualTo("👤 2 contacts");
+    }
+
+    @Test
+    void aCardWithoutANamePreviewsAsAContactCard() {
+        assertThat(InboxIngestService.preview("vcard", "BEGIN:VCARD\nTEL:+1\nEND:VCARD", null))
+                .isEqualTo("👤 Contact card");
+    }
+
+    @Test
+    void whatWhatsAppWebCannotShowHasALabel() {
+        assertThat(InboxIngestService.preview("biz_content_placeholder", null, null)).isEqualTo("💼 Business message");
+        assertThat(InboxIngestService.preview("unknown", null, null)).isEqualTo("Message to view on the phone");
+        assertThat(InboxIngestService.preview("newsletter_follower_invite", null, null)).isEqualTo("📢 Channel invite");
+    }
+
+    @Test
+    void aVerificationCodeOnlyThePhoneHasPreviewsAsSuch() {
+        WaWebMessage m = new WaWebMessage();
+        m.setType("biz_content_placeholder");
+        m.setBusinessTag("AUTHENTICATION");
+        assertThat(InboxIngestService.preview(m)).isEqualTo("🔒 Verification code");
+        m.setBusinessTag("MARKETING");
+        assertThat(InboxIngestService.preview(m)).isEqualTo("💼 Business message");
+    }
+
+    @Test
+    void aChannelInvitePreviewsWithTheChannelName() {
+        assertThat(InboxIngestService.preview("newsletter_follower_invite", "Speak English", null))
+                .isEqualTo("📢 Channel invite: Speak English");
     }
 
     @Test
