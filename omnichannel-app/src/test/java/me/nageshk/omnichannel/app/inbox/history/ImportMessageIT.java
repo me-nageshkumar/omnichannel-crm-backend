@@ -328,6 +328,52 @@ class ImportMessageIT {
         assertThat(onlyChat().getLastMessage().text()).isEqualTo("👤 2 contacts");
     }
 
+    private ObjectNode invite(String id, String channel) {
+        ObjectNode p = msg(id, REMOTE, false, 100, 0, null).put("type", "newsletter_follower_invite");
+        p.remove("body");
+        if (channel != null) p.putObject("newsletterFollowerInviteInfo").put("newsletterName", channel);
+        return p;
+    }
+
+    @Test
+    void aChannelInviteIsStoredWithTheChannelName() {
+        ingest.importMessage(ctx, invite("i1", "Speak English"));
+        assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📢 Channel invite: Speak English");
+    }
+
+    @Test
+    void aFetchFillsInTheChannelNameOfAnInviteStoredWithout() {
+        ingest.importMessage(ctx, invite("i1", null));
+
+        ImportResult r = ingest.importMessage(ctx, invite("i1", "Speak English"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
+        assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("📢 Channel invite: Speak English");
+    }
+
+    @Test
+    void aFetchFillsInTheBusinessTagOfAPlaceholderStoredWithout() {
+        ObjectNode bare = msg("b1", REMOTE, false, 100, 0, null).put("type", "biz_content_placeholder");
+        bare.remove("body");
+        ingest.importMessage(ctx, bare);
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("💼 Business message");
+
+        ImportResult r = ingest.importMessage(ctx, bare.deepCopy().put("hsmTag", "AUTHENTICATION"));
+
+        assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
+        assertThat(onlyMessage().getBusinessTag()).isEqualTo("AUTHENTICATION");
+        assertThat(onlyChat().getLastMessage().text()).isEqualTo("🔒 Verification code");
+    }
+
+    @Test
+    void aFetchDoesNotReplaceATextAlreadyStored() {
+        ingest.importMessage(ctx, invite("i1", "Speak English"));
+        assertThat(ingest.importMessage(ctx, invite("i1", "Renamed")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+        assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
+    }
+
     @Test
     void existingOpenChatKeepsStatusAndUnread() {
         WaWebChat open = new WaWebChat();

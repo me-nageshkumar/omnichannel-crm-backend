@@ -42,6 +42,8 @@ public class WaWebMessage {
     private List<PollVote> pollVotes;
     /** What is known of a call, for a {@code call_log}; else null. */
     private Call call;
+    /** WhatsApp's tag on a business template ({@code hsmTag}): MARKETING, UTILITY or AUTHENTICATION; else null. */
+    private String businessTag;
     /** WhatsApp's message time. */
     private Instant timestamp;
     /** The highest status reached. */

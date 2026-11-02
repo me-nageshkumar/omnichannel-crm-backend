@@ -206,7 +206,8 @@ public class InboxIngestService {
             if (!fillIn(message, p) && !acked) return new ImportResult(ImportOutcome.UNCHANGED, chat, message);
             message = messages.save(message);
             if (isLast(chat, message)) {
-                chat.setLastMessage(withStatus(chat.getLastMessage(), message.getStatus()));
+                chat.setLastMessage(new WaWebChat.LastMessage(message.getDirection(), message.getType(),
+                        preview(message), message.getStatus()));
                 chat = chats.save(chat);
             }
             return new ImportResult(ImportOutcome.UPDATED, chat, message);
@@ -225,11 +226,24 @@ public class InboxIngestService {
         return new ImportResult(ImportOutcome.INSERTED, chat, message);
     }
 
-    /** Takes what only a fetch tells: the votes on a poll, and a call stored before calls were read. */
+    /**
+     * Takes what only a fetch tells: the votes on a poll, a call stored before calls were read, and what was stored
+     * before it was read: a business tag, and the channel name of an invite. Never replaces what is stored.
+     */
     private static boolean fillIn(WaWebMessage message, JsonNode p) {
         WaWebMessage.Call call = MessagePayloads.call(p);
         boolean changed = call != null && !call.equals(message.getCall());
         if (changed) message.setCall(call);
+        String tag = MessagePayloads.businessTag(p);
+        if (message.getBusinessTag() == null && tag != null) {
+            message.setBusinessTag(tag);
+            changed = true;
+        }
+        String body = "newsletter_follower_invite".equals(message.getType()) ? MessagePayloads.body(p) : null;
+        if (message.getBody() == null && body != null) {
+            message.setBody(body);
+            changed = true;
+        }
         List<WaWebMessage.PollVote> votes = message.getPollVotes();
         for (WaWebMessage.PollVote vote : MessagePayloads.pollVotes(p)) votes = PollVotes.merged(votes, vote);
         if (votes == message.getPollVotes()) return changed;
@@ -336,9 +350,7 @@ public class InboxIngestService {
         if (chat.getLastMessageAt() == null || !at.isBefore(chat.getLastMessageAt())) {
             chat.setLastMessageAt(at);
             chat.setLastMessage(new WaWebChat.LastMessage(message.getDirection(), message.getType(),
-                    preview(message.getType(), message.getBody(),
-                            message.getMedia() == null ? null : message.getMedia().filename()),
-                    message.getStatus()));
+                    preview(message), message.getStatus()));
         }
     }
 
@@ -400,6 +412,7 @@ public class InboxIngestService {
         m.setLocation(MessagePayloads.location(p));
         m.setPollOptions(MessagePayloads.pollOptions(p));
         m.setCall(MessagePayloads.call(p));
+        m.setBusinessTag(MessagePayloads.businessTag(p));
         m.setTimestamp(at);
         m.setStatus(MessageStatus.PENDING);
         m.setAck(MessagePayloads.ack(p));
@@ -472,6 +485,14 @@ public class InboxIngestService {
         }
     }
 
+    /** The preview of a stored message: a verification code only the phone has is told apart by its tag. */
+    static String preview(WaWebMessage m) {
+        if ("biz_content_placeholder".equals(m.getType()) && "AUTHENTICATION".equals(m.getBusinessTag())) {
+            return "🔒 Verification code";
+        }
+        return preview(m.getType(), m.getBody(), m.getMedia() == null ? null : m.getMedia().filename());
+    }
+
     /** A label for body-less or non-text types, else the whole body (the caption); the console cuts it to fit. */
     static String preview(String type, String body, String filename) {
         if (MessagePayloads.isNoticeType(type)) return "WhatsApp notice";
@@ -491,7 +512,8 @@ public class InboxIngestService {
             // WhatsApp Web itself cannot show these, so neither can we; the phone can
             case "biz_content_placeholder" -> "💼 Business message";
             case "unknown" -> "Message to view on the phone";
-            case "newsletter_follower_invite" -> "📢 Channel invite";
+            case "newsletter_follower_invite" ->
+                    text == null || text.isBlank() ? "📢 Channel invite" : "📢 Channel invite: " + text;
             default -> "Unsupported message";
         };
     }
@@ -499,7 +521,8 @@ public class InboxIngestService {
     /** For these types the body is a thumbnail or raw card text, never a caption. */
     private static boolean labelFirst(String type) {
         return switch (type == null ? "" : type) {
-            case "location", "vcard", "multi_vcard", "sticker", "poll_creation", "revoked" -> true;
+            case "location", "vcard", "multi_vcard", "sticker", "poll_creation", "revoked",
+                    "newsletter_follower_invite" -> true;
             default -> false;
         };
     }

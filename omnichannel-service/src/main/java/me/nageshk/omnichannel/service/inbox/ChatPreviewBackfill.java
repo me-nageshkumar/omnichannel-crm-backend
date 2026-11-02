@@ -62,8 +62,7 @@ public class ChatPreviewBackfill implements ApplicationRunner {
                 WaWebMessage.class);
         if (real == null) return false;
         WaWebChat.LastMessage shown = new WaWebChat.LastMessage(real.getDirection(), real.getType(),
-                InboxIngestService.preview(real.getType(), real.getBody(),
-                        real.getMedia() == null ? null : real.getMedia().filename()),
+                InboxIngestService.preview(real),
                 real.getStatus());
         return mongo.updateFirst(new Query(Criteria.where("_id").is(chat.getId()).and("lastMessage.type")
                 .is(chat.getLastMessage().type())), new Update().set("lastMessage", shown), WaWebChat.class)
@@ -85,8 +84,7 @@ public class ChatPreviewBackfill implements ApplicationRunner {
                 || !Objects.equals(newest.getType(), last.type())) {
             return false;
         }
-        String text = InboxIngestService.preview(newest.getType(), newest.getBody(),
-                newest.getMedia() == null ? null : newest.getMedia().filename());
+        String text = InboxIngestService.preview(newest);
         if (text.equals(last.text())) return false;
         return mongo.updateFirst(new Query(Criteria.where("_id").is(chat.getId()).and(TEXT).is(last.text())),
                 new Update().set(TEXT, text), WaWebChat.class).getModifiedCount() > 0;

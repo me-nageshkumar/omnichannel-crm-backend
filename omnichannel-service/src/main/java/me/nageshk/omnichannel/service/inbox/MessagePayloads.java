@@ -17,6 +17,7 @@ final class MessagePayloads {
     private static final String LOCATION_TYPE = "location";
     private static final String POLL_TYPE = "poll_creation";
     private static final String MULTI_VCARD_TYPE = "multi_vcard";
+    private static final String CHANNEL_INVITE_TYPE = "newsletter_follower_invite";
     private static final String CALL_TYPE = "call_log";
     static final Set<String> NOTICE_TYPES = Set.of("notification_template", "e2e_notification", "notification",
             "group_notification", "broadcast_notification");
@@ -56,11 +57,17 @@ final class MessagePayloads {
     static String body(JsonNode p) {
         String type = type(p);
         if (MULTI_VCARD_TYPE.equals(type) && p.path("vcardList").isArray()) return vcards(p.path("vcardList"));
+        if (CHANNEL_INVITE_TYPE.equals(type)) return text(p.path("newsletterFollowerInviteInfo").path("newsletterName"));
         String caption = text(p.path("caption"));
         if (caption != null && !MessageBodies.isText(type)) return caption;
         String body = MessageBodies.readable(type, p.path("body").isTextual() ? p.path("body").asString() : null);
         String question = POLL_TYPE.equals(type) && (body == null || body.isEmpty()) ? text(p.path("pollName")) : null;
         return question != null ? question : body;
+    }
+
+    /** WhatsApp's tag on a business template, such as AUTHENTICATION for a verification code; else null. */
+    static String businessTag(JsonNode p) {
+        return text(p.path("hsmTag"));
     }
 
     /** The cards of a {@code multi_vcard}, one after the other, as a {@code vcard} holds its one card in its body. */

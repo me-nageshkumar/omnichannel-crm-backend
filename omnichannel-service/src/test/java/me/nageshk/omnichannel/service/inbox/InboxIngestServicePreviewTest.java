@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.service.inbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import org.junit.jupiter.api.Test;
 
 class InboxIngestServicePreviewTest {
@@ -53,6 +54,22 @@ class InboxIngestServicePreviewTest {
         assertThat(InboxIngestService.preview("biz_content_placeholder", null, null)).isEqualTo("💼 Business message");
         assertThat(InboxIngestService.preview("unknown", null, null)).isEqualTo("Message to view on the phone");
         assertThat(InboxIngestService.preview("newsletter_follower_invite", null, null)).isEqualTo("📢 Channel invite");
+    }
+
+    @Test
+    void aVerificationCodeOnlyThePhoneHasPreviewsAsSuch() {
+        WaWebMessage m = new WaWebMessage();
+        m.setType("biz_content_placeholder");
+        m.setBusinessTag("AUTHENTICATION");
+        assertThat(InboxIngestService.preview(m)).isEqualTo("🔒 Verification code");
+        m.setBusinessTag("MARKETING");
+        assertThat(InboxIngestService.preview(m)).isEqualTo("💼 Business message");
+    }
+
+    @Test
+    void aChannelInvitePreviewsWithTheChannelName() {
+        assertThat(InboxIngestService.preview("newsletter_follower_invite", "Speak English", null))
+                .isEqualTo("📢 Channel invite: Speak English");
     }
 
     @Test
