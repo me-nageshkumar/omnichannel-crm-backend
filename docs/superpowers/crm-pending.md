@@ -195,8 +195,10 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
   rows sent from the console or a campaign, 5 were fetched again and lost their sender (counted 2026-11-02). Copying
   `source` and `sentBy*` back by `(phoneNumberId, waMessageId)` would restore them, if the user wants it.
 - A full backend run in 4 processes peaks at about 6 GB; the user chose to keep 4 processes for now.
-- Once, a full backend run failed two tests in `HistoryImportRunnerEventsIT`: the fake device got a 404 on `/ws`. Not
-  reproduced since: 5 more runs of the class alone and 2 more full runs in 4 processes on 2026-11-02. Left alone, per the user.
+- Solved 2026-11-02, the "unexplained 404" of the tests: a test server bound its random port on every address while
+  VS Code's helper held the same port on 127.0.0.1 alone, which macOS allows; the tests' calls to localhost reached
+  VS Code, so a whole class (`InboxSendIT` that time, `HistoryImportRunnerEventsIT` before) got 404s. Test servers now
+  listen on 127.0.0.1 (`server.address` in `application-test.yml`), pinned by `TestServerAddressIT`.
 
 ## 3. Rules the user set
 
