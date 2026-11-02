@@ -1,24 +1,29 @@
 # CRM: pending work
 
-Written 2026-10-31, to pick the work up in a later session. The CRM port is otherwise complete: phases A to F plus
-the follow-up fixes are merged, pushed and running. Everything below is optional or waits on a decision.
+Written 2026-10-31 and brought up to date on 2026-11-02, to pick the work up in a later session. The CRM port is
+complete: phases A to F plus the follow-up fixes are merged and pushed, and so is the inbox work of 2026-11-01 (chat
+history import with pause, play and stop; calls; poll votes; notices; business messages; contact names). Everything
+below is optional or waits on a decision.
 
 **To resume, start a new session in `/Users/nagesh/Projects/WhatsAppWebJS/SCM` and say:**
 > Read `omnichannel-crm-backend/docs/superpowers/crm-pending.md`, then let's do <item>.
 
-## 1. State when this was written
+## 1. State on 2026-11-02
 
-| | Backend | Console |
-|---|---|---|
-| Repo | `omnichannel-crm-backend` | `omnichannel-crm-frontend` |
-| Remote | `git@github.com:me-nageshkumar/omnichannel-crm-backend.git` | `git@github.com:me-nageshkumar/omnichannel-crm-frontend.git` |
-| `main` | `04eba73` | `5f21ebf` |
-| Tests | `./mvnw -q verify` passes, 1854 tests | `npx vitest run` passes, 1346 tests; lint, `tsc`, build clean |
+| | Backend | Console | Extension |
+|---|---|---|---|
+| Repo | `omnichannel-crm-backend` | `omnichannel-crm-frontend` | `whatsapp-web-extension` |
+| Remote | `git@github.com:me-nageshkumar/omnichannel-crm-backend.git` | `git@github.com:me-nageshkumar/omnichannel-crm-frontend.git` | `git@github-yassg:me-nageshkumar/whatsapp-web-extension.git` |
+| `main` | `442d7d7` | `ae24a7c` | `c002372` |
+| Tests | `./mvnw -q verify` passes, 2052 tests, about 5 min | `npx vitest run` passes, 1436 tests; lint, `tsc`, build clean | `npm test` passes, 175 tests |
 
-- Both repos have only local `main`, in step with `origin/main`, no extra worktrees. Feature branches remain on GitHub.
-- The app ran on port 8089 from `main`; it may not be running any more (see section 4 to start it).
-- Nothing is half-finished. Every numbered step of the phase D, E and F walks was run in a real browser, apart from the
-  side checks in section 2C.
+- All three repos have only `main`, locally and on GitHub, in step with each other, no worktrees. Merged feature
+  branches were deleted from both on 2026-11-01.
+- The app on port 8089 was stopped at the user's request; section 4 starts it. The dev console on port 9000 may still
+  run from the console's main checkout.
+- The extension's page script is served by the backend and picked up by hash, so a backend deploy updates it without
+  an extension reload. A reload is still owed once, for `vote_update` to become a durable event (section 2G).
+- Nothing is half-finished.
 
 ## 2. What is pending
 
@@ -99,18 +104,22 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
   - Ananya Patel and Veenu as CRM contacts; completed campaign "Walk send check", one real message sent.
   - Agent tasks moved on by the walks: "Send the festive price list" is done, "Confirm the delivery date" is assigned
     to `demo-manager`, "Call about uniform sizes" is at occurrence 3.
-- **Real data:** connecting the WhatsApp number brought real incoming messages into the local database. Take care if
-  sharing it or a backup.
+- **Real data:** connecting the WhatsApp number brought real messages into the local database. Take care if sharing it
+  or a backup.
+- **Inbox reset, 2026-11-01:** at the user's request every chat, message, chat action and cached media file was deleted,
+  then all chats were fetched again for 1 Oct to 1 Nov: 62 chats, 258 messages. Imported chats start CLOSED and
+  unassigned, so 61 of them sit under the Closed tab until their contact writes (see 2H). Backup from just before:
+  `/Users/nagesh/Projects/WhatsAppWebJS/SCM/backups/mongo/omnichannel_crm-20261101-1147-before-chat-reset`.
 - **Backup:** the database from before the demo seed is at
   `/private/tmp/claude-501/-Users-nagesh-Projects-WhatsAppWebJS-SCM/6388a6d2-df07-4534-8c7a-ed25963e4ede/scratchpad/omnichannel_crm-before-seed.archive.gz`.
   That is a temp folder and may vanish. Pending work does not need it.
-- **Remote branches:** feature branches are still on GitHub (the user deleted local ones only).
 
 ### F. Chat history import
 
-- A contact with no name takes the name WhatsApp lists its chat under: the title, or for a business or a person not in the phone's contacts the verified name, then the profile name (`page/names.js`). It is stored as a name of record, so a later push name does not replace it. A contact with a name keeps it, and a name cleared by hand stays cleared. Only an all-chats fetch has these names, and 46 chats had just a number as their title. An inbox already open shows new names after a reload: a fetch that stores no messages announces nothing. The number in such a title is not put on a `@lid` contact. Whether `WAWebContactGetters` gives a verified name for a `@lid` chat is not yet seen on a real phone.
+- A contact with no name takes the name WhatsApp lists its chat under: the title, or for a business or a person not in the phone's contacts the verified name, then the profile name (`page/names.js`). It is stored as a name of record, so a later push name does not replace it. A contact with a name keeps it, and a name cleared by hand stays cleared. Seen on a real phone on 2026-11-01: 60 of 62 chats named, all 17 business chats by their verified name (for example "TATA AIG General Insurance Co. Ltd."). Only an all-chats fetch has these names; a single-chat fetch does not. An inbox already open shows new names after a reload: a fetch that stores no messages announces nothing. The number in a number-only title is not put on a `@lid` contact (the user said "Number hidden" is fine). Our own number's `@lid` chat is not filtered from `listChats`, so it could be named after us.
 - Whether `chat.t` always covers a chat's newest message is unconfirmed: a chat it lags on by over a day is left out of a dated fetch. See the spec, section 5.
-- On a real phone 5 chats stalled after one message with the cursor on 20 Oct 12:12, none of which was stored, so most likely a WhatsApp notice sent to many chats. `loadEarlierMsgs` is believed to hand back what is already loaded, which is inferred, not seen. The page now compares message ids, and `max-idle-pages` bounds a chat whatever the cause.
+- On a real phone 5 chats stalled after one message with the cursor on 20 Oct 12:12, none of which was stored, so most likely a WhatsApp notice sent to many chats. `loadEarlierMsgs` is believed to hand back what is already loaded, which is inferred, not seen. The page now compares message ids, and `max-idle-pages` bounds a chat whatever the cause. The next dated fetch on the real phone took 81 s with no stall; those 5 chats were left out as inactive.
+- A dated fetch leaves out chats last active over a day before its range (585 of 650 on the real phone). An all-time fetch skips nothing and still takes about 12 minutes: `chat-delay` (1 s) follows every chat, though most only read what is already in the browser. Skipping the pause for a chat that made no load would bring it near a minute.
 - `interactive` business messages show their text and file, drawn by mimetype. Their buttons are not stored, so they do not show, and it is not known which fields carry them.
 - `vcard`, `biz_content_placeholder`, `unknown` and `newsletter_follower_invite` still show as "Unsupported message" in the thread.
 - `@c.us` / `@lid` duplicate-chat limitation (inherited): the same person can end up as two chats.
@@ -129,11 +138,14 @@ if nobody was reached. Options: leave it, ignore the pipeline filter for this co
 Tested on a real phone on 2026-11-01: a shared location and a poll coming in, and a poll template sent from the console,
 whose options show and can be tapped on the phone. Votes, the poll card and call lines are built (spec
 `2026-11-01-calls-and-poll-votes-design.md`). Still open:
-- Not seen on a real phone: a live vote, a stored vote fetched from WhatsApp's votes table, a location with a place name,
-  a location template sent from the console.
-- Which fields a `call_log` really carries is unconfirmed: `subtype` and `duration` are published, the rest are guesses
-  read defensively. The first call fetched after a start logs `call_log fields: [...]` (names only). Check it, correct
-  `MessagePayloads.call`, then delete that log line and its flag in `InboxIngestService.importMessage`.
+- Seen on the real phone: a vote on a console poll reaches the console ("Great: 1 vote"), at least through a fetch.
+  Not seen: a live vote arriving while the thread is open, a location with a place name, a location template sent from
+  the console.
+- A `call_log` carries `isVideoCall`, `callDuration`, `callOutcome` and `callParticipants`, seen on the real phone; there
+  is no `subtype`. The user confirmed the calls shown as video are video calls. Still to do: delete the
+  `call_log fields: [...]` log line and its flag in `InboxIngestService.importMessage`, and the `subtype` reads in
+  `MessagePayloads.call`. 5 incoming calls with no duration and not marked missed are probably rejected ones: the
+  values of `callOutcome` other than missed are not known.
 - `vote_update` joined `DURABLE_EVENTS`, which ships in the extension package: until the extension is reloaded a vote
   made while the backend is down is lost, though a later fetch recovers it.
 - The console cannot vote on a poll, only show votes.
@@ -141,6 +153,20 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
 - A first message arriving as `ciphertext` is dropped by the page (`events.js`), which is older than the notices work. A chat used to appear anyway when a notice came with it; now it appears with the next real message.
 - Cosmetic: a location template joins name and address with ", " where whatsapp-web.js uses a line break, so the
   recipient may see both as the title.
+
+### H. Open since 2026-11-01
+
+- **A judgement call:** chats a fetch creates start CLOSED and unassigned, so a fetch never sends old conversations to
+  agents. After the inbox reset that left the Open tab empty. Making them land in Open is small, but every fetched chat
+  would then look like work to do.
+- **A judgement call:** on 2026-10-31 the history import was fast-forwarded into `main` and its branches deleted unpushed,
+  against the `--no-ff` rule. Fixing it means rewriting pushed history, so it waits on the user.
+- 4 chats preview "Unsupported message": the types in 2F.
+- Messages sent from the console or a campaign that were fetched again after the reset show "WhatsApp Web" as their
+  sender: who sent them was on the deleted rows.
+- Once, a full backend run failed two tests in `HistoryImportRunnerEventsIT`: the fake device got a 404 on `/ws`. Not
+  seen again in three runs of that class alone and four full runs, two of them in 4 processes. Cause unknown.
+- A full backend run in 4 processes peaks at about 6 GB; the 16 GB Mac's swap was nearly full during it.
 
 ## 3. Rules the user set
 
@@ -162,6 +188,9 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
   `crm.platform` ports with adapters in `omnichannel-app` (`app.crm`), because it may become a separate service.
 - Prettier only on touched files. Never bare `git stash`. Use absolute paths; the shell's directory drifts.
 - Test first. A fresh reviewer on the whole branch, then one fix pass. Re-grade findings by effect on users.
+- While fixing, run only the tests that matter; run the full `./mvnw -q verify` once, right before a merge. The user found
+  repeated full runs too slow.
+- Keep the backend's tests in processes, not threads: `forkCount` in the pom, not Failsafe (the user's choice).
 - Commit trailer: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (or as the session's reminder says).
 
 ## 4. Running things
@@ -186,6 +215,9 @@ kill $(lsof -nP -iTCP:8089 -sTCP:LISTEN -t)
 (cd "$B" && ./mvnw -q -Pwith-frontend -DskipTests -Dfrontend.dist="$F/dist" package)
 (cd "$B" && nohup java -jar omnichannel-app/target/omnichannel-app-0.1.0-SNAPSHOT.jar --server.port=8089 \
   > /tmp/claude-501/app-8089.log 2>&1 &)
+
+# Extension page script into the backend, from the extension's main checkout (it writes into the sibling backend)
+(cd /Users/nagesh/Projects/WhatsAppWebJS/SCM/whatsapp-web-extension && npm run -s build)
 ```
 
 Tooling used: Java 21, Spring Boot 4.1, Node 24, React 18, PatternFly 6.5. In background Bash runs, wrap with
@@ -231,3 +263,13 @@ Tooling used: Java 21, Spring Boot 4.1, Node 24, React 18, PatternFly 6.5. In ba
 - **Demo segments show 0 on purpose:** no deal has the gold tier here, and messages are recent.
 - **A restart signs the browser out** at times; the session is in `localStorage` under `omnichannel.session`.
 - **Stage history:** `Placement.retag` moves a deal's history into its new pipeline, so redaction works by stage id too.
+- **Stopping the app takes up to 30 s** while a console holds its event stream open. Wait for the old process to exit
+  before building: the build replaces the jar under it.
+- **The page script built in a worktree** embeds the worktree's relative paths and gets another hash, so `main` would need
+  a second commit. Build it from a sibling folder at the extension's depth instead: `git archive <branch>` into
+  `SCM/.ext-build`, link the worktree's `node_modules`, run `OMNICHANNEL_BACKEND_DIR=<backend worktree> npm run -s build`,
+  then delete the folder.
+- **An extension worktree** needs `.worktrees/whatsapp-web.js` linked to `../../whatsapp-web.js`, as its sources import
+  that repo by relative path. `.worktrees` is ignored there only through `.git/info/exclude`.
+- **The app log holds NUL bytes**, so `grep` calls it binary and finds nothing: use `grep -a` or `tr -d '\000'`.
+- **Claude in Chrome** sometimes reports itself disconnected; `list_connected_browsers` then a new tab brings it back.
