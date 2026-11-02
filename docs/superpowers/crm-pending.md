@@ -171,15 +171,14 @@ whose options show and can be tapped on the phone. Votes, the poll card and call
 
 - Decided and built 2026-11-02: a chat a fetch **creates** lands in Open and is routed like a new chat when it waits on
   us: unread on the phone (a chat marked unread by hand counts) or the contact wrote last, the contact wrote within 7
-  days (`waiting-window`), and it is not a business (verified name, business or enterprise account). Else it stays
+  days (`waiting-window`), and it is not an official business (an enterprise account, or verified "high"; a shop on
+  the WhatsApp Business app counts as a person, the user's choice). Else it stays
   Closed and unassigned. Decided once, when the chat's fetch ends DONE; a stopped or failed chat is not decided, and a
   chat that existed before the fetch is never touched. The "Routed" line says "fetched from WhatsApp, waiting for a
   reply". Opens nothing when the page does not say the chat is a person (a page script from before), nor when the
   fetch's "To" date is before it was asked for (it cannot see our later replies). Opens the chat the fetch created by
   its id: WhatsApp may keep a chat listed under a number under the person's lid.
   Left as they are (review of 2026-11-02):
-  - "Business" includes anyone on the WhatsApp Business app (`contact.isBusiness`), small shops among them, so their
-    chats stay Closed. Narrowing it to official accounts (`verifiedLevel` high, or enterprise) waits on the user.
   - A crash after a page created the chat and before its progress was saved loses `createdChatId`: that chat stays
     Closed (fails safe). Marking the chat itself at creation would make it exact.
   - A Stop lets the page already on its way finish; if it ends the chat DONE, the chat is still decided.

@@ -1541,17 +1541,16 @@
       return title;
     }
   }
-  function isBusinessChat(chat) {
+  function isOfficialBusiness(chat) {
     try {
       const { Contact } = window.require("WAWebCollections");
       const contact = chat.contact ?? Contact?.get(chat.id);
       if (!contact) return false;
-      if (contact.isBusiness === true || contact.isEnterprise === true)
-        return true;
+      if (contact.isEnterprise === true) return true;
       const getters = window.require("WAWebContactGetters");
-      return Boolean(
-        getters.getIsEnterprise?.(contact) || getters.getVerifiedName?.(contact)
-      );
+      if (getters.getIsEnterprise?.(contact)) return true;
+      const level = getters.getVerifiedLevel?.(contact);
+      return level === 2 || String(level).toLowerCase() === "high";
     } catch {
       return false;
     }
@@ -1841,7 +1840,8 @@
           // whether the chat waits on us, as the inbox decides for a chat a fetch creates;
           // -1 is a chat marked as unread by hand: one unread
           unreadCount: chat.unreadCount < 0 ? 1 : chat.unreadCount ?? 0,
-          business: isBusinessChat(chat)
+          // an official business only; a shop on the Business app counts as a person
+          business: isOfficialBusiness(chat)
         };
       }
     );
@@ -1929,7 +1929,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "960e787c0fef" : "dev";
+  var BUILD = true ? "96193b71c953" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
