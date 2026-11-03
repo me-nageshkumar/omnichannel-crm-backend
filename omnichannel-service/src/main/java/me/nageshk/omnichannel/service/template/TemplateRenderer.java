@@ -80,6 +80,21 @@ public class TemplateRenderer {
         return filled(t, templates.view(t), campaignContext(t, given), List.of());
     }
 
+    /**
+     * Renders the template for an automation rule, which has no user: contact placeholders come from the chat's
+     * contact (no authority check; none, or an unknown id, means every one takes its fallback) and agent placeholders
+     * from {@code values}. A required agent placeholder without a value is listed in {@code missing}.
+     */
+    public RenderedTemplate renderForAutomation(String workspaceId, String templateId, String contactId,
+            Map<String, String> values) {
+        MessageTemplate t = templates.require(workspaceId, templateId);
+        rejectReservedNames(t);
+        Contact contact = blank(contactId) ? null : contacts.require(workspaceId, contactId.trim());
+        TemplateView view = templates.view(t);
+        List<String> missing = new ArrayList<>();
+        return filled(t, view, context(t, view, contact, values == null ? Map.of() : values, missing), missing);
+    }
+
     /** Fills the template's text fields from the context; errors are collected and thrown together. */
     private static RenderedTemplate filled(MessageTemplate t, TemplateView view, Map<String, Object> context,
             List<String> missing) {

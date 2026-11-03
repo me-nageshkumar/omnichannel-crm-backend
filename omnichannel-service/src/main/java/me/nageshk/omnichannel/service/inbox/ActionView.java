@@ -13,5 +13,6 @@ public record ActionView(
         ChatView.Ref toTeam,
         Instant at,
         RoutedReason reason,
+        String reasonDetail,
         ChatView.Ref fromTeam) {
 }

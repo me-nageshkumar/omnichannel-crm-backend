@@ -6,7 +6,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 
 @ConfigurationProperties(prefix = "omnichannel")
 public record OmnichannelProperties(
-        Jwt jwt, SuperAdmin superAdmin, TwoFactor twoFactor, Ws ws, Rpc rpc, History history) {
+        Jwt jwt, SuperAdmin superAdmin, TwoFactor twoFactor, Ws ws, Rpc rpc, History history,
+        Automation automation) {
 
     public record Jwt(String secret, @DefaultValue("12h") Duration ttl) {}
 
@@ -43,4 +44,15 @@ public record OmnichannelProperties(
             @DefaultValue("60s") Duration timeBudget,
             @DefaultValue("3") int maxTimeoutsPerChat,
             @DefaultValue("7d") Duration waitingWindow) {}
+
+    /** Automations: the worker's tick and lease, retries, and how long a live test may sit idle. */
+    public record Automation(
+            @DefaultValue("true") boolean autoTick,
+            @DefaultValue("2s") Duration tick,
+            @DefaultValue("5m") Duration lease,
+            @DefaultValue("3") int maxAttempts,
+            @DefaultValue("20") int batch,
+            @DefaultValue("30m") Duration testIdle,
+            @DefaultValue("60s") Duration sendTimeout,
+            @DefaultValue("2m") Duration retryDelay) {}
 }

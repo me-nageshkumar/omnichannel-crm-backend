@@ -96,17 +96,19 @@ public class ChatRoutingService {
         if (routing == null || routing.mode() == RoutingMode.NONE) return chat;
         Map<String, User> reachable = reachable(chat);
         User sticky = options.sticky() ? stickyAgent(chat, setting, team, reachable, options.excludeUserId()) : null;
-        if (sticky != null) return routed(chat, sticky, team, RoutedReason.STICKY, options.excludeUserId());
+        if (sticky != null) {
+            return routed(chat, sticky, team, RoutedReason.STICKY, options.excludeUserId(), null, null);
+        }
         switch (routing.mode()) {
             case TEAM -> {
-                return routed(chat, null, team, options.reason(), options.excludeUserId());
+                return routed(chat, null, team, options.reason(), options.excludeUserId(), null, null);
             }
             case USER -> {
                 User user = routing.userId() == null ? null : reachable.get(routing.userId());
                 boolean ok = user != null && eligible(user, team, chat.getWorkspaceId())
                         && !user.getId().equals(options.excludeUserId());
                 // the configured member can no longer take chats: the team queue
-                return routed(chat, ok ? user : null, team, options.reason(), options.excludeUserId());
+                return routed(chat, ok ? user : null, team, options.reason(), options.excludeUserId(), null, null);
             }
             case ROUND_ROBIN -> {
                 // the cursor is read fresh: a caller re-routing many chats holds a Team loaded before the first move
@@ -114,7 +116,7 @@ public class ChatRoutingService {
                 User next = nextMember(current, reachable, chat.getWorkspaceId(), options.excludeUserId());
                 // the turn moves once the chat is saved: a save that fails (a newer version) and is retried
                 // must not skip the member whose turn it was
-                WaWebChat saved = routed(chat, next, team, options.reason(), options.excludeUserId());
+                WaWebChat saved = routed(chat, next, team, options.reason(), options.excludeUserId(), null, null);
                 if (next != null) {
                     // only the cursor: saving the whole team could revert an edit made since it was read
                     mongo.updateFirst(new Query(Criteria.where("_id").is(team.getId())),
@@ -128,8 +130,34 @@ public class ChatRoutingService {
         }
     }
 
+    /**
+     * Gives the chat to {@code user} (null: the queue of {@code team}) on behalf of an automation rule, replacing
+     * whatever routing did. Publishes {@link InboxEvents.ChatChanged} too: nothing else will.
+     */
+    public WaWebChat assignByAutomation(WaWebChat chat, User user, Team team, String ruleName) {
+        WaWebChat saved = routed(chat, user, team, RoutedReason.AUTOMATION, null, "Automation: " + ruleName,
+                ruleName);
+        publisher.publishEvent(new InboxEvents.ChatChanged(saved));
+        return saved;
+    }
+
+    /**
+     * Gives the chat to the next eligible member of {@code team} after its cursor, whatever the team's routing mode,
+     * and moves the cursor once saved; with nobody eligible, to the team's queue.
+     */
+    public WaWebChat roundRobinByAutomation(WaWebChat chat, Team team, String ruleName) {
+        Team current = teams.findById(team.getId()).orElse(team);
+        User next = nextMember(current, reachable(chat), chat.getWorkspaceId(), null);
+        WaWebChat saved = assignByAutomation(chat, next, team, ruleName);
+        if (next != null) {
+            mongo.updateFirst(new Query(Criteria.where("_id").is(team.getId())),
+                    new Update().set("roundRobinCursor", next.getId()), Team.class);
+        }
+        return saved;
+    }
+
     /** The team that works the chat's number, or null when the number has none (or it was deleted). */
-    private Team owningTeam(WaWebChat chat) {
+    public Team owningTeam(WaWebChat chat) {
         String teamId = phoneNumbers.findById(chat.getPhoneNumberId()).map(PhoneNumber::getTeamId).orElse(null);
         return teamId == null ? null : teams.findByIdAndWorkspaceId(teamId, chat.getWorkspaceId()).orElse(null);
     }
@@ -169,7 +197,7 @@ public class ChatRoutingService {
     }
 
     /** Active, not disabled anywhere that matters, and available right now (§3.2). */
-    static boolean canTakeChats(User u, String workspaceId) {
+    public static boolean canTakeChats(User u, String workspaceId) {
         return u.isActive() && u.getDisabled() == null && UserAdminService.brandDisabled(u, workspaceId) == null
                 && u.availabilityStatus() == Availability.Status.AVAILABLE;
     }
@@ -179,7 +207,8 @@ public class ChatRoutingService {
         return canTakeChats(u, workspaceId) && team.getMemberIds().contains(u.getId());
     }
 
-    private WaWebChat routed(WaWebChat chat, User user, Team team, RoutedReason reason, String excludedUserId) {
+    private WaWebChat routed(WaWebChat chat, User user, Team team, RoutedReason reason, String excludedUserId,
+            String byName, String reasonDetail) {
         chat.setAssignedUserId(user == null ? null : user.getId());
         chat.setAssignedTeamId(team == null ? null : team.getId());
         chat.setAssignedAt(clock.instant());
@@ -198,6 +227,8 @@ public class ChatRoutingService {
             a.setToTeamName(team.getName());
         }
         a.setReason(reason);
+        a.setReasonDetail(reasonDetail);
+        a.setByName(byName);
         a.setExcludedUserId(excludedUserId);
         a.setAt(chat.getAssignedAt());
         a = actions.save(a);

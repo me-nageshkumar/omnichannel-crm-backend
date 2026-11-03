@@ -502,6 +502,42 @@ Endpoints are under `/api/workspaces/{workspaceId}`: `templates` (`GET ?q=&type=
 defaults to `ACTIVE`; `POST` create; `GET|PUT|DELETE /{id}`; `GET /categories`; `POST /{id}/archive|unarchive|
 duplicate|render`) and `template-media` (`POST` multipart `file`, `GET /{mediaId}`).
 
+## Automations
+
+A brand's rules react to an event, a message coming in or a deal moving lane, with actions: send a template, assign the chat, add the person to the CRM. Packages `*.automation` in each
+module; design in `docs/superpowers/specs/2026-11-03-automations-design.md`, REST contract in
+`docs/superpowers/plans/2026-11-03-automations-backend.md` ("REST contract").
+
+- **Events:** a *message event* (a customer's first real message, or every real message, with `chat.new`
+  computed when the event is written) and a *deal event* (a deal moved to another lane, a pipeline change,
+  won or lost). Only real message types start anything; call logs, revoked messages, reactions and notices
+  do not. A message event id is `m-<stored message id>`, so one message is never queued twice.
+- **Rules:** conditions (a tree in the segment editor's JSON shape, up to 3 levels and 30 conditions) and an
+  ordered list of actions: send a template, assign (agent, team or round robin) and add to the CRM. A rule is
+  `DRAFT` or `PUBLISHED`; a published rule cannot be edited or deleted (409 `AUTOMATION_RULE_PUBLISHED`).
+  Run order is priority (largest first), then creation order. A rule can be tried on a test contact before it
+  is published.
+- **Queue collections:** `automationEvents` (the queue, MongoDB with leases: tick 2 s, lease 5 min, 3 attempts,
+  20 events per tick), `automationRuns` (one live run per event and rule; test runs may repeat),
+  `automationEventHistory` (one record per processed event) and `automationTests`. Nothing expires: there is
+  no retention setting, the collections only grow.
+- **Sends:** a send is retried only when it never reached the extension; one the extension got but did not
+  answer is marked Interrupted ("may have gone") and is never sent again.
+
+| Authority (BRAND) | Allows | Agent | Team Lead | Workspace Manager | Customer Admin |
+|---|---|---|---|---|---|
+| `automation:view` | see rules, their runs and the event history | | | yes | yes |
+| `automation:manage` | create, edit, test, publish, move to draft and delete rules | | | yes | yes |
+
+Endpoints are under `/api/workspaces/{workspaceId}/automations`:
+
+| Path | Authority | Purpose |
+|---|---|---|
+| `GET /options`, `GET /rules`, `GET /rules/{id}`, `GET /rules/{id}/runs`, `GET /events` | view | editor choices, rules in run order, a rule, its runs, the event history |
+| `POST /rules`, `PUT /rules/{id}`, `POST /rules/{id}/publish`, `POST /rules/{id}/unpublish`, `DELETE /rules/{id}` | manage | rule lifecycle |
+| `GET /test-contacts`, `GET /rules/{id}/tests/preflight`, `POST /rules/{id}/tests`, `GET /rules/{id}/tests/active` | manage | start a test |
+| `GET /tests/{id}`, `POST /tests/{id}/check`, `.../actions/{index}/run`, `.../actions/{index}/skip`, `.../again`, `.../end`, `.../replay` | manage | drive a test |
+
 ## API
 
 ```bash

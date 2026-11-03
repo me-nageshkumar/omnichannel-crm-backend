@@ -65,6 +65,12 @@ public class CaptureService {
         this.clock = clock;
     }
 
+    /** True when the contact is a CRM contact on the channel number (a {@code crmContacts} row exists). */
+    public boolean inCrm(String workspaceId, String contactId, String phoneNumberId) {
+        return mongo.exists(new Query(Criteria.where("workspaceId").is(workspaceId).and("contactId").is(contactId)
+                .and("channel.phoneNumberId").is(phoneNumberId)), CrmContact.class);
+    }
+
     public CaptureResult capture(CrmContext ctx, CaptureRequest req) {
         ctx.require("crm:edit");
         requireAnyPipeline(ctx);
@@ -115,7 +121,7 @@ public class CaptureService {
         PlatformContact contact = contactDirectory.find(ctx.workspaceId(), req.contactId())
                 .orElseThrow(() -> new NotFoundException("Contact not found"));
         Origin origin = new Origin(OriginKind.MANUAL, channel.id(), null, null, ctx.userId());
-        Placed placed = placed(ctx, contact, channel, origin, null, null);
+        Placed placed = placed(ctx, contact, channel, origin, null, null, ctx.userId());
         return new AddContactResult(contactService.view(ctx, placed.contact()), placed.created());
     }
 
@@ -127,7 +133,7 @@ public class CaptureService {
     /** As the overload above; a CRM contact created here gets the names. */
     public CaptureResult findOrCreate(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin,
             String pipelineId, String dealTitle, String firstName, String lastName) {
-        Placed placed = placed(ctx, c, channel, origin, firstName, lastName);
+        Placed placed = placed(ctx, c, channel, origin, firstName, lastName, ctx.userId());
         CaptureDeal deal = deals.createForCapture(ctx, placed.contact(), pipelineId, dealTitle);
         // read again: the deal has changed the contact's counters and pipelines
         CrmContact fresh = mongo.findOne(new Query(Criteria.where("_id").is(placed.contact().getId())
@@ -136,9 +142,23 @@ public class CaptureService {
                 placed.created(), deal.created());
     }
 
+    /**
+     * What an automation rule does: the contact in the CRM on the number and a deal in {@code stageId} (null = the
+     * first open lane) of the pipeline. The CRM contact and the deal belong to {@code ownerId}, which may be null.
+     */
+    public CaptureResult captureForAutomation(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin,
+            String pipelineId, String stageId, String dealTitle, String ownerId) {
+        Placed placed = placed(ctx, c, channel, origin, null, null, ownerId);
+        CaptureDeal deal = deals.createForAutomation(ctx, placed.contact(), pipelineId, stageId, dealTitle, ownerId);
+        CrmContact fresh = mongo.findOne(new Query(Criteria.where("_id").is(placed.contact().getId())
+                .and("workspaceId").is(ctx.workspaceId())), CrmContact.class);
+        return new CaptureResult(contactService.view(ctx, fresh == null ? placed.contact() : fresh), deal.deal(),
+                placed.created(), deal.created());
+    }
+
     /** The contact's CRM contact on the number, made when missing. */
     private Placed placed(CrmContext ctx, PlatformContact c, PlatformNumber channel, Origin origin, String firstName,
-            String lastName) {
+            String lastName, String ownerId) {
         String ws = ctx.workspaceId();
         Query existing = new Query(Criteria.where("workspaceId").is(ws).and("contactId").is(c.id())
                 .and("channel.phoneNumberId").is(channel.id()));
@@ -155,7 +175,7 @@ public class CaptureService {
             n.setOrigin(origin);
             n.setFirstName(firstName);
             n.setLastName(lastName);
-            n.setOwnerId(ctx.userId());
+            n.setOwnerId(ownerId);
             n.setLifecycleStatus(defaultKey(ctx.settings().getLifecycleStatuses()));
             // nobody fills required fields on a capture or an import; defaults still apply
             n.setCustomFields(fields.values(ctx, TargetType.CONTACT, Map.of(), null, true, false, new LinkedHashMap<>()));

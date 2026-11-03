@@ -22,7 +22,7 @@ class JwtServiceTest {
                 new OmnichannelProperties.Jwt(SECRET, Duration.ofHours(1)),
                 null, null,
                 new OmnichannelProperties.Ws("*"),
-                new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)), null);
+                new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)), null, null);
         return new JwtService(props, Clock.fixed(now, ZoneOffset.UTC));
     }
 

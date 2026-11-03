@@ -63,7 +63,7 @@ public class InboxViews {
     public ActionView action(WaWebChatAction a) {
         return new ActionView(a.getId(), a.getType(), named(a.getByUserId(), a.getByName()),
                 ref(a.getToUserId(), a.getToUserName()), ref(a.getToTeamId(), a.getToTeamName()), a.getAt(),
-                a.getReason(), ref(a.getFromTeamId(), a.getFromTeamName()));
+                a.getReason(), a.getReasonDetail(), ref(a.getFromTeamId(), a.getFromTeamName()));
     }
 
     private static ChatView toView(WaWebChat c, Contact contact, ChatView.Ref user, ChatView.Ref team,

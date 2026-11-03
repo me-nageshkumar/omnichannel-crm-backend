@@ -259,7 +259,7 @@ public class ChatAssignmentService {
      * Whether {@code user} may open the chat's number (design §3.1): a member of its owning team, or someone who sees
      * every number. A number nobody owns is left to workspace access as before.
      */
-    private boolean canSeeNumber(User user, WaWebChat chat) {
+    public boolean canSeeNumber(User user, WaWebChat chat) {
         Team owner = owningTeam(chat);
         if (owner == null || owner.getMemberIds().contains(user.getId())) return true;
         try {
