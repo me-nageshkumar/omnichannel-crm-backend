@@ -168,6 +168,32 @@ class TaskOccurrenceFailureIT extends CrmTestBase {
     }
 
     @Test
+    void aNextOccurrenceChangedMeanwhileIsKeptEvenWhenTheRepeatEnds() throws Exception {
+        // the claim and the close are both held; meanwhile the repeat is removed and the stored occurrence is ticked
+        MongoTestCommands.delayNext(client, mongo.getDb().getName(), "crmTasks", "findAndModify", 2, 700);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Integer> call = pool.submit(this::complete);
+            while (original().get("pendingNextOccurrenceId") == null) Thread.onSpinWait();
+            mongo.updateFirst(new Query(Criteria.where("_id").is(new org.bson.types.ObjectId(taskId))),
+                    new org.springframework.data.mongodb.core.query.Update().unset("recurrence").inc("version", 1),
+                    "crmTasks");
+            while (tasks().size() < 2) Thread.onSpinWait();
+            Document stored = tasks().stream().filter(t -> !t.get("_id").toString().equals(taskId)).findFirst()
+                    .orElseThrow();
+            mongo.updateFirst(new Query(Criteria.where("_id").is(stored.get("_id"))),
+                    new org.springframework.data.mongodb.core.query.Update().inc("version", 1), "crmTasks");
+            assertThat(call.get()).isEqualTo(200);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(original().getString("status")).isEqualTo("DONE");
+        assertThat(tasks()).as("someone already worked on it, so it stays").hasSize(2);
+        Document next = tasks().stream().filter(t -> !t.get("_id").toString().equals(taskId)).findFirst().orElseThrow();
+        assertThat(original().getString("nextOccurrenceId")).isEqualTo(next.get("_id").toString());
+    }
+
+    @Test
     void skippingFinishesTheSameWayAfterAFailure() throws Exception {
         MongoTestCommands.failNext(client, mongo.getDb().getName(), "crmTasks", "insert", 1);
         assertThat(act("skip")).isEqualTo(500);
