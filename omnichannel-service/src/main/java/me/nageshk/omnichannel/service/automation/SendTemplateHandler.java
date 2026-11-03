@@ -27,7 +27,10 @@ import org.springframework.stereotype.Component;
 /**
  * Sends one of the brand's templates to the event's chat as {@code "Automation: <rule name>"}. It runs at any hour,
  * never messages a do-not-contact contact, and never claims or reopens the chat (the inbox sender sees to that for an
- * {@link AutomationActor}). Device trouble is transient and retried by the worker; WhatsApp refusing is permanent.
+ * {@link AutomationActor}). A send that never reached the extension (no device, WhatsApp Web not ready, the frame
+ * not handed over) is retried by the worker; one the extension got but did not confirm (no answer in time, a
+ * disconnect during the call, the app stopping) may have gone, so it is interrupted and never sent again. WhatsApp
+ * refusing is permanent.
  */
 @Component
 public class SendTemplateHandler implements ActionHandler {
@@ -79,7 +82,7 @@ public class SendTemplateHandler implements ActionHandler {
             return failure(e.getCause() == null ? e : e.getCause(), template);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return ActionResult.retryLater("The send was interrupted");
+            return ActionResult.interrupted("The app was stopping; the message may have gone");
         } catch (TimeoutException | RuntimeException e) {
             return failure(e, template);
         }
@@ -101,11 +104,19 @@ public class SendTemplateHandler implements ActionHandler {
                     ? "WhatsApp Web is not ready on the number"
                     : "The number's extension is offline or the number is disabled");
         }
-        if (cause instanceof TimeoutException) return ActionResult.retryLater("The extension did not answer in time");
+        if (cause instanceof TimeoutException) {
+            return ActionResult.interrupted("The extension did not answer in time; the message may have gone");
+        }
         if (cause instanceof RpcException r) {
-            return RpcException.DEVICE_DISCONNECTED.equals(r.code()) || RpcException.SEND_FAILED.equals(r.code())
-                    ? ActionResult.retryLater("The extension lost the connection")
-                    : ActionResult.failed("WhatsApp did not send it (" + r.code() + ")");
+            // SEND_FAILED: the frame could not be handed to the session, so nothing left the server
+            if (RpcException.SEND_FAILED.equals(r.code())) {
+                return ActionResult.retryLater("The extension lost the connection");
+            }
+            // DEVICE_DISCONNECTED: the frame had left and the device dropped before answering
+            if (RpcException.DEVICE_DISCONNECTED.equals(r.code())) {
+                return ActionResult.interrupted("The extension lost the connection; the message may have gone");
+            }
+            return ActionResult.failed("WhatsApp did not send it (" + r.code() + ")");
         }
         if (cause instanceof ValidationException v) {
             for (String field : v.fields().keySet()) {

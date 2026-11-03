@@ -89,6 +89,12 @@ class AutomationDevice implements AutoCloseable {
         return Envelope.errorResponse(req.id(), "METHOD_NOT_FOUND", req.method());
     }
 
+    /** Drops the connection at once, as an extension that goes away mid-call; call it from {@link #sendAnswer}. */
+    void drop() throws Exception {
+        closed = true;
+        device.close();
+    }
+
     @Override
     public void close() throws Exception {
         closed = true;

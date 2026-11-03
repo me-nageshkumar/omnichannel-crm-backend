@@ -236,14 +236,35 @@ class SendTemplateActionIT extends AutomationTestBase {
     }
 
     @Test
-    void extensionNotAnsweringRetriesLater() throws Exception {
+    void extensionNotAnsweringIsInterrupted() throws Exception {
         WaWebChat chat = incoming(n1, ASHA, "chat", "Hi", "Asha");
         String t = template("Welcome", "Hi {{contact.name}}");
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
             d.sendAnswer = req -> null;
             ActionResult r = run(chat, t, null);
-            assertThat(r.outcome()).isEqualTo(StepOutcome.RETRYING);
-            assertThat(r.reason()).isEqualTo("The extension did not answer in time");
+            assertThat(r.outcome()).isEqualTo(StepOutcome.INTERRUPTED);
+            assertThat(r.reason()).isEqualTo("The extension did not answer in time; the message may have gone");
+            assertThat(d.requests("sendMessage")).hasSize(1);
+        }
+    }
+
+    @Test
+    void disconnectedMidCallIsInterrupted() throws Exception {
+        WaWebChat chat = incoming(n1, ASHA, "chat", "Hi", "Asha");
+        String t = template("Welcome", "Hi {{contact.name}}");
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            d.sendAnswer = req -> {
+                try {
+                    d.drop();
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+                return null;
+            };
+            ActionResult r = run(chat, t, null);
+            assertThat(r.outcome()).isEqualTo(StepOutcome.INTERRUPTED);
+            assertThat(r.reason()).isEqualTo("The extension lost the connection; the message may have gone");
+            assertThat(d.requests("sendMessage")).hasSize(1);
         }
     }
 

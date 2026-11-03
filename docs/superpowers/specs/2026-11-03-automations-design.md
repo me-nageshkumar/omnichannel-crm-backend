@@ -36,7 +36,9 @@ showing what happened.
 - Sending hours for automations (the user's: 24x7; campaigns keep their hours).
 - Queueing sends while the extension is offline for long. (A send that failed because the extension was offline,
   WhatsApp Web was not ready or the extension did not answer **is** retried a bounded number of times: the user's,
-  2026-11-03, after a look at the reference. Any other failure is not retried.)
+  2026-11-03, after a look at the reference. Any other failure is not retried. Narrowed the same day by a controller
+  ruling: only a send that never reached the extension is retried; one the extension got but did not answer is
+  Interrupted, see 5.1.)
 - Merging a person's two chats (`@c.us` and `@lid`): the user will take it after this task.
 - Rule version history.
 
@@ -172,8 +174,11 @@ Both events are per brand (workspace). **Rules apply to all numbers of the brand
 - The stored message shows who sent it as **"Automation: <rule name>"** (a new message source next to Console and
   Campaign). It does not claim or reopen the chat for anyone and does not change its status (my call, like a campaign
   send).
-- The device must be ready; if it is not (extension offline, number disabled), the send is tried again after a short
-  wait, up to three attempts in all; still failing, the action fails with that reason. Other failures (an archived
+- The device must be ready. The send is tried again after a short wait only when it never reached the extension
+  (extension offline or number disabled, WhatsApp Web not ready, or the request could not be handed over), up to three
+  attempts in all; still failing, the action fails with that reason. When the extension got the request but did not
+  answer in time, or disconnected during it, the message may have gone, so the step is marked Interrupted and is never
+  sent again (a controller ruling of 2026-11-03: never messaging twice outranks the retry). Other failures (an archived
   template, a placeholder without a value, WhatsApp refusing the message) are not retried. While a send waits for its
   retry the rule's later actions wait too, so the actions keep their order.
 

@@ -492,6 +492,42 @@ class AutomationWorkerIT extends AutomationTestBase {
     }
 
     @Test
+    void interruptedSendIsNotResentAndTheRuleGoesOn() throws Exception {
+        crmOn();
+        AutomationRule w = welcome();
+        try (AutomationDevice d = device()) {
+            d.sendAnswer = req -> null;
+            WaWebChat chat = incoming(n1, ASHA, "chat", "Hello", "Asha");
+            AutomationEvent copy = onlyQueued();
+
+            assertThat(worker.tick()).isEqualTo(1);
+
+            AutomationRun run = onlyRunOf(w);
+            assertThat(outcomes(run)).containsExactly(StepOutcome.INTERRUPTED, StepOutcome.DONE, StepOutcome.DONE);
+            assertThat(run.getSteps().get(0).reason())
+                    .isEqualTo("The extension did not answer in time; the message may have gone");
+            assertThat(run.getStatus()).isEqualTo(RunStatus.INTERRUPTED);
+            assertThat(stored(chat).getAssignedUserId()).isIn(agent.getId(), agent2.getId());
+            assertThat(deals()).hasSize(1);
+            assertThat(queued()).isEmpty();
+            assertThat(history()).singleElement().satisfies(h -> {
+                assertThat(h.getOutcome()).isEqualTo(EventOutcome.DONE);
+                assertThat(h.getAttempts()).isEqualTo(1);
+            });
+
+            clock.advance(Duration.ofMinutes(6));
+            assertThat(worker.tick()).isZero();
+            // the same event claimed once more finds the run settled
+            mongo.insert(copy);
+            assertThat(worker.tick()).isEqualTo(1);
+
+            assertThat(d.requests("sendMessage")).hasSize(1);
+            assertThat(runsOf(w)).hasSize(1);
+            assertThat(onlyRunOf(w).getStatus()).isEqualTo(RunStatus.INTERRUPTED);
+        }
+    }
+
+    @Test
     void laterRulesWaitForTheRetry() throws Exception {
         AutomationRule a = rule("A", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, 10, null,
                 send(template("Hello", "Hello from A")));

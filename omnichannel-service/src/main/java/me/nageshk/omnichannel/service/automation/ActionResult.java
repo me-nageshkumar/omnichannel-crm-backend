@@ -17,7 +17,15 @@ public record ActionResult(StepOutcome outcome, String reason) {
         return new ActionResult(StepOutcome.FAILED, reason);
     }
 
-    /** A transient failure: the worker retries the step later. */
+    /**
+     * The action may or may not have happened (a send the extension got but did not confirm): final, never retried,
+     * so a message is never sent twice.
+     */
+    public static ActionResult interrupted(String reason) {
+        return new ActionResult(StepOutcome.INTERRUPTED, reason);
+    }
+
+    /** A transient failure before anything left the server: the worker retries the step later. */
     public static ActionResult retryLater(String reason) {
         return new ActionResult(StepOutcome.RETRYING, reason);
     }
