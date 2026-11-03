@@ -118,10 +118,15 @@ Both events are per brand (workspace). **Rules apply to all numbers of the brand
   DONE, or FAILED after a few attempts. An event whose lease ran out (the app stopped mid-way) is claimed again.
 - **No double sends**: each (event, rule) run is stored once under a unique key in the run log, so an event processed
   twice runs each rule once.
-- **The queue stays small** (the user's aim; my call on how): a partial index on PENDING keeps the claim fast however
-  many old events there are, and a TTL index deletes DONE and FAILED events about 7 days after they finished. What a
-  rule did is kept in the run log (section 8, 30 days), not in the queue. The user suggested moving processed events
-  to another collection; the TTL gives the same result with one write instead of a copy and a delete.
+- **The queue stays small and nothing is forgotten** (the user's: "I want to keep track what when happened"). A
+  processed event (DONE, or FAILED after its last attempt) is **moved** to `automationEventHistory`: inserted there
+  with its outcome and finish time, then deleted from `automationEvents`. The move is safe to repeat: the history
+  document keeps the event's id, so a crash between the two writes leaves at most a duplicate insert that the unique id
+  refuses, and the next pass finishes the delete. `automationEvents` therefore holds only PENDING and RUNNING events.
+- **Nothing expires** (the user's): neither the event history nor the run log has a TTL. Both are small documents (an
+  event is the data in section 3, a run is a line per action); a busy brand with a few hundred events a day adds a few
+  MB a year. A retention setting can come later if a customer needs one.
+- History is indexed by brand and time, and by rule, so the Runs page and "what happened to this contact" can read it.
 - Writing the event comes after the message or the move is saved and never fails it. A crash in the instant between
   the two loses that one event (my call: accepted for v1; noted for the reviewer).
 - The worker runs off the ingestion and request threads, so a slow rule never slows the inbox or a deal move. Several
@@ -222,7 +227,7 @@ Add to CRM is created, not moved. So no rule can trigger another.
 - Then "Test again" (listen for the next event) or "Done".
 - **Published rules are not paused** for the test contact during a test (the user's, "for now"): they run as usual.
 - Only drafts can be tested (the user's). One test at a time per rule; a test that waits with no event for 30 minutes
-  ends (my call). Test runs are kept in the run log, marked as tests.
+  ends (my call). Test runs are kept in the run log and the event history, marked as tests.
 
 ## 8. The Automations page
 - Its **own entry in the side menu**, "Automations" (the user's).
@@ -231,7 +236,10 @@ Add to CRM is created, not moved. So no rule can trigger another.
 - **Editor**: When (the event), If (conditions, groups like the segment editor's), Then (actions in order, each with
   its own settings; Assign chat has the dialog above).
 - **Runs**: per rule, newest first: when, who (contact or deal), the event in short, and each action's outcome (done,
-  skipped and why, failed and why). Kept 30 days (my call, after the reference's TTL).
+  skipped and why, failed and why). Kept for good, like the event history (the user's).
+- **Event history** (my call, from the user's "keep track what when happened"): a tab on the Automations page listing
+  every event, newest first, with what it was, when, which rules matched and what each did; filter by event kind, rule,
+  contact and date.
 - Mockups the user saw: `.superpowers/brainstorm/687-1793683211/content/rules-screen.html` and
   `assign-and-test.html` in the backend repo (git-ignored).
 
