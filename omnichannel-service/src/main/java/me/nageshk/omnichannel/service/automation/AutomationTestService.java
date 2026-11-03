@@ -397,15 +397,16 @@ public class AutomationTestService {
             throw outOfTurn(fresh);
         }
         AutomationAction a = list.get(index);
+        String summary = views.actionSummaries(claimed.getWorkspaceId(), list).get(index);
         RunStep step;
         if (run) {
             ActionContext ctx = new ActionContext(claimed.getWorkspaceId(), claimed.getCustomerId(),
                     claimed.getEvent(), claimed.getEventId(), claimed.getData(), rule.getId(), rule.getName(), true);
             ActionResult r = actions.run(ctx, a);
             if (r.outcome() == StepOutcome.RETRYING) r = ActionResult.failed(r.reason() + WOULD_RETRY);
-            step = new RunStep(index, a.type(), r.outcome(), r.reason(), clock.instant());
+            step = new RunStep(index, a.type(), summary, r.outcome(), r.reason(), clock.instant());
         } else {
-            step = new RunStep(index, a.type(), StepOutcome.SKIPPED, SKIPPED, now);
+            step = new RunStep(index, a.type(), summary, StepOutcome.SKIPPED, SKIPPED, now);
         }
         if (claimed.getRunId() != null) {
             mongo.updateFirst(new Query(Criteria.where("_id").is(claimed.getRunId())),
@@ -572,7 +573,9 @@ public class AutomationTestService {
             RunStep s = run == null || run.getSteps() == null || i >= run.getSteps().size() ? null
                     : run.getSteps().get(i);
             AutomationAction a = list.get(i);
-            steps.add(new StepView(i, a == null ? null : a.type(), summaries.get(i), s == null ? null : s.outcome(),
+            // a recorded step keeps the label it was run under; the steps still to come show the rule as it is
+            String summary = s == null ? summaries.get(i) : AutomationViews.stepSummary(s);
+            steps.add(new StepView(i, a == null ? null : a.type(), summary, s == null ? null : s.outcome(),
                     s == null ? null : s.reason(), s == null ? null : s.at()));
         }
         List<TestView.NumberRef> where = t.getEvent() != AutomationEventKind.MESSAGE_RECEIVED ? List.of()

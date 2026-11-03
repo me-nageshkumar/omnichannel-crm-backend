@@ -46,15 +46,17 @@ public class RuleRunner {
     private final MongoTemplate mongo;
     private final ActionRunner actions;
     private final AutomationCrm crm;
+    private final AutomationViews views;
     private final OmnichannelProperties props;
     private final Clock clock;
 
     RuleRunner(AutomationRunRepository runs, MongoTemplate mongo, ActionRunner actions, AutomationCrm crm,
-            OmnichannelProperties props, Clock clock) {
+            AutomationViews views, OmnichannelProperties props, Clock clock) {
         this.runs = runs;
         this.mongo = mongo;
         this.actions = actions;
         this.crm = crm;
+        this.views = views;
         this.props = props;
         this.clock = clock;
     }
@@ -73,7 +75,20 @@ public class RuleRunner {
         } catch (DuplicateKeyException raced) {
             return RuleOutcome.none();
         }
-        return runActions(e, rule, run, 0);
+        return runActions(e, rule, run, 0, summaries(e, rule));
+    }
+
+    /** The labels of the rule's actions as it is now, stored on each step; a failed lookup leaves them out. */
+    private List<String> summaries(AutomationEvent e, AutomationRule rule) {
+        try {
+            return views.actionSummaries(e.getWorkspaceId(), actionsOf(rule));
+        } catch (RuntimeException ex) {
+            return List.of();
+        }
+    }
+
+    private static String summaryAt(List<String> summaries, int index) {
+        return index < summaries.size() ? summaries.get(index) : null;
     }
 
     /** Message events re-read the CRM, so a rule sees what the rules before it did; a deal is in the CRM. */
@@ -116,18 +131,20 @@ public class RuleRunner {
         List<RunStep> steps = run.getSteps() == null ? new ArrayList<>() : new ArrayList<>(run.getSteps());
         run.setSteps(steps);
         List<AutomationAction> list = actionsOf(rule);
+        List<String> summaries = summaries(e, rule);
         int start = 0;
         while (start < list.size() && isFinal(stepAt(steps, start))) start++;
         if (start < list.size() && stepAt(steps, start) == null
                 && list.get(start).type() == AutomationActionType.SEND_TEMPLATE) {
-            record(run, new RunStep(start, list.get(start).type(), StepOutcome.INTERRUPTED, INTERRUPTED_SEND,
-                    clock.instant()));
+            record(run, new RunStep(start, list.get(start).type(), summaryAt(summaries, start),
+                    StepOutcome.INTERRUPTED, INTERRUPTED_SEND, clock.instant()));
             start++;
         }
-        return runActions(e, rule, run, start);
+        return runActions(e, rule, run, start, summaries);
     }
 
-    private RuleOutcome runActions(AutomationEvent e, AutomationRule rule, AutomationRun run, int from) {
+    private RuleOutcome runActions(AutomationEvent e, AutomationRule rule, AutomationRun run, int from,
+            List<String> summaries) {
         List<AutomationAction> list = actionsOf(rule);
         ActionContext ctx = new ActionContext(e.getWorkspaceId(), e.getCustomerId(), e.getKind(), e.getId(),
                 e.getData(), rule.getId(), rule.getName(), false);
@@ -140,12 +157,14 @@ public class RuleRunner {
             ActionResult r = actions.run(ctx, a);
             if (r.outcome() == StepOutcome.RETRYING) {
                 if (e.getAttempts() < props.automation().maxAttempts()) {
-                    record(run, new RunStep(i, a.type(), StepOutcome.RETRYING, r.reason(), clock.instant()));
+                    record(run, new RunStep(i, a.type(), summaryAt(summaries, i), StepOutcome.RETRYING,
+                            r.reason(), clock.instant()));
                     return new RuleOutcome(Optional.of(run), true);
                 }
                 r = ActionResult.failed(r.reason());
             }
-            record(run, new RunStep(i, a.type(), r.outcome(), r.reason(), clock.instant()));
+            record(run, new RunStep(i, a.type(), summaryAt(summaries, i), r.outcome(), r.reason(),
+                    clock.instant()));
         }
         return new RuleOutcome(Optional.of(end(run)), false);
     }

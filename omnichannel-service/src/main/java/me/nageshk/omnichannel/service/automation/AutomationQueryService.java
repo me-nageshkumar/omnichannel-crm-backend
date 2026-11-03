@@ -4,15 +4,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import me.nageshk.omnichannel.common.api.NotFoundException;
-import me.nageshk.omnichannel.db.automation.AutomationActionType;
 import me.nageshk.omnichannel.db.automation.AutomationEventKind;
 import me.nageshk.omnichannel.db.automation.AutomationEventRecord;
-import me.nageshk.omnichannel.db.automation.AutomationRule;
 import me.nageshk.omnichannel.db.automation.AutomationRuleRepository;
 import me.nageshk.omnichannel.db.automation.AutomationRun;
 import me.nageshk.omnichannel.db.automation.AutomationRunRepository;
@@ -31,27 +27,22 @@ public class AutomationQueryService {
     private final MongoTemplate mongo;
     private final AutomationRuleRepository rules;
     private final AutomationRunRepository runs;
-    private final AutomationViews views;
 
-    public AutomationQueryService(MongoTemplate mongo, AutomationRuleRepository rules, AutomationRunRepository runs,
-            AutomationViews views) {
+    public AutomationQueryService(MongoTemplate mongo, AutomationRuleRepository rules, AutomationRunRepository runs) {
         this.mongo = mongo;
         this.rules = rules;
         this.runs = runs;
-        this.views = views;
     }
 
     /** The runs of the rule, test runs included, newest first. */
     public AutomationPage<RunView> runs(String workspaceId, String ruleId, int page) {
-        AutomationRule rule = rules.findByIdAndWorkspaceId(ruleId, workspaceId)
-                .orElseThrow(() -> new NotFoundException("rule not found"));
+        rules.findByIdAndWorkspaceId(ruleId, workspaceId).orElseThrow(() -> new NotFoundException("rule not found"));
         Query filter = new Query(Criteria.where("ruleId").is(ruleId));
         long total = mongo.count(filter, AutomationRun.class);
         List<AutomationRun> found = mongo.find(paged(filter, page, Sort.by(Sort.Direction.DESC, "startedAt", "_id")),
                 AutomationRun.class);
-        List<String> summaries = views.actionSummaries(workspaceId, rule.getActions());
         List<RunView> items = new ArrayList<>();
-        for (AutomationRun run : found) items.add(view(run, summaries));
+        for (AutomationRun run : found) items.add(view(run));
         return new AutomationPage<>(items, total, Math.max(page, 0));
     }
 
@@ -72,15 +63,8 @@ public class AutomationQueryService {
 
         List<String> ids = found.stream().map(AutomationEventRecord::getId).toList();
         Map<String, List<AutomationRun>> byEvent = new HashMap<>();
-        Set<String> ruleIds = new LinkedHashSet<>();
         for (AutomationRun run : ids.isEmpty() ? List.<AutomationRun>of() : runs.findByEventIdIn(ids)) {
             byEvent.computeIfAbsent(run.getEventId(), k -> new ArrayList<>()).add(run);
-            ruleIds.add(run.getRuleId());
-        }
-        Map<String, List<String>> summariesByRule = new HashMap<>();
-        for (AutomationRule rule : rules.findAllById(ruleIds)) {
-            if (workspaceId.equals(rule.getWorkspaceId()))
-                summariesByRule.put(rule.getId(), views.actionSummaries(workspaceId, rule.getActions()));
         }
 
         List<EventRecordView> items = new ArrayList<>();
@@ -88,7 +72,7 @@ public class AutomationQueryService {
             List<RunView> its = byEvent.getOrDefault(r.getId(), List.of()).stream()
                     .sorted(Comparator.comparing(AutomationRun::getStartedAt,
                             Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(AutomationRun::getId))
-                    .map(run -> view(run, summariesByRule.get(run.getRuleId()))).toList();
+                    .map(AutomationQueryService::view).toList();
             items.add(view(r, its));
         }
         return new AutomationPage<>(items, total, Math.max(page, 0));
@@ -98,23 +82,19 @@ public class AutomationQueryService {
         return q.with(PageRequest.of(Math.max(page, 0), AutomationPage.SIZE, sort));
     }
 
-    /** {@code summaries} are the rule's current action summaries; null when the rule is gone. */
-    private static RunView view(AutomationRun r, List<String> summaries) {
+    /** Each step shows the label it was recorded with; a null step (a retried send in flight) is left out. */
+    private static RunView view(AutomationRun r) {
         List<StepView> steps = new ArrayList<>();
         for (RunStep s : r.getSteps() == null ? List.<RunStep>of() : r.getSteps()) {
-            steps.add(new StepView(s.index(), s.type(), summary(s, summaries), s.outcome(), s.reason(), s.at()));
+            if (s == null) continue;
+            steps.add(new StepView(s.index(), s.type(), AutomationViews.stepSummary(s), s.outcome(), s.reason(),
+                    s.at()));
         }
         RunView.Contact contact = r.getContactId() == null ? null
                 : new RunView.Contact(r.getContactId(), r.getContactName(), r.getContactPhone());
         RunView.Deal deal = r.getDealId() == null ? null : new RunView.Deal(r.getDealId(), r.getDealTitle());
         return new RunView(r.getId(), r.getEventId(), r.getRuleId(), r.getRuleName(), r.isTest(), r.getStatus(),
                 r.getEventKind(), r.getSummary(), contact, deal, r.getStartedAt(), r.getFinishedAt(), steps);
-    }
-
-    private static String summary(RunStep s, List<String> summaries) {
-        if (summaries != null && s.index() >= 0 && s.index() < summaries.size()) return summaries.get(s.index());
-        AutomationActionType type = s.type();
-        return AutomationViews.typeLabel(type);
     }
 
     private static EventRecordView view(AutomationEventRecord r, List<RunView> runViews) {

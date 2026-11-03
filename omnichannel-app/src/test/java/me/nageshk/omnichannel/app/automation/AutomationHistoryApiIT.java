@@ -6,7 +6,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import me.nageshk.omnichannel.crm.deal.CrmDeal;
@@ -15,9 +17,13 @@ import me.nageshk.omnichannel.db.automation.AutomationActionType;
 import me.nageshk.omnichannel.db.automation.AutomationEventKind;
 import me.nageshk.omnichannel.db.automation.AutomationEventRecord;
 import me.nageshk.omnichannel.db.automation.AutomationRule;
+import me.nageshk.omnichannel.db.automation.AutomationRun;
 import me.nageshk.omnichannel.db.automation.EventData;
 import me.nageshk.omnichannel.db.automation.EventOutcome;
 import me.nageshk.omnichannel.db.automation.RuleStatus;
+import me.nageshk.omnichannel.db.automation.RunStatus;
+import me.nageshk.omnichannel.db.automation.RunStep;
+import me.nageshk.omnichannel.db.automation.StepOutcome;
 import me.nageshk.omnichannel.db.template.MessageTemplate;
 import me.nageshk.omnichannel.db.template.TemplateStatus;
 import me.nageshk.omnichannel.db.access.Role;
@@ -185,15 +191,108 @@ class AutomationHistoryApiIT extends AutomationTestBase {
     }
 
     @Test
-    void stepSummaryFallsBackToTheTypeWhenTheRuleIsChanged() throws Exception {
+    void stepSummaryFallsBackToTheTypeWhenNoneIsStored() throws Exception {
+        try (AutomationDevice d = device()) {
+            seed(d);
+            mongo.updateMulti(new Query(Criteria.where("ruleId").is(welcome.getId())),
+                    new Update().unset("steps.0.summary"), AutomationRun.class);
+            JsonNode step = runs(welcome, "").get("items").get(0).get("steps").get(0);
+            assertThat(step.get("summary").asString()).isEqualTo("Send template");
+            assertThat(step.get("reason").asString()).isEqualTo("Sent “Welcome”");
+        }
+    }
+
+    @Test
+    void stepSummaryStaysWhenTheRuleIsChanged() throws Exception {
         try (AutomationDevice d = device()) {
             seed(d);
             mongo.updateFirst(new Query(Criteria.where("_id").is(welcome.getId())),
                     new Update().set("actions", List.of()), AutomationRule.class);
             JsonNode step = runs(welcome, "").get("items").get(0).get("steps").get(0);
-            assertThat(step.get("summary").asString()).isEqualTo("Send template");
-            assertThat(step.get("reason").asString()).isEqualTo("Sent “Welcome”");
+            assertThat(step.get("summary").asString()).isEqualTo("Send “Welcome”");
         }
+    }
+
+    private static List<String> stepSummaries(JsonNode run) {
+        List<String> out = new ArrayList<>();
+        run.get("steps").forEach(s -> out.add(s.get("summary").asString()));
+        return out;
+    }
+
+    @Test
+    void stepLabelsSurviveARuleEdit() throws Exception {
+        String w = template("Welcome", "Hi {{contact.name}}, welcome!");
+        AutomationRule r = rule("Welcome", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, null, null,
+                send(w), new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
+                        me.nageshk.omnichannel.db.automation.AssignMode.TEAM_QUEUE, null, support.getId(), null,
+                        null, null, null));
+        try (AutomationDevice d = device()) {
+            incoming(n1, ASHA, "chat", "Hello", "Asha");
+            worker.tick();
+            JsonNode first = runs(r, "").get("items").get(0);
+            assertThat(stepSummaries(first)).containsExactly("Send “Welcome”", "Queue in support");
+
+            JsonNode draft = ok(api(HttpMethod.POST, "/rules/" + r.getId() + "/unpublish", manager, null));
+            Map<String, Object> sendAction = new LinkedHashMap<>();
+            sendAction.put("type", "SEND_TEMPLATE");
+            sendAction.put("templateId", w);
+            sendAction.put("values", Map.of());
+            Map<String, Object> queue = new LinkedHashMap<>();
+            queue.put("type", "ASSIGN_CHAT");
+            queue.put("mode", "TEAM_QUEUE");
+            queue.put("teamId", support.getId());
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("name", "Welcome");
+            body.put("description", null);
+            body.put("event", "MESSAGE_RECEIVED");
+            body.put("priority", null);
+            body.put("conditions", null);
+            body.put("actions", List.of(queue, sendAction));
+            body.put("version", draft.get("version").asLong());
+            ok(api(HttpMethod.PUT, "/rules/" + r.getId(), manager, body));
+            ok(api(HttpMethod.POST, "/rules/" + r.getId() + "/publish", manager, null));
+
+            clock.advance(Duration.ofMinutes(1));
+            incoming(n1, ASHA, "chat", "Again", "Asha");
+            worker.tick();
+
+            JsonNode page = runs(r, "");
+            assertThat(page.get("total").asInt()).isEqualTo(2);
+            assertThat(stepSummaries(page.get("items").get(0))).containsExactly("Queue in support",
+                    "Send “Welcome”");
+            assertThat(stepSummaries(page.get("items").get(1))).containsExactly("Send “Welcome”",
+                    "Queue in support");
+            JsonNode history = events("").get("items");
+            assertThat(stepSummaries(history.get(1).get("runs").get(0))).containsExactly("Send “Welcome”",
+                    "Queue in support");
+        }
+    }
+
+    @Test
+    void aStepInFlightIsLeftOut() {
+        AutomationRule r = rule("R", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, null, null,
+                send("t"), send("t"));
+        record("e1", clock.instant(), EventOutcome.DONE, null);
+        AutomationRun run = new AutomationRun();
+        run.setCustomerId(acme.getId());
+        run.setWorkspaceId(brand.getId());
+        run.setEventId("e1");
+        run.setEventKind(AutomationEventKind.MESSAGE_RECEIVED);
+        run.setRuleId(r.getId());
+        run.setRuleName("R");
+        run.setStatus(RunStatus.RUNNING);
+        run.setStartedAt(clock.instant());
+        run.setSteps(new ArrayList<>(Arrays.asList(null, new RunStep(1, AutomationActionType.SEND_TEMPLATE,
+                "Send “T”", StepOutcome.DONE, "Sent “T”", clock.instant()))));
+        mongo.insert(run);
+        assertThat(mongo.findById(run.getId(), AutomationRun.class).getSteps()).hasSize(2).containsNull();
+
+        JsonNode steps = runs(r, "").get("items").get(0).get("steps");
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0).get("index").asInt()).isEqualTo(1);
+        assertThat(steps.get(0).get("summary").asString()).isEqualTo("Send “T”");
+        JsonNode eventSteps = events("").get("items").get(0).get("runs").get(0).get("steps");
+        assertThat(eventSteps).hasSize(1);
     }
 
     @Test

@@ -17,6 +17,7 @@ import me.nageshk.omnichannel.db.automation.AutomationRunRepository;
 import me.nageshk.omnichannel.db.automation.AutomationTest;
 import me.nageshk.omnichannel.db.automation.AutomationTestRepository;
 import me.nageshk.omnichannel.db.automation.RunStatus;
+import me.nageshk.omnichannel.db.automation.RunStep;
 import me.nageshk.omnichannel.db.template.MessageTemplate;
 import me.nageshk.omnichannel.db.template.MessageTemplateRepository;
 import me.nageshk.omnichannel.db.tenant.Team;
@@ -110,6 +111,11 @@ public class AutomationViews {
             out.add(part != null ? part : typeLabel(a == null ? null : a.type()));
         }
         return out;
+    }
+
+    /** The label a step was recorded with, or its type's name for a step stored without one. */
+    public static String stepSummary(RunStep s) {
+        return s.summary() != null ? s.summary() : typeLabel(s.type());
     }
 
     /** The action's name in the console. */
