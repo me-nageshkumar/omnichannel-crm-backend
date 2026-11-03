@@ -126,7 +126,7 @@ attemptedAt, finishedAt
 ```
 Indexes: unique `(importId, remoteId)`; `(importId, status, _id)`, which serves the claim filter and the per-status
 listing; `(status, attemptedAt)`, which serves `releaseStuck`. The claim sort `(attemptedAt, _id)` has no dedicated
-index: it sorts the PENDING items of one import in memory (at most 500 for CHATS; pending, see `crm-pending.md` §F).
+index: it sorts the PENDING items of one import in memory (at most 500 for CHATS; pending, see `crm-pending.md`, small leftovers).
 
 Deleting a phone number deletes both (`InboxCleanup`).
 
