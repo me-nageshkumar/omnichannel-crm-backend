@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.Set;
 import me.nageshk.omnichannel.common.api.ForbiddenException;
 import me.nageshk.omnichannel.common.api.CodedException;
@@ -157,12 +158,12 @@ public class TaskService {
         if (current.getStatus() == TaskStatus.DONE) return views(ctx, List.of(current)).get(0);
         if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen(); // a skipped occurrence stays skipped
         Instant now = Instant.now(clock);
-        Scheduled next = scheduleNext(ctx, current, now);
-        CrmTask saved = close(ctx, id, next, new Update().set("status", TaskStatus.DONE).set("completedAt", now)
-                .set("completedBy", ctx.userId()));
+        Closed closed = close(ctx, id, scheduleNext(ctx, current, now), () -> new Update()
+                .set("status", TaskStatus.DONE).set("completedAt", now).set("completedBy", ctx.userId()));
+        CrmTask saved = closed.task();
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_COMPLETED, saved, "Task done: " + saved.getTitle(), null);
-        recordNextOccurrence(ctx, next.task());
+        recordNextOccurrence(ctx, closed.next());
         return views(ctx, List.of(saved)).get(0);
     }
 
@@ -175,17 +176,24 @@ public class TaskService {
         assertCanWork(ctx, current);
         if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
         if (current.getRecurrence() == null) throw TaskErrors.notRecurring();
-        Scheduled next = scheduleNext(ctx, current, Instant.now(clock));
-        CrmTask saved = close(ctx, id, next, new Update().set("status", TaskStatus.CANCELLED));
+        Closed closed = close(ctx, id, scheduleNext(ctx, current, Instant.now(clock)),
+                () -> new Update().set("status", TaskStatus.CANCELLED));
+        CrmTask saved = closed.task();
         counters.recompute(ctx.workspaceId(), saved.getTarget());
         record(ctx, ActivityType.TASK_UPDATED, saved, "Task skipped: " + saved.getTitle(), "SKIPPED");
-        recordNextOccurrence(ctx, next.task());
+        recordNextOccurrence(ctx, closed.next());
         return new SkipResult(views(ctx, List.of(saved)).get(0),
-                next.task() == null ? null : views(ctx, List.of(next.task())).get(0));
+                closed.next() == null ? null : views(ctx, List.of(closed.next())).get(0));
     }
 
-    /** The occurrence stored for a task about to close (null when none is due), and the version it has to close at. */
-    private record Scheduled(CrmTask task, Long taskVersion) {}
+    /**
+     * The occurrence stored for a task about to close (null when none is due), the version the task has to close at,
+     * and whether this attempt inserted the occurrence rather than adopting one an earlier attempt stored.
+     */
+    private record Scheduled(CrmTask task, Long taskVersion, boolean inserted) {}
+
+    /** The closed task, and the occurrence that follows it (null when none does). */
+    private record Closed(CrmTask task, CrmTask next) {}
 
     /**
      * Stores the next occurrence before the current one closes, so that without transactions a crash cannot end a
@@ -196,16 +204,16 @@ public class TaskService {
      */
     private Scheduled scheduleNext(CrmContext ctx, CrmTask task, Instant now) {
         CrmTask next = nextOccurrence(ctx, task, now);
-        if (next == null) return new Scheduled(null, task.getVersion());
+        if (next == null) return new Scheduled(null, task.getVersion(), false);
         Long version = task.getVersion();
         if (task.getPendingNextOccurrenceId() == null) {
             version = guarded(ctx, task.getId(), version, new Update().set("pendingNextOccurrenceId", next.getId()))
                     .getVersion();
         }
         try {
-            return new Scheduled(mongo.insert(next), version);
+            return new Scheduled(mongo.insert(next), version, true);
         } catch (DuplicateKeyException stored) {
-            return new Scheduled(mongo.findOne(byId(ctx, next.getId()), CrmTask.class), version);
+            return new Scheduled(mongo.findOne(byId(ctx, next.getId()), CrmTask.class), version, false);
         }
     }
 
@@ -213,21 +221,41 @@ public class TaskService {
      * Applies the closing update, turning a claim into {@code nextOccurrenceId}; guarded by the version. The next
      * occurrence is stored by now, so a change that landed after the claim (a tick, an edit) must not leave it beside
      * a task that stays open: while the task is still open and still holds this claim, closing goes ahead on the
-     * newer version. Anything else, such as another request having closed it, stays a conflict.
+     * newer version. If that change was an edit ending the repeat, the stored occurrence is removed and the task
+     * closes with none after it. Anything else, such as another request having closed it, stays a conflict.
      */
-    private CrmTask close(CrmContext ctx, String id, Scheduled next, Update u) {
-        u.unset("pendingNextOccurrenceId");
-        if (next.task() != null) u.set("nextOccurrenceId", next.task().getId());
+    private Closed close(CrmContext ctx, String id, Scheduled next, Supplier<Update> closing) {
         try {
-            return guarded(ctx, id, next.taskVersion(), u);
+            return new Closed(guarded(ctx, id, next.taskVersion(), closingUpdate(closing, next.task())), next.task());
         } catch (CodedException conflict) {
             if (next.task() == null) throw conflict;
             CrmTask now = mongo.findOne(byId(ctx, id), CrmTask.class);
             boolean stillOurs = now != null && now.getStatus() == TaskStatus.OPEN
                     && next.task().getId().equals(now.getPendingNextOccurrenceId());
             if (!stillOurs) throw conflict;
-            return guarded(ctx, id, now.getVersion(), u);
+            if (now.getRecurrence() == null && removeUntouched(ctx, next)) {
+                // the repeat was removed after the claim: the occurrence went first, so a crash now leaves an open
+                // task whose next attempt, finding no repeat, just clears the claim
+                return new Closed(guarded(ctx, id, now.getVersion(), closingUpdate(closing, null)), null);
+            }
+            return new Closed(guarded(ctx, id, now.getVersion(), closingUpdate(closing, next.task())), next.task());
         }
+    }
+
+    /**
+     * Removes the stored occurrence only if this attempt inserted it and nobody has touched it since; one an earlier
+     * attempt stored, or one already changed, may have been worked on and stays.
+     */
+    private boolean removeUntouched(CrmContext ctx, Scheduled next) {
+        if (!next.inserted()) return false;
+        Query untouched = byId(ctx, next.task().getId());
+        untouched.addCriteria(Criteria.where("status").is(TaskStatus.OPEN).and("version").is(next.task().getVersion()));
+        return mongo.remove(untouched, CrmTask.class).getDeletedCount() == 1;
+    }
+
+    private static Update closingUpdate(Supplier<Update> closing, CrmTask next) {
+        Update u = closing.get().unset("pendingNextOccurrenceId");
+        return next == null ? u : u.set("nextOccurrenceId", next.getId());
     }
 
     /**
