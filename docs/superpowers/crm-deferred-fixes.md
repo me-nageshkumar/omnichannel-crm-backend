@@ -120,3 +120,9 @@ Small findings from the final reviews of phases D to G, kept here because the le
 - [x] Step errors in the task form are `<small>`, so a failed save does not scroll to them; hardly reachable given the length limit. Fixed 2026-11-03: they are error helper text (`taskForm.test.tsx` `bringsARefusedStepIntoView`)
 - [x] A company lookup failing just as the editor closes makes one stray read. Fixed 2026-11-03: no retry starts once the editor has closed (`segmentEditorPage.test.tsx` `aLookupFailingAfterTheEditorClosedIsNotTriedAgain`)
 
+
+## From the review of the three tiny fixes (2026-11-03)
+
+- [ ] An edit that changes a task's repeat rule, due date, title or assignee in the moment a completion is closing it still closes it with the next occurrence built from the old values (only removing the rule is handled)
+- [ ] A step input in the task form marked invalid has no `aria-describedby` pointing at its error text
+- [ ] `aLookupFailingAfterTheEditorClosedIsNotTriedAgain` waits 1.8 s in real time; fake timers would make it faster and tighter
