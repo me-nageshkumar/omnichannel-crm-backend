@@ -339,6 +339,41 @@ class AutomationRulesApiIT extends AutomationTestBase {
         assertThat(deleted.getEndReason()).isEqualTo(TestEndReason.RULE_DELETED);
     }
 
+    @Test
+    void changingTheEventWhileTestingIsRefused() {
+        String t = template("Welcome", "Hi");
+        String id = create(request("R", null, send(t))).get("id").asString();
+        AutomationTest test = waitingTest(AutomationEventKind.MESSAGE_RECEIVED, null, "919800000001");
+        test.setRuleId(id);
+        mongo.save(test);
+
+        Map<String, Object> body = request("R", null, send(t));
+        body.put("event", "DEAL_LANE_CHANGED");
+        body.put("version", 0);
+        ResponseEntity<JsonNode> res = api(HttpMethod.PUT, "/rules/" + id, manager, body);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(code(res)).isEqualTo("VALIDATION");
+        assertThat(res.getBody().get("fields").get("event").asString())
+                .isEqualTo("End the running test before changing the event");
+        assertThat(mongo.findById(id, AutomationRule.class).getEvent())
+                .isEqualTo(AutomationEventKind.MESSAGE_RECEIVED);
+        assertThat(mongo.findById(test.getId(), AutomationTest.class).isActive()).isTrue();
+
+        // other changes go through while the test runs
+        Map<String, Object> rename = request("Renamed", null, send(t));
+        rename.put("version", 0);
+        assertThat(api(HttpMethod.PUT, "/rules/" + id, manager, rename).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // with no test running the event can change
+        mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(
+                org.springframework.data.mongodb.core.query.Criteria.where("_id").is(test.getId())),
+                new org.springframework.data.mongodb.core.query.Update().set("active", false), AutomationTest.class);
+        body.put("version", 1);
+        assertThat(api(HttpMethod.PUT, "/rules/" + id, manager, body).getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(mongo.findById(id, AutomationRule.class).getEvent())
+                .isEqualTo(AutomationEventKind.DEAL_LANE_CHANGED);
+    }
+
     private void run(String ruleId, String eventId, boolean test, RunStatus status, java.time.Instant at) {
         AutomationRun r = new AutomationRun();
         r.setCustomerId(acme.getId());

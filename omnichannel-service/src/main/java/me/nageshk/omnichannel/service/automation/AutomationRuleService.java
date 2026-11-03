@@ -8,6 +8,7 @@ import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.db.automation.AutomationRule;
 import me.nageshk.omnichannel.db.automation.AutomationRuleRepository;
+import me.nageshk.omnichannel.db.automation.AutomationTestRepository;
 import me.nageshk.omnichannel.db.automation.RuleStatus;
 import me.nageshk.omnichannel.db.automation.TestEndReason;
 import me.nageshk.omnichannel.db.user.User;
@@ -21,15 +22,18 @@ public class AutomationRuleService {
 
     private final AutomationRuleRepository rules;
     private final AutomationTestService tests;
+    private final AutomationTestRepository testRecords;
     private final UserRepository users;
     private final RulePublishValidator publishValidator;
     private final AutomationViews views;
     private final Clock clock;
 
     public AutomationRuleService(AutomationRuleRepository rules, AutomationTestService tests,
-            UserRepository users, RulePublishValidator publishValidator, AutomationViews views, Clock clock) {
+            AutomationTestRepository testRecords, UserRepository users, RulePublishValidator publishValidator,
+            AutomationViews views, Clock clock) {
         this.rules = rules;
         this.tests = tests;
+        this.testRecords = testRecords;
         this.users = users;
         this.publishValidator = publishValidator;
         this.views = views;
@@ -64,6 +68,10 @@ public class AutomationRuleService {
         if (r.getStatus() == RuleStatus.PUBLISHED) throw AutomationErrors.published();
         if (req.version() == null) throw new ValidationException("version", "is required");
         checkShape(req);
+        // a running test waits for or holds an event of the old kind
+        if (req.event() != r.getEvent() && testRecords.findByRuleIdAndActiveTrue(r.getId()).isPresent()) {
+            throw new ValidationException("event", "End the running test before changing the event");
+        }
         apply(r, req);
         r.setVersion(req.version());
         return views.view(rules.save(r));
