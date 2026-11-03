@@ -27,9 +27,6 @@ questions, even though the user usually skips them.
 
 - **"CRM contacts reached"** on the Campaigns report follows the pipeline filter (default Sales), so a contact with no
   deal counts 0. Leave it, ignore the filter for this column, or relabel it.
-- **5 lost senders.** Messages sent from the console or a campaign before the 2026-11-01 inbox reset and fetched again
-  show "WhatsApp Web" as sender. Copying `source` and `sentBy*` back from the backup (`project-rules.md`, section 3) by
-  `(phoneNumberId, waMessageId)` would restore them.
 - **Demo test data** left in brand Demo Fashion, removable on request: users `walk-nocrm`, `walk-segments`; roles
   `NO_CRM_WALK`, `AGENT_SEGMENTS_WALK` (they show in `demo-manager`'s role picker); pipeline "Walk check"; segment
   "Festive buyers"; deal "Acceptance test deal"; campaign "Walk send check".
