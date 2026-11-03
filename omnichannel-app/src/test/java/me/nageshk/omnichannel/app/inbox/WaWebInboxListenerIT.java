@@ -281,7 +281,7 @@ class WaWebInboxListenerIT {
     @Test
     void aCallIsStoredWithWhatIsKnownOfIt() {
         ObjectNode p = message("919911111111@c.us", false, T);
-        p.put("type", "call_log").put("subtype", "miss_video");
+        p.put("type", "call_log").put("isVideoCall", true).put("callOutcome", "MISSED");
         p.remove("body");
 
         create(p);

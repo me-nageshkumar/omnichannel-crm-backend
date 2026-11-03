@@ -124,10 +124,10 @@ class ImportMessageIT {
         return p;
     }
 
-    private ObjectNode call(String id, String subtype) {
+    private ObjectNode call(String id, String outcome) {
         ObjectNode p = msg(id, "919811100001@c.us", false, 100, 0, null).put("type", "call_log");
         p.remove("body");
-        if (subtype != null) p.put("subtype", subtype);
+        if (outcome != null) p.put("callOutcome", outcome);
         return p;
     }
 
@@ -160,18 +160,18 @@ class ImportMessageIT {
 
     @Test
     void aCallIsStoredWithWhatIsKnownOfIt() {
-        ingest.importMessage(ctx, call("c1", "miss"));
+        ingest.importMessage(ctx, call("c1", "MISSED"));
         assertThat(onlyMessage().getCall()).isEqualTo(new WaWebMessage.Call(false, true, null));
     }
 
     @Test
     void aCallStoredBeforeCallsWereReadIsFilledIn() {
-        ingest.importMessage(ctx, call("c1", "miss"));
+        ingest.importMessage(ctx, call("c1", "MISSED"));
         WaWebMessage stored = onlyMessage();
         stored.setCall(null);
         messages.save(stored);
 
-        ImportResult r = ingest.importMessage(ctx, call("c1", "miss"));
+        ImportResult r = ingest.importMessage(ctx, call("c1", "MISSED"));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
         assertThat(onlyMessage().getCall()).isEqualTo(new WaWebMessage.Call(false, true, null));
@@ -179,8 +179,8 @@ class ImportMessageIT {
 
     @Test
     void aCallAlreadyFilledInIsUnchanged() {
-        ingest.importMessage(ctx, call("c1", "miss"));
-        assertThat(ingest.importMessage(ctx, call("c1", "miss")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+        ingest.importMessage(ctx, call("c1", "MISSED"));
+        assertThat(ingest.importMessage(ctx, call("c1", "MISSED")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
     }
 
     @Test
