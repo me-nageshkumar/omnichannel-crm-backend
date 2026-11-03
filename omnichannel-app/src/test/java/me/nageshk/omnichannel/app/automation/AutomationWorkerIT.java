@@ -7,6 +7,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import me.nageshk.omnichannel.crm.deal.CrmDeal;
 import me.nageshk.omnichannel.db.automation.AssignMode;
 import me.nageshk.omnichannel.db.automation.AutomationAction;
@@ -31,6 +33,7 @@ import me.nageshk.omnichannel.db.template.MessageTemplate;
 import me.nageshk.omnichannel.db.template.TemplateStatus;
 import me.nageshk.omnichannel.service.automation.AssignChatHandler;
 import me.nageshk.omnichannel.service.automation.AutomationWorker;
+import me.nageshk.omnichannel.service.rpc.Envelope;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -462,6 +465,36 @@ class AutomationWorkerIT extends AutomationTestBase {
                 assertThat(h.getOutcome()).isEqualTo(EventOutcome.DONE);
                 assertThat(h.getAttempts()).isEqualTo(2);
             });
+        }
+    }
+
+    @Test
+    void retriedSendIsClearedBeforeItIsSent() throws Exception {
+        String t = template("Welcome", "Hi {{contact.name}}");
+        AutomationRule r = rule("Welcome", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, null, null,
+                send(t));
+        incoming(n1, ASHA, "chat", "Hello", "Asha");
+        worker.tick();
+        assertThat(outcomes(onlyRunOf(r))).containsExactly(StepOutcome.RETRYING);
+
+        clock.advance(Duration.ofMinutes(2));
+        AtomicBoolean asked = new AtomicBoolean();
+        AtomicReference<RunStep> duringSend = new AtomicReference<>();
+        try (AutomationDevice d = device()) {
+            d.sendAnswer = (Envelope req) -> {
+                List<RunStep> steps = onlyRunOf(r).getSteps();
+                duringSend.set(steps == null || steps.isEmpty() ? null : steps.get(0));
+                asked.set(true);
+                return Envelope.response(req.id(), AutomationDevice.model(req, 1));
+            };
+            assertThat(worker.tick()).isEqualTo(1);
+
+            assertThat(asked).isTrue();
+            assertThat(duringSend.get()).as("step 0 while the resend is in flight").isNull();
+            AutomationRun after = onlyRunOf(r);
+            assertThat(after.getStatus()).isEqualTo(RunStatus.DONE);
+            assertThat(outcomes(after)).containsExactly(StepOutcome.DONE);
+            assertThat(d.requests("sendMessage")).hasSize(1);
         }
     }
 
