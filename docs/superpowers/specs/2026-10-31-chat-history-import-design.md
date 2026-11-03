@@ -232,6 +232,20 @@ requestedBy{id,name}, creationTime, startedAt, finishedAt, progressPercent}`; `p
 `chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 3`, `max-idle-pages 25`, `time-budget 60s`, `max-timeouts-per-chat 3`. Tests: `auto-tick false`,
 delays `0`.
 
+Changed 2026-11-03 (the user asked for the small leftovers to be done):
+- `chat-delay` follows only a chat whose pages loaded from the phone (`loaded`); a chat read from what the browser
+  already held is followed by none, so an all-time fetch no longer waits a second after each of hundreds of chats.
+- A page that times out is followed by `getState`. When that gets no answer either, the page is silent, not the chat:
+  the chat goes back to PENDING uncharged and the import waits (`WHATSAPP_NOT_READY`). Only a timeout while the page
+  still answers counts towards `max-timeouts-per-chat`.
+- An ALL import records `listedAt` when its listing finished; until then each pass lists again, keeping the chats
+  already stored. An import running when this shipped lists once more, harmlessly.
+- A chat an import creates carries the item's id (`waWebChats.createdByHistoryChatId`, sparse index), so the item's
+  `createdChatId` is recovered when a crash lost it.
+- A chat that ends DONE after its import was stopped (CANCELLED) or failed is not opened or routed.
+- Round robin moves the team's cursor after the chat is saved, so a routing retry after a version collision no longer
+  skips a member.
+
 ## 10. Pause, play and stop (added 2026-11-01; my calls, the request skipped the questions)
 
 - A pause never drops a page. A page already asked for is stored, counted and announced; the runner then hands the chat

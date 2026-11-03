@@ -23,18 +23,16 @@ questions, even though the user usually skips them.
   `CaptureService.findOrCreate` takes an `Origin`. Ask: which sources first? Own screen? Does conversion create a deal?
   How is the number chosen when a brand has several?
 
-## Small leftovers, pick up when working nearby
+## Known limits of the inbox, not tasks
 
-- Inbox, limits worth knowing:
-  - The same person can be two chats (`@c.us` and `@lid`); a console send whose model never came back is stored as
-    `console:<id>` and again under its real id.
-  - The console shows poll votes but cannot vote; `interactive` messages lose their buttons; WhatsApp's own notices are
-    not stored (each skipped one logs its subtype, the place to start). The extension still owes one reload for
-    `vote_update` to become a durable event.
-  - A dated fetch leaves out chats last active over a day before its range; an all-time fetch takes about 12 min
-    because `chat-delay` follows every chat.
-  - A device that stops answering with its socket open ends chats FAILED TIMEOUT instead of waiting.
-  - A fetched chat's open/route decision: a crash mid-page loses `createdChatId` (stays Closed); a Stop still decides
-    the chat in flight; a routing retry moves the round-robin cursor once.
-  - An ALL import whose item insert fails partway is never re-listed. `HistoryImportViews` does N+1 lookups.
-  - More detail and the pending real-number checks: spec `2026-10-31-chat-history-import-design.md`.
+The user chose (2026-11-03) to treat these as known limits to come back to later, like the features above. Each needs
+a decision or more investigation.
+
+- The same person can be two chats (`@c.us` and `@lid`); merging them is a design question.
+- A console send whose model never came back is stored as `console:<id>` and again under its real id.
+- The console shows poll votes but cannot vote.
+- `interactive` business messages lose their buttons: which fields carry them is unknown.
+- WhatsApp's own notices are not stored: showing their words needs a table of subtypes (each skipped one logs its
+  subtype, the place to start).
+- A dated fetch leaves out chats last active over a day before its range; whether `chat.t` always covers a chat's
+  newest message is unconfirmed. Pending real-number checks: spec `2026-10-31-chat-history-import-design.md`.
