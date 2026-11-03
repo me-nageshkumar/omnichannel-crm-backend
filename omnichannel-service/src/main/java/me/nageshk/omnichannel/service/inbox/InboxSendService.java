@@ -106,7 +106,7 @@ public class InboxSendService {
     /**
      * Callers check {@code inbox:send} and that the chat is visible to the user; a campaign's runner did its own
      * checks. A {@link UserActor} may claim the chat afterwards (the number's {@code claimOnReply}), a
-     * {@link CampaignActor} never does. The chat may be unsaved (no id):
+     * {@link CampaignActor} or {@link AutomationActor} never does; only an {@link AutomationActor} may send to a closed chat. The chat may be unsaved (no id):
      * it is stored with the first message once the device accepted it, or merged into the row that exists for the
      * same remote id by then. The future fails with the {@code RpcException} of a device error or timeout, in which
      * case nothing is stored. {@code typedPhone} is the phone the console addressed an unsaved chat by (null for
@@ -119,7 +119,8 @@ public class InboxSendService {
      */
     public CompletableFuture<MessageView> send(SendActor actor, String workspaceId, WaWebChat chat,
             SendRequest req, String typedPhone) {
-        if (chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
+        // a rule's message may go to a closed chat, and leaves it closed
+        if (!(actor instanceof AutomationActor) && chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
         DeviceSession device = devices.requireReady(workspaceId, chat);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
 
@@ -154,6 +155,8 @@ public class InboxSendService {
             case UserActor u -> renderer.render(u.me(), workspaceId, templateId,
                     new RenderRequest(chat.getContactId(), req.values()));
             case CampaignActor c -> renderer.renderForCampaign(workspaceId, templateId, req.values());
+            case AutomationActor a -> renderer.renderForAutomation(workspaceId, templateId, chat.getContactId(),
+                    req.values());
         };
         if (rendered.type() == TemplateType.CONTACT_CARD) {
             throw new ValidationException("templateId", "contact cards cannot be sent from the inbox yet");
