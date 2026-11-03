@@ -48,3 +48,6 @@ Events, rules and actions (backend) are built: spec `docs/superpowers/specs/2026
 - No retention setting: nothing expires.
 - No lease renewal while a long event is processed.
 - A published rule can be moved to draft while a retry waits, which closes its run as Interrupted.
+- Message text and the contact's name and phone stay for good in `automationEventHistory` and `automationRuns`:
+  removing a number or a contact leaves them.
+- One worker thread serves every brand, so a hung extension delays all brands by up to the send timeout per send.

@@ -48,7 +48,7 @@ Calls made while building phases D to F, copied from the plan ledgers, which are
 - Plan: Ruling: `chat.new` is computed by a query when the event is written, not stored as a marker
 - Plan: Ruling: the real message types are `chat`, `image`, `video`, `audio`, `ptt`, `document`, `sticker`, `location`, `vcard`, `multi_vcard`, `poll_creation`; every other type starts nothing
 - Plan: Ruling: the message event is written from an `@EventListener` on `InboxEvents.MessageUpserted`, not from a new inbox event
-- Plan: Ruling: a message event's id is `m-<stored message id>`, a deal event's a fresh ObjectId
+- Plan: Ruling: a message event's id is `m-<stored message id>`, a deal event's `"d-" + UUID`
 - Plan: Ruling: the worker ticks every 2 s with a 5 min lease, 3 attempts, 20 events per tick, on its own `automationScheduler`; a send waits 60 s
 - Plan: Ruling: a run document is inserted RUNNING before its actions run, and a re-run resumes it at the first step without an outcome
 - Plan: Ruling: a transient send failure is retried (RETRYING, 2 min delay, 3 claims in all), and later actions wait with it
