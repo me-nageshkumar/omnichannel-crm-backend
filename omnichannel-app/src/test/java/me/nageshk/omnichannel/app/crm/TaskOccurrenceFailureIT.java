@@ -145,6 +145,29 @@ class TaskOccurrenceFailureIT extends CrmTestBase {
     }
 
     @Test
+    void anEditEndingTheRepeatWhileCompletingLeavesNoNextOccurrence() throws Exception {
+        // the claim goes through, then an edit removes the repeat rule while the next occurrence is being stored
+        MongoTestCommands.delayNext(client, mongo.getDb().getName(), "crmTasks", "insert", 1, 700);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Integer> call = pool.submit(this::complete);
+            while (original().get("pendingNextOccurrenceId") == null) Thread.onSpinWait();
+            mongo.updateFirst(new Query(Criteria.where("_id").is(new org.bson.types.ObjectId(taskId))),
+                    new org.springframework.data.mongodb.core.query.Update().unset("recurrence").inc("version", 1),
+                    "crmTasks");
+            assertThat(call.get()).isEqualTo(200);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(original().getString("status")).isEqualTo("DONE");
+        assertThat(original().get("pendingNextOccurrenceId")).isNull();
+        assertThat(original().get("nextOccurrenceId")).isNull();
+        assertThat(tasks()).as("the task no longer repeats, so nothing follows it").hasSize(1);
+        assertThat(mongo.count(new Query(Criteria.where("workspaceId").is(brand.getId()).and("type").is("TASK_CREATED")
+                .and("payload.recurringFromTaskId").is(taskId)), "crmActivities")).isZero();
+    }
+
+    @Test
     void skippingFinishesTheSameWayAfterAFailure() throws Exception {
         MongoTestCommands.failNext(client, mongo.getDb().getName(), "crmTasks", "insert", 1);
         assertThat(act("skip")).isEqualTo(500);
