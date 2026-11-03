@@ -11,5 +11,7 @@ public enum RoutedReason {
     /** The assignee left the team; the chat was re-routed without them (§3.1). */
     MEMBER_REMOVED,
     /** A history fetch created the chat and found it waiting on us. */
-    FETCHED
+    FETCHED,
+    /** An automation rule assigned the chat; the action's {@code reasonDetail} is the rule's name. */
+    AUTOMATION
 }

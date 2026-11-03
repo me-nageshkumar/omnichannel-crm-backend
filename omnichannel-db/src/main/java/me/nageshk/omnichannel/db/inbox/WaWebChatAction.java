@@ -30,6 +30,8 @@ public class WaWebChatAction {
     private Instant at;
     /** Only on {@code ROUTED}: why routing chose as it did when it was not the plain setting. */
     private RoutedReason reason;
+    /** Only on {@code ROUTED} with {@link RoutedReason#AUTOMATION}: the rule's name. */
+    private String reasonDetail;
     /** Only on {@code ROUTED} with {@link RoutedReason#HANDED_BACK}/{@code MEMBER_REMOVED}: who was skipped. */
     private String excludedUserId;
     /** Only on {@code TRANSFERRED}: the team the chat left. */

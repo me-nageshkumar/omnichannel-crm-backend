@@ -104,7 +104,7 @@ class InboxStreamBrokerTest {
     }
 
     private static ActionView actionView() {
-        return new ActionView("a1", ActionType.CLOSED, null, null, null, null, null, null);
+        return new ActionView("a1", ActionType.CLOSED, null, null, null, null, null, null, null);
     }
 
     @Test
