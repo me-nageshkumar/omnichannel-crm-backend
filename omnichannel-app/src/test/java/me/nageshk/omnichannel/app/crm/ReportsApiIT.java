@@ -709,6 +709,25 @@ class ReportsApiIT extends CrmTestBase {
     }
 
     @Test
+    void campaignsCardCountsContactsReachedWhateverPipelineIsPicked() throws Exception {
+        enableCrm();
+        JsonNode a = captured(contact("Asha", "919900000653"), number).get("contact");
+        JsonNode b = captured(contact("Ravi", "919900000654"), number).get("contact");
+        // Ravi is a CRM contact with no deal left, so in no pipeline
+        mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(
+                        org.springframework.data.mongodb.core.query.Criteria.where("_id").is(b.get("id").asText())),
+                new org.springframework.data.mongodb.core.query.Update().set("pipelineIds", List.of()), "crmContacts");
+        String festive = campaignWith("Festive", daysAgo(2),
+                List.of(a.get("contactId").asText(), b.get("contactId").asText(), "someone-else"));
+        JsonNode sales = report("campaigns", managerToken, filter("pipelineId", salesId()));
+        assertThat(row(sales.get("rows"), "campaignId", festive).get("crmContactsReached").asLong()).isEqualTo(2);
+        // an agent limited to Sales still counts only the contacts of the pipelines they can see
+        assignPipelines(agent, salesId());
+        JsonNode mine = report("campaigns", agentToken, filter("pipelineId", salesId()));
+        assertThat(row(mine.get("rows"), "campaignId", festive).get("crmContactsReached").asLong()).isEqualTo(1);
+    }
+
+    @Test
     void campaignsCardFiltersByNumber() throws Exception {
         enableCrm();
         String festive = campaignWith("Festive", daysAgo(2), List.of("x"));

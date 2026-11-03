@@ -23,11 +23,6 @@ questions, even though the user usually skips them.
   `CaptureService.findOrCreate` takes an `Origin`. Ask: which sources first? Own screen? Does conversion create a deal?
   How is the number chosen when a brand has several?
 
-## Waiting on the user
-
-- **"CRM contacts reached"** on the Campaigns report follows the pipeline filter (default Sales), so a contact with no
-  deal counts 0. Leave it, ignore the filter for this column, or relabel it.
-
 ## Small leftovers, pick up when working nearby
 
 - Three tiny fixes in `docs/superpowers/crm-deferred-fixes.md`, under "From the review of the last fixes".

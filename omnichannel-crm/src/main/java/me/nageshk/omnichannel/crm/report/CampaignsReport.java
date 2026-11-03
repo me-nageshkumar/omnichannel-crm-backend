@@ -16,8 +16,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Spec C13. The host's campaigns started in the period (through the port, newest first, at most {@value #LIMIT}),
- * each with how many of its recipients are CRM contacts the caller may see. A restricted caller sees only campaigns
- * that reached at least one of their contacts.
+ * each with how many of its recipients are CRM contacts the caller may see. The pipeline filter does not apply (the
+ * user's choice, 2026-11-03): an unrestricted caller counts every CRM contact, with a deal or not; a restricted caller
+ * counts the contacts of the pipelines they can see, and sees only campaigns that reached at least one of them.
  */
 @Component
 public class CampaignsReport {
@@ -39,9 +40,9 @@ public class CampaignsReport {
                 () -> campaigns.campaigns(ctx.workspaceId(), f.from(), f.to(), LIMIT + 1));
         boolean truncated = found.size() > LIMIT;
         if (truncated) found = found.subList(0, LIMIT);
-        // the platform contacts behind the CRM contacts the caller may see (the owner filter does not apply here)
-        ResolvedFilter contacts = new ResolvedFilter(f.from(), f.to(), f.zone(), f.pipelineId(), f.phoneNumberIds(),
-                Set.of());
+        // the platform contacts behind the CRM contacts the caller may see, in any pipeline they can see or none:
+        // a campaign reaches people, not deals, so neither the pipeline nor the owner filter applies here
+        ResolvedFilter contacts = new ResolvedFilter(f.from(), f.to(), f.zone(), null, f.phoneNumberIds(), Set.of());
         Query q = new Query(scope.contacts(ctx, contacts)).maxTime(ReportRunner.MAX_TIME);
         q.fields().include("contactId");
         Set<String> visible = new HashSet<>();
