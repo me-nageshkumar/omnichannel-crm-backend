@@ -1,13 +1,20 @@
 package me.nageshk.omnichannel.app.automation;
 
+import java.time.Instant;
 import java.util.List;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.db.automation.AutomationEventKind;
 import me.nageshk.omnichannel.service.automation.AutomationOptionsService;
+import me.nageshk.omnichannel.service.automation.AutomationPage;
+import me.nageshk.omnichannel.service.automation.AutomationQueryService;
 import me.nageshk.omnichannel.service.automation.AutomationRuleService;
+import me.nageshk.omnichannel.service.automation.EventRecordView;
 import me.nageshk.omnichannel.service.automation.OptionsView;
 import me.nageshk.omnichannel.service.automation.RuleRequest;
 import me.nageshk.omnichannel.service.automation.RuleSummaryView;
 import me.nageshk.omnichannel.service.automation.RuleView;
+import me.nageshk.omnichannel.service.automation.RunView;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -28,10 +36,13 @@ class AutomationController {
 
     private final AutomationRuleService rules;
     private final AutomationOptionsService options;
+    private final AutomationQueryService queries;
 
-    AutomationController(AutomationRuleService rules, AutomationOptionsService options) {
+    AutomationController(AutomationRuleService rules, AutomationOptionsService options,
+            AutomationQueryService queries) {
         this.rules = rules;
         this.options = options;
+        this.queries = queries;
     }
 
     @GetMapping("/options")
@@ -84,5 +95,23 @@ class AutomationController {
     ResponseEntity<Void> delete(@PathVariable String workspaceId, @PathVariable String id) {
         rules.delete(workspaceId, id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/rules/{id}/runs")
+    @PreAuthorize("@access.has(#workspaceId, 'automation:view')")
+    AutomationPage<RunView> runs(@PathVariable String workspaceId, @PathVariable String id,
+            @RequestParam(defaultValue = "0") int page) {
+        return queries.runs(workspaceId, id, page);
+    }
+
+    @GetMapping("/events")
+    @PreAuthorize("@access.has(#workspaceId, 'automation:view')")
+    AutomationPage<EventRecordView> events(@PathVariable String workspaceId,
+            @RequestParam(required = false) AutomationEventKind kind,
+            @RequestParam(required = false) String ruleId, @RequestParam(required = false) String contactId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = "0") int page) {
+        return queries.events(workspaceId, kind, ruleId, contactId, from, to, page);
     }
 }
