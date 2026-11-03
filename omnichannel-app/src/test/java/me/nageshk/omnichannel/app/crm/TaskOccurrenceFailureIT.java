@@ -168,6 +168,28 @@ class TaskOccurrenceFailureIT extends CrmTestBase {
     }
 
     @Test
+    void anEditWhileCompletingShapesTheNextOccurrence() throws Exception {
+        // the claim goes through, then an edit renames the task while the next occurrence is being stored
+        MongoTestCommands.delayNext(client, mongo.getDb().getName(), "crmTasks", "insert", 1, 700);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Integer> call = pool.submit(this::complete);
+            while (original().get("pendingNextOccurrenceId") == null) Thread.onSpinWait();
+            mongo.updateFirst(new Query(Criteria.where("_id").is(new org.bson.types.ObjectId(taskId))),
+                    new org.springframework.data.mongodb.core.query.Update().set("title", "Stock and price check")
+                            .inc("version", 1), "crmTasks");
+            assertThat(call.get()).isEqualTo(200);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(original().getString("status")).isEqualTo("DONE");
+        assertThat(tasks()).hasSize(2);
+        Document next = tasks().stream().filter(t -> !t.get("_id").toString().equals(taskId)).findFirst().orElseThrow();
+        assertThat(next.getString("title")).isEqualTo("Stock and price check");
+        assertThat(original().getString("nextOccurrenceId")).isEqualTo(next.get("_id").toString());
+    }
+
+    @Test
     void aNextOccurrenceChangedMeanwhileIsKeptEvenWhenTheRepeatEnds() throws Exception {
         // the claim and the close are both held; meanwhile the repeat is removed and the stored occurrence is ticked
         MongoTestCommands.delayNext(client, mongo.getDb().getName(), "crmTasks", "findAndModify", 2, 700);
