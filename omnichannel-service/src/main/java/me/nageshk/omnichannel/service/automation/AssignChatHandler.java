@@ -69,7 +69,10 @@ public class AssignChatHandler implements ActionHandler {
     private ActionResult agent(ActionContext ctx, AutomationAction action, WaWebChat chat) {
         User user = action.userId() == null ? null : userAdmin.withAccessTo(ctx.customerId(), ctx.workspaceId())
                 .stream().filter(u -> u.getId().equals(action.userId())).findFirst().orElse(null);
-        if (user == null) return ActionResult.failed("The agent is no longer in the brand");
+        if (user == null || !user.isActive() || user.getDisabled() != null
+                || UserAdminService.brandDisabled(user, ctx.workspaceId()) != null) {
+            return ActionResult.failed("The agent is no longer in the brand");
+        }
         if (!assignment.canSeeNumber(user, chat)) return ActionResult.failed(user.getName() + " cannot see this number");
         Team owning = routing.owningTeam(chat);
         if (!ChatRoutingService.canTakeChats(user, ctx.workspaceId()) && action.whenAway() == WhenAway.OWNING_TEAM_QUEUE

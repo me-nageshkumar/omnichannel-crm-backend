@@ -2,7 +2,9 @@ package me.nageshk.omnichannel.app.automation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
+import me.nageshk.omnichannel.common.enablement.EnableLevel;
 import me.nageshk.omnichannel.db.automation.AssignMode;
 import me.nageshk.omnichannel.db.automation.AutomationAction;
 import me.nageshk.omnichannel.db.automation.AutomationActionType;
@@ -10,12 +12,14 @@ import me.nageshk.omnichannel.db.automation.AutomationEventKind;
 import me.nageshk.omnichannel.db.automation.EventData;
 import me.nageshk.omnichannel.db.automation.StepOutcome;
 import me.nageshk.omnichannel.db.automation.WhenAway;
+import me.nageshk.omnichannel.db.enablement.Disabled;
 import me.nageshk.omnichannel.db.inbox.ActionType;
 import me.nageshk.omnichannel.db.inbox.RoutedReason;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatAction;
 import me.nageshk.omnichannel.db.tenant.Team;
 import me.nageshk.omnichannel.db.user.Availability;
+import me.nageshk.omnichannel.db.user.BrandDisable;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.UserRepository;
 import me.nageshk.omnichannel.db.user.WorkspaceRole;
@@ -225,6 +229,40 @@ class AssignChatActionIT extends AutomationTestBase {
 
         ActionResult r = handler.run(ctx(chat), assign(AssignMode.AGENT, agent, null, WhenAway.KEEP_WITH_AGENT));
 
+        assertThat(r.outcome()).isEqualTo(StepOutcome.FAILED);
+        assertThat(r.reason()).isEqualTo("The agent is no longer in the brand");
+        assertThat(stored(chat).getAssignedUserId()).isEqualTo(agent2.getId());
+    }
+
+    @Test
+    void disabledAgentFails() {
+        WaWebChat chat = routedChat();
+        AutomationAction action = assign(AssignMode.AGENT, agent, null, WhenAway.KEEP_WITH_AGENT);
+
+        // deactivated
+        User u = users.findById(agent.getId()).orElseThrow();
+        u.setActive(false);
+        users.save(u);
+        ActionResult r = handler.run(ctx(chat), action);
+        assertThat(r.outcome()).isEqualTo(StepOutcome.FAILED);
+        assertThat(r.reason()).isEqualTo("The agent is no longer in the brand");
+        assertThat(stored(chat).getAssignedUserId()).isEqualTo(agent2.getId());
+
+        // disabled in the customer
+        u.setActive(true);
+        u.setDisabled(new Disabled(manager.getId(), EnableLevel.COMPANY, clock.instant()));
+        users.save(u);
+        r = handler.run(ctx(chat), action);
+        assertThat(r.outcome()).isEqualTo(StepOutcome.FAILED);
+        assertThat(r.reason()).isEqualTo("The agent is no longer in the brand");
+        assertThat(stored(chat).getAssignedUserId()).isEqualTo(agent2.getId());
+
+        // disabled in this brand
+        u.setDisabled(null);
+        u.setBrandDisables(new ArrayList<>(List.of(new BrandDisable(brand.getId(),
+                new Disabled(manager.getId(), EnableLevel.BRAND, clock.instant())))));
+        users.save(u);
+        r = handler.run(ctx(chat), action);
         assertThat(r.outcome()).isEqualTo(StepOutcome.FAILED);
         assertThat(r.reason()).isEqualTo("The agent is no longer in the brand");
         assertThat(stored(chat).getAssignedUserId()).isEqualTo(agent2.getId());
