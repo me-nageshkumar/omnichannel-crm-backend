@@ -16,7 +16,7 @@ the phone only. A fetch also spent its last 20 seconds retrying pages that could
 - Rows stored before this have no `call`; the next fetch fills them in, and corrects a `call` read differently.
 - **Unconfirmed:** the published model has `subtype` and `duration` only, and the live model could not be read without
   the Super Admin login. A wrong guess costs detail ("Incoming call" for a call that was missed), not correctness of the
-  row. See `crm-pending.md` section G.
+  row. See `crm-pending.md`, small leftovers.
 
 ## Poll votes
 
