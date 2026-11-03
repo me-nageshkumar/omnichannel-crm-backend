@@ -182,15 +182,14 @@ final class MessagePayloads {
     }
 
     /**
-     * What the payload says of a call; null unless it is a {@code call_log}. Only {@code subtype} and {@code duration}
-     * are in the published model of WhatsApp Web; the other fields are read in case a build sends them, and a call
-     * saying none of this is still a call.
+     * What the payload says of a call; null unless it is a {@code call_log}. A real one carries {@code isVideoCall},
+     * {@code callDuration}, {@code callOutcome} and {@code callParticipants} and no {@code subtype} (seen on a phone,
+     * 2026-11-02); {@code duration} is the published model's name. A call saying none of this is still a call.
      */
     static WaWebMessage.Call call(JsonNode p) {
         if (!CALL_TYPE.equals(type(p))) return null;
-        String subtype = lowerText(p.path("subtype"));
-        boolean video = p.path("isVideoCall").asBoolean(false) || subtype.contains("video");
-        boolean missed = subtype.contains("miss") || lowerText(p.path("callOutcome")).contains("miss");
+        boolean video = p.path("isVideoCall").asBoolean(false);
+        boolean missed = lowerText(p.path("callOutcome")).contains("miss");
         int seconds = Math.max(p.path("callDuration").asInt(0), p.path("duration").asInt(0));
         return new WaWebMessage.Call(video, missed, seconds > 0 ? seconds : null);
     }

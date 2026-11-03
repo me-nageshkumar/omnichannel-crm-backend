@@ -6,7 +6,6 @@ import java.util.Objects;
 import java.util.List;
 import java.util.Optional;
 import java.util.TreeSet;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import me.nageshk.omnichannel.common.events.IngestionFailedException;
 import me.nageshk.omnichannel.db.contact.Contact;
@@ -77,7 +76,6 @@ public class InboxIngestService {
 
     private static final ImportResult SKIPPED = new ImportResult(ImportOutcome.SKIPPED, null, null);
 
-    private final AtomicBoolean callFieldsLogged = new AtomicBoolean();
     private final ContactService contacts;
     private final WaWebChatRepository chats;
     private final WaWebMessageRepository messages;
@@ -152,10 +150,6 @@ public class InboxIngestService {
      */
     public ImportResult importMessage(ImportContext ctx, JsonNode payload) {
         if (payload == null || !payload.isObject() || MessagePayloads.isNotice(payload)) return SKIPPED;
-        // names only: what a call log really carries is not published, see MessagePayloads.call
-        if ("call_log".equals(MessagePayloads.type(payload)) && callFieldsLogged.compareAndSet(false, true)) {
-            log.info("call_log fields: {}", new TreeSet<>(payload.propertyNames()));
-        }
         String remote = MessagePayloads.remote(payload);
         boolean lid = remote.endsWith("@lid");
         if (!lid && !remote.endsWith("@c.us")) return SKIPPED;

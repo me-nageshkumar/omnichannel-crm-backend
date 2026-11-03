@@ -14,9 +14,10 @@ the phone only. A fetch also spent its last 20 seconds retrying pages that could
 - `WaWebMessage.call` is `{video, missed, durationSeconds}`, read by `MessagePayloads.call`.
 - The line never says "voice": a call that does not say it is video may still be one.
 - Rows stored before this have no `call`; the next fetch fills them in, and corrects a `call` read differently.
-- **Unconfirmed:** the published model has `subtype` and `duration` only, and the live model could not be read without
-  the Super Admin login. A wrong guess costs detail ("Incoming call" for a call that was missed), not correctness of the
-  row. See `crm-pending.md`, small leftovers.
+- **Confirmed on a real phone (2026-11-02):** a `call_log` carries `isVideoCall`, `callDuration`, `callOutcome` and
+  `callParticipants`, and no `subtype`, so only those are read (the published model's `duration` too). The only
+  `callOutcome` value known is the missed one: incoming calls with no duration and not missed are probably rejected
+  ones, shown as plain calls.
 
 ## Poll votes
 

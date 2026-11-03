@@ -86,11 +86,10 @@ class MessagePayloadsTest {
     }
 
     @Test
-    void aMissedCallComesFromTheSubtype() {
-        assertThat(MessagePayloads.call(message("call_log").put("subtype", "miss")))
-                .isEqualTo(new WaWebMessage.Call(false, true, null));
+    void aSubtypeSaysNothingOfACall() {
+        // a real call_log has no subtype (seen on a phone, 2026-11-02): it is not read
         assertThat(MessagePayloads.call(message("call_log").put("subtype", "miss_video")))
-                .isEqualTo(new WaWebMessage.Call(true, true, null));
+                .isEqualTo(new WaWebMessage.Call(false, false, null));
     }
 
     @Test
