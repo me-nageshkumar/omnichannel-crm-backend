@@ -112,7 +112,8 @@ Both events are per brand (workspace). **Rules apply to all numbers of the brand
 ### 4.3 The event queue (the user's choice: a MongoDB collection, not Kafka)
 - When a live message comes in (section 3.1) or a deal moves (section 3.2), the app writes one **event document** to
   `automationEvents`: brand, event kind, the event data as it was then, status PENDING, created time. Only brands with
-  at least one published rule, or a test waiting, get events written (my call; keeps the queue empty for others).
+  at least one published rule of that event get every event written; a brand with only a test waiting gets the test
+  contact's events (my call; keeps the queue and the history empty for everyone else).
 - A worker inside the app claims the oldest PENDING event with a time-limited lock (`findAndModify` to RUNNING with a
   lease, as campaign recipients and history import chats are claimed today), runs the rules (section 4.4), and marks it
   DONE, or FAILED after a few attempts. An event whose lease ran out (the app stopped mid-way) is claimed again.
