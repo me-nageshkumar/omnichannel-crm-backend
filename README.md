@@ -504,7 +504,7 @@ duplicate|render`) and `template-media` (`POST` multipart `file`, `GET /{mediaId
 
 ## Automations
 
-Rules that react to an event with actions (events, rules, actions), per brand. Packages `*.automation` in each
+A brand's rules react to an event, a message coming in or a deal moving lane, with actions: send a template, assign the chat, add the person to the CRM. Packages `*.automation` in each
 module; design in `docs/superpowers/specs/2026-11-03-automations-design.md`, REST contract in
 `docs/superpowers/plans/2026-11-03-automations-backend.md` ("REST contract").
 

@@ -45,29 +45,29 @@ Calls made while building phases D to F, copied from the plan ledgers, which are
 
 ## Automations, backend
 
-- Plan call: `chat.new` is computed when the event is written, by a query, not a stored marker: true unless the chat already holds another IN message of a real type (`existsByChatIdAndDirectionAndTypeInAndIdNot`, on the `chat_timestamp` index). No backfill is needed and fetched chats count automatically.
-- Plan call: real message types are the whatsapp-web.js types `chat`, `image`, `video`, `audio`, `ptt`, `document`, `sticker`, `location`, `vcard`, `multi_vcard`, `poll_creation`, mapped to the kinds TEXT, PHOTO, VIDEO, AUDIO (audio and ptt), DOCUMENT, STICKER, LOCATION, CONTACT_CARD (vcard, multi_vcard), POLL. Every other type (call_log, revoked, reactions, notices, ciphertext, …) starts nothing.
-- Plan call: the message event is written from an `@EventListener` on `InboxEvents.MessageUpserted` (published after routing, with the chat re-read), not from a new inbox event.
-- Plan call: a message event's id is `"m-" + <stored message id>`, so the same message can never be queued twice (duplicate insert ignored; an id already in the history is skipped). A deal event gets a fresh ObjectId.
-- Plan call: worker tick 2 s, lease 5 min, 3 attempts, 20 events per tick, own scheduler `automationScheduler` (1 thread, prefix `automation-`); send wait 60 s. An event whose lease ran out is claimed again.
-- Plan call: a rule's run document is inserted (status RUNNING) **before** its actions run; a re-run of the event skips every rule that has a run, and **resumes** a RUNNING one at its first step without an outcome: a SEND_TEMPLATE step without an outcome gets `INTERRUPTED` ("The app stopped while sending; it may have gone") and is not sent again, every other step runs; a step marked `RETRYING` is run again. A crash mid-rule therefore never sends twice and never leaves the person unassigned or outside the CRM.
-- Plan call: a send that fails for a transient reason (no device, WhatsApp Web not ready, the extension not answering) is retried: the step is `RETRYING`, the event goes back to PENDING with `notBefore = now + retryDelay` (2 min), and the worker's next claim resumes the run at that step; after `maxAttempts` (3) claims in all the step is `FAILED` with its reason. Later actions of that rule, and later rules of the event, wait with it. In a test a transient failure is simply `FAILED` with the reason and " (live, this would be retried)".
-- Plan call: no cache of published rules; one indexed `exists` per incoming message decides whether to write the event. While only a test is waiting (no published rule of that kind), the gate takes the test contact's events alone, so the event history does not fill with the brand's other messages during a test.
-- Plan call: only matching rules get a run; the history document keeps the ids of the rules that ran (`ruleIds`) and of the tests that took the event (`testIds`). The history lists processed events only (an event appears once the worker is done with it, seconds later).
-- Plan call: an automation send skips the inbox's "chat must be OPEN" check: a closed chat (a lane change on an old chat) gets the template and stays CLOSED; it is never reopened or claimed. (The spec says "like a campaign send", but campaigns reopen; the spec's explicit words win.)
-- Plan call: at run time a placeholder is "still empty" only when a required AGENT placeholder has no rule value (contact placeholders always carry a fallback; `TemplateService` refuses one without). The action then fails with `Placeholder "<label>" has no value`.
-- Plan call: all three assign choices record a `ROUTED` action with new `RoutedReason.AUTOMATION`, `byName "Automation: <rule>"`, `byUserId` null and a new `reasonDetail` = rule name. An agent is given the chat with the number's owning team when they are a member of it, else with no team. Like routing (and unlike a manual assignment), it does not set the chat's `lastAgent*`: the customer sticks to the agent once the agent replies, not on assignment.
-- Plan call: Add to CRM uses `CrmAccess.forSystem` (user id `"system"`): `createdBy` and `origin.capturedById` are `"system"`, origin kind `INBOUND_CHAT`; the CRM contact's and the deal's owner are the chat's assignee when the action runs, else null. "In the CRM" = a `crmContacts` row for (brand, contact, number); false when the CRM is off.
-- Plan call: the deal title pattern knows `{{name}}` (contact name, else `+<phone>`, else `WhatsApp contact`) and `{{phone}}` (`+<phone>` or empty); an empty pattern means `{{name}} – WhatsApp`.
-- Plan call: publishing a rule with Add to CRM is refused while the brand's CRM is off (its pipeline and lane cannot be checked).
-- Plan call: rules are listed in run order (priority largest first, then creation order); `priority` is 0–9999 or null.
-- Plan call: conditions are a tree of `ConditionNode` with the segment editor's JSON shape (`{combinator: "and"|"or", not, rules}` / `{field, operator, value}`); the screen never sets `not`, the engine honours it. At most 3 levels and 30 conditions.
-- Plan call: the editor's choices come from one `GET /automations/options` under `automation:view`, so the page needs no CRM, user or template authority.
-- Plan call: the test page polls `GET /tests/{id}` every 2 s (no stream), and every `GET /tests/{id}` or `GET /rules/{id}/tests/active` of an active test counts as activity (`lastActivityAt`), so an open page never idles out. A test ends after 30 min with no event, no step **and no poll**, when its rule is published or deleted, or on Done; anyone with `automation:manage` can end it. The test reads the rule fresh at each step; actions can be run even when the rule did not match (the page says so).
-- Plan call: a typed test number is refused when that phone already has a chat holding a real inbound message ("This number has already messaged you…"). A lane-change test needs an existing contact.
-- Plan call: the test preflight reuses `RulePublishValidator.problems` for its blockers (each with the action index parsed from the key) and adds "No connected extension on any of the brand's numbers" when no number of the brand has a ready device (the deal's number is not known before the event); it warns per action what really happens to the test contact.
-- Plan call: "Replay this event" reruns the captured event under a fresh run id (the reference's replay mints a fresh event id for the same reason): condition results cleared, `nextAction 0`, the previous run closed; the event history keeps one record per event, so a replay adds a run, not a history row.
-- Plan call: test runs are excluded from the list's "last run / runs / failures in the last 7 days" and shown in Runs and Event history marked as tests.
+- Plan: Ruling: `chat.new` is computed by a query when the event is written, not stored as a marker
+- Plan: Ruling: the real message types are `chat`, `image`, `video`, `audio`, `ptt`, `document`, `sticker`, `location`, `vcard`, `multi_vcard`, `poll_creation`; every other type starts nothing
+- Plan: Ruling: the message event is written from an `@EventListener` on `InboxEvents.MessageUpserted`, not from a new inbox event
+- Plan: Ruling: a message event's id is `m-<stored message id>`, a deal event's a fresh ObjectId
+- Plan: Ruling: the worker ticks every 2 s with a 5 min lease, 3 attempts, 20 events per tick, on its own `automationScheduler`; a send waits 60 s
+- Plan: Ruling: a run document is inserted RUNNING before its actions run, and a re-run resumes it at the first step without an outcome
+- Plan: Ruling: a transient send failure is retried (RETRYING, 2 min delay, 3 claims in all), and later actions wait with it
+- Plan: Ruling: there is no cache of published rules; one indexed `exists` per incoming message gates the event, and while only a test waits it takes the test contact's events alone
+- Plan: Ruling: only matching rules get a run; the history keeps `ruleIds` and `testIds`, and lists processed events only
+- Plan: Ruling: an automation send skips the "chat must be OPEN" check and leaves a closed chat CLOSED
+- Plan: Ruling: a placeholder is "still empty" at run time only when a required AGENT placeholder has no rule value
+- Plan: Ruling: all three assign choices record a `ROUTED` action with `RoutedReason.AUTOMATION` and do not set `lastAgent*`
+- Plan: Ruling: Add to CRM acts as `CrmAccess.forSystem` (user id `system`, origin `INBOUND_CHAT`)
+- Plan: Ruling: the deal title pattern knows `{{name}}` and `{{phone}}`, an empty pattern meaning `{{name}} – WhatsApp`
+- Plan: Ruling: publishing a rule with Add to CRM is refused while the brand's CRM is off
+- Plan: Ruling: rules are listed in run order (priority largest first, then creation order), priority 0–9999 or null
+- Plan: Ruling: conditions are a `ConditionNode` tree in the segment editor's JSON shape, at most 3 levels and 30 conditions
+- Plan: Ruling: the editor's choices come from one `GET /automations/options` under `automation:view`
+- Plan: Ruling: the test page polls `GET /tests/{id}` every 2 s, a poll counts as activity, and a test ends after 30 idle minutes
+- Plan: Ruling: a typed test number is refused when that phone already has a real inbound message
+- Plan: Ruling: the test preflight reuses `RulePublishValidator.problems` and adds a no-extension blocker
+- Plan: Ruling: "Replay this event" reruns the captured event under a fresh run id and adds a run, not a history row
+- Plan: Ruling: test runs are left out of the list's last-run, runs and failures counts and shown marked as tests
 - Final: Ruling: `DealService.update` refuses a stage change inside the same pipeline (400), so the lane-change event's form path is the pipeline change only; `move` and `close` cover the rest
 - Final: Ruling: a send is retried only when it never reached the extension (extension offline, WhatsApp Web not ready, or the request could not be handed over, up to three attempts); a send the extension got but did not answer in time, or that was cut by a disconnect, is marked Interrupted ("may have gone") and is never sent again — never messaging twice outranks the retry
 - Final: Ruling: the `automationRuns` `event_rule` unique index is partial on `{test: false}`: one live run per (event, rule), test runs may repeat (replay); nothing is deployed so no migration, a database created from an earlier build of this branch needs the old index dropped once
@@ -76,3 +76,4 @@ Calls made while building phases D to F, copied from the plan ledgers, which are
 - Final: Ruling: a brand whose CRM is on but was never opened gets its default pipeline created when Automations first needs it (`ensureDefault`, as the CRM does on its first request)
 - Final: Ruling: an automation assignment does not make the customer stick to the agent (no `lastAgent*`), like routing; the agent's first reply does
 - Final: Ruling: while only a draft is under test, the queue takes the test contact's events alone
+- Final: Ruling: the branch's commit trailer is `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` because project-rules.md defers to the session's attribution reminder

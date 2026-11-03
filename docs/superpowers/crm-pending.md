@@ -7,7 +7,7 @@ unmerged. What is below is optional or waits on a decision; decisions already ma
 **To resume:** start a session in `/Users/nagesh/Projects/WhatsAppWebJS/SCM` and say
 > Read `omnichannel-crm-backend/docs/superpowers/crm-pending.md` and `project-rules.md`, then let's do <item>.
 
-## Features that need the user's decisions first
+## Feature that needs the user's decisions first
 
 This needs a new host feature before the CRM side means anything. Run `superpowers:brainstorming` and raise the
 questions, even though the user usually skips them.
@@ -37,7 +37,8 @@ a decision or more investigation.
 Events, rules and actions (backend) are built: spec `docs/superpowers/specs/2026-11-03-automations-design.md`, plan
 `docs/superpowers/plans/2026-11-03-automations-backend.md`. Replaces the old "Deal automation events" item.
 
-Known limits:
+## Automations: known limits
+
 - An event is lost if the app stops between saving a message or a move and writing its event.
 - The same person as `@c.us` and `@lid` can be "new" twice.
 - A typed test number whose first message arrives with a hidden number is never captured (use an existing contact
