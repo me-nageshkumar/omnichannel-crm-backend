@@ -10,6 +10,8 @@ public interface WaWebChatRepository extends MongoRepository<WaWebChat, String> 
 
     Optional<WaWebChat> findByPhoneNumberIdAndRemoteId(String phoneNumberId, String remoteId);
 
+    List<WaWebChat> findByPhoneNumberIdAndRemoteIdIn(String phoneNumberId, java.util.Collection<String> remoteIds);
+
     /** A contact's chat on a number, whatever remote id it lives under ({@code @c.us} or {@code @lid}). */
     Optional<WaWebChat> findFirstByPhoneNumberIdAndContactId(String phoneNumberId, String contactId);
 

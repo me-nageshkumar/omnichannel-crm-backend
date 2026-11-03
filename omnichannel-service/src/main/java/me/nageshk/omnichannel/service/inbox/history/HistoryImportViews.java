@@ -1,7 +1,9 @@
 package me.nageshk.omnichannel.service.inbox.history;
 
+import java.util.HashMap;
 import java.util.List;
-import me.nageshk.omnichannel.db.inbox.WaWebChat;
+import java.util.Map;
+import java.util.stream.Collectors;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
@@ -22,7 +24,18 @@ public class HistoryImportViews {
     }
 
     public HistoryImportView view(WaWebHistoryImport i) {
-        PhoneNumber n = phoneNumbers.findById(i.getPhoneNumberId()).orElse(null);
+        return views(List.of(i)).getFirst();
+    }
+
+    /** The views of a page of imports, looking their numbers up in one query. */
+    public List<HistoryImportView> views(List<WaWebHistoryImport> imports) {
+        Map<String, PhoneNumber> numbers = new HashMap<>();
+        phoneNumbers.findAllById(imports.stream().map(WaWebHistoryImport::getPhoneNumberId).distinct().toList())
+                .forEach(n -> numbers.put(n.getId(), n));
+        return imports.stream().map(i -> view(i, numbers.get(i.getPhoneNumberId()))).toList();
+    }
+
+    private static HistoryImportView view(WaWebHistoryImport i, PhoneNumber n) {
         HistoryImportView.NumberRef ref = new HistoryImportView.NumberRef(i.getPhoneNumberId(),
                 n == null ? null : n.getNumber(), n == null ? null : n.getLabel());
         WaWebHistoryImport.Scope s = i.getScope();
@@ -36,14 +49,16 @@ public class HistoryImportViews {
                 i.getCreationTime(), i.getStartedAt(), i.getFinishedAt(), progress, i.getError());
     }
 
+    /** The views of a page of chat items, looking their chats up in one query per number. */
     public List<HistoryChatView> chats(List<WaWebHistoryImportChat> items) {
-        return items.stream().map(r -> {
-            String chatId = chats.findByPhoneNumberIdAndRemoteId(r.getPhoneNumberId(), r.getRemoteId())
-                    .map(WaWebChat::getId).orElse(null);
-            return new HistoryChatView(r.getId(), r.getRemoteId(), r.getRequestedPhone(), r.getChatName(), chatId,
-                    r.getStatus(), r.getSkipReason(), r.getError(), r.getCounts(), r.isCapped(), r.isOlderUnavailable(),
-                    r.getAttemptedAt(),
-                    r.getFinishedAt());
-        }).toList();
+        Map<String, String> chatIds = new HashMap<>();
+        items.stream().collect(Collectors.groupingBy(WaWebHistoryImportChat::getPhoneNumberId,
+                Collectors.mapping(WaWebHistoryImportChat::getRemoteId, Collectors.toSet())))
+                .forEach((phoneNumberId, remoteIds) -> chats.findByPhoneNumberIdAndRemoteIdIn(phoneNumberId, remoteIds)
+                        .forEach(c -> chatIds.put(c.getPhoneNumberId() + "|" + c.getRemoteId(), c.getId())));
+        return items.stream().map(r -> new HistoryChatView(r.getId(), r.getRemoteId(), r.getRequestedPhone(),
+                r.getChatName(), chatIds.get(r.getPhoneNumberId() + "|" + r.getRemoteId()), r.getStatus(),
+                r.getSkipReason(), r.getError(), r.getCounts(), r.isCapped(), r.isOlderUnavailable(),
+                r.getAttemptedAt(), r.getFinishedAt())).toList();
     }
 }
