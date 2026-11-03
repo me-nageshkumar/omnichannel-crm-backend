@@ -27,7 +27,9 @@ showing what happened.
 - Draft and Published, a step-by-step test for drafts, a run log, permissions.
 
 **Non-goals (v1)** (my call unless marked)
-- Kafka or any message broker: events are in-process.
+- Kafka or any other message broker (the user's choice, 2026-11-03: not deployed yet, to run on AWS with very little
+  spend). Events go through a queue in MongoDB (section 4.4); it sits behind one interface so Amazon SQS or Kafka can
+  replace it later without touching the rules.
 - Other events (contact created, lead intake, campaign events), other actions (chatbots, labels, attributes, schedule
   a message, wait or delay steps, webhooks).
 - Free-text messages: templates only (the user's).
@@ -106,6 +108,24 @@ Both events are per brand (workspace). **Rules apply to all numbers of the brand
   screen: is, is not, is one of, contains, does not contain, starts with, is empty, is not empty, greater than, less
   than, between. Text comparisons ignore case (my call).
 - Chat is new and Contact is in the CRM are yes/no fields; the screen shows them as "Chat is new" / "Chat is existing".
+
+### 4.4 The event queue (the user's choice: a MongoDB collection, not Kafka)
+- When a live message comes in (section 3.1) or a deal moves (section 3.2), the app writes one **event document** to
+  `automationEvents`: brand, event kind, the event data as it was then, status PENDING, created time. Only brands with
+  at least one published rule, or a test waiting, get events written (my call; keeps the queue empty for others).
+- A worker inside the app claims the oldest PENDING event with a time-limited lock (`findAndModify` to RUNNING with a
+  lease, as campaign recipients and history import chats are claimed today), runs the rules (section 4.3), and marks it
+  DONE, or FAILED after a few attempts. An event whose lease ran out (the app stopped mid-way) is claimed again.
+- **No double sends**: each (event, rule) run is stored once under a unique key in the run log, so an event processed
+  twice runs each rule once.
+- **The queue stays small** (the user's aim; my call on how): a partial index on PENDING keeps the claim fast however
+  many old events there are, and a TTL index deletes DONE and FAILED events about 7 days after they finished. What a
+  rule did is kept in the run log (section 8, 30 days), not in the queue. The user suggested moving processed events
+  to another collection; the TTL gives the same result with one write instead of a copy and a delete.
+- Writing the event comes after the message or the move is saved and never fails it. A crash in the instant between
+  the two loses that one event (my call: accepted for v1; noted for the reviewer).
+- The worker runs off the ingestion and request threads, so a slow rule never slows the inbox or a deal move. Several
+  app servers later can share the queue: the lease stops two of them taking the same event.
 
 ### 4.3 Which rules run, and in what order
 - On every event, **every published rule of the brand for that event whose conditions match runs** (the user's), and
@@ -233,8 +253,8 @@ Add to CRM is created, not moved. So no rule can trigger another.
 - The demo password is not recorded; ask the user.
 
 ## 11. Left to the builder
-- How events reach the engine: in-process, off the ingestion thread (a bounded executor), so a slow rule cannot slow
-  message ingestion or a deal move (my call on the principle; the mechanism is the builder's).
+- The worker's polling interval, lease length, attempt count and how a test waiting on an event is woken (section
+  4.4 fixes the queue itself).
 - Where the incoming-message event is published (today `ChatCreated` and `MessageUpserted` exist; a new event carrying
   "this message created the chat" may be simpler).
 - How a send and an assignment run without a person (today they take an `AuthenticatedUser`; a system actor variant).
