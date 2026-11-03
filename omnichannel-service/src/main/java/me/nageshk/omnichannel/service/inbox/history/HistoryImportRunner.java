@@ -180,7 +180,8 @@ public class HistoryImportRunner {
             mongo.updateFirst(byIdIn(id, HistoryImportStatus.RUNNING), new Update().set("waiting", null),
                     WaWebHistoryImport.class);
             if (!isRunning(id)) return;
-            if (imp.getScope().kind() == HistoryScopeKind.ALL && items.countByImportId(id) == 0
+            // a listing broken half way is done again: the chats it stored are kept, the rest added
+            if (imp.getScope().kind() == HistoryScopeKind.ALL && imp.getListedAt() == null
                     && !listChats(imp, device)) {
                 return;
             }
@@ -199,13 +200,14 @@ public class HistoryImportRunner {
                 }
                 WaWebHistoryImportChat item = claim(id);
                 if (item == null) break;
-                boolean deviceOk;
+                ChatRun run;
                 try {
-                    deviceOk = importChat(imp, item, current);
+                    run = importChat(imp, item, current);
                 } finally {
                     counter.refresh(id);
                 }
-                if (!deviceOk || !pause(settings.chatDelay()) || !isRunning(id)) break;
+                // a chat read from what the browser already held asked nothing of the phone: no pause after it
+                if (!run.deviceOk() || run.loaded() && !pause(settings.chatDelay()) || !isRunning(id)) break;
             }
             completeIfDone(id);
         } catch (RuntimeException e) {
@@ -257,6 +259,8 @@ public class HistoryImportRunner {
                 // listed twice, or an earlier tick got this far
             }
         }
+        mongo.updateFirst(new Query(Criteria.where("_id").is(imp.getId())),
+                new Update().set("listedAt", clock.instant()), WaWebHistoryImport.class);
         log.info("history import {}: {} chats listed, {} left out as last active before the range", imp.getId(),
                 rows.size(), inactive);
         counter.refresh(imp.getId());
@@ -289,8 +293,14 @@ public class HistoryImportRunner {
 
     // ---- one chat ----
 
-    /** Imports one claimed chat page by page; false when the device failed and the import must stop for now. */
-    boolean importChat(WaWebHistoryImport imp, WaWebHistoryImportChat item, DeviceSession device) {
+    /**
+     * How a chat's turn went: {@code deviceOk} false when the device failed and the import must stop for now;
+     * {@code loaded} when the phone was asked for older messages, the only case the pause between chats is for.
+     */
+    record ChatRun(boolean deviceOk, boolean loaded) {}
+
+    /** Imports one claimed chat page by page. */
+    ChatRun importChat(WaWebHistoryImport imp, WaWebHistoryImportChat item, DeviceSession device) {
         ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId(),
                 personName(item.getChatName()));
         WaWebHistoryImport.Range range = imp.getRange();
@@ -311,6 +321,8 @@ public class HistoryImportRunner {
         WaWebChat chat = null;
         // something was stored that the open consoles have not been told about
         boolean unannounced = false;
+        // the phone was asked for older messages: the pause between chats is for this
+        boolean loaded = false;
         try {
             while (true) {
                 // never past the cap: the page holds the newest messages before the cursor
@@ -320,6 +332,7 @@ public class HistoryImportRunner {
                         from, to, limit, settings.maxLoads())).get();
                 // a page that leaves the cursor where it was holds what the last one held: it is no progress
                 boolean moved = !page.messages().isEmpty() && !repeats(page, cursor);
+                loaded |= page.loaded();
                 if (moved) {
                     for (JsonNode m : page.messages()) {
                         ImportResult r = ingest.importMessage(ctx, m);
@@ -344,7 +357,7 @@ public class HistoryImportRunner {
                 if (createdChatId != null) progress.set("createdChatId", createdChatId);
                 if (page.unreadCount() != null) progress.set("phoneUnread", page.unreadCount());
                 if (page.business() != null) progress.set("business", page.business());
-                if (!whileOpen(item, progress)) return true;
+                if (!whileOpen(item, progress)) return new ChatRun(true, loaded);
                 counter.refresh(imp.getId());
                 if (unannounced) {
                     announce(item, chat);
@@ -352,56 +365,62 @@ public class HistoryImportRunner {
                 }
                 if (!page.hasMore()) {
                     done(imp, item, new Update());
-                    return true;
+                    return new ChatRun(true, loaded);
                 }
                 if (seen >= settings.maxMessagesPerChat()) {
                     done(imp, item, new Update().set("capped", true));
-                    return true;
+                    return new ChatRun(true, loaded);
                 }
                 if (emptyPages >= settings.maxEmptyPages() || idlePages >= settings.maxIdlePages()) {
                     if (idlePages >= settings.maxIdlePages()) {
                         log.warn("history import chat {} stored nothing in {} pages, ending it", item.getId(), idlePages);
                     }
                     done(imp, item, new Update().set("olderUnavailable", true));
-                    return true;
+                    return new ChatRun(true, loaded);
                 }
                 if (!pause(settings.pageDelay())) {
                     release(item);
-                    return false;
+                    return new ChatRun(false, loaded);
                 }
                 // after the wait, which is where most pauses and stops land: no page is asked for after one
                 if (!isRunning(imp.getId())) {
                     release(item);
-                    return true;
+                    return new ChatRun(true, loaded);
                 }
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             release(item);
-            return false;
+            return new ChatRun(false, loaded);
         } catch (ExecutionException | RuntimeException e) {
             Throwable cause = unwrap(e);
             if (cause instanceof RpcException rpc && RpcException.CHAT_NOT_FOUND.equals(rpc.code())) {
                 finish(item, new Update().set("status", HistoryChatStatus.SKIPPED)
                         .set("skipReason", HistorySkipReason.NO_CHAT));
-                return true;
+                return new ChatRun(true, loaded);
             }
             if (cause instanceof TimeoutException) {
+                if (!answers(device)) {
+                    // the page answers nothing at all, not only this chat: wait for it, charging the chat nothing
+                    release(item);
+                    setWaiting(imp.getId(), HistoryWaiting.WHATSAPP_NOT_READY);
+                    return new ChatRun(false, loaded);
+                }
                 int count = timeouts + 1;
                 if (count >= settings.maxTimeoutsPerChat()) {
                     finish(item, new Update().set("status", HistoryChatStatus.FAILED).set("error", "TIMEOUT")
                             .set("timeouts", count));
-                    return true;
+                    return new ChatRun(true, loaded);
                 }
                 whileOpen(item, new Update().set("status", HistoryChatStatus.PENDING).set("timeouts", count));
                 setWaiting(imp.getId(), HistoryWaiting.WHATSAPP_NOT_READY);
-                return false;
+                return new ChatRun(false, loaded);
             }
             HistoryWaiting waiting = deviceFailure(cause);
             if (waiting != null) {
                 release(item);
                 setWaiting(imp.getId(), waiting);
-                return false;
+                return new ChatRun(false, loaded);
             }
             String error = cause instanceof RpcException rpc ? rpc.code()
                     : cause instanceof IngestionFailedException ? "DB_ERROR" : cause.getClass().getSimpleName();
@@ -410,10 +429,24 @@ public class HistoryImportRunner {
             }
             finish(item, new Update().set("status", HistoryChatStatus.FAILED).set("error", error)
                     .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated)));
-            return true;
+            return new ChatRun(true, loaded);
         } finally {
             // a page that failed half way stored what it stored
             if (unannounced) announce(item, chat);
+        }
+    }
+
+    /** True when the page answers a cheap call, even with an error: then a page that timed out is the chat's doing. */
+    private boolean answers(DeviceSession device) {
+        try {
+            client.state(device).get();
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException | RuntimeException e) {
+            Throwable cause = unwrap(e);
+            return !(cause instanceof TimeoutException) && deviceFailure(cause) == null;
         }
     }
 

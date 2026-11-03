@@ -98,6 +98,7 @@ class HistoryDevice implements AutoCloseable {
         return switch (req.method()) {
             case "listChats" -> Envelope.response(req.id(), listChats());
             case "fetchChatHistory" -> fetchChatHistory(req);
+            case "getState" -> Envelope.response(req.id(), MAPPER.getNodeFactory().textNode("CONNECTED"));
             default -> Envelope.errorResponse(req.id(), "METHOD_NOT_FOUND", req.method());
         };
     }

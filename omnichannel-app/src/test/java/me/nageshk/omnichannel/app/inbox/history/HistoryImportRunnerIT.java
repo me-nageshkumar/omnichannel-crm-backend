@@ -251,6 +251,49 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
     }
 
     @Test
+    void aDeviceThatAnswersNothingIsWaitedForNotChargedToTheChat() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            seedTwoChats(device);
+            // connected, but the page answers nothing at all: not a page, not its state
+            device.override = req -> null;
+            WaWebHistoryImport imp = importChats("919811100001");
+
+            for (int tick = 0; tick < 3; tick++) runner.tick().get(20, SECONDS);
+
+            WaWebHistoryImportChat a = item(imp, A);
+            assertThat(a.getStatus()).isEqualTo(HistoryChatStatus.PENDING);
+            assertThat(a.getTimeouts()).isZero();
+            WaWebHistoryImport waiting = reload(imp);
+            assertThat(waiting.getStatus()).isEqualTo(HistoryImportStatus.RUNNING);
+            assertThat(waiting.getWaiting()).isEqualTo(HistoryWaiting.WHATSAPP_NOT_READY);
+            assertThat(device.requests("getState")).isNotEmpty();
+        }
+    }
+
+    @Test
+    void anAllChatsImportWhoseListingBrokeHalfWayIsListedAgain() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            seedTwoChats(device);
+            WaWebHistoryImport imp = importAll(null, null);
+            // the listing stored A, then the database failed before B
+            WaWebHistoryImportChat a = new WaWebHistoryImportChat();
+            a.setImportId(imp.getId());
+            a.setWorkspaceId(imp.getWorkspaceId());
+            a.setPhoneNumberId(imp.getPhoneNumberId());
+            a.setRemoteId(A);
+            a.setStatus(HistoryChatStatus.PENDING);
+            a.setCounts(WaWebHistoryImportChat.Counts.ZERO);
+            items.insert(a);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(itemsOf(imp)).extracting(WaWebHistoryImportChat::getRemoteId).containsExactlyInAnyOrder(A, B);
+            assertThat(itemsOf(imp)).allSatisfy(i -> assertThat(i.getStatus()).isEqualTo(HistoryChatStatus.DONE));
+            assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+        }
+    }
+
+    @Test
     void releaseStuckResetsRunningItems() {
         WaWebHistoryImport imp = importChats("919811100001");
         WaWebHistoryImportChat stuck = item(imp, A);

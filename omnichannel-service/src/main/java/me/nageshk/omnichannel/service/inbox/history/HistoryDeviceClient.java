@@ -38,6 +38,11 @@ public class HistoryDeviceClient {
         return dispatcher.call(device, "listChats", mapper.createObjectNode()).thenApply(HistoryDeviceClient::chatRows);
     }
 
+    /** The page's connection state: a cheap call that only tells whether the page answers at all. */
+    public CompletableFuture<JsonNode> state(DeviceSession device) {
+        return dispatcher.call(device, "getState", mapper.createObjectNode());
+    }
+
     public CompletableFuture<HistoryPage> fetchChatHistory(DeviceSession device, FetchRequest req) {
         return dispatcher.call(device, "fetchChatHistory", params(req)).thenApply(HistoryDeviceClient::page);
     }
