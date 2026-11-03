@@ -302,7 +302,7 @@ public class HistoryImportRunner {
     /** Imports one claimed chat page by page. */
     ChatRun importChat(WaWebHistoryImport imp, WaWebHistoryImportChat item, DeviceSession device) {
         ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId(),
-                personName(item.getChatName()));
+                personName(item.getChatName()), item.getId());
         WaWebHistoryImport.Range range = imp.getRange();
         Long from = range == null || range.from() == null ? null : range.from().getEpochSecond();
         Long to = until(imp);
@@ -436,6 +436,13 @@ public class HistoryImportRunner {
         }
     }
 
+    /** True when the import was stopped or failed: what it fetched stays, but it decides nothing more. */
+    private boolean stopped(String importId) {
+        WaWebHistoryImport now = mongo.findById(importId, WaWebHistoryImport.class);
+        return now == null || now.getStatus() == HistoryImportStatus.CANCELLED
+                || now.getStatus() == HistoryImportStatus.FAILED;
+    }
+
     /** True when the page answers a cheap call, even with an error: then a page that timed out is the chat's doing. */
     private boolean answers(DeviceSession device) {
         try {
@@ -461,11 +468,22 @@ public class HistoryImportRunner {
         return whileOpen(item, update.set("finishedAt", clock.instant()));
     }
 
-    /** Ends the chat DONE and, the first time only, opens it if it waits on us. */
+    /**
+     * Ends the chat DONE and, the first time only, opens it if it waits on us; not when the user stopped the import
+     * while this chat's last page was on its way.
+     */
     private void done(WaWebHistoryImport imp, WaWebHistoryImportChat item, Update update) {
         if (!finish(item, update.set("status", HistoryChatStatus.DONE))) return;
         WaWebHistoryImportChat ended = items.findById(item.getId()).orElse(null);
-        if (ended == null) return;
+        if (ended == null || stopped(imp.getId())) return;
+        if (ended.getCreatedChatId() == null) {
+            // a crash between storing a page and noting its progress loses the note, not the chat's own mark
+            chats.findFirstByCreatedByHistoryChatId(ended.getId()).ifPresent(created -> {
+                ended.setCreatedChatId(created.getId());
+                mongo.updateFirst(new Query(Criteria.where("_id").is(ended.getId())),
+                        new Update().set("createdChatId", created.getId()), WaWebHistoryImportChat.class);
+            });
+        }
         try {
             opener.openIfWaiting(imp, ended);
         } catch (RuntimeException e) {

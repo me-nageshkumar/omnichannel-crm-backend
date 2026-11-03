@@ -55,10 +55,15 @@ public class InboxIngestService {
     }
 
     /** The number a history import stores messages for. */
-    public record ImportContext(String customerId, String workspaceId, String phoneNumberId, String chatName) {
+    /**
+     * {@code historyChatId}, the history import item doing the import, is noted on a chat this creates, so the import
+     * can tell which chat it created even when a crash lost its own note.
+     */
+    public record ImportContext(String customerId, String workspaceId, String phoneNumberId, String chatName,
+            String historyChatId) {
 
         public ImportContext(String customerId, String workspaceId, String phoneNumberId) {
-            this(customerId, workspaceId, phoneNumberId, null);
+            this(customerId, workspaceId, phoneNumberId, null, null);
         }
     }
 
@@ -196,6 +201,7 @@ public class InboxIngestService {
             chat.setContactId(contact.getId());
             chat.setStatus(ChatStatus.CLOSED);
             chat.setUnreadCount(0);
+            chat.setCreatedByHistoryChatId(ctx.historyChatId());
             chat = chats.save(chat);
         }
 

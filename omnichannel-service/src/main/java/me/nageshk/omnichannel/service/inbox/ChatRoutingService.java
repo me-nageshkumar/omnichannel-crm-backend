@@ -112,12 +112,15 @@ public class ChatRoutingService {
                 // the cursor is read fresh: a caller re-routing many chats holds a Team loaded before the first move
                 Team current = teams.findById(team.getId()).orElse(team);
                 User next = nextMember(current, reachable, chat.getWorkspaceId(), options.excludeUserId());
+                // the turn moves once the chat is saved: a save that fails (a newer version) and is retried
+                // must not skip the member whose turn it was
+                WaWebChat saved = routed(chat, next, team, options.reason(), options.excludeUserId());
                 if (next != null) {
                     // only the cursor: saving the whole team could revert an edit made since it was read
                     mongo.updateFirst(new Query(Criteria.where("_id").is(team.getId())),
                             new Update().set("roundRobinCursor", next.getId()), Team.class);
                 }
-                return routed(chat, next, team, options.reason(), options.excludeUserId());
+                return saved;
             }
             default -> {
                 return chat;

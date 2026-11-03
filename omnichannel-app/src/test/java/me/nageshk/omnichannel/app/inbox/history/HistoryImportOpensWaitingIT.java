@@ -34,6 +34,7 @@ class HistoryImportOpensWaitingIT extends HistoryImportTestBase {
     @Autowired TeamRepository teams;
     @Autowired PhoneNumberRepository phoneNumbers;
     @Autowired InboxSettingService settings;
+    @Autowired me.nageshk.omnichannel.service.inbox.InboxIngestService ingest;
 
     /** Seconds since the epoch, {@code ago} before the clock. */
     private long ago(Duration ago) {
@@ -92,6 +93,45 @@ class HistoryImportOpensWaitingIT extends HistoryImportTestBase {
                 assertThat(a.getType()).isEqualTo(ActionType.ROUTED);
                 assertThat(a.getReason()).isEqualTo(RoutedReason.FETCHED);
             });
+        }
+    }
+
+    @Test
+    void aFetchStoppedWhileItsLastPageWasOnTheWayOpensNothing() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, ago(Duration.ofHours(2)), 1, "is it in stock?")));
+            device.unread.put(A, 1);
+            java.util.concurrent.atomic.AtomicReference<String> importId = new java.util.concurrent.atomic.AtomicReference<>();
+            // the user presses Stop while the chat's only page is on its way
+            device.override = req -> {
+                if ("fetchChatHistory".equals(req.method())) service.cancel(brand.getId(), importId.get());
+                return device.answer(req);
+            };
+            importId.set(importAll(null, null).getId());
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(theChat().getStatus()).isEqualTo(ChatStatus.CLOSED);
+            assertThat(actions()).isEmpty();
+        }
+    }
+
+    @Test
+    void aChatTheFetchCreatedIsKnownAfterACrashLostItsNote() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            var first = HistoryDevice.msg(A, false, ago(Duration.ofHours(2)), 1, "is it in stock?");
+            device.chats.put(A, List.of(first));
+            device.unread.put(A, 1);
+            var imp = importChats("919811100001");
+            var item = itemsOf(imp).getFirst();
+            // a first pass stored the page, creating the chat, and the process died before noting it on the item
+            ingest.importMessage(new me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext(
+                    imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId(), null, item.getId()), first);
+            assertThat(itemsOf(imp).getFirst().getCreatedChatId()).isNull();
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(theChat().getStatus()).isEqualTo(ChatStatus.OPEN);
         }
     }
 
