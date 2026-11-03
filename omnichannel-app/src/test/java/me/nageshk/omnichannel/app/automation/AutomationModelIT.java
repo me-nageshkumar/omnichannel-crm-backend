@@ -54,6 +54,16 @@ class AutomationModelIT {
         }
     }
 
+    @Test
+    void runsHaveAPlainEventIndex() {
+        var event = mongo.indexOps(AutomationRun.class).getIndexInfo().stream()
+                .filter(i -> i.getName().equals("event")).findFirst();
+        assertThat(event).isPresent();
+        assertThat(event.get().getIndexFields()).extracting(f -> f.getKey()).containsExactly("eventId");
+        assertThat(event.get().getPartialFilterExpression()).isNull();
+        assertThat(event.get().isUnique()).isFalse();
+    }
+
     private AutomationRun run(String eventId, String ruleId) {
         AutomationRun r = new AutomationRun();
         r.setEventId(eventId);

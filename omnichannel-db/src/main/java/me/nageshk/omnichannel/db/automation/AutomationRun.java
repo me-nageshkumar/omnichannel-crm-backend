@@ -11,12 +11,14 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
  * One rule's run for one event. A live run is unique per event and rule, so a retried event never runs a rule twice;
- * a test's runs are not, since a replay runs the same event again.
+ * a test's runs are not, since a replay runs the same event again. The unique index is partial, so the worker and the
+ * history read runs by event through the plain {@code event} index.
  */
 @Document("automationRuns")
 @CompoundIndexes({
         @CompoundIndex(name = "event_rule", def = "{'eventId': 1, 'ruleId': 1}", unique = true,
                 partialFilter = "{'test': false}"),
+        @CompoundIndex(name = "event", def = "{'eventId': 1}"),
         @CompoundIndex(name = "rule_started", def = "{'ruleId': 1, 'startedAt': -1}"),
         @CompoundIndex(name = "ws_started", def = "{'workspaceId': 1, 'startedAt': -1}")
 })
