@@ -34,7 +34,9 @@ showing what happened.
   a message, wait or delay steps, webhooks).
 - Free-text messages: templates only (the user's).
 - Sending hours for automations (the user's: 24x7; campaigns keep their hours).
-- Retrying a failed action later, or queueing sends while the extension is offline.
+- Queueing sends while the extension is offline for long. (A send that failed because the extension was offline,
+  WhatsApp Web was not ready or the extension did not answer **is** retried a bounded number of times: the user's,
+  2026-11-03, after a look at the reference. Any other failure is not retried.)
 - Merging a person's two chats (`@c.us` and `@lid`): the user will take it after this task.
 - Rule version history.
 
@@ -105,8 +107,12 @@ Both events are per brand (workspace). **Rules apply to all numbers of the brand
     Document, Sticker, Location, Contact card, Poll. Stored as "is one of" over those kinds.
   - Lane change: Pipeline; Moved into lane; Moved from lane; Lane type (Won, Lost, open); Deal amount; Deal owner.
 - Operators, from the reference vocabulary (`equal_to`, `contains`, `startsWith`, `between`, …), in plain words in the
-  screen: is, is not, is one of, contains, does not contain, starts with, is empty, is not empty, greater than, less
-  than, between. Text comparisons ignore case (my call).
+  screen: is, is not, is one of, contains, does not contain, starts with, ends with, is empty, is not empty, greater
+  than, less than, at least, at most, between (ends with, at least and at most added at the user's choice on
+  2026-11-03; the reference's regex "matches" is left out as a trap for non-technical users). Text comparisons ignore
+  case (my call).
+- Every event, field and action in the editor carries a one-line description and an example value, as the reference's
+  pickers do (the user's, 2026-11-03).
 - Chat is new and Contact is in the CRM are yes/no fields; the screen shows them as "Chat is new" / "Chat is existing".
 
 ### 4.3 The event queue (the user's choice: a MongoDB collection, not Kafka)
@@ -166,8 +172,10 @@ Both events are per brand (workspace). **Rules apply to all numbers of the brand
 - The stored message shows who sent it as **"Automation: <rule name>"** (a new message source next to Console and
   Campaign). It does not claim or reopen the chat for anyone and does not change its status (my call, like a campaign
   send).
-- The device must be ready; if it is not (extension offline, number disabled), the action fails with that reason. No
-  retry in v1.
+- The device must be ready; if it is not (extension offline, number disabled), the send is tried again after a short
+  wait, up to three attempts in all; still failing, the action fails with that reason. Other failures (an archived
+  template, a placeholder without a value, WhatsApp refusing the message) are not retried. While a send waits for its
+  retry the rule's later actions wait too, so the actions keep their order.
 
 ### 5.2 Assign chat
 - The dialog the user asked for, three choices:
@@ -225,10 +233,15 @@ Add to CRM is created, not moved. So no rule can trigger another.
    actual value it saw, then whether the rule matches.
 4. **Run the actions one at a time**: each has Run and Skip and shows its result. They really happen, to the test
    contact (the template is really sent).
-- Then "Test again" (listen for the next event) or "Done".
+- **Before Start, a preflight** (from the reference): the page lists what would stop the test from working at all,
+  such as no connected extension on the brand's numbers, an archived template, an agent who left, CRM off for Add to
+  CRM (blockers, which disable Start), and what will really happen to the test contact (warnings).
+- Then "Test again" (listen for the next event), "Replay this event" (run the same captured event again from its first
+  condition, without another message; the actions really run again, to the test contact) or "Done".
 - **Published rules are not paused** for the test contact during a test (the user's, "for now"): they run as usual.
-- Only drafts can be tested (the user's). One test at a time per rule; a test that waits with no event for 30 minutes
-  ends (my call). Test runs are kept in the run log and the event history, marked as tests.
+- Only drafts can be tested (the user's). One test at a time per rule; a test ends when nothing has happened for 30
+  minutes, where the open test page counts as something happening (the page polls, as the reference's console
+  heartbeats): a test is cut off only once nobody is watching it (my call). Test runs are kept in the run log and the event history, marked as tests.
 
 ## 8. The Automations page
 - Its **own entry in the side menu**, "Automations" (the user's).
