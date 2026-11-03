@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.db.template;
 
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
@@ -7,6 +8,8 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 public interface MessageTemplateRepository extends MongoRepository<MessageTemplate, String> {
 
     Optional<MessageTemplate> findByIdAndWorkspaceId(String id, String workspaceId);
+
+    List<MessageTemplate> findByWorkspaceIdAndStatusOrderByNameKey(String workspaceId, TemplateStatus status);
 
     boolean existsByWorkspaceId(String workspaceId);
 
