@@ -199,12 +199,30 @@ public class DealService {
      * with the lowest id wins and the other is removed, so both answer the same deal.
      */
     public CaptureDeal createForCapture(CrmContext ctx, CrmContact contact, String pipelineId, String title) {
+        return createCaptured(ctx, contact, pipelineId, null, title, null, false);
+    }
+
+    /**
+     * The deal a rule's action makes: in {@code stageId} when given (else the first open lane), owned by
+     * {@code ownerId} (may be null), whose status follows the lane's type. An open deal the contact already has in the
+     * pipeline is reused. Creating is not a move, so no lane event fires.
+     *
+     * @throws NotFoundException "Lane not found" when {@code stageId} is not a lane of the pipeline
+     */
+    public CaptureDeal createForAutomation(CrmContext ctx, CrmContact contact, String pipelineId, String stageId,
+            String title, String ownerId) {
+        return createCaptured(ctx, contact, pipelineId, stageId, title, ownerId, true);
+    }
+
+    private CaptureDeal createCaptured(CrmContext ctx, CrmContact contact, String pipelineId, String stageId,
+            String title, String ownerId, boolean explicitOwner) {
         CrmDeal existing = firstOpen(ctx.workspaceId(), contact.getId(), pipelineId);
         if (existing != null) return new CaptureDeal(view(ctx, existing), false);
         CrmPipeline pipeline = mongo.findOne(new Query(Criteria.where("_id").is(pipelineId)
                 .and("workspaceId").is(ctx.workspaceId())), CrmPipeline.class);
         if (pipeline == null) throw new NotFoundException("Pipeline not found");
-        CrmStage stage = firstOpenStage(pipeline);
+        CrmStage stage = stageId == null ? firstOpenStage(pipeline)
+                : Placement.stage(pipeline, stageId).orElseThrow(() -> new NotFoundException("Lane not found"));
         String name = displayName(ctx, contact);
         String t = present(title) ? title.trim() : name + " deal";
         if (t.length() > MAX_TITLE) t = t.substring(0, MAX_TITLE);
@@ -212,7 +230,7 @@ public class DealService {
         d.setTitle(t);
         // capture has no one to fill required fields; defaults still apply
         d.setCustomFields(fields.values(ctx, TargetType.DEAL, Map.of(), null, true, false, new LinkedHashMap<>()));
-        d.setOwnerId(contact.getOwnerId() != null ? contact.getOwnerId() : ctx.userId());
+        d.setOwnerId(explicitOwner ? ownerId : contact.getOwnerId() != null ? contact.getOwnerId() : ctx.userId());
         d.setTeamId(contact.getTeamId());
         CrmDeal saved = appended(ctx, d);
         CrmDeal winner = firstOpen(ctx.workspaceId(), contact.getId(), pipelineId);
@@ -221,7 +239,7 @@ public class DealService {
                     CrmDeal.class);
             return new CaptureDeal(view(ctx, winner), false);
         }
-        afterCreate(ctx, saved, "Deal created from a capture");
+        afterCreate(ctx, saved, explicitOwner ? "Deal created by an automation" : "Deal created from a capture");
         return new CaptureDeal(view(ctx, reload(ctx, saved.getId())), true);
     }
 
