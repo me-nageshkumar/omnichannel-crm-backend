@@ -116,7 +116,7 @@ Small findings from the final reviews of phases D to G, kept here because the le
 
 ## From the review of the last fixes
 
-- [ ] An edit removing a task's repeat rule in the moment a completion is closing it still closes it with the occurrence already stored; only a form opened in that window can do it
-- [ ] Step errors in the task form are `<small>`, so a failed save does not scroll to them; hardly reachable given the length limit
-- [ ] A company lookup failing just as the editor closes makes one stray read
+- [x] An edit removing a task's repeat rule in the moment a completion is closing it still closes it with the occurrence already stored; only a form opened in that window can do it. Fixed 2026-11-03: the close honours the edit and removes the stored occurrence (`TaskOccurrenceFailureIT.anEditEndingTheRepeatWhileCompletingLeavesNoNextOccurrence`)
+- [x] Step errors in the task form are `<small>`, so a failed save does not scroll to them; hardly reachable given the length limit. Fixed 2026-11-03: they are error helper text (`taskForm.test.tsx` `bringsARefusedStepIntoView`)
+- [x] A company lookup failing just as the editor closes makes one stray read. Fixed 2026-11-03: no retry starts once the editor has closed (`segmentEditorPage.test.tsx` `aLookupFailingAfterTheEditorClosedIsNotTriedAgain`)
 
