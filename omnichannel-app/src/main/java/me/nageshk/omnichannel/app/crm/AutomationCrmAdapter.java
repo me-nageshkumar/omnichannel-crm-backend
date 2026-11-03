@@ -48,9 +48,7 @@ class AutomationCrmAdapter implements AutomationCrm {
 
     @Override
     public LeadResult addLead(LeadRequest r) {
-        if (settings.find(r.workspaceId()).filter(CrmSettings::isEnabled).isEmpty()) {
-            throw new AutomationActionFailed("CRM is off for this brand");
-        }
+        if (enabled(r.workspaceId()) == null) throw new AutomationActionFailed("CRM is off for this brand");
         CrmContext ctx = access.forSystem(r.workspaceId(), r.customerId());
         String pipelineId = r.pipelineId() != null ? r.pipelineId() : ctx.settings().getDefaultPipelineId();
         if (pipelineId == null) throw new AutomationActionFailed("The brand has no default pipeline");
@@ -83,7 +81,7 @@ class AutomationCrmAdapter implements AutomationCrm {
 
     @Override
     public CrmOptions options(String workspaceId) {
-        CrmSettings s = settings.find(workspaceId).filter(CrmSettings::isEnabled).orElse(null);
+        CrmSettings s = enabled(workspaceId);
         if (s == null) return new CrmOptions(false, null, List.of());
         CrmContext ctx = access.forSystem(workspaceId, s.getCustomerId());
         List<PipelineOption> list = pipelines.list(ctx).stream()
@@ -92,6 +90,16 @@ class AutomationCrmAdapter implements AutomationCrm {
                         .map(st -> new LaneOption(st.getId(), st.getName(), type(st))).toList()))
                 .toList();
         return new CrmOptions(true, s.getDefaultPipelineId(), list);
+    }
+
+    /** The brand's settings when its CRM is on, with the default pipeline made if the CRM has not yet done so. */
+    private CrmSettings enabled(String workspaceId) {
+        CrmSettings s = settings.find(workspaceId).filter(CrmSettings::isEnabled).orElse(null);
+        if (s != null && s.getDefaultPipelineId() == null) {
+            pipelines.ensureDefault(workspaceId, s.getCustomerId(), "system");
+            s = settings.find(workspaceId).filter(CrmSettings::isEnabled).orElse(null);
+        }
+        return s;
     }
 
     private static String type(CrmStage st) {

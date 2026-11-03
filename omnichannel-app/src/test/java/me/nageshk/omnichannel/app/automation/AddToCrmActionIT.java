@@ -56,8 +56,6 @@ class AddToCrmActionIT extends AutomationTestBase {
 
     private WaWebChat asha() {
         enableCrm();
-        // the first request of the brand makes its default pipeline
-        call(HttpMethod.GET, "/api/workspaces/" + brand.getId() + "/crm/pipelines", manager, null);
         return incoming(n1, ASHA, "chat", "Hi", "Asha");
     }
 
@@ -97,12 +95,13 @@ class AddToCrmActionIT extends AutomationTestBase {
     @Test
     void addsLeadToDefaultPipelineFirstLane() {
         WaWebChat chat = asha();
-        CrmPipeline sales = defaultPipeline();
-        CrmStage first = sales.getStages().stream().filter(s -> s.getType() == StageType.OPEN)
-                .min(java.util.Comparator.comparingDouble(CrmStage::getPosition)).orElseThrow();
 
         ActionResult r = handler.run(ctx(chat), add(null, null, null));
 
+        // the action made the brand's default pipeline; no CRM request came first
+        CrmPipeline sales = defaultPipeline();
+        CrmStage first = sales.getStages().stream().filter(s -> s.getType() == StageType.OPEN)
+                .min(java.util.Comparator.comparingDouble(CrmStage::getPosition)).orElseThrow();
         assertThat(r.outcome()).isEqualTo(StepOutcome.DONE);
         assertThat(r.reason()).isEqualTo("Added to Sales › " + first.getName());
         assertThat(contacts()).singleElement().satisfies(c -> {

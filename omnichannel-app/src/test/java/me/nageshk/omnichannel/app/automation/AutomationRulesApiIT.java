@@ -84,12 +84,6 @@ class AutomationRulesApiIT extends AutomationTestBase {
         return api(HttpMethod.POST, "/rules/" + id + "/publish", manager, null);
     }
 
-    /** The brand's first CRM request makes its default pipeline. */
-    private void enableCrmWithPipeline() {
-        enableCrm();
-        call(HttpMethod.GET, "/api/workspaces/" + brand.getId() + "/crm/pipelines", manager, null);
-    }
-
     private String code(ResponseEntity<JsonNode> res) {
         return res.getBody().get("code").asString();
     }
@@ -237,7 +231,7 @@ class AutomationRulesApiIT extends AutomationTestBase {
         assertThat(f.get("actions[0].pipelineId").asString()).isEqualTo("CRM is off for this brand");
 
         // CRM on: pipeline, lane
-        enableCrmWithPipeline();
+        enableCrm();
         String pipelineId = api(HttpMethod.GET, "/options", manager, null).getBody().get("crm")
                 .get("defaultPipelineId").asString();
         String on = create(request("On", null, crm("gone", null), crm(pipelineId, "gone"), crm(null, null),
@@ -478,7 +472,7 @@ class AutomationRulesApiIT extends AutomationTestBase {
         assertThat(o.get("crm").get("pipelines")).isEmpty();
         assertThat(o.get("crm").get("defaultPipelineId").isNull()).isTrue();
 
-        enableCrmWithPipeline();
+        enableCrm();
         JsonNode crm = api(HttpMethod.GET, "/options", manager, null).getBody().get("crm");
         assertThat(crm.get("enabled").asBoolean()).isTrue();
         assertThat(crm.get("pipelines")).hasSize(1);
@@ -488,6 +482,17 @@ class AutomationRulesApiIT extends AutomationTestBase {
         assertThat(p.get("lanes").size()).isGreaterThan(1);
         assertThat(p.get("lanes").get(0).get("type").asString()).isEqualTo("OPEN");
         assertThat(p.get("lanes").get(0).get("name").asString()).isNotBlank();
+    }
+
+    @Test
+    void optionsAndPublishWorkForACrmBrandNeverOpened() {
+        enableCrm();
+        JsonNode crm = api(HttpMethod.GET, "/options", manager, null).getBody().get("crm");
+        assertThat(crm.get("defaultPipelineId").isNull()).isFalse();
+        assertThat(crm.get("pipelines").get(0).get("id").asString()).isEqualTo(crm.get("defaultPipelineId").asString());
+        assertThat(crm.get("pipelines").get(0).get("lanes").size()).isGreaterThan(0);
+        String id = create(request("Lead", null, crm(null, null))).get("id").asString();
+        assertThat(publishRule(id).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     @Test
