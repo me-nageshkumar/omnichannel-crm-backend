@@ -65,6 +65,12 @@ public class CaptureService {
         this.clock = clock;
     }
 
+    /** True when the contact is a CRM contact on the channel number (a {@code crmContacts} row exists). */
+    public boolean inCrm(String workspaceId, String contactId, String phoneNumberId) {
+        return mongo.exists(new Query(Criteria.where("workspaceId").is(workspaceId).and("contactId").is(contactId)
+                .and("channel.phoneNumberId").is(phoneNumberId)), CrmContact.class);
+    }
+
     public CaptureResult capture(CrmContext ctx, CaptureRequest req) {
         ctx.require("crm:edit");
         requireAnyPipeline(ctx);

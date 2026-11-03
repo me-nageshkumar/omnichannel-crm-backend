@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.db.inbox;
 
+import java.util.Collection;
 import java.util.Optional;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
@@ -14,6 +15,9 @@ public interface WaWebMessageRepository extends MongoRepository<WaWebMessage, St
 
     Optional<WaWebMessage> findFirstByChatIdAndDirectionOrderByTimestampDesc(String chatId,
             MessageDirection direction);
+
+    boolean existsByChatIdAndDirectionAndTypeInAndIdNot(String chatId, MessageDirection direction,
+            Collection<String> types, String id);
 
     void deleteByPhoneNumberId(String phoneNumberId);
 }
