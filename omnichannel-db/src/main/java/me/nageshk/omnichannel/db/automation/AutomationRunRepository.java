@@ -8,7 +8,8 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface AutomationRunRepository extends MongoRepository<AutomationRun, String> {
 
-    Optional<AutomationRun> findByEventIdAndRuleId(String eventId, String ruleId);
+    /** The live run of the rule for the event; a test's runs are left out. */
+    Optional<AutomationRun> findByEventIdAndRuleIdAndTestFalse(String eventId, String ruleId);
 
     List<AutomationRun> findByEventIdIn(Collection<String> eventIds);
 

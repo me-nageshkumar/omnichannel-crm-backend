@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import me.nageshk.omnichannel.db.automation.AutomationAction;
+import me.nageshk.omnichannel.db.automation.AutomationActionType;
 import me.nageshk.omnichannel.db.automation.AutomationRule;
 import me.nageshk.omnichannel.db.automation.AutomationRun;
 import me.nageshk.omnichannel.db.automation.AutomationRunRepository;
@@ -91,21 +92,47 @@ public class AutomationViews {
     private String summary(AutomationRule r, Lookups l) {
         List<String> parts = new ArrayList<>();
         for (AutomationAction a : r.getActions() == null ? List.<AutomationAction>of() : r.getActions()) {
-            if (a == null || a.type() == null) continue;
-            switch (a.type()) {
-                case SEND_TEMPLATE -> parts.add("Send “" + l.template(a.templateId()) + "”");
-                case ASSIGN_CHAT -> {
-                    if (a.mode() == null) break;
-                    switch (a.mode()) {
-                        case AGENT -> parts.add("Assign to " + l.agent(a.userId()));
-                        case TEAM_QUEUE -> parts.add("Queue in " + l.team(a.teamId()));
-                        case TEAM_ROUND_ROBIN -> parts.add("Round robin in " + l.team(a.teamId()));
-                    }
-                }
-                case ADD_TO_CRM -> parts.add("Add to CRM (" + l.pipeline(a.pipelineId(), a.stageId()) + ")");
-            }
+            String part = part(a, l);
+            if (part != null) parts.add(part);
         }
         return String.join(SEPARATOR, parts);
+    }
+
+    /**
+     * One summary per action, in order, as in the rule's {@code actionsSummary}; an action too incomplete to sum up
+     * shows its type ("Send template", "Assign chat", "Add to CRM").
+     */
+    public List<String> actionSummaries(String workspaceId, List<AutomationAction> actions) {
+        Lookups lookups = new Lookups(workspaceId);
+        List<String> out = new ArrayList<>();
+        for (AutomationAction a : actions == null ? List.<AutomationAction>of() : actions) {
+            String part = part(a, lookups);
+            out.add(part != null ? part : typeLabel(a == null ? null : a.type()));
+        }
+        return out;
+    }
+
+    /** The action's name in the console. */
+    public static String typeLabel(AutomationActionType type) {
+        if (type == null) return "Unknown action";
+        return switch (type) {
+            case SEND_TEMPLATE -> "Send template";
+            case ASSIGN_CHAT -> "Assign chat";
+            case ADD_TO_CRM -> "Add to CRM";
+        };
+    }
+
+    private static String part(AutomationAction a, Lookups l) {
+        if (a == null || a.type() == null) return null;
+        return switch (a.type()) {
+            case SEND_TEMPLATE -> "Send “" + l.template(a.templateId()) + "”";
+            case ASSIGN_CHAT -> a.mode() == null ? null : switch (a.mode()) {
+                case AGENT -> "Assign to " + l.agent(a.userId());
+                case TEAM_QUEUE -> "Queue in " + l.team(a.teamId());
+                case TEAM_ROUND_ROBIN -> "Round robin in " + l.team(a.teamId());
+            };
+            case ADD_TO_CRM -> "Add to CRM (" + l.pipeline(a.pipelineId(), a.stageId()) + ")";
+        };
     }
 
     /** Names of what actions refer to, each looked up once; a missing referent shows its id. */

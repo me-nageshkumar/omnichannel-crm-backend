@@ -9,10 +9,14 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-/** One rule's run for one event; unique per event and rule, so a retried event never runs a rule twice. */
+/**
+ * One rule's run for one event. A live run is unique per event and rule, so a retried event never runs a rule twice;
+ * a test's runs are not, since a replay runs the same event again.
+ */
 @Document("automationRuns")
 @CompoundIndexes({
-        @CompoundIndex(name = "event_rule", def = "{'eventId': 1, 'ruleId': 1}", unique = true),
+        @CompoundIndex(name = "event_rule", def = "{'eventId': 1, 'ruleId': 1}", unique = true,
+                partialFilter = "{'test': false}"),
         @CompoundIndex(name = "rule_started", def = "{'ruleId': 1, 'startedAt': -1}"),
         @CompoundIndex(name = "ws_started", def = "{'workspaceId': 1, 'startedAt': -1}")
 })

@@ -8,10 +8,8 @@ import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.db.automation.AutomationRule;
 import me.nageshk.omnichannel.db.automation.AutomationRuleRepository;
-import me.nageshk.omnichannel.db.automation.AutomationTestRepository;
 import me.nageshk.omnichannel.db.automation.RuleStatus;
 import me.nageshk.omnichannel.db.automation.TestEndReason;
-import me.nageshk.omnichannel.db.automation.TestStatus;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.UserRepository;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
@@ -22,13 +20,13 @@ import org.springframework.stereotype.Service;
 public class AutomationRuleService {
 
     private final AutomationRuleRepository rules;
-    private final AutomationTestRepository tests;
+    private final AutomationTestService tests;
     private final UserRepository users;
     private final RulePublishValidator publishValidator;
     private final AutomationViews views;
     private final Clock clock;
 
-    public AutomationRuleService(AutomationRuleRepository rules, AutomationTestRepository tests,
+    public AutomationRuleService(AutomationRuleRepository rules, AutomationTestService tests,
             UserRepository users, RulePublishValidator publishValidator, AutomationViews views, Clock clock) {
         this.rules = rules;
         this.tests = tests;
@@ -81,7 +79,7 @@ public class AutomationRuleService {
         r.setPublishedByUserId(me.userId());
         r.setPublishedByName(nameOf(me));
         AutomationRule saved = rules.save(r);
-        endActiveTest(saved.getId(), TestEndReason.RULE_PUBLISHED);
+        tests.endActive(saved.getId(), TestEndReason.RULE_PUBLISHED);
         return views.view(saved);
     }
 
@@ -99,7 +97,7 @@ public class AutomationRuleService {
     public void delete(String workspaceId, String id) {
         AutomationRule r = require(workspaceId, id);
         if (r.getStatus() == RuleStatus.PUBLISHED) throw AutomationErrors.published();
-        endActiveTest(r.getId(), TestEndReason.RULE_DELETED);
+        tests.endActive(r.getId(), TestEndReason.RULE_DELETED);
         rules.delete(r);
     }
 
@@ -123,15 +121,5 @@ public class AutomationRuleService {
 
     private String nameOf(AuthenticatedUser me) {
         return users.findById(me.userId()).map(User::getName).orElse(me.getUsername());
-    }
-
-    /** The rule's test in progress ends with the reason; the test service of a later task may take this over. */
-    private void endActiveTest(String ruleId, TestEndReason reason) {
-        tests.findByRuleIdAndActiveTrue(ruleId).ifPresent(t -> {
-            t.setActive(false);
-            t.setStatus(TestStatus.ENDED);
-            t.setEndReason(reason);
-            tests.save(t);
-        });
     }
 }

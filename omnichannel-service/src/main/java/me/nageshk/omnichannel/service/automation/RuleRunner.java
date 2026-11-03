@@ -60,7 +60,7 @@ public class RuleRunner {
     }
 
     public RuleOutcome run(AutomationEvent e, AutomationRule rule) {
-        Optional<AutomationRun> existing = runs.findByEventIdAndRuleId(e.getId(), rule.getId());
+        Optional<AutomationRun> existing = runs.findByEventIdAndRuleIdAndTestFalse(e.getId(), rule.getId());
         if (existing.isPresent()) {
             AutomationRun run = existing.get();
             return run.getStatus() == RunStatus.RUNNING ? resume(e, rule, run) : RuleOutcome.none();

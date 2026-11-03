@@ -35,8 +35,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * The queue's consumer: claims the oldest due event with a lease, runs the brand's published rules of its kind in
- * {@link RuleOrder}, and moves it to the history. A send waiting for its device puts the event back for a retry, and
- * the later rules wait with it.
+ * {@link RuleOrder}, offers it to the tests waiting for its contact, and moves it to the history. A send waiting for
+ * its device puts the event back for a retry, and the later rules wait with it. Each tick first ends the idle tests.
  */
 @Service
 public class AutomationWorker {
@@ -47,16 +47,18 @@ public class AutomationWorker {
     private final AutomationRuleRepository rules;
     private final AutomationRunRepository runs;
     private final RuleRunner ruleRunner;
+    private final AutomationTestService tests;
     private final OmnichannelProperties props;
     private final Clock clock;
     private final AtomicBoolean ticking = new AtomicBoolean();
 
     AutomationWorker(MongoTemplate mongo, AutomationRuleRepository rules, AutomationRunRepository runs,
-            RuleRunner ruleRunner, OmnichannelProperties props, Clock clock) {
+            RuleRunner ruleRunner, AutomationTestService tests, OmnichannelProperties props, Clock clock) {
         this.mongo = mongo;
         this.rules = rules;
         this.runs = runs;
         this.ruleRunner = ruleRunner;
+        this.tests = tests;
         this.props = props;
         this.clock = clock;
     }
@@ -65,7 +67,11 @@ public class AutomationWorker {
     public int tick() {
         if (!ticking.compareAndSet(false, true)) return 0;
         try {
-            // Task 10: end the idle live tests here, before claiming
+            try {
+                tests.endIdle(clock.instant());
+            } catch (RuntimeException ex) {
+                log.warn("could not end the idle automation tests: {}", ex.toString());
+            }
             Set<String> seen = new HashSet<>();
             int done = 0;
             while (done < props.automation().batch()) {
@@ -122,15 +128,15 @@ public class AutomationWorker {
                     return;
                 }
             }
-            // Task 10: offer the event to the waiting tests here, before it is filed away
-            finish(e, EventOutcome.DONE, null);
+            // the published rules have run; a test waiting for this contact takes the event too
+            finish(e, EventOutcome.DONE, null, tests.capture(e));
         } catch (RuntimeException ex) {
             String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             log.warn("automation event {} failed on attempt {}: {}", e.getId(), e.getAttempts(), message, ex);
             if (e.getAttempts() < props.automation().maxAttempts()) {
                 release(e, new Update().set("lastError", message));
             } else {
-                finish(e, EventOutcome.FAILED, message);
+                finish(e, EventOutcome.FAILED, message, List.of());
             }
         }
     }
@@ -145,8 +151,11 @@ public class AutomationWorker {
         mongo.updateFirst(held(e), u.set("status", EventStatus.PENDING).unset("leaseUntil"), AutomationEvent.class);
     }
 
-    /** Files the event in the history (once, whoever gets there first) and takes it off the queue. */
-    private void finish(AutomationEvent e, EventOutcome outcome, String error) {
+    /**
+     * Files the event in the history (once, whoever gets there first) and takes it off the queue. {@code ruleIds} are
+     * the rules that ran live; {@code testIds} the tests that took the event.
+     */
+    private void finish(AutomationEvent e, EventOutcome outcome, String error, List<String> testIds) {
         Instant now = clock.instant();
         List<AutomationRun> eventRuns = runs.findByEventIdIn(List.of(e.getId()));
         AutomationEventRecord r = new AutomationEventRecord();
@@ -160,8 +169,9 @@ public class AutomationWorker {
         r.setOutcome(outcome);
         r.setError(error);
         r.setAttempts(e.getAttempts());
-        r.setRuleIds(eventRuns.stream().map(AutomationRun::getRuleId).distinct().toList());
-        r.setTestIds(new ArrayList<>());
+        r.setRuleIds(eventRuns.stream().filter(run -> !run.isTest()).map(AutomationRun::getRuleId).distinct()
+                .toList());
+        r.setTestIds(new ArrayList<>(testIds));
         r.setCreatedAt(e.getCreatedAt());
         r.setFinishedAt(now);
         try {
