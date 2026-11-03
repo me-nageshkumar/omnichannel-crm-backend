@@ -112,6 +112,10 @@ public class SendTemplateHandler implements ActionHandler {
             if (RpcException.SEND_FAILED.equals(r.code())) {
                 return ActionResult.retryLater("The extension lost the connection");
             }
+            // WHATSAPP_NOT_READY: the page refused before sending, so it is as transient as a not-ready number
+            if (RpcException.WHATSAPP_NOT_READY.equals(r.code())) {
+                return ActionResult.retryLater("WhatsApp Web is not ready on the number");
+            }
             // DEVICE_DISCONNECTED: the frame had left and the device dropped before answering
             if (RpcException.DEVICE_DISCONNECTED.equals(r.code())) {
                 return ActionResult.interrupted("The extension lost the connection; the message may have gone");

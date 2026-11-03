@@ -281,6 +281,18 @@ class SendTemplateActionIT extends AutomationTestBase {
     }
 
     @Test
+    void whatsappNotReadyFromTheExtensionRetriesLater() throws Exception {
+        WaWebChat chat = incoming(n1, ASHA, "chat", "Hi", "Asha");
+        String t = template("Welcome", "Hi {{contact.name}}");
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            d.sendAnswer = (Envelope req) -> Envelope.errorResponse(req.id(), "WHATSAPP_NOT_READY", "not ready");
+            ActionResult r = run(chat, t, null);
+            assertThat(r.outcome()).isEqualTo(StepOutcome.RETRYING);
+            assertThat(r.reason()).isEqualTo("WhatsApp Web is not ready on the number");
+        }
+    }
+
+    @Test
     void consoleSendStillRefusesClosedChat() throws Exception {
         WaWebChat chat = incoming(n1, ASHA, "chat", "Hi", "Asha");
         chat.setStatus(ChatStatus.CLOSED);
