@@ -232,6 +232,25 @@ requestedBy{id,name}, creationTime, startedAt, finishedAt, progressPercent}`; `p
 `chat-delay 1s`, `max-messages-per-chat 5000`, `max-empty-pages 3`, `max-idle-pages 25`, `time-budget 60s`, `max-timeouts-per-chat 3`. Tests: `auto-tick false`,
 delays `0`.
 
+Changed 2026-11-03 (the user asked for the small leftovers to be done):
+- `chat-delay` follows only a chat whose pages asked WhatsApp for earlier messages (the page's new `asked`, true
+  whenever `loadEarlierMsgs` was called, whatever came back; a page script without it counts as asking), or that timed
+  out. A chat read from what the browser already held is followed by none. Whether `loadEarlierMsgs` reaches the phone
+  is not known, so asking always counts: a dated fetch gains most (a chat already holding a message older than the
+  range asks nothing), an all-time fetch little, since most chats hold under a page and ask once.
+- A page that times out is followed by `getState`. No answer, or WhatsApp Web not `CONNECTED`, means the page is
+  silent, not the chat: the chat goes back to PENDING uncharged and the import waits (`WHATSAPP_NOT_READY`, or
+  `NO_DEVICE` when the extension went). Only a timeout while the page answers and WhatsApp is connected counts towards
+  `max-timeouts-per-chat`. A page frozen with its socket open is now waited for indefinitely, each pass costing up to
+  two RPC timeouts.
+- An ALL import records `listedAt` when its listing finished; until then each pass lists again, keeping the chats
+  already stored. An import running when this shipped lists once more, harmlessly.
+- A chat an import creates carries the item's id (`waWebChats.createdByHistoryChatId`, sparse index), so the item's
+  `createdChatId` is recovered when a crash lost it.
+- A chat that ends DONE after its import was stopped (CANCELLED) or failed is not opened or routed.
+- Round robin moves the team's cursor after the chat is saved, so a routing retry after a version collision no longer
+  skips a member.
+
 ## 10. Pause, play and stop (added 2026-11-01; my calls, the request skipped the questions)
 
 - A pause never drops a page. A page already asked for is stored, counted and announced; the runner then hands the chat

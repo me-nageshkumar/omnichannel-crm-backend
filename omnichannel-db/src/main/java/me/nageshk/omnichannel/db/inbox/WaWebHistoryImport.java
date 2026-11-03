@@ -44,6 +44,8 @@ public class WaWebHistoryImport {
     @CreatedDate
     private Instant creationTime;
     private Instant startedAt;
+    /** When an ALL import finished listing the phone's chats; until then the next pass lists them again. */
+    private Instant listedAt;
     private Instant finishedAt;
     @LastModifiedDate
     private Instant lastUpdateTime;

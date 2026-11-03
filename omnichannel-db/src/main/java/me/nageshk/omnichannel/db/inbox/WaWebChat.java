@@ -9,6 +9,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** One conversation between a WhatsApp Web number and a remote chat. */
@@ -51,6 +52,9 @@ public class WaWebChat {
     /** The user who last sent in, or was assigned, this chat; never cleared, so a returning customer can stick. */
     private String lastAgentUserId;
     private Instant lastAgentAt;
+    /** The history import item that created this chat, if one did; sparse-indexed, absent on every other chat. */
+    @Indexed(sparse = true)
+    private String createdByHistoryChatId;
     @CreatedDate
     private Instant creationTime;
     @LastModifiedDate

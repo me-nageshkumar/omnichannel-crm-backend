@@ -158,7 +158,7 @@ public class TaskService {
         if (current.getStatus() == TaskStatus.DONE) return views(ctx, List.of(current)).get(0);
         if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen(); // a skipped occurrence stays skipped
         Instant now = Instant.now(clock);
-        Closed closed = close(ctx, id, scheduleNext(ctx, current, now), () -> new Update()
+        Closed closed = close(ctx, id, now, scheduleNext(ctx, current, now), () -> new Update()
                 .set("status", TaskStatus.DONE).set("completedAt", now).set("completedBy", ctx.userId()));
         CrmTask saved = closed.task();
         counters.recompute(ctx.workspaceId(), saved.getTarget());
@@ -176,7 +176,8 @@ public class TaskService {
         assertCanWork(ctx, current);
         if (current.getStatus() != TaskStatus.OPEN) throw TaskErrors.notOpen();
         if (current.getRecurrence() == null) throw TaskErrors.notRecurring();
-        Closed closed = close(ctx, id, scheduleNext(ctx, current, Instant.now(clock)),
+        Instant at = Instant.now(clock);
+        Closed closed = close(ctx, id, at, scheduleNext(ctx, current, at),
                 () -> new Update().set("status", TaskStatus.CANCELLED));
         CrmTask saved = closed.task();
         counters.recompute(ctx.workspaceId(), saved.getTarget());
@@ -221,10 +222,12 @@ public class TaskService {
      * Applies the closing update, turning a claim into {@code nextOccurrenceId}; guarded by the version. The next
      * occurrence is stored by now, so a change that landed after the claim (a tick, an edit) must not leave it beside
      * a task that stays open: while the task is still open and still holds this claim, closing goes ahead on the
-     * newer version. If that change was an edit ending the repeat, the stored occurrence is removed and the task
-     * closes with none after it. Anything else, such as another request having closed it, stays a conflict.
+     * newer version. The occurrence follows the task as it now is: one this attempt stored and nobody has touched is
+     * removed and built again from it (none at all when the edit ended the repeat); one an earlier attempt stored, or
+     * one already changed, may have been worked on and stays. Anything else, such as another request having closed
+     * it, stays a conflict.
      */
-    private Closed close(CrmContext ctx, String id, Scheduled next, Supplier<Update> closing) {
+    private Closed close(CrmContext ctx, String id, Instant at, Scheduled next, Supplier<Update> closing) {
         try {
             return new Closed(guarded(ctx, id, next.taskVersion(), closingUpdate(closing, next.task())), next.task());
         } catch (CodedException conflict) {
@@ -233,12 +236,14 @@ public class TaskService {
             boolean stillOurs = now != null && now.getStatus() == TaskStatus.OPEN
                     && next.task().getId().equals(now.getPendingNextOccurrenceId());
             if (!stillOurs) throw conflict;
-            if (now.getRecurrence() == null && removeUntouched(ctx, next)) {
-                // the repeat was removed after the claim: the occurrence went first, so a crash now leaves an open
-                // task whose next attempt, finding no repeat, just clears the claim
-                return new Closed(guarded(ctx, id, now.getVersion(), closingUpdate(closing, null)), null);
+            if (!removeUntouched(ctx, next)) {
+                return new Closed(guarded(ctx, id, now.getVersion(), closingUpdate(closing, next.task())), next.task());
             }
-            return new Closed(guarded(ctx, id, now.getVersion(), closingUpdate(closing, next.task())), next.task());
+            // removed first, so a crash now leaves an open task holding the claim, which the next attempt rebuilds
+            // under the same id (or, the repeat gone, simply clears)
+            Scheduled rebuilt = scheduleNext(ctx, now, at);
+            return new Closed(guarded(ctx, id, rebuilt.taskVersion(), closingUpdate(closing, rebuilt.task())),
+                    rebuilt.task());
         }
     }
 

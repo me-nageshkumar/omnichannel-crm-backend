@@ -329,6 +329,25 @@ class ChatRoutingIT {
     }
 
     @Test
+    void roundRobinMovesNoTurnWhenTheChatCouldNotBeSaved() {
+        User a = agent("a");
+        User b = agent("b");
+        Team support = team("Support", a, b);
+        configure(support, RoutingMode.NONE, null);
+        message("919911111111", false, T);
+        configure(support, RoutingMode.ROUND_ROBIN, null);
+        setCursor(support, b.getId());
+        WaWebChat stale = chat("919911111111");
+        // saved by someone else meanwhile: routing the copy read before fails on the version
+        chats.save(chat("919911111111"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> routing.route(stale, RoutedReason.FETCHED))
+                .isInstanceOf(org.springframework.dao.OptimisticLockingFailureException.class);
+
+        assertThat(cursorOf(support)).as("the turn stays with whoever was next").isEqualTo(b.getId());
+    }
+
+    @Test
     void roundRobinRotatesAndSkipsDisabled() {
         User a = agent("a");
         User b = agent("b");

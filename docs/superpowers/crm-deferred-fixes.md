@@ -123,6 +123,6 @@ Small findings from the final reviews of phases D to G, kept here because the le
 
 ## From the review of the three tiny fixes (2026-11-03)
 
-- [ ] An edit that changes a task's repeat rule, due date, title or assignee in the moment a completion is closing it still closes it with the next occurrence built from the old values (only removing the rule is handled)
-- [ ] A step input in the task form marked invalid has no `aria-describedby` pointing at its error text
-- [ ] `aLookupFailingAfterTheEditorClosedIsNotTriedAgain` waits 1.8 s in real time; fake timers would make it faster and tighter
+- [x] An edit that changes a task's repeat rule, due date, title or assignee in the moment a completion is closing it still closes it with the next occurrence built from the old values (only removing the rule is handled). Fixed 2026-11-03: an untouched occurrence is built again from the task as it stands (`TaskOccurrenceFailureIT.anEditWhileCompletingShapesTheNextOccurrence`)
+- [x] A step input in the task form marked invalid has no `aria-describedby` pointing at its error text. Fixed 2026-11-03 (`taskForm.test.tsx` `aStepErrorIsTheStepsDescription`)
+- [x] `aLookupFailingAfterTheEditorClosedIsNotTriedAgain` waits 1.8 s in real time; fake timers would make it faster and tighter. Done 2026-11-03; checked it still fails without the fix

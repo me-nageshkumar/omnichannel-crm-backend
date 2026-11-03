@@ -98,6 +98,7 @@ class HistoryDevice implements AutoCloseable {
         return switch (req.method()) {
             case "listChats" -> Envelope.response(req.id(), listChats());
             case "fetchChatHistory" -> fetchChatHistory(req);
+            case "getState" -> Envelope.response(req.id(), MAPPER.getNodeFactory().textNode("CONNECTED"));
             default -> Envelope.errorResponse(req.id(), "METHOD_NOT_FOUND", req.method());
         };
     }
@@ -156,6 +157,8 @@ class HistoryDevice implements AutoCloseable {
         if (!oldPageScript) {
             result.put("unreadCount", unread.getOrDefault(chatId, 0));
             result.put("business", business.contains(chatId));
+            // everything is already in the browser: WhatsApp is never asked for earlier messages
+            result.put("asked", false);
         }
         return Envelope.response(req.id(), result);
     }

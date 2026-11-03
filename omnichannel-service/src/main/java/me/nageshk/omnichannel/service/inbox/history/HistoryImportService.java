@@ -169,10 +169,9 @@ public class HistoryImportService {
         if (phoneNumberId != null) where.and("phoneNumberId").is(phoneNumberId);
         if (status != null) where.and("status").is(status);
         long total = mongo.count(new Query(where), WaWebHistoryImport.class);
-        List<HistoryImportView> rows = mongo.find(paged(new Query(where), page)
-                .with(Sort.by(Sort.Order.desc("creationTime"), Sort.Order.desc("_id"))), WaWebHistoryImport.class)
-                .stream().map(views::view).toList();
-        return new ImportPage(rows, total, page);
+        List<WaWebHistoryImport> found = mongo.find(paged(new Query(where), page)
+                .with(Sort.by(Sort.Order.desc("creationTime"), Sort.Order.desc("_id"))), WaWebHistoryImport.class);
+        return new ImportPage(views.views(found), total, page);
     }
 
     public ChatPage chats(String workspaceId, String id, HistoryChatStatus status, int page) {

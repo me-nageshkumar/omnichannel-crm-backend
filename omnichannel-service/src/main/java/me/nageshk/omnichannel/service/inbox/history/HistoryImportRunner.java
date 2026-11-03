@@ -70,6 +70,8 @@ public class HistoryImportRunner {
     private static final List<HistoryChatStatus> OPEN = List.of(HistoryChatStatus.PENDING, HistoryChatStatus.RUNNING);
     /** A chat's last-activity time is WhatsApp's own and unconfirmed, so a little earlier than the range is kept. */
     private static final Duration ACTIVITY_MARGIN = Duration.ofDays(1);
+    /** What {@code getState} answers while WhatsApp Web is connected ({@code WAWebSocketModel.Socket.state}). */
+    private static final String CONNECTED = "CONNECTED";
 
     private final MongoTemplate mongo;
     private final WaWebHistoryImportRepository imports;
@@ -180,7 +182,8 @@ public class HistoryImportRunner {
             mongo.updateFirst(byIdIn(id, HistoryImportStatus.RUNNING), new Update().set("waiting", null),
                     WaWebHistoryImport.class);
             if (!isRunning(id)) return;
-            if (imp.getScope().kind() == HistoryScopeKind.ALL && items.countByImportId(id) == 0
+            // a listing broken half way is done again: the chats it stored are kept, the rest added
+            if (imp.getScope().kind() == HistoryScopeKind.ALL && imp.getListedAt() == null
                     && !listChats(imp, device)) {
                 return;
             }
@@ -199,13 +202,14 @@ public class HistoryImportRunner {
                 }
                 WaWebHistoryImportChat item = claim(id);
                 if (item == null) break;
-                boolean deviceOk;
+                ChatRun run;
                 try {
-                    deviceOk = importChat(imp, item, current);
+                    run = importChat(imp, item, current);
                 } finally {
                     counter.refresh(id);
                 }
-                if (!deviceOk || !pause(settings.chatDelay()) || !isRunning(id)) break;
+                // a chat read from what the browser already held asked nothing of WhatsApp: no pause after it
+                if (!run.deviceOk() || run.paced() && !pause(settings.chatDelay()) || !isRunning(id)) break;
             }
             completeIfDone(id);
         } catch (RuntimeException e) {
@@ -257,6 +261,8 @@ public class HistoryImportRunner {
                 // listed twice, or an earlier tick got this far
             }
         }
+        mongo.updateFirst(new Query(Criteria.where("_id").is(imp.getId())),
+                new Update().set("listedAt", clock.instant()), WaWebHistoryImport.class);
         log.info("history import {}: {} chats listed, {} left out as last active before the range", imp.getId(),
                 rows.size(), inactive);
         counter.refresh(imp.getId());
@@ -289,10 +295,16 @@ public class HistoryImportRunner {
 
     // ---- one chat ----
 
-    /** Imports one claimed chat page by page; false when the device failed and the import must stop for now. */
-    boolean importChat(WaWebHistoryImport imp, WaWebHistoryImportChat item, DeviceSession device) {
+    /**
+     * How a chat's turn went: {@code deviceOk} false when the device failed and the import must stop for now;
+     * {@code paced} when WhatsApp was (or may have been) asked for older messages, which the pause between chats is for.
+     */
+    record ChatRun(boolean deviceOk, boolean paced) {}
+
+    /** Imports one claimed chat page by page. */
+    ChatRun importChat(WaWebHistoryImport imp, WaWebHistoryImportChat item, DeviceSession device) {
         ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId(),
-                personName(item.getChatName()));
+                personName(item.getChatName()), item.getId());
         WaWebHistoryImport.Range range = imp.getRange();
         Long from = range == null || range.from() == null ? null : range.from().getEpochSecond();
         Long to = until(imp);
@@ -311,6 +323,8 @@ public class HistoryImportRunner {
         WaWebChat chat = null;
         // something was stored that the open consoles have not been told about
         boolean unannounced = false;
+        // WhatsApp was asked for older messages, or a page timed out and may still be asking: the pause is for this
+        boolean paced = false;
         try {
             while (true) {
                 // never past the cap: the page holds the newest messages before the cursor
@@ -320,6 +334,7 @@ public class HistoryImportRunner {
                         from, to, limit, settings.maxLoads())).get();
                 // a page that leaves the cursor where it was holds what the last one held: it is no progress
                 boolean moved = !page.messages().isEmpty() && !repeats(page, cursor);
+                paced |= page.asked();
                 if (moved) {
                     for (JsonNode m : page.messages()) {
                         ImportResult r = ingest.importMessage(ctx, m);
@@ -344,7 +359,7 @@ public class HistoryImportRunner {
                 if (createdChatId != null) progress.set("createdChatId", createdChatId);
                 if (page.unreadCount() != null) progress.set("phoneUnread", page.unreadCount());
                 if (page.business() != null) progress.set("business", page.business());
-                if (!whileOpen(item, progress)) return true;
+                if (!whileOpen(item, progress)) return new ChatRun(true, paced);
                 counter.refresh(imp.getId());
                 if (unannounced) {
                     announce(item, chat);
@@ -352,56 +367,65 @@ public class HistoryImportRunner {
                 }
                 if (!page.hasMore()) {
                     done(imp, item, new Update());
-                    return true;
+                    return new ChatRun(true, paced);
                 }
                 if (seen >= settings.maxMessagesPerChat()) {
                     done(imp, item, new Update().set("capped", true));
-                    return true;
+                    return new ChatRun(true, paced);
                 }
                 if (emptyPages >= settings.maxEmptyPages() || idlePages >= settings.maxIdlePages()) {
                     if (idlePages >= settings.maxIdlePages()) {
                         log.warn("history import chat {} stored nothing in {} pages, ending it", item.getId(), idlePages);
                     }
                     done(imp, item, new Update().set("olderUnavailable", true));
-                    return true;
+                    return new ChatRun(true, paced);
                 }
                 if (!pause(settings.pageDelay())) {
                     release(item);
-                    return false;
+                    return new ChatRun(false, paced);
                 }
                 // after the wait, which is where most pauses and stops land: no page is asked for after one
                 if (!isRunning(imp.getId())) {
                     release(item);
-                    return true;
+                    return new ChatRun(true, paced);
                 }
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             release(item);
-            return false;
+            return new ChatRun(false, paced);
         } catch (ExecutionException | RuntimeException e) {
             Throwable cause = unwrap(e);
             if (cause instanceof RpcException rpc && RpcException.CHAT_NOT_FOUND.equals(rpc.code())) {
                 finish(item, new Update().set("status", HistoryChatStatus.SKIPPED)
                         .set("skipReason", HistorySkipReason.NO_CHAT));
-                return true;
+                return new ChatRun(true, paced);
             }
             if (cause instanceof TimeoutException) {
+                // the page may still be working on it: whatever comes next waits its turn
+                paced = true;
+                HistoryWaiting silent = silence(device);
+                if (silent != null) {
+                    // the page, or WhatsApp in it, answers nothing at all, not only this chat: wait, charging it nothing
+                    release(item);
+                    setWaiting(imp.getId(), silent);
+                    return new ChatRun(false, paced);
+                }
                 int count = timeouts + 1;
                 if (count >= settings.maxTimeoutsPerChat()) {
                     finish(item, new Update().set("status", HistoryChatStatus.FAILED).set("error", "TIMEOUT")
                             .set("timeouts", count));
-                    return true;
+                    return new ChatRun(true, paced);
                 }
                 whileOpen(item, new Update().set("status", HistoryChatStatus.PENDING).set("timeouts", count));
                 setWaiting(imp.getId(), HistoryWaiting.WHATSAPP_NOT_READY);
-                return false;
+                return new ChatRun(false, paced);
             }
             HistoryWaiting waiting = deviceFailure(cause);
             if (waiting != null) {
                 release(item);
                 setWaiting(imp.getId(), waiting);
-                return false;
+                return new ChatRun(false, paced);
             }
             String error = cause instanceof RpcException rpc ? rpc.code()
                     : cause instanceof IngestionFailedException ? "DB_ERROR" : cause.getClass().getSimpleName();
@@ -410,10 +434,36 @@ public class HistoryImportRunner {
             }
             finish(item, new Update().set("status", HistoryChatStatus.FAILED).set("error", error)
                     .set("counts", new WaWebHistoryImportChat.Counts(seen, inserted, updated)));
-            return true;
+            return new ChatRun(true, paced);
         } finally {
             // a page that failed half way stored what it stored
             if (unannounced) announce(item, chat);
+        }
+    }
+
+    /** True when the import was stopped or failed: what it fetched stays, but it decides nothing more. */
+    private boolean stopped(String importId) {
+        WaWebHistoryImport now = mongo.findById(importId, WaWebHistoryImport.class);
+        return now == null || now.getStatus() == HistoryImportStatus.CANCELLED
+                || now.getStatus() == HistoryImportStatus.FAILED;
+    }
+
+    /**
+     * Why the page cannot be asked anything right now, or null when it answers a cheap call with WhatsApp connected: then
+     * a page that timed out is the chat's doing. A page that answers with an error is still there.
+     */
+    private HistoryWaiting silence(DeviceSession device) {
+        try {
+            JsonNode state = client.state(device).get();
+            return state == null || !state.isString() || CONNECTED.equals(state.asString()) ? null
+                    : HistoryWaiting.WHATSAPP_NOT_READY;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return HistoryWaiting.WHATSAPP_NOT_READY;
+        } catch (ExecutionException | RuntimeException e) {
+            Throwable cause = unwrap(e);
+            if (cause instanceof TimeoutException) return HistoryWaiting.WHATSAPP_NOT_READY;
+            return deviceFailure(cause);
         }
     }
 
@@ -428,11 +478,22 @@ public class HistoryImportRunner {
         return whileOpen(item, update.set("finishedAt", clock.instant()));
     }
 
-    /** Ends the chat DONE and, the first time only, opens it if it waits on us. */
+    /**
+     * Ends the chat DONE and, the first time only, opens it if it waits on us; not when the user stopped the import
+     * while this chat's last page was on its way.
+     */
     private void done(WaWebHistoryImport imp, WaWebHistoryImportChat item, Update update) {
         if (!finish(item, update.set("status", HistoryChatStatus.DONE))) return;
         WaWebHistoryImportChat ended = items.findById(item.getId()).orElse(null);
-        if (ended == null) return;
+        if (ended == null || stopped(imp.getId())) return;
+        if (ended.getCreatedChatId() == null) {
+            // a crash between storing a page and noting its progress loses the note, not the chat's own mark
+            chats.findFirstByCreatedByHistoryChatId(ended.getId()).ifPresent(created -> {
+                ended.setCreatedChatId(created.getId());
+                mongo.updateFirst(new Query(Criteria.where("_id").is(ended.getId())),
+                        new Update().set("createdChatId", created.getId()), WaWebHistoryImportChat.class);
+            });
+        }
         try {
             opener.openIfWaiting(imp, ended);
         } catch (RuntimeException e) {
