@@ -13,7 +13,10 @@ import me.nageshk.omnichannel.db.automation.EventStatus;
 import me.nageshk.omnichannel.db.automation.RuleStatus;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
+import me.nageshk.omnichannel.db.inbox.MessageDirection;
+import me.nageshk.omnichannel.db.inbox.MessageSource;
 import me.nageshk.omnichannel.service.automation.AutomationGate;
+import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
 import me.nageshk.omnichannel.service.inbox.InboxSettingService;
@@ -193,6 +196,22 @@ class MessageEventIT extends AutomationTestBase {
         WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(n1.getId(), ASHA).orElseThrow();
         assertThat(mongo.findAll(WaWebMessage.class)).hasSize(1);
         assertThat(chat.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(queued()).isEmpty();
+    }
+
+    @Test
+    void nullTypeNeverBreaksIngestion() {
+        WaWebChat chat = incoming(n1, ASHA, "chat", "Hello", "Asha");
+        mongo.remove(new org.springframework.data.mongodb.core.query.Query(), AutomationEvent.class);
+        WaWebMessage m = new WaWebMessage();
+        m.setId("null-type");
+        m.setChatId(chat.getId());
+        m.setDirection(MessageDirection.IN);
+        m.setSource(MessageSource.CONTACT);
+        m.setType(null);
+
+        assertThatCode(() -> publisher.publishEvent(new InboxEvents.MessageUpserted(chat, m, true)))
+                .doesNotThrowAnyException();
         assertThat(queued()).isEmpty();
     }
 

@@ -27,12 +27,13 @@ public class AutomationMessageListener {
     @EventListener
     void on(InboxEvents.MessageUpserted e) {
         WaWebMessage m = e.message();
-        if (!e.inserted() || m.getDirection() != MessageDirection.IN || m.getSource() != MessageSource.CONTACT
-                || !MessageKinds.REAL_TYPES.contains(m.getType())) return;
         try {
+            if (!e.inserted() || m.getDirection() != MessageDirection.IN || m.getSource() != MessageSource.CONTACT
+                    || m.getType() == null || !MessageKinds.REAL_TYPES.contains(m.getType())) return;
             writer.messageReceived(e.chat(), m);
         } catch (RuntimeException ex) {
-            log.warn("could not queue the automation event of message {}: {}", m.getId(), ex.toString());
+            log.warn("could not queue the automation event of message {}: {}", m == null ? null : m.getId(),
+                    ex.toString());
         }
     }
 }
