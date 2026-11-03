@@ -294,6 +294,26 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
     }
 
     @Test
+    void aPageWhoseWhatsAppIsReconnectingIsWaitedForNotChargedToTheChat() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            seedTwoChats(device);
+            // the page answers, but WhatsApp Web itself is not connected: its pages time out
+            device.override = req -> switch (req.method()) {
+                case "fetchChatHistory" -> null;
+                case "getState" -> Envelope.response(req.id(),
+                        tools.jackson.databind.node.JsonNodeFactory.instance.textNode("OPENING"));
+                default -> device.answer(req);
+            };
+            WaWebHistoryImport imp = importChats("919811100001");
+
+            runner.tick().get(20, SECONDS);
+
+            assertThat(item(imp, A).getTimeouts()).isZero();
+            assertThat(reload(imp).getWaiting()).isEqualTo(HistoryWaiting.WHATSAPP_NOT_READY);
+        }
+    }
+
+    @Test
     void releaseStuckResetsRunningItems() {
         WaWebHistoryImport imp = importChats("919811100001");
         WaWebHistoryImportChat stuck = item(imp, A);

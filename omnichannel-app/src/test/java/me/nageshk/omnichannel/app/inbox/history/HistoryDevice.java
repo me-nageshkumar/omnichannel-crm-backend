@@ -157,6 +157,8 @@ class HistoryDevice implements AutoCloseable {
         if (!oldPageScript) {
             result.put("unreadCount", unread.getOrDefault(chatId, 0));
             result.put("business", business.contains(chatId));
+            // everything is already in the browser: WhatsApp is never asked for earlier messages
+            result.put("asked", false);
         }
         return Envelope.response(req.id(), result);
     }

@@ -233,11 +233,16 @@ requestedBy{id,name}, creationTime, startedAt, finishedAt, progressPercent}`; `p
 delays `0`.
 
 Changed 2026-11-03 (the user asked for the small leftovers to be done):
-- `chat-delay` follows only a chat whose pages loaded from the phone (`loaded`); a chat read from what the browser
-  already held is followed by none, so an all-time fetch no longer waits a second after each of hundreds of chats.
-- A page that times out is followed by `getState`. When that gets no answer either, the page is silent, not the chat:
-  the chat goes back to PENDING uncharged and the import waits (`WHATSAPP_NOT_READY`). Only a timeout while the page
-  still answers counts towards `max-timeouts-per-chat`.
+- `chat-delay` follows only a chat whose pages asked WhatsApp for earlier messages (the page's new `asked`, true
+  whenever `loadEarlierMsgs` was called, whatever came back; a page script without it counts as asking), or that timed
+  out. A chat read from what the browser already held is followed by none. Whether `loadEarlierMsgs` reaches the phone
+  is not known, so asking always counts: a dated fetch gains most (a chat already holding a message older than the
+  range asks nothing), an all-time fetch little, since most chats hold under a page and ask once.
+- A page that times out is followed by `getState`. No answer, or WhatsApp Web not `CONNECTED`, means the page is
+  silent, not the chat: the chat goes back to PENDING uncharged and the import waits (`WHATSAPP_NOT_READY`, or
+  `NO_DEVICE` when the extension went). Only a timeout while the page answers and WhatsApp is connected counts towards
+  `max-timeouts-per-chat`. A page frozen with its socket open is now waited for indefinitely, each pass costing up to
+  two RPC timeouts.
 - An ALL import records `listedAt` when its listing finished; until then each pass lists again, keeping the chats
   already stored. An import running when this shipped lists once more, harmlessly.
 - A chat an import creates carries the item's id (`waWebChats.createdByHistoryChatId`, sparse index), so the item's

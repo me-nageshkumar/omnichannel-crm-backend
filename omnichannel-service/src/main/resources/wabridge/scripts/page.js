@@ -1836,6 +1836,8 @@
           oldest,
           // a page with nothing to keep can still be progress: it walked further back
           loaded,
+          // WhatsApp was asked for earlier messages, whatever came back: the importer paces itself on this
+          asked: loads > 0,
           hasMore: kept.length > limit || !exhausted && !pastFrom,
           // whether the chat waits on us, as the inbox decides for a chat a fetch creates;
           // -1 is a chat marked as unread by hand: one unread
@@ -1929,7 +1931,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "6d4028227cba" : "dev";
+  var BUILD = true ? "cfddb2976471" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {

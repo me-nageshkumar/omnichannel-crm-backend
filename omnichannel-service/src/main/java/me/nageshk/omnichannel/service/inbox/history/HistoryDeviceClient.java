@@ -26,10 +26,11 @@ public class HistoryDeviceClient {
     /** {@code loaded}: the page brought older messages into WhatsApp Web, whether or not any were kept. */
     /*
      * unreadCount (on the phone) and business tell whether the chat waits on us; null from a page script older than
-     * them.
+     * them. {@code asked}: WhatsApp was asked for earlier messages, whatever came back; true from a page script that
+     * does not say, so an older one keeps the pause between chats.
      */
     public record HistoryPage(List<JsonNode> messages, Long oldestT, List<String> oldestIds, boolean hasMore,
-            boolean loaded, Integer unreadCount, Boolean business) {}
+            boolean loaded, Integer unreadCount, Boolean business, boolean asked) {}
 
     private final RpcDispatcher dispatcher;
     private final ObjectMapper mapper;
@@ -89,7 +90,8 @@ public class HistoryDeviceClient {
         return new HistoryPage(messages, oldestT, oldestIds, result != null && result.path("hasMore").asBoolean(false),
                 result != null && result.path("loaded").asBoolean(false),
                 unread != null && unread.isNumber() ? unread.asInt() : null,
-                business != null && business.isBoolean() ? business.asBoolean() : null);
+                business != null && business.isBoolean() ? business.asBoolean() : null,
+                result == null || !result.path("asked").isBoolean() || result.path("asked").asBoolean());
     }
 
     private static String text(JsonNode n, String field) {

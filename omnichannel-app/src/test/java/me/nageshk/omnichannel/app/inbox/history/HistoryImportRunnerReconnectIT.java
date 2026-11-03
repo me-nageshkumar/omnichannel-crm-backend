@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Three seconds after a chat that loaded from the phone, long enough for the extension to reconnect while an import is
+ * Three seconds after a chat that asked WhatsApp for earlier messages, long enough for the extension to reconnect while an import is
  * running.
  */
 @TestPropertySource(properties = "omnichannel.history.chat-delay=3s")
@@ -41,8 +41,8 @@ class HistoryImportRunnerReconnectIT extends HistoryImportTestBase {
                     return first.answer(req);
                 }
                 var reply = first.answer(req);
-                // it loaded from the phone, so the three seconds follow it: time for the extension to come back
-                ((tools.jackson.databind.node.ObjectNode) reply.result()).put("loaded", true);
+                // it asked WhatsApp for earlier messages, so the three seconds follow it: time for the extension to come back
+                ((tools.jackson.databind.node.ObjectNode) reply.result()).put("asked", true);
                 closing.start();
                 return reply;
             };
