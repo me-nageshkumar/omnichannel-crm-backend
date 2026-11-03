@@ -9,14 +9,9 @@ unmerged. What is below is optional or waits on a decision; decisions already ma
 
 ## Features that need the user's decisions first
 
-Both need a new host feature before the CRM side means anything. Run `superpowers:brainstorming` and raise the
+This needs a new host feature before the CRM side means anything. Run `superpowers:brainstorming` and raise the
 questions, even though the user usually skips them.
 
-- **Deal automation events.** The reference publishes `crm_deal_stage_changed`, `crm_deal_won`, `crm_deal_lost` to Kafka
-  (`redlava-crm/.../automation/`; engine design `whatsapp/docs/superpowers/specs/2026-08-13-automation-event-action-engine-design.md`).
-  Our app has no engine and no Kafka; stage changes are already `STAGE_CHANGED` activities (`crm/deal`). Add a
-  `crm.platform` port (say `DealEventSink`) with an adapter in `app.crm`. An event must never fail the deal save.
-  Ask: a general engine or a few fixed reactions? Which triggers and actions? Kafka or in-process? Who sets rules, where?
 - **Lead conversion and lead channel defaults.** Reference `redlava-crm/.../leadconversion/`, `LeadChannelDefault`;
   intake design `whatsapp/docs/superpowers/specs/2026-08-05-facebook-leads-management-design.md` (historical, read its
   header). Our app has no lead intake; `OriginKind` already has `FACEBOOK_LEAD`, `WEBSITE_LEAD`, `CTWA_AD`, and
@@ -36,3 +31,19 @@ a decision or more investigation.
   subtype, the place to start).
 - A dated fetch leaves out chats last active over a day before its range; whether `chat.t` always covers a chat's
   newest message is unconfirmed. Pending real-number checks: spec `2026-10-31-chat-history-import-design.md`.
+
+## Automations: done
+
+Events, rules and actions (backend) are built: spec `docs/superpowers/specs/2026-11-03-automations-design.md`, plan
+`docs/superpowers/plans/2026-11-03-automations-backend.md`. Replaces the old "Deal automation events" item.
+
+Known limits:
+- An event is lost if the app stops between saving a message or a move and writing its event.
+- The same person as `@c.us` and `@lid` can be "new" twice.
+- A typed test number whose first message arrives with a hidden number is never captured (use an existing contact
+  with "Treat this chat as new").
+- A crash mid-rule marks an unfinished send Interrupted and runs the rest of the rule.
+- A send that timed out is not retried (it may have gone); only a send that never reached the extension is.
+- No retention setting: nothing expires.
+- No lease renewal while a long event is processed.
+- A published rule can be moved to draft while a retry waits, which closes its run as Interrupted.
