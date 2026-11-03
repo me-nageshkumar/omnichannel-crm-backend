@@ -18,6 +18,9 @@ omnichannel:
     auto-tick: false
     page-delay: 0ms
     chat-delay: 0ms
+  # tests drive the automation worker themselves
+  automation:
+    auto-tick: false
   crm:
     jobs:
       # tests run the CRM jobs themselves

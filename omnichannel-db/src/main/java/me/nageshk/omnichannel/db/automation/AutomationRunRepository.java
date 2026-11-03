@@ -1,0 +1,13 @@
+package me.nageshk.omnichannel.db.automation;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.mongodb.repository.MongoRepository;
+
+public interface AutomationRunRepository extends MongoRepository<AutomationRun, String> {
+
+    Optional<AutomationRun> findByEventIdAndRuleId(String eventId, String ruleId);
+
+    List<AutomationRun> findByEventIdIn(Collection<String> eventIds);
+}
