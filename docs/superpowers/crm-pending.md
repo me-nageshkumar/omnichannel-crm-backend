@@ -27,9 +27,6 @@ questions, even though the user usually skips them.
 
 - **"CRM contacts reached"** on the Campaigns report follows the pipeline filter (default Sales), so a contact with no
   deal counts 0. Leave it, ignore the filter for this column, or relabel it.
-- **Demo test data** left in brand Demo Fashion, removable on request: users `walk-nocrm`, `walk-segments`; roles
-  `NO_CRM_WALK`, `AGENT_SEGMENTS_WALK` (they show in `demo-manager`'s role picker); pipeline "Walk check"; segment
-  "Festive buyers"; deal "Acceptance test deal"; campaign "Walk send check".
 
 ## Small leftovers, pick up when working nearby
 

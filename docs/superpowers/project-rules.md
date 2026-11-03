@@ -14,6 +14,9 @@ where things are, and traps already hit. Read sections 1 and 2 before any git, d
 - The demo password is not recorded on purpose: ask the user. Do not repeat credential values.
 - Do not change a shared role's permissions; use a separate test role and user, through the app's screens.
 - Deleting records: ask, unless they are throwaways made in the same task.
+- The walk test data in brand Demo Fashion stays (the user's choice, 2026-11-03): users `walk-nocrm`, `walk-segments`,
+  roles `NO_CRM_WALK`, `AGENT_SEGMENTS_WALK`, pipeline "Walk check", segment "Festive buyers", deal "Acceptance test
+  deal", campaign "Walk send check". Do not offer to remove it.
 - A history fetch syncs with WhatsApp Web **keeping the database's state**: stored messages keep sender, source and
   text; stored chats keep status, agent, team and unread count. Only status moves up and missing details fill in.
 - "Skip the questions" is the standing choice for specs: flag your own calls in the spec. The features in
