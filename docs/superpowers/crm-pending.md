@@ -26,7 +26,6 @@ questions, even though the user usually skips them.
 ## Small leftovers, pick up when working nearby
 
 - Three tiny fixes in `docs/superpowers/crm-deferred-fixes.md`, under "From the review of the last fixes".
-- Never checked in a browser, and no test: the segment editor's light theme, the audience popover by keyboard.
 - Inbox, limits worth knowing:
   - The same person can be two chats (`@c.us` and `@lid`); a console send whose model never came back is stored as
     `console:<id>` and again under its real id.
