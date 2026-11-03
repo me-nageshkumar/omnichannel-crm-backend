@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.service.automation;
 
+import java.math.BigDecimal;
 import java.time.Clock;
+import java.util.UUID;
 import me.nageshk.omnichannel.db.automation.AutomationEvent;
 import me.nageshk.omnichannel.db.automation.AutomationEventKind;
 import me.nageshk.omnichannel.db.automation.AutomationEventRecordRepository;
@@ -10,6 +12,7 @@ import me.nageshk.omnichannel.db.automation.EventStatus;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
+import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
@@ -28,6 +31,7 @@ public class AutomationEventWriter {
     private final AutomationEventRepository events;
     private final AutomationEventRecordRepository history;
     private final WaWebMessageRepository messages;
+    private final WaWebChatRepository chats;
     private final ContactRepository contacts;
     private final PhoneNumberRepository numbers;
     private final UserRepository users;
@@ -36,13 +40,14 @@ public class AutomationEventWriter {
     private final Clock clock;
 
     AutomationEventWriter(AutomationGate gate, AutomationEventRepository events,
-            AutomationEventRecordRepository history, WaWebMessageRepository messages, ContactRepository contacts,
+            AutomationEventRecordRepository history, WaWebMessageRepository messages, WaWebChatRepository chats, ContactRepository contacts,
             PhoneNumberRepository numbers, UserRepository users, TeamRepository teams, AutomationCrm crm,
             Clock clock) {
         this.gate = gate;
         this.events = events;
         this.history = history;
         this.messages = messages;
+        this.chats = chats;
         this.contacts = contacts;
         this.numbers = numbers;
         this.users = users;
@@ -87,6 +92,46 @@ public class AutomationEventWriter {
         } catch (DuplicateKeyException ignored) {
             // the same message was handled before
         }
+    }
+
+    /** The facts of a deal that moved to another lane; the service's own type, the CRM's is mapped to it. */
+    public record DealMove(String workspaceId, String customerId, String dealId, String title, String status,
+            BigDecimal amount, String currency, String ownerId, String lostReason, String pipelineId,
+            String pipelineName, EventData.LaneData from, EventData.LaneData to, String contactId,
+            String phoneNumberId) {
+    }
+
+    /** Queues a DEAL_LANE_CHANGED event for the move, unless nobody wants it. */
+    public void dealLaneChanged(DealMove m) {
+        if (!gate.wants(m.workspaceId(), AutomationEventKind.DEAL_LANE_CHANGED, m.contactId(), null)) return;
+        Contact contact = m.contactId() == null ? null : contacts.findById(m.contactId()).orElse(null);
+        WaWebChat chat = m.contactId() == null || m.phoneNumberId() == null ? null
+                : chats.findFirstByPhoneNumberIdAndContactId(m.phoneNumberId(), m.contactId()).orElse(null);
+        PhoneNumber number = m.phoneNumberId() == null ? null : numbers.findById(m.phoneNumberId()).orElse(null);
+        EventData data = new EventData(
+                chat == null ? null
+                        : new EventData.ChatData(chat.getId(), false, chat.getStatus(),
+                                userRef(chat.getAssignedUserId()), teamRef(chat.getAssignedTeamId())),
+                null,
+                new EventData.NumberData(m.phoneNumberId(), number == null ? null : number.getNumber(),
+                        number == null ? null : number.getLabel()),
+                new EventData.ContactData(m.contactId(), contact == null ? null : contact.getName(),
+                        contact == null ? null : contact.getPhone(), true,
+                        contact != null && contact.getDoNotContact() != null),
+                new EventData.DealData(m.dealId(), m.title(), m.status(), m.amount(), m.currency(),
+                        userRef(m.ownerId()), m.lostReason()),
+                new EventData.Ref(m.pipelineId(), m.pipelineName()), m.from(), m.to());
+        AutomationEvent e = new AutomationEvent();
+        e.setId("d-" + UUID.randomUUID());
+        e.setCustomerId(m.customerId());
+        e.setWorkspaceId(m.workspaceId());
+        e.setKind(AutomationEventKind.DEAL_LANE_CHANGED);
+        e.setData(data);
+        e.setContactId(m.contactId());
+        e.setContactPhone(contact == null ? null : contact.getPhone());
+        e.setStatus(EventStatus.PENDING);
+        e.setCreatedAt(clock.instant());
+        events.insert(e);
     }
 
     private EventData.Ref userRef(String userId) {
