@@ -95,7 +95,8 @@ class InboxStreamBrokerTest {
     }
 
     private static ChatView chatView() {
-        return new ChatView("c1", PN, "9199@c.us", null, ChatStatus.OPEN, null, null, 0, null, null, null, null, null);
+        return new ChatView("c1", PN, "9199@c.us", null, ChatStatus.OPEN, null, null, 0, null, null, null, null, null,
+                java.util.List.of());
     }
 
     private static MessageView messageView() {

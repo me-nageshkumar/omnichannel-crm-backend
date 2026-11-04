@@ -183,8 +183,9 @@ public class InboxIngestService {
             Contact known = contacts.findForChat(ctx.workspaceId(), remote);
             if (known != null && known.getName() != null) senderName = null;
         }
+        // on our own message senderPn is the business's number, not the person's
         Contact contact = contacts.upsertFromChat(ctx.workspaceId(), ctx.customerId(), remote, senderName,
-                lid ? MessagePayloads.lidPhone(p) : null, at);
+                lid && !fromMe ? MessagePayloads.lidPhone(p) : null, at);
         if (contact == null) return SKIPPED;
         // not over a name cleared by hand; of record, or the contact's next push name would replace it
         if (ctx.chatName() != null && !contact.isNameEdited()) {
@@ -277,8 +278,10 @@ public class InboxIngestService {
             String waMessageId, Progress progress) {
         boolean fromMe = MessagePayloads.fromMe(p);
         Instant at = MessagePayloads.timestamp(p, event);
+        // on our own message senderPn is the business's number, not the person's
         Contact contact = contacts.upsertFromChat(event.workspaceId(), event.customerId(), remote,
-                fromMe ? null : MessagePayloads.senderName(p), lid ? MessagePayloads.lidPhone(p) : null, at);
+                fromMe ? null : MessagePayloads.senderName(p), lid && !fromMe ? MessagePayloads.lidPhone(p) : null,
+                at);
         if (contact == null) return Optional.empty();
 
         WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(event.phoneNumberId(), remote).orElse(null);
@@ -496,7 +499,8 @@ public class InboxIngestService {
         return Optional.of(new Ingested(chat, i.message(), i.chatCreated(), i.reopened(), i.messageInserted()));
     }
 
-    static <T> T retrying(Supplier<T> action) {
+    /** Runs {@code action}, and once more when it lost a race on a unique index or a version. */
+    public static <T> T retrying(Supplier<T> action) {
         try {
             return action.get();
         } catch (DuplicateKeyException | OptimisticLockingFailureException e) {

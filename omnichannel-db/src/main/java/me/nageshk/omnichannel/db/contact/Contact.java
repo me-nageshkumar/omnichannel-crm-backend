@@ -1,8 +1,10 @@
 package me.nageshk.omnichannel.db.contact;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.Getter;
@@ -20,8 +22,10 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @CompoundIndexes({
         @CompoundIndex(name = "ws_phone", def = "{'workspaceId': 1, 'phone': 1}", unique = true,
                 partialFilter = "{'phone': {$type: 'string'}}"),
-        @CompoundIndex(name = "ws_waId", def = "{'workspaceId': 1, 'waId': 1}", unique = true,
-                partialFilter = "{'waId': {$type: 'string'}}"),
+        @CompoundIndex(name = "ws_waIds", def = "{'workspaceId': 1, 'waIds': 1}", unique = true,
+                partialFilter = "{'waIds': {$type: 'string'}}"),
+        @CompoundIndex(name = "ws_mergingInto", def = "{'workspaceId': 1, 'mergingInto': 1}",
+                partialFilter = "{'mergingInto': {$exists: true}}"),
         @CompoundIndex(name = "ws_lastMessageAt", def = "{'workspaceId': 1, 'lastMessageAt': -1}"),
         @CompoundIndex(name = "ws_labels", def = "{'workspaceId': 1, 'labels': 1}")
 })
@@ -33,7 +37,8 @@ public class Contact {
     private String id;
     private String workspaceId;
     private String customerId;
-    private String waId;
+    /** Every WhatsApp id (phone {@code @c.us} or hidden {@code @lid}) seen for the person, in the order learnt. */
+    private List<String> waIds = new ArrayList<>();
     private String phone;
     private String name;
     private boolean nameEdited;
@@ -43,6 +48,14 @@ public class Contact {
     private Instant lastMessageAt;
     /** Null means the contact may be contacted. */
     private DoNotContact doNotContact;
+    /**
+     * Set while this contact is being merged into another: the survivor's id, and the WhatsApp ids and phone this
+     * contact let go of (they are unique per brand) so the survivor can take them. A run cut short is finished from
+     * these by the next one; a message under one of these ids belongs to the survivor.
+     */
+    private String mergingInto;
+    private List<String> mergingWaIds;
+    private String mergingPhone;
     @CreatedDate
     private Instant creationTime;
     @LastModifiedDate

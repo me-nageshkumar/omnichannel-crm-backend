@@ -58,4 +58,34 @@ class AdClickApiIT extends InboxApiTestBase {
         assertThat(withAd.get("adClick").has("raw")).isFalse();
         assertThat(without.get("adClick").isNull()).isTrue();
     }
+
+    @Test
+    void otherChatsListThePersonsOtherChats() throws Exception {
+        WaWebChat phoneChat = chat("Alice", "911", 1, agent, null);
+        WaWebChat lidChat = chat(number, brand, contacts.findById(phoneChat.getContactId()).orElseThrow(), 2);
+        lidChat.setRemoteId("555@lid");
+        chats.save(lidChat);
+
+        JsonNode page = json(send(get(chatsUrl()), agentToken, null).andExpect(status().isOk()));
+
+        for (JsonNode i : page.get("items")) {
+            JsonNode others = i.get("otherChats");
+            assertThat(others.size()).isEqualTo(1);
+            boolean isPhone = i.get("id").asString().equals(phoneChat.getId());
+            WaWebChat other = isPhone ? lidChat : phoneChat;
+            assertThat(others.get(0).get("id").asString()).isEqualTo(other.getId());
+            assertThat(others.get(0).get("remoteId").asString()).isEqualTo(other.getRemoteId());
+        }
+    }
+
+    @Test
+    void noOtherChatsIsEmpty() throws Exception {
+        chat("Alice", "911", 1, agent, null);
+
+        JsonNode page = json(send(get(chatsUrl()), agentToken, null).andExpect(status().isOk()));
+
+        JsonNode others = page.get("items").get(0).get("otherChats");
+        assertThat(others.isArray()).isTrue();
+        assertThat(others.size()).isZero();
+    }
 }

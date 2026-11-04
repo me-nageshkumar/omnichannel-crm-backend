@@ -8,6 +8,8 @@ import org.springframework.data.mongodb.repository.Query;
 /** Chats of WhatsApp Web numbers. */
 public interface WaWebChatRepository extends MongoRepository<WaWebChat, String> {
 
+    List<WaWebChat> findAllByPhoneNumberIdAndContactId(String phoneNumberId, String contactId);
+
     Optional<WaWebChat> findByPhoneNumberIdAndRemoteId(String phoneNumberId, String remoteId);
 
     Optional<WaWebChat> findFirstByCreatedByHistoryChatId(String historyChatId);
@@ -16,6 +18,13 @@ public interface WaWebChatRepository extends MongoRepository<WaWebChat, String> 
 
     /** A contact's chat on a number, whatever remote id it lives under ({@code @c.us} or {@code @lid}). */
     Optional<WaWebChat> findFirstByPhoneNumberIdAndContactId(String phoneNumberId, String contactId);
+
+    /** Every chat of a brand contact, on any number and under any remote id. */
+    List<WaWebChat> findAllByWorkspaceIdAndContactId(String workspaceId, String contactId);
+
+    /** The chats of several contacts on one number, for the "other chats" of a chat list. */
+    List<WaWebChat> findAllByPhoneNumberIdAndContactIdIn(String phoneNumberId,
+            java.util.Collection<String> contactIds);
 
     Optional<WaWebChat> findByIdAndWorkspaceId(String id, String workspaceId);
 

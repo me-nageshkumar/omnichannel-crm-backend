@@ -89,3 +89,11 @@ Calls made while building phases D to F, copied from the plan ledgers, which are
 - Ruling: numeric JSON values count as text for the ad fields — cost if wrong: a numeric source id is stored as text, not dropped.
 - Ruling: the API tests for the views live in `AdClickApiIT` rather than `AdClickIngestIT` — cost if wrong: a file location.
 
+
+## One contact across two WhatsApp ids, backend
+
+- Plan: Ruling: the resolver runs on its own one-thread executor bean `contactResolverExecutor`, with an in-memory last-attempt map per contact and a per-device 300 ms pacing; both reset on restart — cost if wrong: one extra attempt per contact after a restart.
+- Plan: Ruling: the per-message trigger acts only on inserted inbound messages whose contact lacks a phone or an `@lid` id, and only when the number's device is ready; otherwise the next message retries — cost if wrong: a resolution waits for the next message or the manual button.
+- Plan: Ruling: `ContactsMerged(workspaceId, survivorId, otherId)` is published by the merge and `app.crm.ContactMergeAdapter` re-points CRM records, skipping and warning on a duplicate `(contact, number)` — cost if wrong: a CRM record left on the deleted contact.
+- Plan: Ruling: `POST /contacts/resolve-ids` answers `202 {queued: n}` where `n` counts contacts lacking a phone or a lid with a chat on a number whose device is ready now — cost if wrong: a count that differs from what the resolver finally does.
+- Plan: Ruling: `ChatView.otherChats` comes from one batch query per distinct number in the list, not one per chat — cost if wrong: one extra query per number on a chat list.

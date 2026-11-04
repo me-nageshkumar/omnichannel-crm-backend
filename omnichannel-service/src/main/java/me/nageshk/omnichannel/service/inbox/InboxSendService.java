@@ -336,20 +336,22 @@ public class InboxSendService {
      */
     private Recorded record(SendActor actor, WaWebChat sent, Outgoing out, String type, String waMessageId,
             Instant at, int ack, Instant now, String lidPhone) {
+        // the person the console wrote to becomes (or already is) a contact, carrying the phone that was typed; done
+        // before the chat is read, as linking the lid can merge two contacts and so re-point the chat row
+        Contact contact = null;
+        if (sent.getId() == null) {
+            contact = lidPhone != null && sent.getRemoteId().endsWith("@lid")
+                    ? contacts.linkLidToPhone(sent.getWorkspaceId(), sent.getCustomerId(), sent.getRemoteId(),
+                            lidPhone, now)
+                    : contacts.upsertFromChat(sent.getWorkspaceId(), sent.getCustomerId(), sent.getRemoteId(), null,
+                            null, now);
+        }
         // a chat without an id is stored now, the device having accepted its first message; a row another writer
         // created for the same remote id wins, and a lost race is retried by the caller
         WaWebChat chat = sent.getId() == null
                 ? chats.findByPhoneNumberIdAndRemoteId(sent.getPhoneNumberId(), sent.getRemoteId()).orElse(sent)
                 : chats.findById(sent.getId()).orElse(sent);
-        if (sent.getId() == null) {
-            // the person the console wrote to becomes (or already is) a contact, carrying the phone that was typed
-            Contact contact = lidPhone != null && chat.getRemoteId().endsWith("@lid")
-                    ? contacts.linkLidToPhone(sent.getWorkspaceId(), sent.getCustomerId(), chat.getRemoteId(),
-                            lidPhone, now)
-                    : contacts.upsertFromChat(sent.getWorkspaceId(), sent.getCustomerId(), chat.getRemoteId(), null,
-                            null, now);
-            if (contact != null) chat.setContactId(contact.getId());
-        }
+        if (contact != null) chat.setContactId(contact.getId());
         if (chat.getId() == null) {
             chat = chats.save(chat);
         } else if (sent.getId() == null && isOurOwnOutbound(chat)) {

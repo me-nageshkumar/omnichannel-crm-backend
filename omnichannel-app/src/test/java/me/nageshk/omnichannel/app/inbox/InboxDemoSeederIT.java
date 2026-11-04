@@ -124,7 +124,7 @@ class InboxDemoSeederIT {
         for (WaWebChat chat : all) {
             Contact contact = contactById.get(chat.getContactId());
             assertThat(chat.getRemoteId())
-                    .isEqualTo(contact.getPhone() != null ? contact.getPhone() + "@c.us" : contact.getWaId());
+                    .isEqualTo(contact.getPhone() != null ? contact.getPhone() + "@c.us" : contact.getWaIds().get(0));
             List<WaWebMessage> thread = messages.findAll().stream().filter(m -> chat.getId().equals(m.getChatId()))
                     .sorted((a, b) -> a.getTimestamp().compareTo(b.getTimestamp())).toList();
             assertThat(thread).hasSizeBetween(4, 8);

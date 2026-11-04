@@ -109,11 +109,11 @@ public class ContactDemoSeeder implements ApplicationRunner {
             c.setSource(ContactSource.values()[i % 3]);
             if (i % 10 == 9) {
                 hidden++;
-                c.setWaId(String.format("9000000000000%02d@lid", hidden));
+                c.setWaIds(new java.util.ArrayList<>(List.of(String.format("9000000000000%02d@lid", hidden))));
                 c.setSource(ContactSource.CHAT);
             } else {
                 c.setPhone(String.format("91900000%04d", i + 1));
-                if (c.getSource() == ContactSource.CHAT) c.setWaId(c.getPhone() + "@c.us");
+                if (c.getSource() == ContactSource.CHAT) c.setWaIds(new java.util.ArrayList<>(List.of(c.getPhone() + "@c.us")));
             }
             c.setNameEdited(c.getSource() != ContactSource.CHAT);
             c.getLabels().add(cycle[i % cycle.length].getId());

@@ -13,8 +13,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
  * <p>Also switches on {@code @Scheduled}. Boot's task-scheduling auto-configuration backs off because the
  * {@code wsScheduler} {@code ScheduledExecutorService} bean exists, so a {@code taskScheduler} is defined here; without
  * it {@code @Scheduled} would run on {@code wsScheduler}, the single-thread executor that times out WebSocket
- * authentication. This scheduler is also the only {@code TaskExecutor} bean, so if {@code @EnableAsync} is added
- * later, define an {@code applicationTaskExecutor} too.
+ * authentication. Other {@code TaskExecutor} beans exist ({@code campaignScheduler}, {@code historyImportScheduler},
+ * {@code contactResolverExecutor}), each injected by name, but none is called {@code applicationTaskExecutor}, so if
+ * {@code @EnableAsync} is added later, define one too.
  */
 @Configuration
 @EnableScheduling

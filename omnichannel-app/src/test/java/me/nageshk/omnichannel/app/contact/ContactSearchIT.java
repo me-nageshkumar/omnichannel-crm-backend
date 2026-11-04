@@ -58,7 +58,7 @@ class ContactSearchIT extends ContactApiTestBase {
         c.setCustomerId(acme.getId());
         c.setName(name);
         c.setPhone(phone);
-        if (phone == null) c.setWaId(name.toLowerCase().replace(' ', '-') + "@lid");
+        if (phone == null) c.getWaIds().add(name.toLowerCase().replace(' ', '-') + "@lid");
         c.setSource(source);
         c.setLastMessageAt(lastMessage);
         for (String l : labelIds) c.getLabels().add(l);

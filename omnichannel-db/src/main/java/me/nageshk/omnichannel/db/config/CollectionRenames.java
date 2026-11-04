@@ -20,7 +20,8 @@ import org.springframework.stereotype.Component;
  * old name that still exists: an empty or missing new collection is replaced by the renamed old one, keeping its
  * documents and indexes, and the code's indexes are created again; an empty old leftover next to a non-empty new
  * collection is dropped; two non-empty collections are left alone and logged. A fresh or already migrated database
- * is not touched. Then {@link ClassAliasRenames} brings the stored type hints up to the current package names.
+ * is not touched. Then {@link ClassAliasRenames} brings the stored type hints up to the current package names, and
+ * {@link ContactIdsMigration} moves the contacts' {@code waId} into {@code waIds}.
  */
 @Slf4j
 @Component
@@ -34,10 +35,12 @@ public class CollectionRenames implements SmartInitializingSingleton {
 
     private final MongoTemplate mongo;
     private final ClassAliasRenames classAliases;
+    private final ContactIdsMigration contactIds;
 
-    public CollectionRenames(MongoTemplate mongo, ClassAliasRenames classAliases) {
+    public CollectionRenames(MongoTemplate mongo, ClassAliasRenames classAliases, ContactIdsMigration contactIds) {
         this.mongo = mongo;
         this.classAliases = classAliases;
+        this.contactIds = contactIds;
     }
 
     private static Map<String, String> renames() {
@@ -73,6 +76,7 @@ public class CollectionRenames implements SmartInitializingSingleton {
     public void afterSingletonsInstantiated() {
         migrate();
         classAliases.migrate();
+        contactIds.migrate();
     }
 
     public void migrate() {

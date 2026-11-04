@@ -272,4 +272,29 @@ class MessageEventIT extends AutomationTestBase {
                     assertThat(c.getOrigin().ad().sourceId()).isEqualTo("120330");
                 });
     }
+
+    @Test
+    void secondChatOfTheSamePersonIsNotNew() {
+        WaWebChat phoneChat = incoming(n1, ASHA, "chat", "Hello", "Asha");
+        mongo.remove(new org.springframework.data.mongodb.core.query.Query(), AutomationEvent.class);
+
+        var lid = payload("77700000001@lid", false, "chat", "From my other id", "Asha");
+        lid.put("senderPn", ASHA);
+        WaWebChat lidChat = publish(n1, lid);
+
+        assertThat(lidChat.getId()).isNotEqualTo(phoneChat.getId());
+        assertThat(lidChat.getContactId()).isEqualTo(phoneChat.getContactId());
+        AutomationEvent e = only();
+        assertThat(e.getData().message().text()).isEqualTo("From my other id");
+        assertThat(e.getData().chat().isNew()).isFalse();
+    }
+
+    @Test
+    void anotherPersonIsNew() {
+        incoming(n1, ASHA, "chat", "Hello", "Asha");
+        incoming(n1, RAVI, "chat", "Hi", "Ravi");
+
+        assertThat(queued()).filteredOn(e -> "Hi".equals(e.getData().message().text())).singleElement()
+                .satisfies(e -> assertThat(e.getData().chat().isNew()).isTrue());
+    }
 }

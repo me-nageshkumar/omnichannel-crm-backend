@@ -63,7 +63,7 @@ class InboxViewsIT {
         c.setCustomerId(acme.getId());
         c.setName(name);
         c.setPhone(phone);
-        c.setWaId(phone == null ? "lid-" + name : phone);
+        c.getWaIds().add(phone == null ? "lid-" + name : phone);
         return contacts.save(c);
     }
 
