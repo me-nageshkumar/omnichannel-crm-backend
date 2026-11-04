@@ -26,7 +26,8 @@ public record MessageView(
         List<String> pollOptions,
         List<WaWebMessage.PollVote> pollVotes,
         WaWebMessage.Call call,
-        String businessTag) {
+        String businessTag,
+        AdClickView adClick) {
 
     /** {@code available} is true once the bytes are cached, so the console can show a thumbnail at once. */
     public record MediaView(String mimetype, String filename, Long size, boolean available) {

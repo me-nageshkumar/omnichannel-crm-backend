@@ -134,7 +134,7 @@ class AutomationHistoryApiIT extends AutomationTestBase {
         r.setCustomerId(acme.getId());
         r.setWorkspaceId(brand.getId());
         r.setKind(AutomationEventKind.MESSAGE_RECEIVED);
-        r.setData(new EventData(null, new EventData.MessageData("m", "Old news", "TEXT"), null,
+        r.setData(new EventData(null, new EventData.MessageData("m", "Old news", "TEXT", null), null,
                 new EventData.ContactData("c", "Old", "919000000000", false, false), null, null, null, null));
         r.setContactId("c");
         r.setOutcome(outcome);

@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.service.inbox;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import me.nageshk.omnichannel.db.inbox.AdClick;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -249,5 +250,95 @@ class MessagePayloadsTest {
     void noDirectPathAndNoFlagMeansNoMedia() {
         assertThat(MessagePayloads.hasMedia(message("chat"))).isFalse();
         assertThat(MessagePayloads.hasMedia(message("image").put("directPath", ""))).isFalse();
+    }
+
+    private static final Instant AD_AT = Instant.parse("2026-11-04T10:00:00Z");
+
+    private static ObjectNode withContext(boolean fromMe) {
+        ObjectNode p = message("chat").put("fromMe", fromMe);
+        return p;
+    }
+
+    @Test
+    void adClickReadsTheWaJsShape() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceUrl", "https://fb.me/x").put("sourceId", "1200")
+                .put("sourceApp", "facebook").put("title", "Diwali sale").put("description", "20% off")
+                .put("conversionSource", "FB_Ads").put("thumbnail", "AAAA");
+        AdClick ad = MessagePayloads.adClick(p, AD_AT);
+        assertThat(ad.sourceUrl()).isEqualTo("https://fb.me/x");
+        assertThat(ad.sourceId()).isEqualTo("1200");
+        assertThat(ad.sourceApp()).isEqualTo("facebook");
+        assertThat(ad.headline()).isEqualTo("Diwali sale");
+        assertThat(ad.description()).isEqualTo("20% off");
+        assertThat(ad.conversionSource()).isEqualTo("FB_Ads");
+        assertThat(ad.at()).isEqualTo(AD_AT);
+        assertThat(ad.raw()).containsEntry("sourceUrl", "https://fb.me/x").doesNotContainKey("thumbnail");
+    }
+
+    @Test
+    void clickIdAliases() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceId", "1").put("ctwa_clid", "CLK");
+        assertThat(MessagePayloads.adClick(p, AD_AT).clickId()).isEqualTo("CLK");
+        ((ObjectNode) p.get("ctwaContext")).put("ctwaClid", "PREFERRED");
+        assertThat(MessagePayloads.adClick(p, AD_AT).clickId()).isEqualTo("PREFERRED");
+    }
+
+    @Test
+    void headlineFallsBackToHeadline() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceId", "1").put("headline", "Fallback");
+        assertThat(MessagePayloads.adClick(p, AD_AT).headline()).isEqualTo("Fallback");
+    }
+
+    @Test
+    void emptyContextIsNotAnAd() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext");
+        assertThat(MessagePayloads.adClick(p, AD_AT)).isNull();
+        p.putObject("ctwaContext").put("sourceUrl", "  ").put("sourceId", "").put("title", "only a title");
+        assertThat(MessagePayloads.adClick(p, AD_AT)).isNull();
+        assertThat(MessagePayloads.adClick(withContext(false), AD_AT)).isNull();
+    }
+
+    @Test
+    void outboundContextIsIgnored() {
+        ObjectNode p = withContext(true);
+        p.putObject("ctwaContext").put("sourceId", "1200");
+        assertThat(MessagePayloads.adClick(p, AD_AT)).isNull();
+    }
+
+    @Test
+    void longTextIsCut() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceId", "1").put("title", "x".repeat(600));
+        assertThat(MessagePayloads.adClick(p, AD_AT).headline()).hasSize(500);
+    }
+
+    @Test
+    void oversizeRawIsDropped() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceId", "1").put("description", "d".repeat(5 * 1024));
+        AdClick ad = MessagePayloads.adClick(p, AD_AT);
+        assertThat(ad.raw()).isNull();
+        assertThat(ad.sourceId()).isEqualTo("1");
+        assertThat(ad.description()).hasSize(500);
+    }
+
+    @Test
+    void rawDropsKeysMongoRefuses() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceId", "1").put("a.b", "x").put("$c", "y").put("ok", "z");
+        assertThat(MessagePayloads.adClick(p, AD_AT).raw()).containsOnlyKeys("ok", "sourceId");
+    }
+
+    @Test
+    void numericSourceIdCounts() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceId", 1200L).put("conversionSource", 7);
+        AdClick ad = MessagePayloads.adClick(p, AD_AT);
+        assertThat(ad.sourceId()).isEqualTo("1200");
+        assertThat(ad.conversionSource()).isEqualTo("7");
     }
 }

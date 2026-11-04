@@ -35,6 +35,7 @@ class MessageEventIT extends AutomationTestBase {
     private static final String ASHA = "919811100001@c.us";
     private static final String RAVI = "919811100002@c.us";
 
+    @Autowired me.nageshk.omnichannel.service.automation.AutomationWorker worker;
     @Autowired InboxIngestService ingest;
     @Autowired InboxSettingService settings;
     @MockitoSpyBean AutomationGate gate;
@@ -228,5 +229,47 @@ class MessageEventIT extends AutomationTestBase {
                 .satisfies(e -> assertThat(e.getData().contact().inCrm()).isTrue());
         assertThat(queued()).filteredOn(e -> "Hello".equals(e.getData().message().text())).singleElement()
                 .satisfies(e -> assertThat(e.getData().contact().inCrm()).isFalse());
+    }
+
+    @Test
+    void adMessageCarriesTheAdInTheEvent() throws Exception {
+        enableCrm();
+        call(HttpMethod.GET, "/api/workspaces/" + brand.getId() + "/crm/pipelines", manager, null);
+        var add = new me.nageshk.omnichannel.db.automation.AutomationAction(
+                me.nageshk.omnichannel.db.automation.AutomationActionType.ADD_TO_CRM, null, null, null, null, null,
+                null, null, null, null);
+        var adRule = rule("From ad", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, 5,
+                all(leaf("message.ad", "is", true)), add);
+
+        var ad = payload(ASHA, false, "chat", "Hi", "Asha");
+        var ctx = ad.putObject("ctwaContext");
+        ctx.put("sourceId", "120330");
+        ctx.put("sourceUrl", "https://fb.me/x");
+        ctx.put("title", "Diwali sale");
+        publish(n1, ad);
+        incoming(n1, RAVI, "chat", "Plain", "Ravi");
+
+        assertThat(queued()).hasSize(2);
+        var adEvent = queued().stream().filter(e -> "Hi".equals(e.getData().message().text())).findFirst()
+                .orElseThrow();
+        assertThat(adEvent.getData().message().ad().sourceId()).isEqualTo("120330");
+        assertThat(adEvent.getData().message().ad().sourceUrl()).isEqualTo("https://fb.me/x");
+        assertThat(adEvent.getData().message().ad().headline()).isEqualTo("Diwali sale");
+        assertThat(queued().stream().filter(e -> "Plain".equals(e.getData().message().text())).findFirst()
+                .orElseThrow().getData().message().ad()).isNull();
+
+        worker.tick();
+
+        var runs = mongo.find(new org.springframework.data.mongodb.core.query.Query(
+                org.springframework.data.mongodb.core.query.Criteria.where("ruleId").is(adRule.getId())),
+                me.nageshk.omnichannel.db.automation.AutomationRun.class);
+        assertThat(runs).hasSize(1);
+        assertThat(runs.get(0).getEventId()).isEqualTo(adEvent.getId());
+        assertThat(runs.get(0).getStatus()).isEqualTo(me.nageshk.omnichannel.db.automation.RunStatus.DONE);
+        assertThat(mongo.findAll(me.nageshk.omnichannel.crm.contact.CrmContact.class)).singleElement()
+                .satisfies(c -> {
+                    assertThat(c.getOrigin().kind()).isEqualTo(me.nageshk.omnichannel.crm.contact.OriginKind.CTWA_AD);
+                    assertThat(c.getOrigin().ad().sourceId()).isEqualTo("120330");
+                });
     }
 }

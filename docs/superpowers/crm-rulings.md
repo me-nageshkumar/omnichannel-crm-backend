@@ -77,3 +77,15 @@ Calls made while building phases D to F, copied from the plan ledgers, which are
 - Final: Ruling: an automation assignment does not make the customer stick to the agent (no `lastAgent*`), like routing; the agent's first reply does
 - Final: Ruling: while only a draft is under test, the queue takes the test contact's events alone
 - Final: Ruling: the branch's commit trailer is `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` because project-rules.md defers to the session's attribution reminder
+
+## Click-to-WhatsApp ads, backend
+
+- Plan: Ruling: `AdClick` lives in `omnichannel-db` and its console view `AdClickView` in `omnichannel-service`, so the entity sits with the other inbox documents — cost if wrong: a file location.
+- Plan: Ruling: `MessagePayloads.adClick` takes the message timestamp so the record carries `at` without a second parse — cost if wrong: one extra parameter on a private helper.
+- Plan: Ruling: a missing chat on Add to CRM means no ad (origin stays `INBOUND_CHAT`), not a failure — cost if wrong: a lead without its origin label, never a failed capture.
+- Plan: Ruling: `message.ad` is a boolean on every message event (false without an ad), while the headline and source id are set only when present, so "is empty" works — cost if wrong: a condition that never matches a plain message.
+- Ruling: raw keys containing '.' or starting with '$' are dropped before storing, because Mongo refuses them — cost if wrong: a field of the raw copy missing, the parsed fields are kept.
+- Ruling: the chat's ad is the earliest ad by message time, so an older ad message replaces a newer one on live ingest and history import — cost if wrong: the chat shows a later campaign than the one that brought the person in.
+- Ruling: numeric JSON values count as text for the ad fields — cost if wrong: a numeric source id is stored as text, not dropped.
+- Ruling: the API tests for the views live in `AdClickApiIT` rather than `AdClickIngestIT` — cost if wrong: a file location.
+

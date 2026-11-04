@@ -274,7 +274,9 @@ public class CrmContactService {
             }
             Origin o = c.getOrigin();
             CrmContactView.OriginView origin = o == null ? null : new CrmContactView.OriginView(o.kind(),
-                    o.phoneNumberId(), o.chatId(), o.firstMessageAt(), ref(persons, o.capturedById()));
+                    o.phoneNumberId(), o.chatId(), o.firstMessageAt(), ref(persons, o.capturedById()),
+                    o.ad() == null ? null : new CrmContactView.AdOriginView(o.ad().sourceId(), o.ad().sourceUrl(),
+                            o.ad().headline()));
             out.add(new CrmContactView(c.getId(), c.getContactId(), c.getChannel(),
                     p != null && p.phone() != null ? p.phone() : c.getPhone(), name(c, p), c.getFirstName(),
                     c.getLastName(), c.getEmail(), c.getJobTitle(), companies.get(c.getCompanyId()), ref(persons, c.getOwnerId()),

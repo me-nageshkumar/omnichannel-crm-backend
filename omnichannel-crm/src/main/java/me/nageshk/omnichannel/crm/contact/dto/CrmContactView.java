@@ -15,7 +15,9 @@ public record CrmContactView(String id, String contactId, Channel channel, Strin
         boolean contactDeleted, List<ChannelChangeView> channelHistory, Instant creationTime, Long version) {
 
     public record OriginView(OriginKind kind, String phoneNumberId, String chatId, Instant firstMessageAt,
-            Ref capturedBy) {}
+            Ref capturedBy, AdOriginView ad) {}
+
+    public record AdOriginView(String sourceId, String sourceUrl, String headline) {}
 
     public record ChannelChangeView(String from, String to, Ref by, Instant at, String reason) {}
 }

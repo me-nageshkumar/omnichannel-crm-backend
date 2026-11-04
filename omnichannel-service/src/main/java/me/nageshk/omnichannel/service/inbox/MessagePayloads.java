@@ -3,13 +3,17 @@ package me.nageshk.omnichannel.service.inbox;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import java.util.StringJoiner;
+import me.nageshk.omnichannel.db.inbox.AdClick;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.events.LoggingEventListener;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /** Reads the fields of a whatsapp-web.js message payload; every helper tolerates missing nodes. */
 final class MessagePayloads {
@@ -21,6 +25,12 @@ final class MessagePayloads {
     private static final String CALL_TYPE = "call_log";
     static final Set<String> NOTICE_TYPES = Set.of("notification_template", "e2e_notification", "notification",
             "group_notification", "broadcast_notification");
+
+    private static final int AD_TEXT_MAX = 500;
+    private static final int AD_RAW_MAX_BYTES = 4096;
+    private static final Set<String> AD_RAW_DROPPED = Set.of("thumbnail", "thumbnailUrl", "originalImageUrl", "mediaUrl",
+            "conversionData");
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private MessagePayloads() {
     }
@@ -143,6 +153,50 @@ final class MessagePayloads {
             if (name != null && !name.isBlank()) names.add(name);
         }
         return names.isEmpty() ? null : names;
+    }
+
+    /**
+     * The click-to-WhatsApp ad behind an inbound message, from its {@code ctwaContext}; null for anything else: a
+     * message we sent, no such object, or one naming no source url, id or conversion source.
+     */
+    static AdClick adClick(JsonNode p, Instant at) {
+        JsonNode ctx = p.path("ctwaContext");
+        if (fromMe(p) || !ctx.isObject()) return null;
+        String sourceUrl = adText(ctx.path("sourceUrl"));
+        String sourceId = adText(ctx.path("sourceId"));
+        String conversionSource = adText(ctx.path("conversionSource"));
+        if (sourceUrl == null && sourceId == null && conversionSource == null) return null;
+        String headline = adText(ctx.path("title"));
+        if (headline == null) headline = adText(ctx.path("headline"));
+        String clickId = adText(ctx.path("ctwaClid"));
+        if (clickId == null) clickId = adText(ctx.path("ctwa_clid"));
+        return new AdClick(sourceId, sourceUrl, adText(ctx.path("sourceApp")), headline,
+                adText(ctx.path("description")), conversionSource, clickId, at, adRaw((ObjectNode) ctx));
+    }
+
+    /** The context minus its images and conversion data; null when what is left is over 4 KB as JSON. */
+    private static Map<String, Object> adRaw(ObjectNode ctx) {
+        ObjectNode kept = ctx.deepCopy();
+        kept.remove(AD_RAW_DROPPED);
+        dropMongoKeys(kept);
+        if (JSON.writeValueAsBytes(kept).length > AD_RAW_MAX_BYTES) return null;
+        return JSON.convertValue(kept, new tools.jackson.core.type.TypeReference<Map<String, Object>>() { });
+    }
+
+    /** Removes, at any depth, the keys Mongo refuses to store: those with a dot or a leading dollar sign. */
+    private static void dropMongoKeys(JsonNode node) {
+        if (node.isObject()) {
+            ((ObjectNode) node).propertyNames().stream().filter(k -> k.contains(".") || k.startsWith("$")).toList()
+                    .forEach(((ObjectNode) node)::remove);
+        }
+        node.forEach(MessagePayloads::dropMongoKeys);
+    }
+
+    private static String adText(JsonNode n) {
+        if (!n.isTextual() && !n.isNumber()) return null;
+        String s = n.asString().trim();
+        if (s.isEmpty()) return null;
+        return s.length() > AD_TEXT_MAX ? s.substring(0, AD_TEXT_MAX) : s;
     }
 
     static String senderName(JsonNode p) {

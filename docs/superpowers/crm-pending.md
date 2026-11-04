@@ -17,6 +17,9 @@ questions, even though the user usually skips them.
   header). Our app has no lead intake; `OriginKind` already has `FACEBOOK_LEAD`, `WEBSITE_LEAD`, `CTWA_AD`, and
   `CaptureService.findOrCreate` takes an `Origin`. Ask: which sources first? Own screen? Does conversion create a deal?
   How is the number chosen when a brand has several?
+  Click-to-WhatsApp ad leads shipped on 2026-11-04 (spec `specs/2026-11-04-ctwa-leads-design.md`: ad context on
+  messages and chats, `CTWA_AD` origin, Automations conditions). What remains is Facebook Lead Ads and website
+  forms: a leads collection, intake, a screen, and the number choice.
 
 ## Known limits of the inbox, not tasks
 
@@ -51,3 +54,9 @@ Events, rules and actions (backend) are built: spec `docs/superpowers/specs/2026
 - Message text and the contact's name and phone stay for good in `automationEventHistory` and `automationRuns`:
   removing a number or a contact leaves them.
 - One worker thread serves every brand, so a hung extension delays all brands by up to the send timeout per send.
+
+## Click-to-WhatsApp ads: known limits
+
+- The `ctwaContext` field names come from the wa-js model and are unconfirmed until the end-to-end check, which needs the
+  user to tap one of their own ads from a named phone. If the real shape differs, fix `MessagePayloads.adClick` from
+  the stored `adClick.raw`.
