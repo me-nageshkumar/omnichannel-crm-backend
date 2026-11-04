@@ -56,6 +56,8 @@ public class WaWebMessage {
     private String templateId;
     /** The campaign that sent the message, else null. */
     private String campaignId;
+    /** The ad this message came from, else null; set when the message was stored. */
+    private AdClick adClick;
     @CreatedDate
     private Instant creationTime;
 

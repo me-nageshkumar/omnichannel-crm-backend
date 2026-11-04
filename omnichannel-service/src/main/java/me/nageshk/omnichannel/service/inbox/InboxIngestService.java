@@ -226,6 +226,7 @@ public class InboxIngestService {
         message.setStatusTimes(null);
         fillIn(message, p);
         foldPreview(chat, message, at);
+        keepFirstAd(chat, message);
         if (message.getDirection() == MessageDirection.IN) chat.setLastInboundAt(later(chat.getLastInboundAt(), at));
         else chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         chat = chats.save(chat);
@@ -339,6 +340,7 @@ public class InboxIngestService {
         boolean reopened = false;
         chat.setContactId(contact.getId());
         foldPreview(chat, message, at);
+        keepFirstAd(chat, message);
         if (message.getDirection() == MessageDirection.IN) {
             chat.setUnreadCount(chat.getUnreadCount() + 1);
             chat.setLastInboundAt(later(chat.getLastInboundAt(), at));
@@ -350,6 +352,13 @@ public class InboxIngestService {
             chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         }
         return reopened;
+    }
+
+    /** Gives the chat the ad of an inbound message when it has none yet; the first ad stays. */
+    private static void keepFirstAd(WaWebChat chat, WaWebMessage message) {
+        if (chat.getAdClick() == null && message.getDirection() == MessageDirection.IN) {
+            chat.setAdClick(message.getAdClick());
+        }
     }
 
     /** Makes the message the chat's preview unless a newer one already is. */
@@ -420,6 +429,7 @@ public class InboxIngestService {
         m.setPollOptions(MessagePayloads.pollOptions(p));
         m.setCall(MessagePayloads.call(p));
         m.setBusinessTag(MessagePayloads.businessTag(p));
+        m.setAdClick(fromMe ? null : MessagePayloads.adClick(p, at));
         m.setTimestamp(at);
         m.setStatus(MessageStatus.PENDING);
         m.setAck(MessagePayloads.ack(p));
