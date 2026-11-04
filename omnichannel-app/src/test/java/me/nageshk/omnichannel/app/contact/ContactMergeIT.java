@@ -22,7 +22,11 @@ import me.nageshk.omnichannel.service.contact.ContactService;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.test.context.event.ApplicationEvents;
@@ -30,6 +34,7 @@ import org.springframework.test.context.event.RecordApplicationEvents;
 
 /** Two contacts that are one person become one: every reference follows the survivor. */
 @RecordApplicationEvents
+@ExtendWith(OutputCaptureExtension.class)
 class ContactMergeIT extends ContactApiTestBase {
 
     private static final String PHONE = "919812345678";
@@ -228,5 +233,82 @@ class ContactMergeIT extends ContactApiTestBase {
         assertThat(chats.findById(lidChat.getId()).orElseThrow().getContactId()).isEqualTo(byPhone.getId());
         assertThat(contactIdsOf(ContactNote.class)).containsExactly(byPhone.getId());
         assertThat(events.stream(ContactEvents.ContactsMerged.class)).hasSize(1);
+    }
+
+    /** The other as a cut-short run leaves it: its ids and phone moved to the stash, naming the survivor. */
+    private Contact released(Contact other, Contact survivor, String phone, String... waIds) {
+        other.setMergingInto(survivor.getId());
+        other.setMergingWaIds(new ArrayList<>(List.of(waIds)));
+        other.setMergingPhone(phone);
+        other.setWaIds(new ArrayList<>());
+        other.setPhone(null);
+        return contacts.save(other);
+    }
+
+    @Test
+    void failedSurvivorSaveKeepsTheIdsRecoverable(CapturedOutput output) {
+        Contact survivor = saved("Asha", true, null, "777@lid");
+        Contact other = released(saved("Asha WA", false, null), survivor, PHONE, PHONE + "@c.us", LID);
+        chat(LID, other);
+        // a message under the lid made a contact for it while the other had let go of it
+        Contact intruder = saved(null, false, null, LID);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> merges.merge(brandA.getId(), survivor.getId(), other.getId()))
+                .isInstanceOf(DuplicateKeyException.class);
+
+        Contact stash = contacts.findById(other.getId()).orElseThrow();
+        assertThat(stash.getMergingInto()).isEqualTo(survivor.getId());
+        assertThat(stash.getMergingWaIds()).containsExactly(PHONE + "@c.us", LID);
+        assertThat(stash.getMergingPhone()).isEqualTo(PHONE);
+        assertThat(contacts.findById(survivor.getId()).orElseThrow().getWaIds()).containsExactly("777@lid");
+        assertThat(contactIdsOf(WaWebChat.class)).containsExactly(other.getId());
+        assertThat(events.stream(ContactEvents.ContactsMerged.class)).isEmpty();
+        assertThat(output).contains("contact " + other.getId() + " was not merged into " + survivor.getId())
+                .contains("contact " + intruder.getId() + " holds " + LID);
+
+        contacts.delete(intruder);
+        merges.merge(brandA.getId(), survivor.getId(), other.getId());
+
+        Contact stored = contacts.findById(survivor.getId()).orElseThrow();
+        assertThat(stored.getWaIds()).containsExactly("777@lid", PHONE + "@c.us", LID);
+        assertThat(stored.getPhone()).isEqualTo(PHONE);
+        assertThat(contacts.findById(other.getId())).isEmpty();
+        assertThat(contactIdsOf(WaWebChat.class)).containsExactly(survivor.getId());
+    }
+
+    @Test
+    void partialRunIsHealedByTheNextRun() {
+        Contact survivor = saved("Asha", true, PHONE, PHONE + "@c.us", LID);
+        Contact other = released(saved("Asha WA", false, null), survivor, null, LID);
+        chat(LID, survivor);
+        note(survivor, "moved already");
+
+        Contact merged = merges.merge(brandA.getId(), survivor.getId(), other.getId());
+
+        assertThat(merged.getId()).isEqualTo(survivor.getId());
+        assertThat(contacts.findById(other.getId())).isEmpty();
+        Contact stored = contacts.findById(survivor.getId()).orElseThrow();
+        assertThat(stored.getWaIds()).containsExactly(PHONE + "@c.us", LID);
+        assertThat(stored.getPhone()).isEqualTo(PHONE);
+        assertThat(stored.getName()).isEqualTo("Asha");
+        assertThat(contactIdsOf(WaWebChat.class)).containsExactly(survivor.getId());
+        assertThat(contactIdsOf(ContactNote.class)).containsExactly(survivor.getId());
+        assertThat(events.stream(ContactEvents.ContactsMerged.class)).containsExactly(
+                new ContactEvents.ContactsMerged(brandA.getId(), survivor.getId(), other.getId()));
+    }
+
+    @Test
+    void completedMergeIsLogged(CapturedOutput output) {
+        Contact survivor = saved("Asha", true, PHONE, PHONE + "@c.us");
+        Contact other = saved("Asha WA", false, null, LID);
+        chat(LID, other);
+        note(other, "one");
+        recipient(other, null);
+
+        merges.merge(brandA.getId(), survivor.getId(), other.getId());
+
+        assertThat(output).contains("contact " + other.getId() + " merged into " + survivor.getId() + " in "
+                + brandA.getId() + ": 1 chats, 1 notes, 1 recipients");
     }
 }

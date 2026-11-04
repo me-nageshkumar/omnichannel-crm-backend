@@ -146,4 +146,37 @@ class ContactIdentityIT {
         assertThat(contacts.findById(known.getId()).orElseThrow().getWaIds()).containsExactly(LID, PHONE + "@c.us");
         assertThat(onlyChat().getContactId()).isEqualTo(known.getId());
     }
+
+    @Test
+    void lidMessageDuringMergeJoinsTheSurvivor() {
+        Contact survivor = contact(PHONE, PHONE + "@c.us");
+        Contact merging = contact(null);
+        merging.setMergingInto(survivor.getId());
+        merging.setMergingWaIds(new ArrayList<>(List.of(LID)));
+        contacts.save(merging);
+
+        create(message(LID, false, T));
+
+        assertThat(contacts.count()).isEqualTo(2);
+        assertThat(onlyChat().getContactId()).isEqualTo(survivor.getId());
+        assertThat(contacts.findById(survivor.getId()).orElseThrow().getWaIds()).containsExactly(PHONE + "@c.us", LID);
+        assertThat(contacts.findById(merging.getId()).orElseThrow().getWaIds()).isEmpty();
+    }
+
+    @Test
+    void phoneMessageDuringMergeJoinsTheSurvivor() {
+        Contact survivor = contact(null, LID);
+        Contact merging = contact(null);
+        merging.setMergingInto(survivor.getId());
+        merging.setMergingPhone(PHONE);
+        contacts.save(merging);
+
+        create(message(PHONE + "@c.us", false, T));
+
+        assertThat(contacts.count()).isEqualTo(2);
+        assertThat(onlyChat().getContactId()).isEqualTo(survivor.getId());
+        Contact stored = contacts.findById(survivor.getId()).orElseThrow();
+        assertThat(stored.getWaIds()).containsExactly(LID, PHONE + "@c.us");
+        assertThat(stored.getPhone()).isEqualTo(PHONE);
+    }
 }

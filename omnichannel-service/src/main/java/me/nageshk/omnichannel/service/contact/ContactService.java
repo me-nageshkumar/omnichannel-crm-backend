@@ -213,15 +213,31 @@ public class ContactService {
 
     /**
      * The contact {@link #upsertFromChat} would update for this chat partner, or null: the one of the chat's phone
-     * for a {@code @c.us} chat, else the one carrying the chat id.
+     * for a {@code @c.us} chat, else the one carrying the chat id, else the survivor of a merge under way that
+     * stashed the id or phone.
      */
     public Contact findForChat(String workspaceId, String remote) {
         Contact c = null;
         int at = remote.indexOf('@');
-        if (!remote.endsWith("@lid") && at > 0) {
-            c = contacts.findByWorkspaceIdAndPhone(workspaceId, remote.substring(0, at)).orElse(null);
-        }
-        return c != null ? c : contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, remote).orElse(null);
+        String phone = !remote.endsWith("@lid") && at > 0 ? remote.substring(0, at) : null;
+        if (phone != null) c = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
+        if (c == null) c = contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, remote).orElse(null);
+        return c != null ? c : mergingFor(workspaceId, remote, phone);
+    }
+
+    /**
+     * The survivor of a merge under way whose other contact stashed {@code waId} or {@code phone} (null: not looked
+     * up), or that other contact when the survivor is gone; null when no merge holds either. The id still belongs to
+     * the person, so a message under it joins the survivor instead of making a contact that would take it.
+     */
+    private Contact mergingFor(String workspaceId, String waId, String phone) {
+        Criteria held = phone == null ? Criteria.where("mergingWaIds").is(waId)
+                : new Criteria().orOperator(Criteria.where("mergingWaIds").is(waId),
+                        Criteria.where("mergingPhone").is(phone));
+        Contact merging = mongo.findOne(new Query(Criteria.where("workspaceId").is(workspaceId)
+                .and("mergingInto").exists(true)).addCriteria(held), Contact.class);
+        if (merging == null) return null;
+        return contacts.findByIdAndWorkspaceId(merging.getMergingInto(), workspaceId).orElse(merging);
     }
 
     /**
@@ -263,6 +279,7 @@ public class ContactService {
         boolean changed = false;
         if (c == null && lid && phone != null) { // the phone's contact owns this person: the lid joins it below
             c = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
+            if (c == null) c = mergingFor(workspaceId, remote, phone);
         }
         if (c == null) {
             c = new Contact();
