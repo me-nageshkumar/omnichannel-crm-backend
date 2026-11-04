@@ -300,7 +300,7 @@ public class ContactIdResolver {
             Contact c = contacts.findByIdAndWorkspaceId(current, workspaceId).orElse(null);
             if (c == null || c.getMergingInto() != null) return; // merged away meanwhile
             if (c.getWaIds().contains(id)) continue;
-            Contact holder = holderOf(workspaceId, id);
+            Contact holder = holderOf(workspaceId, id, c.getId());
             if (holder != null && !holder.getId().equals(c.getId()) && differentPhones(c, holder)) {
                 // a number change, or two people: merging would drop one phone into a deleted contact's stash
                 log.warn("contacts {} and {} in {} both answer to {} but hold different phones; not merged",
@@ -311,7 +311,7 @@ public class ContactIdResolver {
                 if (!merge(workspaceId, survivorId, otherId)) return;
                 current = survivorId;
             } else if (holder != null || !stashedByMerge(workspaceId, id)) {
-                if (!add(workspaceId, current, id)) return;
+                add(workspaceId, current, id); // a clash is logged; the remaining ids are still decided
             }
         }
     }
@@ -320,13 +320,18 @@ public class ContactIdResolver {
         return a.getPhone() != null && b.getPhone() != null && !a.getPhone().equals(b.getPhone());
     }
 
-    /** The live contact the id belongs to: for a phone id the contact of that phone, else the one listing it. */
-    private Contact holderOf(String workspaceId, String id) {
-        if (id.endsWith(PHONE_SUFFIX)) {
-            Contact byPhone = contacts.findByWorkspaceIdAndPhone(workspaceId, digits(id)).orElse(null);
-            if (byPhone != null) return byPhone;
-        }
-        return contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, id).orElse(null);
+    /**
+     * The live contact the id belongs to: for a phone id the contact of that phone, else the one listing it. When the
+     * phone's contact is {@code selfId} itself, another contact may still list the phone id (ingest leaves such a
+     * pair rather than reject a message); that one is the holder, so the pair is settled instead of the id clashing.
+     */
+    private Contact holderOf(String workspaceId, String id, String selfId) {
+        Contact byPhone = id.endsWith(PHONE_SUFFIX)
+                ? contacts.findByWorkspaceIdAndPhone(workspaceId, digits(id)).orElse(null)
+                : null;
+        if (byPhone != null && !byPhone.getId().equals(selfId)) return byPhone;
+        Contact listing = contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, id).orElse(null);
+        return listing != null ? listing : byPhone;
     }
 
     /** Whether a contact being merged away let go of the id (or, for a phone id, its phone) to its survivor. */
@@ -339,8 +344,8 @@ public class ContactIdResolver {
                 .addCriteria(held), Contact.class);
     }
 
-    /** False when another contact took the id meanwhile (logged); the next attempt decides again. */
-    private boolean add(String workspaceId, String contactId, String id) {
+    /** Adds the id; when another contact took it meanwhile, logs that and leaves it to the next attempt. */
+    private void add(String workspaceId, String contactId, String id) {
         try {
             InboxIngestService.retrying(() -> {
                 Contact c = contacts.findByIdAndWorkspaceId(contactId, workspaceId).orElse(null);
@@ -354,11 +359,9 @@ public class ContactIdResolver {
                 return changed ? contacts.save(c) : c;
             });
             log.info("contact {} in {} took its other WhatsApp id", contactId, workspaceId);
-            return true;
         } catch (DuplicateKeyException e) {
             log.warn("contact {} in {} did not take its other WhatsApp id: another contact took it meanwhile",
                     contactId, workspaceId);
-            return false;
         }
     }
 

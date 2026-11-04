@@ -284,7 +284,8 @@ A brand's people, in `contacts` (one per brand and WhatsApp person; everything i
   message whose contact lacks a phone or a lid, the number's device is asked for the other id
   (`resolveIds`, read-only) at most once per contact per `omnichannel.contacts.resolve-retry` (1h) and
   once per `resolve-pace` (300ms) per device; `omnichannel.contacts.resolve-on-message` (default true)
-  switches this off. Two contacts holding different phones are never merged automatically (logged).
+  switches this off. The resolver never merges two contacts holding different phones (it logs them); the
+  console-send fold links by the phone that was typed.
   "Resolve hidden numbers" on the contacts page (`POST .../contacts/resolve-ids`, `contact:edit`, answers
   `202 {queued}`) queues up to `resolve-batch` (500) such contacts per press, those without a phone first,
   skipping any tried within the retry, and retries every stalled merge. The chat header names the

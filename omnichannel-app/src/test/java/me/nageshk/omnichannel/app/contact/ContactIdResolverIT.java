@@ -29,6 +29,7 @@ import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.WorkspaceRole;
 import me.nageshk.omnichannel.security.access.BuiltInRoles;
 import me.nageshk.omnichannel.service.contact.ContactEvents;
+import me.nageshk.omnichannel.service.contact.ContactIdResolver;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -117,6 +118,7 @@ class ContactIdResolverIT {
     @Autowired ContactRepository contacts;
     @Autowired WaWebChatRepository chats;
     @Autowired MergeThreads mergeThreads;
+    @Autowired ContactIdResolver resolver;
 
     Customer acme;
     Workspace brand;
@@ -404,6 +406,8 @@ class ContactIdResolverIT {
 
             assertThat(resolveIds(manager).getBody().get("queued").asInt()).isEqualTo(2);
             await(() -> d.requests("resolveIds").size() == 1);
+            // an hour on, the retry memory would allow both again: only their being pending holds them back
+            clock.advance(Duration.ofHours(1));
             // one contact waits on the device, the other in the queue: neither is queued again
             assertThat(resolveIds(manager).getBody().get("queued").asInt()).isZero();
 
@@ -453,6 +457,30 @@ class ContactIdResolverIT {
             assertThat(output.getAll()).contains("WARN").contains(older.getId()).contains(current.getId())
                     .contains("different phones");
         }
+    }
+
+    @Test
+    void heldIdPairIsMergedByTheResolver(CapturedOutput output) throws Exception {
+        // what ingest leaves when a phone message finds a contact by phone whose id another contact holds
+        Contact byPhone = contact(PHONE);
+        chat(n1, P, byPhone);
+        Contact holder = contact(null, L, P);
+        chat(n1, L, holder);
+        int before = output.getAll().length();
+        try (ResolverDevice d = device(n1, true)) {
+            d.knows(P, L);
+            resolver.resolve(brand.getId(), n1.getId(), byPhone.getId()).get(10, TimeUnit.SECONDS);
+
+            Contact one = only();
+            assertThat(one.getId()).isEqualTo(byPhone.getId());
+            assertThat(one.getPhone()).isEqualTo(PHONE);
+            // the survivor listed no id of its own, so the ids come in the other's order
+            assertThat(one.getWaIds()).containsExactly(L, P);
+            assertThat(chats.findAll()).hasSize(2).extracting(WaWebChat::getContactId).containsOnly(byPhone.getId());
+            assertThat(mergeThreads.names).hasSize(1);
+            assertThat(d.requests("resolveIds")).extracting(ResolverDevice.Request::id).containsExactly(P);
+        }
+        assertThat(output.getAll().substring(before)).doesNotContain("took it meanwhile");
     }
 
     @Test
