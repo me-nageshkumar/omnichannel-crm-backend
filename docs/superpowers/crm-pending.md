@@ -7,19 +7,15 @@ unmerged. What is below is optional or waits on a decision; decisions already ma
 **To resume:** start a session in `/Users/nagesh/Projects/WhatsAppWebJS/SCM` and say
 > Read `omnichannel-crm-backend/docs/superpowers/crm-pending.md` and `project-rules.md`, then let's do <item>.
 
-## Feature that needs the user's decisions first
+## Parked features
 
-This needs a new host feature before the CRM side means anything. Run `superpowers:brainstorming` and raise the
-questions, even though the user usually skips them.
-
-- **Lead conversion and lead channel defaults.** Reference `redlava-crm/.../leadconversion/`, `LeadChannelDefault`;
-  intake design `whatsapp/docs/superpowers/specs/2026-08-05-facebook-leads-management-design.md` (historical, read its
-  header). Our app has no lead intake; `OriginKind` already has `FACEBOOK_LEAD`, `WEBSITE_LEAD`, `CTWA_AD`, and
-  `CaptureService.findOrCreate` takes an `Origin`. Ask: which sources first? Own screen? Does conversion create a deal?
-  How is the number chosen when a brand has several?
-  Click-to-WhatsApp ad leads shipped on 2026-11-04 (spec `specs/2026-11-04-ctwa-leads-design.md`: ad context on
-  messages and chats, `CTWA_AD` origin, Automations conditions). What remains is Facebook Lead Ads and website
-  forms: a leads collection, intake, a screen, and the number choice.
+- **Facebook Lead Ads conversion.** Parked by the user on 2026-11-04: there is no Facebook (Meta) app yet, so no lead
+  intake, webhook or page connection can be built. Reference when the time comes: `redlava-crm/.../leadconversion/`,
+  `LeadChannelDefault`, and the historical intake design
+  `whatsapp/docs/superpowers/specs/2026-08-05-facebook-leads-management-design.md` (read its header). Our side already
+  has `OriginKind.FACEBOOK_LEAD` / `WEBSITE_LEAD` and `CaptureService.findOrCreate(…, Origin, …)`. Click-to-WhatsApp ad
+  leads shipped on 2026-11-04 (spec `specs/2026-11-04-ctwa-leads-design.md`) and need no Meta app. Website-form leads
+  would need the same decisions (a leads collection, intake, a screen, the number choice) and are not asked for.
 
 ## Known limits of the inbox, not tasks
 
