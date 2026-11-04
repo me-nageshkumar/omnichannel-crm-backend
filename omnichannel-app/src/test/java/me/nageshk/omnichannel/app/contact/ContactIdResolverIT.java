@@ -68,7 +68,8 @@ import tools.jackson.databind.node.ObjectNode;
  */
 @AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"omnichannel.rpc.timeout=2s", "omnichannel.contacts.resolve-on-message=true"})
+        properties = {"omnichannel.rpc.timeout=2s", "omnichannel.contacts.resolve-on-message=true",
+                "omnichannel.contacts.resolve-batch=2"})
 @Import(ContactIdResolverIT.Fixtures.class)
 @ExtendWith(OutputCaptureExtension.class)
 class ContactIdResolverIT {
@@ -410,7 +411,8 @@ class ContactIdResolverIT {
             drain();
             assertThat(d.requests("resolveIds")).extracting(ResolverDevice.Request::id)
                     .containsExactlyInAnyOrder(L, P);
-            // once done, the contacts can be queued again
+            // once done and an hour on, the contacts can be queued again
+            clock.advance(Duration.ofHours(1));
             assertThat(resolveIds(manager).getBody().get("queued").asInt()).isEqualTo(2);
         }
     }
@@ -431,6 +433,63 @@ class ContactIdResolverIT {
             drain();
             assertThat(d.requests("resolveIds")).hasSize(1);
             assertThat(only().getWaIds()).containsExactly(L);
+        }
+    }
+
+    @Test
+    void twoPhonesAreNeverAutoMerged(CapturedOutput output) throws Exception {
+        Contact older = contact("919822222222", "919822222222@c.us", L); // the person's old number
+        try (ResolverDevice d = device(n1, true)) {
+            d.knows(P, L);
+            incoming(n1, P);
+            drain();
+
+            assertThat(brandContacts()).hasSize(2);
+            assertThat(contacts.findById(older.getId()).orElseThrow().getWaIds())
+                    .containsExactly("919822222222@c.us", L);
+            Contact current = contacts.findByWorkspaceIdAndPhone(brand.getId(), PHONE).orElseThrow();
+            assertThat(current.getWaIds()).containsExactly(P);
+            assertThat(mergeThreads.names).isEmpty();
+            assertThat(output.getAll()).contains("WARN").contains(older.getId()).contains(current.getId())
+                    .contains("different phones");
+        }
+    }
+
+    @Test
+    void brandRequestRespectsTheRetryMemory() throws Exception {
+        Contact asked = contact(null, L);
+        chat(n1, L, asked);
+        Contact notAsked = contact(null, L2);
+        chat(n1, L2, notAsked);
+        try (ResolverDevice d = device(n1, true)) {
+            incoming(n1, L); // looks the contact up now
+            drain();
+
+            assertThat(resolveIds(manager).getBody().get("queued").asInt()).isEqualTo(1);
+            drain();
+            assertThat(d.requests("resolveIds")).extracting(ResolverDevice.Request::id).containsExactly(L, L2);
+        }
+    }
+
+    @Test
+    void brandRequestIsCappedPerPress() throws Exception {
+        Contact hidden = contact(null, L);
+        chat(n1, L, hidden);
+        Contact hidden2 = contact(null, L2);
+        chat(n1, L2, hidden2);
+        Contact phoneOnly = contact(PHONE, P);
+        chat(n1, P, phoneOnly);
+        try (ResolverDevice d = device(n1, true)) {
+            // at most 2 per press (resolve-batch in this test), contacts without a phone first
+            assertThat(resolveIds(manager).getBody().get("queued").asInt()).isEqualTo(2);
+            drain();
+            assertThat(d.requests("resolveIds")).extracting(ResolverDevice.Request::id)
+                    .containsExactlyInAnyOrder(L, L2);
+
+            assertThat(resolveIds(manager).getBody().get("queued").asInt()).isEqualTo(1);
+            drain();
+            assertThat(d.requests("resolveIds")).extracting(ResolverDevice.Request::id)
+                    .containsExactlyInAnyOrder(L, L2, P);
         }
     }
 

@@ -263,22 +263,32 @@ the same request. Status shown per number: `DISABLED` (with `disabledBecause` NU
 A brand's people, in `contacts` (one per brand and WhatsApp person; everything is scoped by
 `workspaceId`, another brand's ids answer 404). Packages `*.contact` in each module.
 
-- **Model:** `waId` (`…@c.us` or `…@lid`), `phone` (digits, country code first, or none for a hidden
-  number), `name` (the WhatsApp display name until a person edits it: `nameEdited`), `labels` (ids),
-  `attributes` (attribute id to text, at most 500 characters), `source` (`CHAT`, `IMPORT`, `MANUAL`),
-  `lastMessageAt`. Labels (name, colour, description) and attributes (name, description) are per-brand
-  lists in `contactLabels` / `contactAttributes`; names are unique per brand ignoring case; deleting
-  one removes it from every contact. Notes in `contactNotes`, saved filters in `contactFilters`.
-- **Identity:** within a brand no two contacts share a `phone` or a `waId` (partial unique indexes, so
-  any number of contacts may have neither). A `@c.us` chat finds the contact by phone (linking an
-  imported contact to its chat) else by `waId`, else creates it. A `@lid` chat finds by `waId`; if the
-  message carries the person's phone (`senderPn`, `_data.senderPn` or `author` ending `@c.us`) it is
-  filled in unless another contact of the brand has it. Contacts are never merged.
+- **Model:** `waIds` (every WhatsApp id the person was seen under, `…@c.us` or `…@lid`, in the order
+  learnt), `phone` (digits, country code first, or none for a hidden number), `name` (the WhatsApp
+  display name until a person edits it: `nameEdited`), `labels` (ids), `attributes` (attribute id to
+  text, at most 500 characters), `source` (`CHAT`, `IMPORT`, `MANUAL`), `lastMessageAt`. Labels (name,
+  colour, description) and attributes (name, description) are per-brand lists in `contactLabels` /
+  `contactAttributes`; names are unique per brand ignoring case; deleting one removes it from every
+  contact. Notes in `contactNotes`, saved filters in `contactFilters`.
+- **Identity:** within a brand a phone belongs to one contact and so does each WhatsApp id (partial
+  unique indexes on `phone` and `waIds`, so any number of contacts may have neither). A `@c.us` chat
+  finds the contact by phone (linking an imported contact to its chat; the id is added to it unless
+  another contact already holds it) else by `waIds`, else creates it. A `@lid` chat finds by `waIds`; if
+  an incoming message carries the person's phone (`senderPn`, `_data.senderPn` or `author` ending
+  `@c.us`; never read from our own messages, where it is the business's number) the lid joins the
+  contact of that phone, or the phone is filled in unless another contact of the brand has it.
 - **One person, two ids:** a person seen under a phone id (`@c.us`) and a hidden id (`@lid`) is one contact
-  holding both in `waIds`. "Resolve hidden numbers" on the contacts page
-  (`POST .../contacts/resolve-ids`, answers `202 {queued}`) asks WhatsApp Web for the other id and merges
-  duplicates; a stalled merge is retried by it. The chat header names the person's other chats on the number
-  (`otherChats` on the chat view).
+  holding both in `waIds`. Duplicates are merged (ids, labels and missing details join the survivor, the
+  one with a phone else the older; chats, notes, campaign recipients and the CRM records that do not
+  clash follow) by the console-send fold (WhatsApp answers a send to a phone under a lid) or by the resolver: after an incoming
+  message whose contact lacks a phone or a lid, the number's device is asked for the other id
+  (`resolveIds`, read-only) at most once per contact per `omnichannel.contacts.resolve-retry` (1h) and
+  once per `resolve-pace` (300ms) per device; `omnichannel.contacts.resolve-on-message` (default true)
+  switches this off. Two contacts holding different phones are never merged automatically (logged).
+  "Resolve hidden numbers" on the contacts page (`POST .../contacts/resolve-ids`, `contact:edit`, answers
+  `202 {queued}`) queues up to `resolve-batch` (500) such contacts per press, those without a phone first,
+  skipping any tried within the retry, and retries every stalled merge. The chat header names the
+  person's other chats on the number (`otherChats` on the chat view).
 - **From chats:** `ChatContactListener` handles `message` and `message_create`. Groups, broadcasts,
   status and newsletters are ignored. Only incoming messages set the name (`notifyName`,
   `_data.notifyName`, `pushname`); `lastMessageAt` only moves forward; replays change nothing; a failure

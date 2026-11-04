@@ -14,13 +14,17 @@ public interface ContactRepository extends MongoRepository<Contact, String> {
 
     Optional<Contact> findByWorkspaceIdAndWaIdsContaining(String workspaceId, String waId);
 
+    /** The brand's contacts without a phone, other than those being merged away. The caller closes the stream. */
+    @Query("{ 'workspaceId': ?0, 'mergingInto': { $exists: false }, 'phone': null }")
+    Stream<Contact> streamPhonelessByWorkspaceId(String workspaceId);
+
     /**
-     * The brand's contacts that lack a phone or a hidden {@code @lid} id, other than those being merged away. The
-     * caller closes the stream.
+     * The brand's contacts with a phone but no hidden {@code @lid} id, other than those being merged away. The caller
+     * closes the stream.
      */
-    @Query("{ 'workspaceId': ?0, 'mergingInto': { $exists: false },"
-            + " $or: [ { 'phone': null }, { 'waIds': { $not: { $regex: '@lid$' } } } ] }")
-    Stream<Contact> streamUnresolvedByWorkspaceId(String workspaceId);
+    @Query("{ 'workspaceId': ?0, 'mergingInto': { $exists: false }, 'phone': { $type: 'string' },"
+            + " 'waIds': { $not: { $regex: '@lid$' } } }")
+    Stream<Contact> streamLidlessByWorkspaceId(String workspaceId);
 
     /** The brand's contacts a merge left half done: each names its survivor in {@code mergingInto}. */
     @Query("{ 'workspaceId': ?0, 'mergingInto': { $exists: true } }")

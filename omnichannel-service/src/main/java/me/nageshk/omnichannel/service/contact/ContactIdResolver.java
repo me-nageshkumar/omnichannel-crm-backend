@@ -71,6 +71,7 @@ public class ContactIdResolver {
     private final Executor executor;
     private final Duration retry;
     private final Duration pace;
+    private final int batch;
 
     /** When each contact (by id) was last looked up, whatever came of it. */
     private final ConcurrentHashMap<String, Instant> lastAttempt = new ConcurrentHashMap<>();
@@ -95,6 +96,7 @@ public class ContactIdResolver {
         this.executor = executor;
         this.retry = props.contacts().resolveRetry();
         this.pace = props.contacts().resolvePace();
+        this.batch = props.contacts().resolveBatch();
     }
 
     /**
@@ -158,9 +160,10 @@ public class ContactIdResolver {
     }
 
     /**
-     * Queues every contact of the brand that lacks a phone or a hidden id and chats on a number whose device is ready
-     * now (on one such number), and finishes every merge left half done ({@code mergingInto} set). A contact already
-     * pending is skipped. Returns how many were queued.
+     * Queues up to {@code resolveBatch} contacts of the brand that lack a phone (first) or a hidden id, chat on a
+     * number whose device is ready now (on one such number) and were not tried within {@code resolveRetry}; and
+     * finishes every merge left half done ({@code mergingInto} set), outside that cap. A contact already pending is
+     * skipped. Returns how many were queued.
      */
     public int queueBrand(String workspaceId) {
         int queued = 0;
@@ -173,14 +176,35 @@ public class ContactIdResolver {
         }
         Map<String, String> readyNumberOf = readyNumberByContact(workspaceId);
         if (readyNumberOf.isEmpty()) return queued;
-        try (Stream<Contact> unresolved = contacts.streamUnresolvedByWorkspaceId(workspaceId)) {
-            for (Contact c : (Iterable<Contact>) unresolved::iterator) {
-                String phoneNumberId = readyNumberOf.get(c.getId());
-                if (phoneNumberId == null || askWith(c) == null) continue;
-                if (queueLookUp(workspaceId, phoneNumberId, c.getId()) != null) queued++;
+        int lookUps = 0;
+        try (Stream<Contact> phoneless = contacts.streamPhonelessByWorkspaceId(workspaceId)) {
+            lookUps = queueLookUps(workspaceId, phoneless, readyNumberOf, lookUps);
+        }
+        if (lookUps < batch) {
+            try (Stream<Contact> lidless = contacts.streamLidlessByWorkspaceId(workspaceId)) {
+                lookUps = queueLookUps(workspaceId, lidless, readyNumberOf, lookUps);
             }
         }
+        return queued + lookUps;
+    }
+
+    /** Queues lookups from {@code candidates} until {@code resolveBatch} are queued; returns the new count. */
+    private int queueLookUps(String workspaceId, Stream<Contact> candidates, Map<String, String> readyNumberOf,
+            int queued) {
+        Instant now = clock.instant();
+        for (Contact c : (Iterable<Contact>) candidates::iterator) {
+            if (queued >= batch) break;
+            String phoneNumberId = readyNumberOf.get(c.getId());
+            if (phoneNumberId == null || askWith(c) == null || !due(c.getId(), now)) continue;
+            if (queueLookUp(workspaceId, phoneNumberId, c.getId()) != null) queued++;
+        }
         return queued;
+    }
+
+    /** Whether the contact was not tried within {@code resolveRetry} (nothing is recorded). */
+    private boolean due(String contactId, Instant now) {
+        Instant last = lastAttempt.get(contactId);
+        return last == null || !now.isBefore(last.plus(retry));
     }
 
     /** Whether the contact lacks a phone or a hidden id (a contact being merged away is neither). */
@@ -266,8 +290,9 @@ public class ContactIdResolver {
 
     /**
      * The one place that decides what an answered id does to the contact: on it already, nothing; held by another
-     * contact (its phone or one of its ids), the two are merged and the survivor goes on; stashed by a merge under
-     * way, left to that merge; held by nobody, added (with the phone, for a phone id, when the contact has none).
+     * contact (its phone or one of its ids), the two are merged and the survivor goes on, unless both hold different
+     * phones (logged and left: never merged automatically); stashed by a merge under way, left to that merge; held
+     * by nobody, added (with the phone, for a phone id, when the contact has none).
      */
     private void apply(String workspaceId, String contactId, List<String> ids) {
         String current = contactId;
@@ -276,7 +301,11 @@ public class ContactIdResolver {
             if (c == null || c.getMergingInto() != null) return; // merged away meanwhile
             if (c.getWaIds().contains(id)) continue;
             Contact holder = holderOf(workspaceId, id);
-            if (holder != null && !holder.getId().equals(c.getId())) {
+            if (holder != null && !holder.getId().equals(c.getId()) && differentPhones(c, holder)) {
+                // a number change, or two people: merging would drop one phone into a deleted contact's stash
+                log.warn("contacts {} and {} in {} both answer to {} but hold different phones; not merged",
+                        c.getId(), holder.getId(), workspaceId, id);
+            } else if (holder != null && !holder.getId().equals(c.getId())) {
                 String survivorId = ContactMergeService.survivorOf(c, holder);
                 String otherId = survivorId.equals(c.getId()) ? holder.getId() : c.getId();
                 if (!merge(workspaceId, survivorId, otherId)) return;
@@ -285,6 +314,10 @@ public class ContactIdResolver {
                 if (!add(workspaceId, current, id)) return;
             }
         }
+    }
+
+    private static boolean differentPhones(Contact a, Contact b) {
+        return a.getPhone() != null && b.getPhone() != null && !a.getPhone().equals(b.getPhone());
     }
 
     /** The live contact the id belongs to: for a phone id the contact of that phone, else the one listing it. */

@@ -73,3 +73,5 @@ omnichannel:
     # device is asked at most once per pace
     resolve-retry: 1h
     resolve-pace: 300ms
+    # at most this many contacts are queued by one "Resolve hidden numbers" request (those without a phone first)
+    resolve-batch: 500

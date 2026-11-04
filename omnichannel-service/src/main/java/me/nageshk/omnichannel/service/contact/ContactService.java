@@ -261,6 +261,14 @@ public class ContactService {
         return contacts.save(byPhone);
     }
 
+    /** Whether a contact other than {@code contactId} lists the id, or stashed it while being merged. */
+    private boolean heldByAnother(String workspaceId, String waId, String contactId) {
+        Contact live = contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, waId).orElse(null);
+        if (live != null) return !live.getId().equals(contactId);
+        return mongo.exists(new Query(Criteria.where("workspaceId").is(workspaceId).and("mergingInto").exists(true)
+                .and("mergingWaIds").is(waId).and("_id").ne(contactId)), Contact.class);
+    }
+
     /** Appends the WhatsApp id unless the contact holds it already; true when it was added. */
     static boolean addWaId(Contact c, String waId) {
         if (c.getWaIds().contains(waId)) return false;
@@ -288,8 +296,12 @@ public class ContactService {
             c.setSource(ContactSource.CHAT);
             changed = true;
         }
-        // a new contact, a lid joining the phone's contact, or a phone id the contact found by phone lacked
-        if (addWaId(c, remote)) changed = true;
+        // a new contact, a lid joining the phone's contact, or a phone id the contact found by phone lacked; that
+        // last one only when no other contact holds the id (the resolver decides about such a pair), so the unique
+        // index never rejects an ordinary message
+        boolean heldElsewhere = !lid && c.getId() != null && phone.equals(c.getPhone())
+                && !c.getWaIds().contains(remote) && heldByAnother(workspaceId, remote, c.getId());
+        if (!heldElsewhere && addWaId(c, remote)) changed = true;
         if (c.getPhone() == null && phone != null
                 && contacts.findByWorkspaceIdAndPhone(workspaceId, phone).isEmpty()) {
             c.setPhone(phone);

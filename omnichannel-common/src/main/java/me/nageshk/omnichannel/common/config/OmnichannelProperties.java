@@ -58,9 +58,11 @@ public record OmnichannelProperties(
 
     /**
      * Resolving a contact's other WhatsApp id through its number's device: at most one attempt per contact per
-     * {@code resolveRetry}, at most one device call per {@code resolvePace} per device.
+     * {@code resolveRetry}, at most one device call per {@code resolvePace} per device, and at most
+     * {@code resolveBatch} contacts queued by one "Resolve hidden numbers" request.
      */
     public record Contacts(
             @DefaultValue("1h") Duration resolveRetry,
-            @DefaultValue("300ms") Duration resolvePace) {}
+            @DefaultValue("300ms") Duration resolvePace,
+            @DefaultValue("500") int resolveBatch) {}
 }

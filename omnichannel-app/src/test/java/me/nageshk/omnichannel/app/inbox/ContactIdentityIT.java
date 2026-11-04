@@ -179,4 +179,30 @@ class ContactIdentityIT {
         assertThat(stored.getWaIds()).containsExactly(LID, PHONE + "@c.us");
         assertThat(stored.getPhone()).isEqualTo(PHONE);
     }
+
+    @Test
+    void heldIdIsNotAddedToThePhoneContact() {
+        Contact byPhone = contact(PHONE); // a contact added by hand or by CSV
+        Contact holder = contact(null, LID, PHONE + "@c.us");
+        create(message(PHONE + "@c.us", false, T));
+
+        assertThat(mongo.count(new Query(), WaWebMessage.class)).isEqualTo(1);
+        assertThat(onlyChat().getContactId()).isEqualTo(byPhone.getId());
+        assertThat(contacts.findById(byPhone.getId()).orElseThrow().getWaIds()).isEmpty();
+        assertThat(contacts.findById(holder.getId()).orElseThrow().getWaIds()).containsExactly(LID, PHONE + "@c.us");
+    }
+
+    @Test
+    void ownOutgoingLidMessageDoesNotJoinByPhone() {
+        Contact business = contact(PHONE, PHONE + "@c.us");
+        ObjectNode p = message(LID, true, T);
+        p.put("senderPn", PHONE + "@c.us"); // on our own message, the business's number
+        create(p);
+
+        assertThat(contacts.findById(business.getId()).orElseThrow().getWaIds()).containsExactly(PHONE + "@c.us");
+        Contact customer = contacts.findByWorkspaceIdAndWaIdsContaining(WS, LID).orElseThrow();
+        assertThat(customer.getId()).isNotEqualTo(business.getId());
+        assertThat(customer.getPhone()).isNull();
+        assertThat(onlyChat().getContactId()).isEqualTo(customer.getId());
+    }
 }
