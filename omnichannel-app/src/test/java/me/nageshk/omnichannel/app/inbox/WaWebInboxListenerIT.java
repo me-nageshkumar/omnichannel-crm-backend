@@ -969,7 +969,7 @@ class WaWebInboxListenerIT {
     }
 
     @Test
-    void lidPhoneAlreadyUsedStaysHidden() {
+    void lidPhoneAlreadyUsedJoinsThatContact() {
         Contact existing = new Contact();
         existing.setWorkspaceId(WS);
         existing.setPhone("919812345678");
@@ -980,8 +980,10 @@ class WaWebInboxListenerIT {
         p.put("senderPn", "919812345678@c.us");
         create(p);
 
-        assertThat(contacts.count()).isEqualTo(2);
-        assertThat(contacts.findByWorkspaceIdAndWaIdsContaining(WS, "123456789012345@lid").orElseThrow().getPhone()).isNull();
+        assertThat(contacts.count()).isEqualTo(1);
+        Contact joined = contacts.findByWorkspaceIdAndWaIdsContaining(WS, "123456789012345@lid").orElseThrow();
+        assertThat(joined.getId()).isEqualTo(existing.getId());
+        assertThat(joined.getPhone()).isEqualTo("919812345678");
     }
 
     @Test

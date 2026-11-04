@@ -233,8 +233,8 @@ public class ContactService {
         if (byPhone == null) return upsertFromChat(workspaceId, customerId, lid, null, phone, at);
         Contact byLid = contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, lid).orElse(null);
         if (byLid != null && !byLid.getId().equals(byPhone.getId())) {
-            if (byLid.getPhone() != null || byLid.getName() != null) return byLid;
-            contacts.delete(byLid);
+            Contact kept = mergeInto(byPhone, byLid);
+            if (kept != byPhone) return kept;
         }
         if (!byPhone.getWaIds().contains(lid)) byPhone.getWaIds().add(lid);
         Instant when = at != null ? at : clock.instant();
@@ -242,6 +242,17 @@ public class ContactService {
             byPhone.setLastMessageAt(when);
         }
         return contacts.save(byPhone);
+    }
+
+    /**
+     * Folds {@code other} into {@code survivor}. Task 3 replaces this with the merge service; until then a nameless,
+     * phoneless contact with no other id is deleted, and any other is returned unchanged with both contacts left.
+     */
+    // Task 3
+    Contact mergeInto(Contact survivor, Contact other) {
+        if (other.getPhone() != null || other.getName() != null || other.getWaIds().size() > 1) return other;
+        contacts.delete(other);
+        return survivor;
     }
 
     private Contact upsert(String workspaceId, String customerId, String remote, String senderName,
@@ -253,6 +264,13 @@ public class ContactService {
 
         Contact c = findForChat(workspaceId, remote);
         boolean changed = false;
+        if (c == null && lid && phone != null) {
+            c = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
+            if (c != null) { // the phone's contact owns this person: the lid joins it
+                c.getWaIds().add(remote);
+                changed = true;
+            }
+        }
         if (c == null) {
             c = new Contact();
             c.setWorkspaceId(workspaceId);
