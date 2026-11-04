@@ -19,6 +19,11 @@ public final class AutomationFields {
         if (d.message() != null) {
             put(v, "message.text", d.message().text());
             put(v, "message.type", d.message().type());
+            v.put("message.ad", d.message().ad() != null);
+            if (d.message().ad() != null) {
+                put(v, "message.ad.headline", d.message().ad().headline());
+                put(v, "message.ad.sourceId", d.message().ad().sourceId());
+            }
         }
         if (d.number() != null) {
             put(v, "number", d.number().id());

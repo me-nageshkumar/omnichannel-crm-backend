@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class EventSummariesTest {
 
     private static EventData message(String name, String phone, String text, String kind) {
-        return new EventData(null, new EventData.MessageData("m1", text, kind), null,
+        return new EventData(null, new EventData.MessageData("m1", text, kind, null), null,
                 new EventData.ContactData("c1", name, phone, false, false), null, null, null, null);
     }
 
@@ -46,5 +46,22 @@ class EventSummariesTest {
     void laneChangeNamesBothLanes() {
         assertThat(of(move("Proposal sent", "Won"))).isEqualTo("Big order moved from Proposal sent to Won");
         assertThat(of(move(null, "Won"))).isEqualTo("Big order moved from a removed lane to Won");
+    }
+
+    private static EventData adMessage(String headline) {
+        return new EventData(null, new EventData.MessageData("m1", "Hi", "TEXT",
+                new EventData.AdData("120", "https://fb.me/x", headline)), null,
+                new EventData.ContactData("c1", "Asha", null, false, false), null, null, null, null);
+    }
+
+    @Test
+    void adMessageNamesTheAd() {
+        assertThat(of(adMessage("Diwali sale"))).isEqualTo("Message from Asha (from ad \u201cDiwali sale\u201d): Hi");
+    }
+
+    @Test
+    void adWithoutHeadline() {
+        assertThat(of(adMessage(null))).isEqualTo("Message from Asha (from an ad): Hi");
+        assertThat(of(adMessage(" "))).isEqualTo("Message from Asha (from an ad): Hi");
     }
 }

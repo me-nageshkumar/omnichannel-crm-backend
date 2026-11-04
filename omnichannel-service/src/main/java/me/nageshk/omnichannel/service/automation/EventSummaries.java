@@ -29,7 +29,11 @@ public final class EventSummaries {
                     : d.toLane().name();
             return title + " moved from " + from + " to " + to;
         }
-        return "Message from " + who(d == null ? null : d.contact()) + ": " + what(d == null ? null : d.message());
+        EventData.AdData ad = d == null || d.message() == null ? null : d.message().ad();
+        String from = ad == null ? "" : blank(ad.headline()) ? " (from an ad)"
+                : " (from ad \u201c" + ad.headline().strip() + "\u201d)";
+        return "Message from " + who(d == null ? null : d.contact()) + from + ": "
+                + what(d == null ? null : d.message());
     }
 
     private static String who(EventData.ContactData c) {

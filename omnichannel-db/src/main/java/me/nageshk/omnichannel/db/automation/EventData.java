@@ -16,7 +16,11 @@ public record EventData(ChatData chat, MessageData message, NumberData number, C
     }
 
     /** {@code type} is the message kind. */
-    public record MessageData(String id, String text, String type) {
+    public record MessageData(String id, String text, String type, AdData ad) {
+    }
+
+    /** The click-to-WhatsApp ad a message came from. */
+    public record AdData(String sourceId, String sourceUrl, String headline) {
     }
 
     public record NumberData(String id, String number, String label) {

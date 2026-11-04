@@ -150,4 +150,13 @@ class RuleShapeValidatorTest {
         assertThat(RuleShapeValidator.check(rule(AutomationEventKind.DEAL_LANE_CHANGED, null, List.of(add))))
                 .containsEntry("actions[0].type", "Add to CRM works on incoming messages only");
     }
+
+    @Test
+    void adFieldsAcceptTheirOperators() {
+        assertThat(check(leaf("message.ad", "contains", "x"))).isNotEmpty();
+        assertThat(check(leaf("message.ad", "is", true))).isEmpty();
+        assertThat(check(leaf("message.ad.sourceId", "greater_than", 3))).isNotEmpty();
+        assertThat(check(leaf("message.ad.sourceId", "is", "120"))).isEmpty();
+        assertThat(check(leaf("message.ad.headline", "contains", "sale"))).isEmpty();
+    }
 }

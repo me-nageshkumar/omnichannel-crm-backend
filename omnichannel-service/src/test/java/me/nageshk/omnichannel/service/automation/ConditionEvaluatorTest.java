@@ -139,7 +139,7 @@ class ConditionEvaluatorTest {
     @Test
     void valuesReadEventData() {
         EventData d = new EventData(new EventData.ChatData("c1", true, null, null, null),
-                new EventData.MessageData("m1", "hi", "TEXT"), new EventData.NumberData("n1", "+91", "Main"), null,
+                new EventData.MessageData("m1", "hi", "TEXT", null), new EventData.NumberData("n1", "+91", "Main"), null,
                 null, null, null, null);
         Map<String, Object> v = AutomationFields.values(d, true);
         assertThat(v).containsEntry("chat.new", true).containsEntry("message.text", "hi")
@@ -155,5 +155,32 @@ class ConditionEvaluatorTest {
         for (String t : List.of("call_log", "revoked", "reaction", "ciphertext", "e2e_notification")) {
             assertThat(MessageKinds.kindOf(t)).isEmpty();
         }
+    }
+
+    private static EventData messageData(EventData.AdData ad) {
+        return new EventData(null, new EventData.MessageData("m1", "hi", "TEXT", ad), null, null, null, null, null,
+                null);
+    }
+
+    @Test
+    void adConditionMatchesOnlyAdMessages() {
+        Map<String, Object> ad = AutomationFields.values(
+                messageData(new EventData.AdData("120", "https://fb.me/x", "Big sale")), false);
+        Map<String, Object> plain = AutomationFields.values(messageData(null), false);
+        assertThat(matches(leaf("message.ad", "is", true), ad)).isTrue();
+        assertThat(matches(leaf("message.ad", "is", true), plain)).isFalse();
+        assertThat(matches(leaf("message.ad", "is", false), plain)).isTrue();
+    }
+
+    @Test
+    void missingHeadlineIsEmpty() {
+        Map<String, Object> ad = AutomationFields.values(
+                messageData(new EventData.AdData("120", null, "Big sale")), false);
+        Map<String, Object> plain = AutomationFields.values(messageData(null), false);
+        assertThat(matches(leaf("message.ad.headline", "is_empty", null), plain)).isTrue();
+        assertThat(matches(leaf("message.ad.headline", "is_empty", null), ad)).isFalse();
+        assertThat(matches(leaf("message.ad.headline", "contains", "sale"), ad)).isTrue();
+        assertThat(matches(leaf("message.ad.headline", "contains", "sale"), plain)).isFalse();
+        assertThat(matches(leaf("message.ad.sourceId", "is", "120"), ad)).isTrue();
     }
 }

@@ -29,7 +29,10 @@ public final class ConditionCatalog {
             "message.type", spec("message.type", FieldType.CHOICE, Set.of(IS_ONE_OF)),
             "number", spec("number", FieldType.CHOICE, CHOICE_OPS),
             "contact.inCrm", spec("contact.inCrm", FieldType.BOOLEAN, Set.of(IS)),
-            "contact.name", spec("contact.name", FieldType.TEXT, TEXT_OPS));
+            "contact.name", spec("contact.name", FieldType.TEXT, TEXT_OPS),
+            "message.ad", spec("message.ad", FieldType.BOOLEAN, Set.of(IS)),
+            "message.ad.headline", spec("message.ad.headline", FieldType.TEXT, TEXT_OPS),
+            "message.ad.sourceId", spec("message.ad.sourceId", FieldType.TEXT, TEXT_OPS));
 
     private static final Map<String, FieldSpec> LANE = Map.of(
             "pipeline", spec("pipeline", FieldType.CHOICE, CHOICE_OPS),
