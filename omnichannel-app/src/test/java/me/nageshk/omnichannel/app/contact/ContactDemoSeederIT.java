@@ -74,7 +74,7 @@ class ContactDemoSeederIT {
         assertThat(all).hasSize(40);
         assertThat(all).allMatch(c -> c.getWorkspaceId().equals(brand.getId()));
         assertThat(all.stream().filter(c -> c.getPhone() == null)).hasSize(4)
-                .allMatch(c -> c.getWaId().matches("9000000000000\\d\\d@lid"));
+                .allMatch(c -> c.getWaIds().get(0).matches("9000000000000\\d\\d@lid"));
         assertThat(all.stream().filter(c -> c.getPhone() != null))
                 .allMatch(c -> c.getPhone().matches("91900000\\d{4}"));
         assertThat(all).extracting(Contact::getSource).contains(ContactSource.CHAT, ContactSource.IMPORT, ContactSource.MANUAL);

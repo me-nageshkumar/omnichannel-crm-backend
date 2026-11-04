@@ -97,7 +97,7 @@ class HistoryImportServiceIT {
         c.setCustomerId(acme.getId());
         c.setName("C " + phone);
         c.setPhone(phone);
-        c.setWaId(waId);
+        if (waId != null) c.getWaIds().add(waId);
         c.setSource(ContactSource.CHAT);
         return contacts.save(c);
     }

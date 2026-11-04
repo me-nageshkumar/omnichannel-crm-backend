@@ -873,7 +873,7 @@ class WaWebInboxListenerIT {
 
         Contact c = contacts.findByWorkspaceIdAndPhone(WS, "919812345678").orElseThrow();
         assertThat(c.getName()).isEqualTo("Asha Rao");
-        assertThat(c.getWaId()).isEqualTo("919812345678@c.us");
+        assertThat(c.getWaIds()).containsExactly("919812345678@c.us");
         assertThat(c.getSource()).isEqualTo(ContactSource.CHAT);
         assertThat(c.getCustomerId()).isEqualTo(CUSTOMER);
         assertThat(c.isNameEdited()).isFalse();
@@ -937,7 +937,7 @@ class WaWebInboxListenerIT {
         p.put("notifyName", "Hidden Hari");
         create(p);
 
-        Contact c = contacts.findByWorkspaceIdAndWaId(WS, "123456789012345@lid").orElseThrow();
+        Contact c = contacts.findByWorkspaceIdAndWaIdsContaining(WS, "123456789012345@lid").orElseThrow();
         assertThat(c.getPhone()).isNull();
         assertThat(c.getName()).isEqualTo("Hidden Hari");
         assertThat(c.getSource()).isEqualTo(ContactSource.CHAT);
@@ -949,7 +949,7 @@ class WaWebInboxListenerIT {
         ObjectNode p = message("123456789012345@lid", false, T);
         p.put("senderPn", "919812345678@c.us");
         create(p);
-        Contact c = contacts.findByWorkspaceIdAndWaId(WS, "123456789012345@lid").orElseThrow();
+        Contact c = contacts.findByWorkspaceIdAndWaIdsContaining(WS, "123456789012345@lid").orElseThrow();
         assertThat(c.getPhone()).isEqualTo("919812345678");
         WaWebChat chat = onlyChat();
         assertThat(chat.getRemoteId()).isEqualTo("123456789012345@lid");
@@ -958,13 +958,13 @@ class WaWebInboxListenerIT {
         ObjectNode q = message("222222222222222@lid", false, T);
         q.putObject("_data").put("senderPn", "919812345600@c.us");
         create(q);
-        assertThat(contacts.findByWorkspaceIdAndWaId(WS, "222222222222222@lid").orElseThrow().getPhone())
+        assertThat(contacts.findByWorkspaceIdAndWaIdsContaining(WS, "222222222222222@lid").orElseThrow().getPhone())
                 .isEqualTo("919812345600");
 
         ObjectNode r = message("333333333333333@lid", false, T);
         r.put("author", "919812345611@c.us");
         create(r);
-        assertThat(contacts.findByWorkspaceIdAndWaId(WS, "333333333333333@lid").orElseThrow().getPhone())
+        assertThat(contacts.findByWorkspaceIdAndWaIdsContaining(WS, "333333333333333@lid").orElseThrow().getPhone())
                 .isEqualTo("919812345611");
     }
 
@@ -981,7 +981,7 @@ class WaWebInboxListenerIT {
         create(p);
 
         assertThat(contacts.count()).isEqualTo(2);
-        assertThat(contacts.findByWorkspaceIdAndWaId(WS, "123456789012345@lid").orElseThrow().getPhone()).isNull();
+        assertThat(contacts.findByWorkspaceIdAndWaIdsContaining(WS, "123456789012345@lid").orElseThrow().getPhone()).isNull();
     }
 
     @Test
@@ -999,7 +999,7 @@ class WaWebInboxListenerIT {
 
         assertThat(contacts.count()).isEqualTo(1);
         Contact c = contacts.findById(imported.getId()).orElseThrow();
-        assertThat(c.getWaId()).isEqualTo("919812345678@c.us");
+        assertThat(c.getWaIds()).containsExactly("919812345678@c.us");
         assertThat(c.getSource()).isEqualTo(ContactSource.IMPORT);
         assertThat(c.getLastMessageAt()).isEqualTo(Instant.ofEpochSecond(T));
         assertThat(onlyChat().getContactId()).isEqualTo(imported.getId());

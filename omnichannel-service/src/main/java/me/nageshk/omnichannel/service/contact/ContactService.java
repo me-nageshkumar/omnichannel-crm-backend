@@ -218,7 +218,7 @@ public class ContactService {
         if (!remote.endsWith("@lid") && at > 0) {
             c = contacts.findByWorkspaceIdAndPhone(workspaceId, remote.substring(0, at)).orElse(null);
         }
-        return c != null ? c : contacts.findByWorkspaceIdAndWaId(workspaceId, remote).orElse(null);
+        return c != null ? c : contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, remote).orElse(null);
     }
 
     /**
@@ -231,12 +231,12 @@ public class ContactService {
     public Contact linkLidToPhone(String workspaceId, String customerId, String lid, String phone, Instant at) {
         Contact byPhone = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
         if (byPhone == null) return upsertFromChat(workspaceId, customerId, lid, null, phone, at);
-        Contact byLid = contacts.findByWorkspaceIdAndWaId(workspaceId, lid).orElse(null);
+        Contact byLid = contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, lid).orElse(null);
         if (byLid != null && !byLid.getId().equals(byPhone.getId())) {
             if (byLid.getPhone() != null || byLid.getName() != null) return byLid;
             contacts.delete(byLid);
         }
-        byPhone.setWaId(lid);
+        if (!byPhone.getWaIds().contains(lid)) byPhone.getWaIds().add(lid);
         Instant when = at != null ? at : clock.instant();
         if (byPhone.getLastMessageAt() == null || when.isAfter(byPhone.getLastMessageAt())) {
             byPhone.setLastMessageAt(when);
@@ -260,8 +260,8 @@ public class ContactService {
             c.setSource(ContactSource.CHAT);
             changed = true;
         }
-        if (c.getWaId() == null) {
-            c.setWaId(remote);
+        if (c.getWaIds().isEmpty()) {
+            c.getWaIds().add(remote);
             changed = true;
         }
         if (c.getPhone() == null && phone != null

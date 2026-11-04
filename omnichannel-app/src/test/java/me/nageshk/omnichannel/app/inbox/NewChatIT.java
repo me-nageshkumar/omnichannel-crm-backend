@@ -241,7 +241,7 @@ class NewChatIT extends InboxApiTestBase {
         assertThat(chat.getLastMessage().text()).isEqualTo("hello");
         Contact contact = contacts.findById(chat.getContactId()).orElseThrow();
         assertThat(contact.getPhone()).isEqualTo("919811111111");
-        assertThat(contact.getWaId()).isEqualTo("919811111111@c.us");
+        assertThat(contact.getWaIds()).containsExactly("919811111111@c.us");
         assertThat(actions.count()).isZero();
     }
 
@@ -315,7 +315,7 @@ class NewChatIT extends InboxApiTestBase {
         assertThat(contacts.count()).isEqualTo(1);
         Contact contact = contacts.findById(chat.getContactId()).orElseThrow();
         assertThat(contact.getPhone()).isEqualTo("919811111111");
-        assertThat(contact.getWaId()).isEqualTo(lid);
+        assertThat(contact.getWaIds()).containsExactly(lid);
         if (known != null) {
             assertThat(contact.getId()).isEqualTo(known.getId());
             assertThat(contact.getName()).isEqualTo(known.getName());
@@ -612,7 +612,7 @@ class NewChatIT extends InboxApiTestBase {
         assertThat(contacts.count()).isEqualTo(1);
         Contact contact = contacts.findById(chat.getContactId()).orElseThrow();
         assertThat(contact.getPhone()).isEqualTo("919811111111");
-        assertThat(contact.getWaId()).isEqualTo(LID);
+        assertThat(contact.getWaIds()).containsExactly(LID);
         if (known != null) {
             assertThat(contact.getId()).isEqualTo(known.getId());
             assertThat(contact.getName()).isEqualTo(known.getName());
@@ -668,7 +668,7 @@ class NewChatIT extends InboxApiTestBase {
         Contact c = new Contact();
         c.setWorkspaceId(brand.getId());
         c.setCustomerId(acme.getId());
-        c.setWaId(LID);
+        c.getWaIds().add(LID);
         c.setSource(me.nageshk.omnichannel.db.contact.ContactSource.CHAT);
         Contact hidden = contacts.save(c);
         WaWebChat chat = chat(number, brand, hidden, 1);

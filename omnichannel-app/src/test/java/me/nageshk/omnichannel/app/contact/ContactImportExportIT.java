@@ -221,7 +221,7 @@ class ContactImportExportIT extends ContactApiTestBase {
         contacts.save(a);
         Contact hidden = new Contact();
         hidden.setWorkspaceId(brandA.getId());
-        hidden.setWaId("111@lid");
+        hidden.getWaIds().add("111@lid");
         hidden.setSource(ContactSource.CHAT);
         contacts.save(hidden);
         Contact other = contact(brandB, "Other brand", "919800000009");

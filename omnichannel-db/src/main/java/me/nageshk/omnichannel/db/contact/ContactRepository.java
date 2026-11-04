@@ -10,5 +10,5 @@ public interface ContactRepository extends MongoRepository<Contact, String> {
 
     Optional<Contact> findByWorkspaceIdAndPhone(String workspaceId, String phone);
 
-    Optional<Contact> findByWorkspaceIdAndWaId(String workspaceId, String waId);
+    Optional<Contact> findByWorkspaceIdAndWaIdsContaining(String workspaceId, String waId);
 }

@@ -19,6 +19,7 @@ class ContactIndexesIT {
 
     @Autowired ContactRepository contacts;
     @Autowired TestUsers testUsers;
+    @Autowired org.springframework.data.mongodb.core.MongoTemplate mongo;
 
     @BeforeEach
     void setUp() {
@@ -35,9 +36,26 @@ class ContactIndexesIT {
         c.setWorkspaceId(workspaceId);
         c.setCustomerId("cust");
         c.setPhone(phone);
-        c.setWaId(waId);
+        if (waId != null) c.getWaIds().add(waId);
         c.setSource(ContactSource.MANUAL);
         return c;
+    }
+
+    @Test
+    void indexesAreNamedForWaIds() {
+        assertThat(mongo.indexOps(Contact.class).getIndexInfo())
+                .extracting(org.springframework.data.mongodb.core.index.IndexInfo::getName)
+                .contains("ws_waIds", "ws_phone").doesNotContain("ws_waId");
+    }
+
+    @Test
+    void secondIdOnOneContactIsFoundAndUnique() {
+        Contact c = contact("w1", null, "111111111111111@lid");
+        c.getWaIds().add("919812345678@c.us");
+        contacts.save(c);
+        assertThat(contacts.findByWorkspaceIdAndWaIdsContaining("w1", "919812345678@c.us")).isPresent();
+        assertThatThrownBy(() -> contacts.save(contact("w1", null, "919812345678@c.us")))
+                .isInstanceOf(DuplicateKeyException.class);
     }
 
     @Test

@@ -8,12 +8,12 @@ import me.nageshk.omnichannel.db.contact.ContactSource;
 import me.nageshk.omnichannel.db.contact.DoNotContact;
 
 /** API view of a contact: label ids and attribute values keyed by attribute id. */
-public record ContactView(String id, String name, String phone, String waId, boolean numberHidden, List<String> labels,
+public record ContactView(String id, String name, String phone, List<String> waIds, boolean numberHidden, List<String> labels,
         Map<String, String> attributes, ContactSource source, Instant lastMessageAt, Instant creationTime,
         Instant lastUpdateTime, DoNotContact doNotContact) {
 
     public static ContactView of(Contact c) {
-        return new ContactView(c.getId(), c.getName(), c.getPhone(), c.getWaId(), c.getPhone() == null,
+        return new ContactView(c.getId(), c.getName(), c.getPhone(), List.copyOf(c.getWaIds()), c.getPhone() == null,
                 c.getLabels().stream().sorted().toList(), Map.copyOf(c.getAttributes()), c.getSource(),
                 c.getLastMessageAt(), c.getCreationTime(), c.getLastUpdateTime(), c.getDoNotContact());
     }

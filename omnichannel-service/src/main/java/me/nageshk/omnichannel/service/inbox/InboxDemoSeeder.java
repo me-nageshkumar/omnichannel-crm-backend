@@ -256,7 +256,7 @@ public class InboxDemoSeeder implements ApplicationRunner {
         chat.setCustomerId(customer.getId());
         chat.setWorkspaceId(brand.getId());
         chat.setPhoneNumberId(number.getId());
-        chat.setRemoteId(contact.getPhone() != null ? contact.getPhone() + "@c.us" : contact.getWaId());
+        chat.setRemoteId(contact.getPhone() != null ? contact.getPhone() + "@c.us" : contact.getWaIds().get(0));
         chat.setContactId(contact.getId());
         chat.setStatus(script.closed() ? ChatStatus.CLOSED : ChatStatus.OPEN);
         if (script.assignee() != null) chat.setAssignedUserId(staff.get(script.assignee()).getId());

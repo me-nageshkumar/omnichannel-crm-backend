@@ -88,14 +88,14 @@ public class HistoryImportService {
             String phone = Phones.normalise(raw);
             if (!Phones.isValid(phone)) throw new ValidationException("phones", Phones.MESSAGE);
             addPhone(phone, phones, remoteIds, requestedPhones);
-            contacts.findByWorkspaceIdAndPhone(workspaceId, phone).map(Contact::getWaId)
-                    .ifPresent(w -> remoteIds.add(remoteId(w)));
+            contacts.findByWorkspaceIdAndPhone(workspaceId, phone).map(Contact::getWaIds)
+                    .ifPresent(ws -> ws.forEach(w -> remoteIds.add(remoteId(w))));
         }
         for (String id : scope.contactIds() == null ? List.<String>of() : scope.contactIds()) {
             Contact c = contacts.findByIdAndWorkspaceId(id, workspaceId)
                     .orElseThrow(() -> new ValidationException("contactIds", "unknown contact"));
             if (c.getPhone() != null) addPhone(c.getPhone(), phones, remoteIds, requestedPhones);
-            if (c.getWaId() != null) remoteIds.add(remoteId(c.getWaId()));
+            c.getWaIds().forEach(w -> remoteIds.add(remoteId(w)));
         }
         if (remoteIds.isEmpty()) throw new ValidationException("scope", "choose at least one contact");
         if (remoteIds.size() > MAX_CHATS) throw new ValidationException("scope", "at most 500 chats per import");
