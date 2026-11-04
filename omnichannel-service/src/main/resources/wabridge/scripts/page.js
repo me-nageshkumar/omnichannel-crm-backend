@@ -25,9 +25,9 @@
     mod
   ));
 
-  // ../whatsapp-web.js/src/util/Injected/Utils.js
+  // ../../../whatsapp-web.js/src/util/Injected/Utils.js
   var require_Utils = __commonJS({
-    "../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
+    "../../../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
       "use strict";
       exports.LoadUtils = () => {
         window.WWebJS = {};
@@ -1263,9 +1263,9 @@
     }
   });
 
-  // ../whatsapp-web.js/src/util/Constants.js
+  // ../../../whatsapp-web.js/src/util/Constants.js
   var require_Constants = __commonJS({
-    "../whatsapp-web.js/src/util/Constants.js"(exports) {
+    "../../../whatsapp-web.js/src/util/Constants.js"(exports) {
       "use strict";
       exports.WhatsWebURL = "https://web.whatsapp.com/";
       exports.DefaultOptions = {
@@ -1690,6 +1690,40 @@
       }
       return { phone: result.wid._serialized, lid };
     });
+    methods.set("resolveIds", async ({ id } = {}) => {
+      if (typeof window.WWebJS === "undefined") {
+        throw codedError(
+          ErrorCodes.WHATSAPP_NOT_READY,
+          "WWebJS helpers are not loaded yet"
+        );
+      }
+      const isLid = typeof id === "string" && id.endsWith("@lid");
+      if (typeof id !== "string" || !(isLid || id.endsWith("@c.us")) || id === "@lid" || id === "@c.us") {
+        throw codedError(
+          ErrorCodes.PAGE_ERROR,
+          "id must be a non-empty string ending in @c.us or @lid"
+        );
+      }
+      const wid = window.require("WAWebWidFactory").createWid(id);
+      const contact = window.require("WAWebApiContact");
+      const lookup = () => {
+        try {
+          const other2 = isLid ? contact.getPhoneNumber(wid) : contact.getCurrentLid(wid);
+          return other2?._serialized ?? null;
+        } catch {
+          return null;
+        }
+      };
+      let other = lookup();
+      if (other === null) {
+        try {
+          const result = await window.require("WAWebQueryExistsJob").queryWidExists(wid);
+          if (result?.wid) other = lookup();
+        } catch {
+        }
+      }
+      return isLid ? { phone: other, lid: id } : { phone: id, lid: other };
+    });
     methods.set("downloadMedia", async ({ messageId } = {}) => {
       if (typeof window.WWebJS === "undefined") {
         throw codedError(
@@ -1931,7 +1965,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "cfddb2976471" : "dev";
+  var BUILD = true ? "26ca6daffdca" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
