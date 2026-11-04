@@ -18,7 +18,8 @@ public record ChatView(
         Instant lastMessageAt,
         LastMessage lastMessage,
         Instant creationTime,
-        Ref lastAgent) {
+        Ref lastAgent,
+        AdClickView adClick) {
 
     /** {@code numberHidden} is true when the contact has no phone number (WhatsApp privacy ids). */
     public record Contact(String id, String name, String phone, boolean numberHidden) {

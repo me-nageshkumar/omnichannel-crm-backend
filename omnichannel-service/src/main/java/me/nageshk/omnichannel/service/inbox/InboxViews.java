@@ -57,7 +57,7 @@ public class InboxViews {
                 loc == null ? null : new MessageView.Location(loc.latitude(), loc.longitude(), loc.description()),
                 m.getTimestamp(), m.getStatus(), m.getStatusTimes(),
                 sentBy(m), m.getTemplateId(), m.getPollOptions(), m.getPollVotes(), m.getCall(),
-                m.getBusinessTag());
+                m.getBusinessTag(), AdClickView.of(m.getAdClick()));
     }
 
     public ActionView action(WaWebChatAction a) {
@@ -76,7 +76,7 @@ public class InboxViews {
                 c.getStatus(), user, team, c.getUnreadCount(), c.getLastMessageAt(),
                 last == null ? null
                         : new ChatView.LastMessage(last.direction(), last.type(), last.text(), last.status()),
-                c.getCreationTime(), lastAgent);
+                c.getCreationTime(), lastAgent, AdClickView.of(c.getAdClick()));
     }
 
     private static ChatView.Ref ref(String id, String name) {
