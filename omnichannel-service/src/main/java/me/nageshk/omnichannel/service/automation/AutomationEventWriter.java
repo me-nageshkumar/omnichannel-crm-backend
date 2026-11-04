@@ -63,7 +63,15 @@ public class AutomationEventWriter {
         if (!gate.wants(chat.getWorkspaceId(), AutomationEventKind.MESSAGE_RECEIVED, chat.getContactId(), phone)) return;
         String id = "m-" + message.getId();
         if (history.existsById(id)) return;
-        boolean isNew = !messages.existsByChatIdAndDirectionAndTypeInAndIdNot(chat.getId(), MessageDirection.IN,
+        // new means new for the person on this number: all their chats count, not only this one
+        java.util.List<String> chatIds = chat.getContactId() == null ? java.util.List.of(chat.getId())
+                : chats.findAllByPhoneNumberIdAndContactId(chat.getPhoneNumberId(), chat.getContactId()).stream()
+                        .map(WaWebChat::getId).toList();
+        if (!chatIds.contains(chat.getId())) {
+            chatIds = new java.util.ArrayList<>(chatIds);
+            chatIds.add(chat.getId());
+        }
+        boolean isNew = !messages.existsByChatIdInAndDirectionAndTypeInAndIdNot(chatIds, MessageDirection.IN,
                 MessageKinds.REAL_TYPES, message.getId());
         PhoneNumber number = numbers.findById(chat.getPhoneNumberId()).orElse(null);
         EventData data = new EventData(

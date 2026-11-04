@@ -16,6 +16,9 @@ public interface WaWebMessageRepository extends MongoRepository<WaWebMessage, St
     Optional<WaWebMessage> findFirstByChatIdAndDirectionOrderByTimestampDesc(String chatId,
             MessageDirection direction);
 
+    boolean existsByChatIdInAndDirectionAndTypeInAndIdNot(Collection<String> chatIds, MessageDirection direction,
+            Collection<String> types, String id);
+
     boolean existsByChatIdAndDirectionAndTypeInAndIdNot(String chatId, MessageDirection direction,
             Collection<String> types, String id);
 
