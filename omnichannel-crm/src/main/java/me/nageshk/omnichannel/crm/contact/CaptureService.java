@@ -85,7 +85,8 @@ public class CaptureService {
         PlatformContact contact = contactDirectory.find(ctx.workspaceId(), chat.contactId())
                 .orElseThrow(() -> new NotFoundException("Contact not found"));
         PlatformNumber channel = numberOf(ctx, chat.phoneNumberId());
-        Origin origin = new Origin(OriginKind.INBOUND_CHAT, channel.id(), chat.id(), chat.lastInboundAt(), ctx.userId());
+        Origin origin = new Origin(AdOrigin.kindOf(chat.ad()), channel.id(), chat.id(), chat.lastInboundAt(), ctx.userId(),
+                AdOrigin.of(chat.ad()));
         return findOrCreate(ctx, contact, channel, origin, pipelineId, req.dealTitle());
     }
 
@@ -101,7 +102,7 @@ public class CaptureService {
         String name = ((first == null ? "" : first) + " " + (last == null ? "" : last)).trim();
         PlatformContact contact = contactDirectory.ensure(ctx.workspaceId(), ctx.customerId(), req.phone(),
                 name.isEmpty() ? null : name);
-        Origin origin = new Origin(OriginKind.MANUAL, channel.id(), null, null, ctx.userId());
+        Origin origin = new Origin(OriginKind.MANUAL, channel.id(), null, null, ctx.userId(), null);
         return findOrCreate(ctx, contact, channel, origin, pipelineId, req.dealTitle(), first, last);
     }
 
@@ -120,7 +121,7 @@ public class CaptureService {
         PlatformNumber channel = workedNumber(ctx, req.channelAccountId());
         PlatformContact contact = contactDirectory.find(ctx.workspaceId(), req.contactId())
                 .orElseThrow(() -> new NotFoundException("Contact not found"));
-        Origin origin = new Origin(OriginKind.MANUAL, channel.id(), null, null, ctx.userId());
+        Origin origin = new Origin(OriginKind.MANUAL, channel.id(), null, null, ctx.userId(), null);
         Placed placed = placed(ctx, contact, channel, origin, null, null, ctx.userId());
         return new AddContactResult(contactService.view(ctx, placed.contact()), placed.created());
     }

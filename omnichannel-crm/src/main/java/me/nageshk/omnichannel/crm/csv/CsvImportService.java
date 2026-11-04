@@ -205,7 +205,7 @@ public class CsvImportService {
         } catch (ValidationException e) {
             throw new ValidationException("WhatsApp number", e.fields().getOrDefault("phone", "is not valid"));
         }
-        Origin origin = new Origin(OriginKind.IMPORT, channel.id(), null, null, ctx.userId());
+        Origin origin = new Origin(OriginKind.IMPORT, channel.id(), null, null, ctx.userId(), null);
         CaptureResult result = capture.findOrCreate(ctx, pc, channel, origin, pipelineId, null, first, last);
         CrmContactView v = result.contact();
         boolean created = result.createdContact();

@@ -63,6 +63,32 @@ class CaptureApiIT extends CrmTestBase {
     }
 
     @Test
+    void captureFromAdRecordsTheAdOrigin() throws Exception {
+        WaWebChat chat = chat(contact("Alice", "919811111111"), number, agent, null);
+        chat.setAdClick(new me.nageshk.omnichannel.db.inbox.AdClick("120001", "https://fb.me/ad1", "FB", "Summer sale",
+                "Big", "FB_Ads", "click-1", java.time.Instant.now(), null));
+        chats.save(chat);
+        assignPipelines(agent, sales);
+        JsonNode origin = json(send(post(crm() + "/contacts/capture"), agentToken, capture(chat, sales))
+                .andExpect(status().isOk())).get("contact").get("origin");
+        assertThat(origin.get("kind").asText()).isEqualTo("CTWA_AD");
+        assertThat(origin.get("ad").get("sourceId").asText()).isEqualTo("120001");
+        assertThat(origin.get("ad").get("sourceUrl").asText()).isEqualTo("https://fb.me/ad1");
+        assertThat(origin.get("ad").get("headline").asText()).isEqualTo("Summer sale");
+        assertThat(origin.get("ad").has("clickId")).isFalse();
+    }
+
+    @Test
+    void plainCaptureStaysInboundChat() throws Exception {
+        WaWebChat chat = chat(contact("Alice", "919811111111"), number, agent, null);
+        assignPipelines(agent, sales);
+        JsonNode origin = json(send(post(crm() + "/contacts/capture"), agentToken, capture(chat, sales))
+                .andExpect(status().isOk())).get("contact").get("origin");
+        assertThat(origin.get("kind").asText()).isEqualTo("INBOUND_CHAT");
+        assertThat(origin.get("ad") == null || origin.get("ad").isNull()).isTrue();
+    }
+
+    @Test
     void agentCapturesChatAssignedToTheirTeam() throws Exception {
         WaWebChat chat = chat(contact("Alice", "919811111111"), number, null, support);
         assignPipelines(agent, sales);

@@ -2,7 +2,9 @@ package me.nageshk.omnichannel.app.crm;
 
 import java.util.Optional;
 import me.nageshk.omnichannel.crm.platform.ChatDirectory;
+import me.nageshk.omnichannel.crm.platform.PlatformAdClick;
 import me.nageshk.omnichannel.crm.platform.PlatformChat;
+import me.nageshk.omnichannel.db.inbox.AdClick;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import org.springframework.stereotype.Component;
@@ -28,6 +30,11 @@ class ChatDirectoryAdapter implements ChatDirectory {
 
     private static PlatformChat of(WaWebChat c) {
         return new PlatformChat(c.getId(), c.getWorkspaceId(), c.getPhoneNumberId(), c.getContactId(),
-                c.getAssignedUserId(), c.getAssignedTeamId(), c.getLastInboundAt());
+                c.getAssignedUserId(), c.getAssignedTeamId(), c.getLastInboundAt(), ad(c.getAdClick()));
+    }
+
+    private static PlatformAdClick ad(AdClick a) {
+        return a == null ? null
+                : new PlatformAdClick(a.sourceId(), a.sourceUrl(), a.sourceApp(), a.headline(), a.clickId());
     }
 }

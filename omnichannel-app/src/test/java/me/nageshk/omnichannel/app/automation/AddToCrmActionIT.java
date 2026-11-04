@@ -118,6 +118,23 @@ class AddToCrmActionIT extends AutomationTestBase {
     }
 
     @Test
+    void adChatGetsCtwaOrigin() {
+        WaWebChat chat = asha();
+        chat.setAdClick(new me.nageshk.omnichannel.db.inbox.AdClick("120001", "https://fb.me/ad1", "FB", "Summer sale",
+                "Big", "FB_Ads", "click-1", java.time.Instant.now(), null));
+        chats.save(chat);
+
+        ActionResult r = handler.run(ctx(chat), add(null, null, null));
+
+        assertThat(r.outcome()).isEqualTo(StepOutcome.DONE);
+        assertThat(contacts()).singleElement().satisfies(c -> {
+            assertThat(c.getOrigin().kind()).isEqualTo(OriginKind.CTWA_AD);
+            assertThat(c.getOrigin().ad().sourceId()).isEqualTo("120001");
+            assertThat(c.getOrigin().chatId()).isEqualTo(chat.getId());
+        });
+    }
+
+    @Test
     void chosenPipelineAndLane() {
         WaWebChat chat = asha();
         CrmPipeline leads = pipeline("Leads", true, "New", "Qualified");

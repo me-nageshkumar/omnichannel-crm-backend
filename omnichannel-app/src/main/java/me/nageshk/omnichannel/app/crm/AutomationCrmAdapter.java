@@ -5,15 +5,18 @@ import java.util.List;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.access.CrmContext;
+import me.nageshk.omnichannel.crm.contact.AdOrigin;
 import me.nageshk.omnichannel.crm.contact.CaptureService;
 import me.nageshk.omnichannel.crm.contact.Origin;
-import me.nageshk.omnichannel.crm.contact.OriginKind;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureResult;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipelineService;
 import me.nageshk.omnichannel.crm.pipeline.CrmStage;
 import me.nageshk.omnichannel.crm.pipeline.StageType;
+import me.nageshk.omnichannel.crm.platform.ChatDirectory;
 import me.nageshk.omnichannel.crm.platform.ContactDirectory;
+import me.nageshk.omnichannel.crm.platform.PlatformAdClick;
+import me.nageshk.omnichannel.crm.platform.PlatformChat;
 import me.nageshk.omnichannel.crm.platform.PlatformContact;
 import me.nageshk.omnichannel.crm.platform.PlatformNumber;
 import me.nageshk.omnichannel.crm.settings.CrmSettings;
@@ -30,14 +33,17 @@ class AutomationCrmAdapter implements AutomationCrm {
     private final CrmAccess access;
     private final CrmPipelineService pipelines;
     private final ContactDirectory contacts;
+    private final ChatDirectory chats;
 
     AutomationCrmAdapter(CrmSettingsService settings, CaptureService capture, CrmAccess access,
-            CrmPipelineService pipelines, ContactDirectory contacts) {
+            CrmPipelineService pipelines, ContactDirectory contacts,
+            ChatDirectory chats) {
         this.settings = settings;
         this.capture = capture;
         this.access = access;
         this.pipelines = pipelines;
         this.contacts = contacts;
+        this.chats = chats;
     }
 
     @Override
@@ -66,7 +72,9 @@ class AutomationCrmAdapter implements AutomationCrm {
                 .orElseThrow(() -> new AutomationActionFailed("The contact no longer exists"));
         PlatformNumber number = ctx.numbers().stream().filter(n -> n.id().equals(r.phoneNumberId())).findFirst()
                 .orElseThrow(() -> new AutomationActionFailed("The number no longer exists"));
-        Origin origin = new Origin(OriginKind.INBOUND_CHAT, number.id(), r.chatId(), r.firstMessageAt(), "system");
+        PlatformAdClick ad = chats.find(r.workspaceId(), r.chatId()).map(PlatformChat::ad).orElse(null);
+        Origin origin = new Origin(AdOrigin.kindOf(ad), number.id(), r.chatId(), r.firstMessageAt(), "system",
+                AdOrigin.of(ad));
         CaptureResult res;
         try {
             res = capture.captureForAutomation(ctx, contact, number, origin, pipelineId, r.stageId(), r.dealTitle(),
