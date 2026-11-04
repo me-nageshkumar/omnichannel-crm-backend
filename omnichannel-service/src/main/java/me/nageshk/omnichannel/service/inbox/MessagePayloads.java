@@ -193,7 +193,7 @@ final class MessagePayloads {
     }
 
     private static String adText(JsonNode n) {
-        if (!n.isTextual()) return null;
+        if (!n.isTextual() && !n.isNumber()) return null;
         String s = n.asString().trim();
         if (s.isEmpty()) return null;
         return s.length() > AD_TEXT_MAX ? s.substring(0, AD_TEXT_MAX) : s;

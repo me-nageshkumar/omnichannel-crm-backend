@@ -127,7 +127,38 @@ class AdClickIngestIT {
         ingest.importMessage(new ImportContext(CUSTOMER, WS, "pn-1"), p);
 
         assertThat(onlyChat().getAdClick().sourceId()).isEqualTo("1200");
+        assertThat(onlyChat().getAdClick().at()).isEqualTo(Instant.ofEpochSecond(T));
         assertThat(messages.findAll().getFirst().getAdClick().headline()).isEqualTo("Diwali sale");
+    }
+
+    private ObjectNode historyAd(String waId, long t, String sourceId) {
+        ObjectNode p = withAd(message(REMOTE, false, t), sourceId, "Ad " + sourceId);
+        p.putObject("id").put("_serialized", "false_" + REMOTE + "_" + waId).put("remote", REMOTE).put("fromMe", false);
+        p.put("t", t);
+        return p;
+    }
+
+    @Test
+    void importOfAnOlderAdReplacesTheChatAd() {
+        ImportContext ctx = new ImportContext(CUSTOMER, WS, "pn-1");
+        ingest.importMessage(ctx, historyAd("NEW", T + 600, "2000"));
+        assertThat(onlyChat().getAdClick().sourceId()).isEqualTo("2000");
+
+        ingest.importMessage(ctx, historyAd("OLD", T, "1000"));
+
+        assertThat(onlyChat().getAdClick().sourceId()).isEqualTo("1000");
+        assertThat(onlyChat().getAdClick().at()).isEqualTo(Instant.ofEpochSecond(T));
+        assertThat(message("OLD").getAdClick().at()).isEqualTo(Instant.ofEpochSecond(T));
+        assertThat(message("NEW").getAdClick().at()).isEqualTo(Instant.ofEpochSecond(T + 600));
+    }
+
+    @Test
+    void laterAdNeverReplacesTheFirst() {
+        create(withAd(message(REMOTE, false, T), "1200", "First"));
+        create(withAd(message(REMOTE, false, T + 600), "9999", "Later"));
+
+        assertThat(onlyChat().getAdClick().sourceId()).isEqualTo("1200");
+        assertThat(onlyChat().getAdClick().at()).isEqualTo(Instant.ofEpochSecond(T));
     }
 
     @Test

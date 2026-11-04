@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 import me.nageshk.omnichannel.common.events.IngestionFailedException;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.inbox.ActionType;
+import me.nageshk.omnichannel.db.inbox.AdClick;
 import me.nageshk.omnichannel.db.inbox.ChatStatus;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageSource;
@@ -354,11 +355,12 @@ public class InboxIngestService {
         return reopened;
     }
 
-    /** Gives the chat the ad of an inbound message when it has none yet; the first ad stays. */
+    /** Gives the chat the ad of an inbound message when it has none or this one is earlier; the earliest ad stays. */
     private static void keepFirstAd(WaWebChat chat, WaWebMessage message) {
-        if (chat.getAdClick() == null && message.getDirection() == MessageDirection.IN) {
-            chat.setAdClick(message.getAdClick());
-        }
+        AdClick ad = message.getAdClick();
+        if (ad == null || message.getDirection() != MessageDirection.IN) return;
+        AdClick kept = chat.getAdClick();
+        if (kept == null || kept.at() == null || ad.at().isBefore(kept.at())) chat.setAdClick(ad);
     }
 
     /** Makes the message the chat's preview unless a newer one already is. */

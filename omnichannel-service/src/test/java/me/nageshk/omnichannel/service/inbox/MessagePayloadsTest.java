@@ -332,4 +332,13 @@ class MessagePayloadsTest {
         p.putObject("ctwaContext").put("sourceId", "1").put("a.b", "x").put("$c", "y").put("ok", "z");
         assertThat(MessagePayloads.adClick(p, AD_AT).raw()).containsOnlyKeys("ok", "sourceId");
     }
+
+    @Test
+    void numericSourceIdCounts() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceId", 1200L).put("conversionSource", 7);
+        AdClick ad = MessagePayloads.adClick(p, AD_AT);
+        assertThat(ad.sourceId()).isEqualTo("1200");
+        assertThat(ad.conversionSource()).isEqualTo("7");
+    }
 }
