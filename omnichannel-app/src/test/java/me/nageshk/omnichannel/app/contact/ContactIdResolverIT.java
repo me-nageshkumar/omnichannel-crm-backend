@@ -392,6 +392,49 @@ class ContactIdResolverIT {
     }
 
     @Test
+    void secondBrandRequestQueuesNothingWhileTheFirstIsPending() throws Exception {
+        Contact hidden = contact(null, L);
+        chat(n1, L, hidden);
+        Contact phoneOnly = contact(PHONE, P);
+        chat(n1, P, phoneOnly);
+        try (ResolverDevice d = device(n1, true)) {
+            CountDownLatch held = new CountDownLatch(1);
+            d.gate = held;
+
+            assertThat(resolveIds(manager).getBody().get("queued").asInt()).isEqualTo(2);
+            await(() -> d.requests("resolveIds").size() == 1);
+            // one contact waits on the device, the other in the queue: neither is queued again
+            assertThat(resolveIds(manager).getBody().get("queued").asInt()).isZero();
+
+            held.countDown();
+            drain();
+            assertThat(d.requests("resolveIds")).extracting(ResolverDevice.Request::id)
+                    .containsExactlyInAnyOrder(L, P);
+            // once done, the contacts can be queued again
+            assertThat(resolveIds(manager).getBody().get("queued").asInt()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void aPendingContactIsNotQueuedTwiceByMessages() throws Exception {
+        try (ResolverDevice d = device(n1, true)) {
+            CountDownLatch held = new CountDownLatch(1);
+            d.gate = held;
+
+            incoming(n1, L);
+            await(() -> d.requests("resolveIds").size() == 1);
+            // the hour has passed, but the first lookup is still waiting on the device
+            clock.advance(Duration.ofHours(1));
+            incoming(n1, L);
+
+            held.countDown();
+            drain();
+            assertThat(d.requests("resolveIds")).hasSize(1);
+            assertThat(only().getWaIds()).containsExactly(L);
+        }
+    }
+
+    @Test
     void endpointRetriesAStalledMerge() throws Exception {
         Contact survivor = contact(PHONE, P);
         Contact stalled = contact(null);

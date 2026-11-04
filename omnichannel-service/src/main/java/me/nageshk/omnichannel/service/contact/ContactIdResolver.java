@@ -46,7 +46,8 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>Everything runs on {@code contactResolverExecutor} (one thread), never on the ingest thread: at most one attempt
  * per contact per {@code resolveRetry} after a message, at most one device call per {@code resolvePace} per device.
- * Both are kept in memory and start over on a restart.
+ * A contact is queued once at a time: while its work waits or runs, asking again queues nothing. All of this is kept
+ * in memory and starts over on a restart.
  */
 @Service
 public class ContactIdResolver {
@@ -75,6 +76,8 @@ public class ContactIdResolver {
     private final ConcurrentHashMap<String, Instant> lastAttempt = new ConcurrentHashMap<>();
     /** When each number's device was last asked ({@link System#nanoTime()}); only the resolver thread uses it. */
     private final Map<String, Long> lastCall = new ConcurrentHashMap<>();
+    /** Contacts (by id) whose work is queued or running; another request for them queues nothing. */
+    private final Set<String> pending = ConcurrentHashMap.newKeySet();
     /** Numbers whose extension does not know {@code resolveIds} yet, already logged once. */
     private final Set<String> outdated = ConcurrentHashMap.newKeySet();
 
@@ -96,13 +99,47 @@ public class ContactIdResolver {
 
     /**
      * Queues a lookup of the contact's other id on the number's device, whenever it was last tried, and counts it as
-     * an attempt. The future completes when the lookup is done; a missing device, a failed call or an answer that
-     * changes nothing complete it normally (each failure is logged once, here).
+     * an attempt; when the contact is already queued or being looked up, queues nothing and completes at once. The
+     * future completes when the lookup is done; a missing device, a failed call or an answer that changes nothing
+     * complete it normally (each failure is logged once, here).
      */
     public CompletableFuture<Void> resolve(String workspaceId, String phoneNumberId, String contactId) {
+        CompletableFuture<Void> queued = queueLookUp(workspaceId, phoneNumberId, contactId);
+        return queued != null ? queued : CompletableFuture.completedFuture(null);
+    }
+
+    /** The lookup's future, or null when the contact was already pending. */
+    private CompletableFuture<Void> queueLookUp(String workspaceId, String phoneNumberId, String contactId) {
+        if (!pending.add(contactId)) return null;
         lastAttempt.put(contactId, clock.instant());
-        return CompletableFuture.runAsync(() -> guarded(contactId, () -> lookUp(workspaceId, phoneNumberId, contactId)),
-                executor);
+        try {
+            return CompletableFuture.runAsync(
+                    () -> once(contactId, () -> lookUp(workspaceId, phoneNumberId, contactId)), executor);
+        } catch (RuntimeException e) {
+            pending.remove(contactId);
+            throw e;
+        }
+    }
+
+    /** Runs {@code work} on the resolver thread unless the contact is already pending; false when it was. */
+    private boolean queue(String contactId, Runnable work) {
+        if (!pending.add(contactId)) return false;
+        try {
+            executor.execute(() -> once(contactId, work));
+            return true;
+        } catch (RuntimeException e) {
+            pending.remove(contactId);
+            throw e;
+        }
+    }
+
+    /** The contact's queued work: guarded, and no longer pending once it is done. */
+    private void once(String contactId, Runnable work) {
+        try {
+            guarded(contactId, work);
+        } finally {
+            pending.remove(contactId);
+        }
     }
 
     /**
@@ -111,19 +148,19 @@ public class ContactIdResolver {
      * Otherwise nothing happens and a later message tries again.
      */
     void afterMessage(String workspaceId, String phoneNumberId, String contactId) {
-        executor.execute(() -> guarded(contactId, () -> {
+        queue(contactId, () -> {
             Contact c = contacts.findByIdAndWorkspaceId(contactId, workspaceId).orElse(null);
             if (c == null || !unresolved(c) || !devices.isReady(workspaceId, phoneNumberId) || !claim(contactId)) {
                 return;
             }
             lookUp(workspaceId, phoneNumberId, contactId);
-        }));
+        });
     }
 
     /**
      * Queues every contact of the brand that lacks a phone or a hidden id and chats on a number whose device is ready
-     * now (on one such number), and finishes every merge left half done ({@code mergingInto} set). Returns how many
-     * were queued.
+     * now (on one such number), and finishes every merge left half done ({@code mergingInto} set). A contact already
+     * pending is skipped. Returns how many were queued.
      */
     public int queueBrand(String workspaceId) {
         int queued = 0;
@@ -131,8 +168,7 @@ public class ContactIdResolver {
             for (Contact m : (Iterable<Contact>) merging::iterator) {
                 String survivorId = m.getMergingInto();
                 String otherId = m.getId();
-                executor.execute(() -> guarded(otherId, () -> merge(workspaceId, survivorId, otherId)));
-                queued++;
+                if (queue(otherId, () -> merge(workspaceId, survivorId, otherId))) queued++;
             }
         }
         Map<String, String> readyNumberOf = readyNumberByContact(workspaceId);
@@ -141,8 +177,7 @@ public class ContactIdResolver {
             for (Contact c : (Iterable<Contact>) unresolved::iterator) {
                 String phoneNumberId = readyNumberOf.get(c.getId());
                 if (phoneNumberId == null || askWith(c) == null) continue;
-                resolve(workspaceId, phoneNumberId, c.getId());
-                queued++;
+                if (queueLookUp(workspaceId, phoneNumberId, c.getId()) != null) queued++;
             }
         }
         return queued;

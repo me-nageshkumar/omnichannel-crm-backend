@@ -67,6 +67,8 @@ omnichannel:
     send-timeout: 60s
     retry-delay: 2m
   contacts:
+    # a stored inbound message looks up its contact's other WhatsApp id (tests switch it off)
+    resolve-on-message: true
     # a contact missing its phone or its hidden id is looked up on its number's device at most once per retry, and a
     # device is asked at most once per pace
     resolve-retry: 1h
