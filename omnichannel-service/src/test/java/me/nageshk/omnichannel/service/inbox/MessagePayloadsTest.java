@@ -325,4 +325,11 @@ class MessagePayloadsTest {
         assertThat(ad.sourceId()).isEqualTo("1");
         assertThat(ad.description()).hasSize(500);
     }
+
+    @Test
+    void rawDropsKeysMongoRefuses() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceId", "1").put("a.b", "x").put("$c", "y").put("ok", "z");
+        assertThat(MessagePayloads.adClick(p, AD_AT).raw()).containsOnlyKeys("ok", "sourceId");
+    }
 }

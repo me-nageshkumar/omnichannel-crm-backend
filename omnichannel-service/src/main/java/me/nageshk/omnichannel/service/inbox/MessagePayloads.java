@@ -178,8 +178,18 @@ final class MessagePayloads {
     private static Map<String, Object> adRaw(ObjectNode ctx) {
         ObjectNode kept = ctx.deepCopy();
         kept.remove(AD_RAW_DROPPED);
+        dropMongoKeys(kept);
         if (JSON.writeValueAsBytes(kept).length > AD_RAW_MAX_BYTES) return null;
         return JSON.convertValue(kept, new tools.jackson.core.type.TypeReference<Map<String, Object>>() { });
+    }
+
+    /** Removes, at any depth, the keys Mongo refuses to store: those with a dot or a leading dollar sign. */
+    private static void dropMongoKeys(JsonNode node) {
+        if (node.isObject()) {
+            ((ObjectNode) node).propertyNames().stream().filter(k -> k.contains(".") || k.startsWith("$")).toList()
+                    .forEach(((ObjectNode) node)::remove);
+        }
+        node.forEach(MessagePayloads::dropMongoKeys);
     }
 
     private static String adText(JsonNode n) {
