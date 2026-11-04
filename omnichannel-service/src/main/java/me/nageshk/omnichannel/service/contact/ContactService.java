@@ -39,11 +39,14 @@ public class ContactService {
     private final ContactAttributeRepository attributes;
     private final ContactNoteRepository notes;
     private final MongoTemplate mongo;
+    private final ContactMergeService merges;
     private final Clock clock;
 
     public ContactService(ContactRepository contacts, ContactLabelRepository labels,
-            ContactAttributeRepository attributes, ContactNoteRepository notes, MongoTemplate mongo, Clock clock) {
+            ContactAttributeRepository attributes, ContactNoteRepository notes, MongoTemplate mongo,
+            ContactMergeService merges, Clock clock) {
         this.contacts = contacts;
+        this.merges = merges;
         this.labels = labels;
         this.attributes = attributes;
         this.notes = notes;
@@ -223,20 +226,18 @@ public class ContactService {
 
     /**
      * The console wrote to {@code phone} and WhatsApp answered under {@code lid}: both ids are one person. The
-     * contact of that phone takes the lid; a nameless hidden contact that ingest just created for the lid (its
-     * {@code message_create} can beat the reply) is folded away, as the lid is unique. A lid contact with a name or
-     * a phone of its own is someone we already know and is kept as the chat's contact instead. Without a contact for
-     * the phone this is {@link #upsertFromChat} with the phone filled in.
+     * contact of that phone takes the lid; a contact that already holds the lid (a hidden contact ingest created,
+     * its {@code message_create} can beat the reply, or one known for longer) is merged into it. Without a contact
+     * for the phone this is {@link #upsertFromChat} with the phone filled in.
      */
     public Contact linkLidToPhone(String workspaceId, String customerId, String lid, String phone, Instant at) {
         Contact byPhone = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
         if (byPhone == null) return upsertFromChat(workspaceId, customerId, lid, null, phone, at);
         Contact byLid = contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, lid).orElse(null);
         if (byLid != null && !byLid.getId().equals(byPhone.getId())) {
-            Contact kept = mergeInto(byPhone, byLid);
-            if (kept != byPhone) return kept;
+            byPhone = merges.merge(workspaceId, byPhone.getId(), byLid.getId());
         }
-        if (!byPhone.getWaIds().contains(lid)) byPhone.getWaIds().add(lid);
+        addWaId(byPhone, lid);
         Instant when = at != null ? at : clock.instant();
         if (byPhone.getLastMessageAt() == null || when.isAfter(byPhone.getLastMessageAt())) {
             byPhone.setLastMessageAt(when);
@@ -244,15 +245,11 @@ public class ContactService {
         return contacts.save(byPhone);
     }
 
-    /**
-     * Folds {@code other} into {@code survivor}. Task 3 replaces this with the merge service; until then a nameless,
-     * phoneless contact with no other id is deleted, and any other is returned unchanged with both contacts left.
-     */
-    // Task 3
-    Contact mergeInto(Contact survivor, Contact other) {
-        if (other.getPhone() != null || other.getName() != null || other.getWaIds().size() > 1) return other;
-        contacts.delete(other);
-        return survivor;
+    /** Appends the WhatsApp id unless the contact holds it already; true when it was added. */
+    static boolean addWaId(Contact c, String waId) {
+        if (c.getWaIds().contains(waId)) return false;
+        c.getWaIds().add(waId);
+        return true;
     }
 
     private Contact upsert(String workspaceId, String customerId, String remote, String senderName,
@@ -264,12 +261,8 @@ public class ContactService {
 
         Contact c = findForChat(workspaceId, remote);
         boolean changed = false;
-        if (c == null && lid && phone != null) {
+        if (c == null && lid && phone != null) { // the phone's contact owns this person: the lid joins it below
             c = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
-            if (c != null) { // the phone's contact owns this person: the lid joins it
-                c.getWaIds().add(remote);
-                changed = true;
-            }
         }
         if (c == null) {
             c = new Contact();
@@ -278,10 +271,8 @@ public class ContactService {
             c.setSource(ContactSource.CHAT);
             changed = true;
         }
-        if (c.getWaIds().isEmpty()) {
-            c.getWaIds().add(remote);
-            changed = true;
-        }
+        // a new contact, a lid joining the phone's contact, or a phone id the contact found by phone lacked
+        if (addWaId(c, remote)) changed = true;
         if (c.getPhone() == null && phone != null
                 && contacts.findByWorkspaceIdAndPhone(workspaceId, phone).isEmpty()) {
             c.setPhone(phone);

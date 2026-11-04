@@ -35,6 +35,9 @@ import me.nageshk.omnichannel.crm.platform.ContactDirectory;
 import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformContact;
 import me.nageshk.omnichannel.crm.platform.PlatformPerson;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -45,6 +48,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class CrmContactService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CrmContactService.class);
 
     static final int DEFAULT_SIZE = 50;
     static final int MAX_SIZE = 200;
@@ -73,6 +78,27 @@ public class CrmContactService {
         this.companyCounters = companyCounters;
         this.activities = activities;
         this.clock = clock;
+    }
+
+    /**
+     * Two brand contacts were merged: every CRM record of {@code otherId} moves to {@code survivorId}, except one on
+     * a number where the survivor has a record already, which is left as it is (a CRM merge is its own feature) and
+     * logged. Returns the number of records moved.
+     */
+    public int repointContact(String workspaceId, String otherId, String survivorId) {
+        int moved = 0;
+        Query ofOther = new Query(Criteria.where("workspaceId").is(workspaceId).and("contactId").is(otherId));
+        for (CrmContact c : mongo.find(ofOther, CrmContact.class)) {
+            try {
+                moved += (int) mongo.updateFirst(new Query(Criteria.where("_id").is(c.getId())
+                                .and("contactId").is(otherId)), new Update().set("contactId", survivorId),
+                        CrmContact.class).getModifiedCount();
+            } catch (DuplicateKeyException e) { // unique (contactId, channel.phoneNumberId): the survivor has one
+                LOG.warn("CRM contact {} was not moved to merged contact {}: it has a CRM contact on number {}",
+                        c.getId(), survivorId, c.getChannel() == null ? null : c.getChannel().phoneNumberId());
+            }
+        }
+        return moved;
     }
 
     public CrmPage<CrmContactView> search(CrmContext ctx, ContactSearchRequest req) {

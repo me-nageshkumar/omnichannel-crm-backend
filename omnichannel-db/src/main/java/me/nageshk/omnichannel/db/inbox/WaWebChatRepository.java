@@ -17,6 +17,9 @@ public interface WaWebChatRepository extends MongoRepository<WaWebChat, String> 
     /** A contact's chat on a number, whatever remote id it lives under ({@code @c.us} or {@code @lid}). */
     Optional<WaWebChat> findFirstByPhoneNumberIdAndContactId(String phoneNumberId, String contactId);
 
+    /** Every chat of a brand contact, on any number and under any remote id. */
+    List<WaWebChat> findAllByWorkspaceIdAndContactId(String workspaceId, String contactId);
+
     Optional<WaWebChat> findByIdAndWorkspaceId(String id, String workspaceId);
 
     /** Only the {@code id} of each chat is loaded. */

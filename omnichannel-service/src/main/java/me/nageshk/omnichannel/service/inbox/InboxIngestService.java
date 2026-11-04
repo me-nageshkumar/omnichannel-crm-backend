@@ -496,7 +496,8 @@ public class InboxIngestService {
         return Optional.of(new Ingested(chat, i.message(), i.chatCreated(), i.reopened(), i.messageInserted()));
     }
 
-    static <T> T retrying(Supplier<T> action) {
+    /** Runs {@code action}, and once more when it lost a race on a unique index or a version. */
+    public static <T> T retrying(Supplier<T> action) {
         try {
             return action.get();
         } catch (DuplicateKeyException | OptimisticLockingFailureException e) {

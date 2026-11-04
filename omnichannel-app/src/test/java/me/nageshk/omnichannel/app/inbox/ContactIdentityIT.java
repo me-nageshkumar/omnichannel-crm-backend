@@ -136,4 +136,14 @@ class ContactIdentityIT {
         assertThat(contacts.findById(known.getId()).orElseThrow().getWaIds()).containsExactly(LID, PHONE + "@c.us");
         assertThat(onlyChat().getContactId()).isEqualTo(known.getId());
     }
+
+    @Test
+    void phoneMessageRecordsItsIdOnThePhoneContact() {
+        Contact known = contact(PHONE, LID);
+        create(message(PHONE + "@c.us", false, T));
+
+        assertThat(contacts.count()).isEqualTo(1);
+        assertThat(contacts.findById(known.getId()).orElseThrow().getWaIds()).containsExactly(LID, PHONE + "@c.us");
+        assertThat(onlyChat().getContactId()).isEqualTo(known.getId());
+    }
 }
