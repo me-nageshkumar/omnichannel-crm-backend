@@ -2,7 +2,7 @@
 
 The user's standing rules for this project (backend, console and extension), the commands to test, build and deploy,
 where things are, and traps already hit. Read sections 1 and 2 before any git, deploy or data work. Open work is in
-`crm-pending.md`, next to this file.
+`known-limits.md`, next to this file.
 
 ## 1. Rules the user set
 
@@ -20,7 +20,7 @@ where things are, and traps already hit. Read sections 1 and 2 before any git, d
 - A history fetch syncs with WhatsApp Web **keeping the database's state**: stored messages keep sender, source and
   text; stored chats keep status, agent, team and unread count. Only status moves up and missing details fill in.
 - "Skip the questions" is the standing choice for specs: flag your own calls in the spec. The features in
-  `crm-pending.md` that need decisions are the exception.
+  `known-limits.md` that need decisions are the exception.
 - Channel-neutral names for new things (`channelAccountId`, `ChannelKind`). Mongo collections camelCase. Files in
   GridFS, never S3. `omnichannel-crm` imports only `common`, `security.access`, `security.auth`; the host is reached
   through `crm.platform` ports with adapters in `app.crm`.
