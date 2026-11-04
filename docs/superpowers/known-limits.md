@@ -1,11 +1,18 @@
-# CRM: pending work
+# Known limits and parked work
 
-Rewritten short on 2026-11-03; the rules, commands and traps moved to `project-rules.md` next to this file. The CRM
-port and the inbox work are merged and pushed: in all three repos `main` matches GitHub and no branch is left
-unmerged. What is below is optional or waits on a decision; decisions already made live in the specs, history in git.
+Behaviour a future reader might take for a bug, and features parked by the user. Each limit needs a decision or more
+investigation before it becomes a task; decisions already made live in the specs, history in git. The rules and
+commands are in `project-rules.md` next to this file. Nothing is queued: the CRM port, the inbox work, Automations
+(spec `specs/2026-11-03-automations-design.md`) and click-to-WhatsApp ad leads (spec
+`specs/2026-11-04-ctwa-leads-design.md`) are merged and deployed.
 
-**To resume:** start a session in `/Users/nagesh/Projects/WhatsAppWebJS/SCM` and say
-> Read `omnichannel-crm-backend/docs/superpowers/crm-pending.md` and `project-rules.md`, then let's do <item>.
+## Checks still owed by the user
+
+- Automations end-to-end walk (console plan `plans/2026-11-03-automations-console.md`, Task 9): build a "Welcome (test)"
+  rule, test it on a contact the user names, publish, move back to draft.
+- Click-to-WhatsApp ad check (console plan `plans/2026-11-04-ctwa-leads-console.md`, Task 4): the user taps one of
+  their own ads from a phone they name; confirm the inbox line, the CRM origin and a draft rule "Ad is yes".
+Both need the demo-manager password typed into the session. Never message anyone the user has not named.
 
 ## Parked features
 
@@ -30,11 +37,6 @@ a decision or more investigation.
   subtype, the place to start).
 - A dated fetch leaves out chats last active over a day before its range; whether `chat.t` always covers a chat's
   newest message is unconfirmed. Pending real-number checks: spec `2026-10-31-chat-history-import-design.md`.
-
-## Automations: done
-
-Events, rules and actions (backend) are built: spec `docs/superpowers/specs/2026-11-03-automations-design.md`, plan
-`docs/superpowers/plans/2026-11-03-automations-backend.md`. Replaces the old "Deal automation events" item.
 
 ## Automations: known limits
 
