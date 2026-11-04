@@ -76,9 +76,10 @@ Text fields are trimmed and cut at 500 characters **(my call)**.
 ### 4.2 Storage
 
 - `WaWebMessage.adClick`: set on insert when §4.1 matches. Existing messages are not revisited.
-- `WaWebChat.adClick`: the **first** ad click of the chat: set when the chat's `adClick` is null and an inbound message
-  with an ad click is stored (live ingest and history import alike). Never overwritten **(my call)**: a chat is one
-  lead, and the first ad is the one that brought the person in. Later ad clicks stay on their messages.
+- `WaWebChat.adClick`: the chat's ad is the **earliest** ad click by message time **(my call)**: a chat is one lead,
+  and the first ad is the one that brought the person in. It is set when null; an inbound ad message older than the
+  stored one replaces it (live ingest, and history import, which walks newest to oldest); a later ad never replaces
+  it. Later ad clicks stay on their messages.
 - `raw` keeps the object as sent (images and `conversionData` dropped) so a wrong guess about field names can be
   corrected from the database. It is not shown anywhere and is capped at 4 KB; a larger object is stored without `raw`.
 

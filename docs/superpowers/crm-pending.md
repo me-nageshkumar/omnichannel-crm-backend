@@ -57,5 +57,6 @@ Events, rules and actions (backend) are built: spec `docs/superpowers/specs/2026
 
 ## Click-to-WhatsApp ads: known limits
 
-- The `ctwaContext` field names come from the wa-js model and are confirmed by the end-to-end check; the raw object is
-  kept on the message (`adClick.raw`) to fix a mismatch from stored data.
+- The `ctwaContext` field names come from the wa-js model and are unconfirmed until the end-to-end check, which needs the
+  user to tap one of their own ads from a named phone. If the real shape differs, fix `MessagePayloads.adClick` from
+  the stored `adClick.raw`.

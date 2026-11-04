@@ -265,5 +265,11 @@ class MessageEventIT extends AutomationTestBase {
                 me.nageshk.omnichannel.db.automation.AutomationRun.class);
         assertThat(runs).hasSize(1);
         assertThat(runs.get(0).getEventId()).isEqualTo(adEvent.getId());
+        assertThat(runs.get(0).getStatus()).isEqualTo(me.nageshk.omnichannel.db.automation.RunStatus.DONE);
+        assertThat(mongo.findAll(me.nageshk.omnichannel.crm.contact.CrmContact.class)).singleElement()
+                .satisfies(c -> {
+                    assertThat(c.getOrigin().kind()).isEqualTo(me.nageshk.omnichannel.crm.contact.OriginKind.CTWA_AD);
+                    assertThat(c.getOrigin().ad().sourceId()).isEqualTo("120330");
+                });
     }
 }
