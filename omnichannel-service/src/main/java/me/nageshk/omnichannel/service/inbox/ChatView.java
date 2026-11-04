@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.service.inbox;
 
 import java.time.Instant;
+import java.util.List;
 import me.nageshk.omnichannel.db.inbox.ChatStatus;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageStatus;
@@ -19,7 +20,8 @@ public record ChatView(
         LastMessage lastMessage,
         Instant creationTime,
         Ref lastAgent,
-        AdClickView adClick) {
+        AdClickView adClick,
+        List<OtherChat> otherChats) {
 
     /** {@code numberHidden} is true when the contact has no phone number (WhatsApp privacy ids). */
     public record Contact(String id, String name, String phone, boolean numberHidden) {
@@ -27,6 +29,10 @@ public record ChatView(
 
     /** A user or team by id and display name; the name is null when the row has since been deleted. */
     public record Ref(String id, String name) {
+    }
+
+    /** Another chat of the same person on the same number, under a different WhatsApp id. */
+    public record OtherChat(String id, String remoteId) {
     }
 
     public record LastMessage(MessageDirection direction, String type, String text, MessageStatus status) {

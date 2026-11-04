@@ -29,7 +29,8 @@ Both need the demo-manager password typed into the session. Never message anyone
 The user chose (2026-11-03) to treat these as known limits to come back to later, like the features above. Each needs
 a decision or more investigation.
 
-- The same person can be two chats (`@c.us` and `@lid`); merging them is a design question.
+- The same person can be two chats (`@c.us` and `@lid`) but is one contact; merging the threads is a possible
+  follow-on. A link to a chat the agent cannot open shows the inbox's error.
 - A console send whose model never came back is stored as `console:<id>` and again under its real id.
 - The console shows poll votes but cannot vote.
 - `interactive` business messages lose their buttons: which fields carry them is unknown.
@@ -41,7 +42,7 @@ a decision or more investigation.
 ## Automations: known limits
 
 - An event is lost if the app stops between saving a message or a move and writing its event.
-- The same person as `@c.us` and `@lid` can be "new" twice.
+- A hidden-id chat whose phone is not yet resolved can be new once more.
 - A typed test number whose first message arrives with a hidden number is never captured (use an existing contact
   with "Treat this chat as new").
 - A crash mid-rule marks an unfinished send Interrupted and runs the rest of the rule.
@@ -52,6 +53,15 @@ a decision or more investigation.
 - Message text and the contact's name and phone stay for good in `automationEventHistory` and `automationRuns`:
   removing a number or a contact leaves them.
 - One worker thread serves every brand, so a hung extension delays all brands by up to the send timeout per send.
+
+## Contacts across two ids: known limits
+
+- Resolution needs the number's device online.
+- A person whose privacy hides the phone stays a hidden-number contact only.
+- A stalled merge is retried only by "Resolve hidden numbers".
+- An automation test's target contact and a CRM record left after a conflict can point at a deleted contact
+  ("Contact deleted" is shown).
+- The hourly cap and the pending set reset on restart.
 
 ## Click-to-WhatsApp ads: known limits
 

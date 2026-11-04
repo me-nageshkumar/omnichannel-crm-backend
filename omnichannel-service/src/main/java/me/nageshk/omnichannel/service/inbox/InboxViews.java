@@ -10,6 +10,7 @@ import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatAction;
+import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.tenant.Team;
 import me.nageshk.omnichannel.db.tenant.TeamRepository;
@@ -25,6 +26,7 @@ public class InboxViews {
     private final ContactRepository contacts;
     private final UserRepository users;
     private final TeamRepository teams;
+    private final WaWebChatRepository waChats;
 
     public ChatView chat(WaWebChat chat) {
         return chats(List.of(chat)).get(0);
@@ -40,7 +42,8 @@ public class InboxViews {
         users.findAllById(userIds).forEach(u -> userNames.put(u.getId(), u.getName()));
         Map<String, String> teamNames = new HashMap<>();
         teams.findAllById(ids(chats, WaWebChat::getAssignedTeamId)).forEach(t -> teamNames.put(t.getId(), t.getName()));
-        return chats.stream().map(c -> toView(c, contactsById.get(c.getContactId()),
+        Map<String, List<WaWebChat>> siblings = siblings(chats);
+        return chats.stream().map(c -> toView(c, contactsById.get(c.getContactId()), otherChats(c, siblings),
                 ref(c.getAssignedUserId(), userNames.get(c.getAssignedUserId())),
                 ref(c.getAssignedTeamId(), teamNames.get(c.getAssignedTeamId())),
                 ref(c.getLastAgentUserId(), userNames.get(c.getLastAgentUserId())))).toList();
@@ -66,7 +69,8 @@ public class InboxViews {
                 a.getReason(), a.getReasonDetail(), ref(a.getFromTeamId(), a.getFromTeamName()));
     }
 
-    private static ChatView toView(WaWebChat c, Contact contact, ChatView.Ref user, ChatView.Ref team,
+    private static ChatView toView(WaWebChat c, Contact contact, List<ChatView.OtherChat> otherChats,
+            ChatView.Ref user, ChatView.Ref team,
             ChatView.Ref lastAgent) {
         String phone = contact == null ? null : contact.getPhone();
         WaWebChat.LastMessage last = c.getLastMessage();
@@ -76,7 +80,31 @@ public class InboxViews {
                 c.getStatus(), user, team, c.getUnreadCount(), c.getLastMessageAt(),
                 last == null ? null
                         : new ChatView.LastMessage(last.direction(), last.type(), last.text(), last.status()),
-                c.getCreationTime(), lastAgent, AdClickView.of(c.getAdClick()));
+                c.getCreationTime(), lastAgent, AdClickView.of(c.getAdClick()), otherChats);
+    }
+
+    /** One query per distinct number: the chats of the listed contacts, keyed by number and contact. */
+    private Map<String, List<WaWebChat>> siblings(List<WaWebChat> chats) {
+        Map<String, java.util.Set<String>> contactsByNumber = new HashMap<>();
+        for (WaWebChat c : chats) {
+            if (c.getContactId() != null && c.getPhoneNumberId() != null) {
+                contactsByNumber.computeIfAbsent(c.getPhoneNumberId(), k -> new java.util.HashSet<>())
+                        .add(c.getContactId());
+            }
+        }
+        Map<String, List<WaWebChat>> out = new HashMap<>();
+        contactsByNumber.forEach((number, contactIds) -> waChats
+                .findAllByPhoneNumberIdAndContactIdIn(number, contactIds)
+                .forEach(c -> out.computeIfAbsent(number + "|" + c.getContactId(), k -> new java.util.ArrayList<>())
+                        .add(c)));
+        return out;
+    }
+
+    private static List<ChatView.OtherChat> otherChats(WaWebChat c, Map<String, List<WaWebChat>> siblings) {
+        if (c.getContactId() == null) return List.of();
+        return siblings.getOrDefault(c.getPhoneNumberId() + "|" + c.getContactId(), List.of()).stream()
+                .filter(o -> !o.getId().equals(c.getId()))
+                .map(o -> new ChatView.OtherChat(o.getId(), o.getRemoteId())).toList();
     }
 
     private static ChatView.Ref ref(String id, String name) {

@@ -274,6 +274,11 @@ A brand's people, in `contacts` (one per brand and WhatsApp person; everything i
   imported contact to its chat) else by `waId`, else creates it. A `@lid` chat finds by `waId`; if the
   message carries the person's phone (`senderPn`, `_data.senderPn` or `author` ending `@c.us`) it is
   filled in unless another contact of the brand has it. Contacts are never merged.
+- **One person, two ids:** a person seen under a phone id (`@c.us`) and a hidden id (`@lid`) is one contact
+  holding both in `waIds`. "Resolve hidden numbers" on the contacts page
+  (`POST .../contacts/resolve-ids`, answers `202 {queued}`) asks WhatsApp Web for the other id and merges
+  duplicates; a stalled merge is retried by it. The chat header names the person's other chats on the number
+  (`otherChats` on the chat view).
 - **From chats:** `ChatContactListener` handles `message` and `message_create`. Groups, broadcasts,
   status and newsletters are ignored. Only incoming messages set the name (`notifyName`,
   `_data.notifyName`, `pushname`); `lastMessageAt` only moves forward; replays change nothing; a failure
