@@ -66,3 +66,8 @@ omnichannel:
     test-idle: 30m
     send-timeout: 60s
     retry-delay: 2m
+  contacts:
+    # a contact missing its phone or its hidden id is looked up on its number's device at most once per retry, and a
+    # device is asked at most once per pace
+    resolve-retry: 1h
+    resolve-pace: 300ms

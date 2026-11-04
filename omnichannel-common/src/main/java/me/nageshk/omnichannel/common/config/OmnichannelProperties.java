@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties(prefix = "omnichannel")
 public record OmnichannelProperties(
         Jwt jwt, SuperAdmin superAdmin, TwoFactor twoFactor, Ws ws, Rpc rpc, History history,
-        Automation automation) {
+        Automation automation, @DefaultValue Contacts contacts) {
 
     public record Jwt(String secret, @DefaultValue("12h") Duration ttl) {}
 
@@ -55,4 +55,12 @@ public record OmnichannelProperties(
             @DefaultValue("30m") Duration testIdle,
             @DefaultValue("60s") Duration sendTimeout,
             @DefaultValue("2m") Duration retryDelay) {}
+
+    /**
+     * Resolving a contact's other WhatsApp id through its number's device: at most one attempt per contact per
+     * {@code resolveRetry}, at most one device call per {@code resolvePace} per device.
+     */
+    public record Contacts(
+            @DefaultValue("1h") Duration resolveRetry,
+            @DefaultValue("300ms") Duration resolvePace) {}
 }

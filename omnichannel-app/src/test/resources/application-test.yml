@@ -21,6 +21,11 @@ omnichannel:
   # tests drive the automation worker themselves
   automation:
     auto-tick: false
+  # a stored message does not look up its contact's other id on the device (ContactIdResolverIT switches it on),
+  # so other tests' fake devices see only the requests they expect; the pace is short
+  contacts:
+    resolve-on-message: false
+    resolve-pace: 50ms
   crm:
     jobs:
       # tests run the CRM jobs themselves
