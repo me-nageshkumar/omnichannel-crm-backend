@@ -517,6 +517,9 @@ module; design in `docs/superpowers/specs/2026-11-03-automations-design.md`, RES
   `DRAFT` or `PUBLISHED`; a published rule cannot be edited or deleted (409 `AUTOMATION_RULE_PUBLISHED`).
   Run order is priority (largest first), then creation order. A rule can be tried on a test contact before it
   is published.
+- **Click-to-WhatsApp ads:** a message from a click-to-WhatsApp ad carries the ad context (the ad's id, link and
+  headline). Rules can use the conditions Ad (yes/no), Ad headline and Ad id, and Add to CRM then records the ad
+  as the contact's origin.
 - **Queue collections:** `automationEvents` (the queue, MongoDB with leases: tick 2 s, lease 5 min, 3 attempts,
   20 events per tick), `automationRuns` (one live run per event and rule; test runs may repeat),
   `automationEventHistory` (one record per processed event) and `automationTests`. Nothing expires: there is
