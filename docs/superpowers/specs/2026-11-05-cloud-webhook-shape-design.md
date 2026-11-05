@@ -179,6 +179,7 @@ not have:
 | `ctwa_source_app`, `ctwa_conversion_source` | message | `ctwaContext.sourceApp` and `conversionSource`, which `AdClick` stores and the console and CRM show; Meta's `referral` has no place for them |
 | `vcards` | `contacts` messages | the vCard texts, for the console's card rendering |
 | `captured_at` | message, echo, status | the extension's capture time (ms), when it had one |
+| `body` | `unsupported`, `album`, an `order` without a title | what the person wrote (the caption, else a body that is no thumbnail) when Meta's shape has no place for it; the store reads it as the row's body |
 
 Types Meta does not have keep WhatsApp Web's name as `type` and get a type-named object, following Meta's own
 convention (the object is named after the type): `poll_creation`, `poll_vote`, `call_log`, `revoked`,
@@ -429,9 +430,9 @@ table). What the converter reads, and what changed against the first draft:
 - **`ctwaContext`.** Present on one message: a business's link preview of a group invite, with `sourceUrl`,
   `title`, `description`, `thumbnail`, `thumbnailUrl`, `mediaType` (a number), `mediaUrl`, and none of `sourceId`,
   `conversionSource`, `ctwaClid`, `sourceApp`. Today's ad rule (`sourceUrl` alone suffices) would have called it an
-  ad. The converter keeps today's rule so the stored data does not change under this feature, and the question of
-  tightening it to `sourceId`/`conversionSource`/`ctwaClid` goes to the owed ad-tap check **(flagged for the user)**;
-  `media_type` is written as Meta's string (`image`/`video`) from the numeric code, best effort.
+  ad. The converter applies the rule main has since 2026-11-05: an ad needs `sourceId`, `conversionSource` or a click
+  id; a `sourceUrl`-only context is a link preview and is logged by its field names. `media_type` is written as
+  Meta's string (`image`/`video`) from the numeric code, best effort.
 - **Storage.** Message content in IndexedDB is encrypted (`msgRowOpaqueData`), so a fetch of history through the page's
   decrypted models is the only way to read old messages; nothing here changes the history import.
 

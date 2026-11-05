@@ -102,9 +102,15 @@ public final class MessageFields {
 
     /**
      * What the sender wrote: the text, a media caption, the vCards of a card message, the question of a poll, the
-     * label of a button or list reply, the body of a business message, the channel of an invite; else null.
+     * label of a button or list reply, the body of a business message, the channel of an invite; else
+     * {@code wa_web.body}, the text of a message Meta's shape has no place for; else null.
      */
     static String bodyOf(Content c) {
+        String body = metaBodyOf(c);
+        return body != null || c.waWeb() == null ? body : c.waWeb().body();
+    }
+
+    private static String metaBodyOf(Content c) {
         String type = c.type() == null ? "" : c.type();
         return switch (type) {
             case "text" -> c.text();

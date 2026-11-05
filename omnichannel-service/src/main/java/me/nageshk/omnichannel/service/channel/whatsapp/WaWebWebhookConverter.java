@@ -151,7 +151,7 @@ public final class WaWebWebhookConverter {
                 "WhatsApp Web reported the message as failed", null, null)) : null;
         long seconds = (at == null ? Instant.now() : at).getEpochSecond();
         WaWeb waWeb = new WaWeb(chatId, ack, null, null, null, null, null, null, null, null,
-                at == null ? null : at.toEpochMilli());
+                at == null ? null : at.toEpochMilli(), null);
         return new Status(messageId, status, String.valueOf(seconds), recipientDigits, lidUser, null, null, errors, null,
                 waWeb);
     }
@@ -185,7 +185,7 @@ public final class WaWebWebhookConverter {
                 "video".equals(type) ? media : null, "audio".equals(type) ? media : null,
                 "document".equals(type) ? media : null, "sticker".equals(type) ? media : null,
                 "location".equals(type) ? location(raw) : null, vcards == null ? null : VcardCards.parse(vcards),
-                waWeb(raw, chatId, rawType, type, referral, vcards, fallbackTime, ext.media()), ext);
+                waWeb(raw, chatId, rawType, type, referral, vcards, fallbackTime, ext), ext);
     }
 
     /** The one contact of the event: the person who wrote, by phone and lid, with the name WhatsApp showed. */
@@ -395,15 +395,33 @@ public final class WaWebWebhookConverter {
     // ---- wa_web
 
     private static WaWeb waWeb(JsonNode raw, String chatId, String rawType, String type, Referral referral,
-            List<String> vcards, Instant capturedAt, boolean extMedia) {
+            List<String> vcards, Instant capturedAt, WaWebExtensionTypes.Mapped ext) {
         boolean media = MEDIA_TYPES.contains(rawType);
+        boolean extMedia = ext.media();
         JsonNode ctx = raw.path("ctwaContext");
         return new WaWeb(chatId, raw.path("ack").asInt(0), rawType.equals(type) ? null : rawType,
                 media || extMedia ? fileSize(raw) : null, media || extMedia ? mediaAvailable(raw) : null,
                 text(raw.path("hsmTag")),
                 referral == null ? null : adRaw(ctx), referral == null ? null : adText(ctx.path("sourceApp")),
                 referral == null ? null : adText(ctx.path("conversionSource")), vcards,
-                capturedAt == null ? null : capturedAt.toEpochMilli());
+                capturedAt == null ? null : capturedAt.toEpochMilli(),
+                carriesNoText(type, ext) ? rawText(raw, rawType) : null);
+    }
+
+    /** True for a Meta shape with no place for what a person wrote. */
+    private static boolean carriesNoText(String type, WaWebExtensionTypes.Mapped ext) {
+        return switch (type) {
+            case "unsupported", "album" -> true;
+            case "order" -> ext.order() == null || ext.order().text() == null;
+            default -> false;
+        };
+    }
+
+    /** The caption, else a body that is no thumbnail; null when blank. */
+    private static String rawText(JsonNode raw, String rawType) {
+        String caption = text(raw.path("caption"));
+        String s = caption != null ? caption : body(raw, rawType);
+        return s == null || s.isBlank() ? null : s;
     }
 
     // ---- small readers

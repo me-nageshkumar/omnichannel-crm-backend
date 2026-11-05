@@ -209,6 +209,24 @@ class WaWebWebhookConverterTest {
         assertThat(m.context().frequentlyForwarded()).isNull();
     }
 
+    @Test
+    void textWithNoPlaceInMetasShapeGoesToWaWebBody() {
+        ObjectNode raw = mapper.createObjectNode();
+        raw.putObject("id").put("fromMe", false).put("remote", "919912345678@c.us").put("id", "P1")
+                .put("_serialized", "false_919912345678@c.us_P1");
+        raw.put("type", "product").put("t", 1793872800L).put("directPath", "/v/t62/abc")
+                .put("body", "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof".repeat(4))
+                .put("caption", "Blue kurta");
+        Message m = convertRaw(raw, CAPTURED).messages().get(0);
+        assertThat(m.type()).isEqualTo("unsupported");
+        assertThat(m.waWeb().body()).isEqualTo("Blue kurta");
+        raw.remove("caption");
+        assertThat(convertRaw(raw, CAPTURED).messages().get(0).waWeb().body()).isNull();
+        // a type Meta has a text for keeps wa_web.body empty
+        assertThat(convertRaw(raw.put("type", "chat").put("body", "hi"), CAPTURED).messages().get(0).waWeb().body())
+                .isNull();
+    }
+
     private Value convert(String name) throws IOException {
         return convertRaw(read(name + ".raw.json"), CAPTURED);
     }

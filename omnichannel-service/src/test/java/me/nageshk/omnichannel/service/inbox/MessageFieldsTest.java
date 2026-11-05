@@ -194,12 +194,20 @@ class MessageFieldsTest {
     }
 
     @Test
-    void aProductIsUnsupportedAndKeepsNoThumbnail() {
-        // not one of Meta's types: kept as unsupported under its own name, with no text (a caption is not carried)
-        MessageFields.Content c = content(raw("product").put("directPath", "/v/t62/abc").put("body", THUMBNAIL)
-                .put("caption", "Blue kurta"));
-        assertThat(MessageFields.storedType(c)).isEqualTo("product");
-        assertThat(MessageFields.bodyOf(c)).isNull();
+    void anyMediaTypeUsesTheCaptionAndDropsTheThumbnail() {
+        // not one of Meta's types: unsupported under its own name, its text carried in wa_web.body
+        ObjectNode product = raw("product").put("directPath", "/v/t62/abc").put("body", THUMBNAIL);
+        assertThat(MessageFields.storedType(content(product))).isEqualTo("product");
+        assertThat(MessageFields.bodyOf(content(product))).isNull();
+        assertThat(MessageFields.bodyOf(content(product.put("caption", "Blue kurta")))).isEqualTo("Blue kurta");
+    }
+
+    @Test
+    void aMetaTextWinsOverWaWebBody() {
+        // an order with a title has Meta's text; wa_web.body is only for a shape without one
+        ObjectNode order = raw("order").put("orderTitle", "Two shirts").put("caption", "ignored");
+        assertThat(MessageFields.bodyOf(content(order))).isEqualTo("Two shirts");
+        assertThat(convert(order).orElseThrow().waWeb().body()).isNull();
     }
 
     @Test

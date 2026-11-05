@@ -121,7 +121,7 @@ class WebhookEventJsonTest {
                                         "hello",
                                         new WaWeb(
                                                 "919912345678@c.us", 0, "chat", null, null, null, null, null,
-                                                null, null, null)))))));
+                                                null, null, null, null)))))));
         JsonNode json = mapper.valueToTree(e);
         JsonNode value = json.at("/entry/0/changes/0/value");
         assertThat(value.path("messaging_product").asString()).isEqualTo("whatsapp");
