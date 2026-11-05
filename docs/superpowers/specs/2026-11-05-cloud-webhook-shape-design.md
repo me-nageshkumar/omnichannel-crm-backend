@@ -155,7 +155,9 @@ One bridge event becomes one webhook event, Meta's wire shape and names:
   (a WhatsApp Web number has no business account). `display_phone_number` is the number's digits.
 - One bridge event may yield two changes in one entry: an echo (`field: "smb_message_echoes"`) and the status it
   already carries (`field: "messages"` with `statuses`), see §4.4. Meta sends one change per webhook; the arrays allow
-  more, and the processor handles each change on its own.
+  more. The processor handles an **entry** as a unit: a status whose `id` matches an echo in the same entry is
+  applied while the echo is stored, so the row is inserted with its status and one set of `InboxEvents` is published,
+  exactly as `storeMessage` does today. A status with no echo in its entry is processed on its own.
 - The typed model: records with Jackson's snake-case naming, `@JsonIgnoreProperties(ignoreUnknown = true)`, nulls left
   out on the wire. A real Meta body (any of the 19 300) must deserialise into it without error; the test fixtures use
   a dozen real ones (numbers replaced).
@@ -172,8 +174,10 @@ not have:
 | `ack` | message, echo | WhatsApp Web's ack integer, kept for logging and the stored `ack` column |
 | `original_type` | message, echo | the whatsapp-web.js type before mapping (`ptt`, `vcard`, `list`, …) |
 | `file_size` | media messages | bytes; Meta has no size |
+| `media_available` | media messages | true when the model carries `directPath` (today's `hasMedia` rule): the page can fetch the bytes. False for expired and view-once media, whose type object still describes them |
 | `business_tag` | message | WhatsApp's `hsmTag` (`AUTHENTICATION`, `UTILITY`, …) |
 | `ctwa_context` | message | the raw ad context minus images and conversion data, as `AdClick.raw` is kept today |
+| `ctwa_source_app`, `ctwa_conversion_source` | message | `ctwaContext.sourceApp` and `conversionSource`, which `AdClick` stores and the console and CRM show; Meta's `referral` has no place for them |
 | `vcards` | `contacts` messages | the vCard texts, for the console's card rendering |
 | `captured_at` | message, echo, status | the extension's capture time (ms), when it had one |
 
@@ -200,13 +204,14 @@ Type objects, with Meta's field names:
 | `type` | object | from the raw model |
 |---|---|---|
 | `text` | `text.body` | `body`, unless it is a media thumbnail (`MessageBodies.readable`) |
-| `image`, `video`, `sticker` | `{id, mime_type, sha256, caption, animated}` | `id` = the message id **(my call: the page downloads media by message id, so the message id is the media handle)**, `mimetype`, `filehash`, `caption`; `isGif` → `video` keeps `caption`; sticker `animated` from `isAnimated` if present |
+| `image`, `video`, `sticker` | `{id, mime_type, sha256, caption, animated}` | `id` = the message id **(my call: the page downloads media by message id, so the message id is the media handle)**, `mimetype`, `filehash`, `caption`; `isGif` → `video` keeps `caption`; sticker `animated` from `isAnimated` if present. The object is always present on a media type; whether the bytes can be fetched is `wa_web.media_available`, and the processor records `WaWebMessage.Media` only when it is true, as today. `Media.mediaId` stays the GridFS cache id and never takes the Cloud `id` |
 | `audio` | `{id, mime_type, sha256, voice}` | `voice: true` when the type was `ptt` |
 | `document` | `{id, mime_type, sha256, filename, caption}` | `filename` from the model or `_data` |
 | `location` | `{latitude, longitude, name, address}` | `location.latitude/longitude/description`, else `lat/lng/loc`, else `_data.*`; `description`'s first line → `name`, the rest → `address` |
 | `contacts` | `[{name: {formatted_name, first_name}, phones: [{phone, wa_id, type}]}]` | parsed from each vCard's `FN`, `N`, `TEL;waid=` lines (`vcard` body, `multi_vcard` `vcardList[].vcard`); the texts also go to `wa_web.vcards` |
 | `button` | `{payload, text}` | `buttons_response` / `template_button_reply`: `selectedButtonId` → `payload`, `body` → `text` |
-| `interactive` | `{type: "list_reply", list_reply: {id, title, description}}` | `list_response`: `listResponse.singleSelectReply.selectedRowId` → `id`, `body` → `title` |
+| `interactive` (a customer's reply) | `{type: "list_reply", list_reply: {id, title, description}}` | `list_response`: `listResponse.singleSelectReply.selectedRowId` → `id`, `body` → `title` |
+| `interactive` (business-authored) | `{type: "list" \| "button" \| "template" \| "flow", body: {text}, header, footer}` — Meta's own shape for an interactive message a business sends | whatsapp-web.js `interactive`, `list`, `buttons`, `hsm`, `template`, `native_flow`: `body` → `body.text`, `title`/`footer` when present; the buttons themselves are not read (known limit). A business message with a picture (16 of the demo's 28 `interactive` rows carry media) gets `header: {type: "image" \| "video" \| "document", <type>: {id, mime_type, sha256, filename}}` and `wa_web.media_available`, and the processor records `Media` from the header as it does for a media type |
 | `order` | `{catalog_id, text, product_items}` | `orderId`, `orderTitle`, `itemCount` as far as the model has them; else `unsupported` |
 | `unsupported` | `errors[]` as above | `unknown`, `ciphertext` (never forwarded anyway), and any type this table does not name |
 | `poll_creation` (ext.) | `{name, options: [{name, local_id}], allow_multiple_answers}` | `pollName`, `pollOptions`, `allowMultipleAnswers`; a fetched poll's `pollVotes` → `votes[]` in the same shape as §4.5 |
@@ -221,8 +226,12 @@ Dropped before conversion, as today: WhatsApp's own notices (`notification_templ
 acknowledged.
 
 Business-authored `interactive`, `list`, `buttons`, `hsm`, `template` messages (a bank's menu, a business's
-template) become `text` with their body **(my call)**: for the CRM they are text to read, their buttons are already
-lost today (`known-limits.md`), and in Meta's vocabulary `interactive` means a customer's reply.
+template) stay `type: "interactive"` with Meta's shape for an interactive message as a business sends it **(my
+call, changed after the builder check)**: they were going to become `text`, but a `text` from a contact starts
+automations (`MessageKinds.REAL_TYPES`, `AutomationMessageListener`) and today a bank's menu or an OTP template starts
+none. Keeping them `interactive` keeps that, keeps the stored `interactive` rows as they are (no migration, nothing
+to run twice), and a customer's list reply is `interactive` too, told apart by `interactive.type`. Neither starts an
+automation, as neither does today.
 
 ### 4.4 Our own message: `field: "smb_message_echoes"`, `value.message_echoes[]`
 
@@ -289,12 +298,14 @@ Meta has the type; WhatsApp Web's name for the extension types; nothing else cha
 | `ptt` | `audio` | the voice flag is not stored; the preview says "Voice message" for both already |
 | `vcard`, `multi_vcard` | `contacts` | the body keeps the vCard text |
 | `unknown` | `unsupported` | preview "Message to view on the phone" moves to `unsupported` |
-| `interactive` (business-authored) | `text` | §4.3; from now on a stored `interactive` is a customer's list reply |
-| `image`, `video`, `audio`, `document`, `sticker`, `location`, `poll_creation`, `call_log`, `revoked`, `biz_content_placeholder`, `newsletter_follower_invite` | unchanged | |
+| `list`, `buttons`, `hsm`, `template`, `native_flow`, `list_response` | `interactive` | §4.3; none stored in the demo database today |
+| `buttons_response`, `template_button_reply` | `button` | none stored today |
+| `image`, `video`, `audio`, `document`, `sticker`, `location`, `interactive`, `poll_creation`, `call_log`, `revoked`, `biz_content_placeholder`, `newsletter_follower_invite` | unchanged | |
 
-`MessageTypeMigration` runs once at startup from `CollectionRenames.afterSingletonsInstantiated()`, like
-`ContactIdsMigration`: `updateMany` on `waWebMessages.type` and `waWebChats.lastMessage.type`, idempotent because it
-only matches the old values. The demo database has 316 messages; the migration is instant. The code that switches on
+`MessageTypeMigration` runs at every startup from `CollectionRenames.afterSingletonsInstantiated()`, like
+`ContactIdsMigration`: `updateMany` on `waWebMessages.type` and `waWebChats.lastMessage.type`, idempotent because
+every old name in the table differs from every new name (which is why `interactive` is not renamed). The demo database
+has 316 messages; the migration is instant. The code that switches on
 types moves with it: `preview`, `MessageBodies.TEXT_TYPES`, `ChatPreviewBackfill`, `MessageKinds` (the automation kind
 of each type; the kinds `TEXT`/`AUDIO`/`CONTACT_CARD`… that rules store are unchanged, so no rule migrates),
 `InboxSendService` (an outgoing voice note is `audio`, a text is `text`), and in the console `MessageBubble`,
@@ -391,6 +402,13 @@ converter's reading, never the Cloud shape.
 
 - Inbound rows no longer carry WhatsApp's ack (§4.5). If something ever needs it, the stored webhook event has it in
   `wa_web.ack`.
+- A message of a non-media type that carries `directPath` gets no media record any more (today it does), except a
+  business-authored `interactive` message, whose picture travels in `interactive.header` (§4.3). In the demo database
+  only `interactive` rows are like that.
+- `WaWebMessage.Media.mediaId` is the GridFS cache id. A real Cloud webhook's `image.id` (a Graph API media id) has no
+  field on the row yet; the Cloud channel feature adds one.
+- A real Cloud `referral` has no `sourceApp`; `AdClick.sourceApp` will be null for a Cloud number and "came from an
+  ad" is then "a `referral` is present".
 - A real Cloud `contacts` message has no vCard text, so the console's card renderer would show nothing for it; a
   Cloud channel needs the console to render from `contacts[]` (kept for that feature).
 - Reactions, edits and separate revoke events are not forwarded by the page; when they are, they map to Meta's
