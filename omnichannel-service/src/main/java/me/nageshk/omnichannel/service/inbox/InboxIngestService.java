@@ -532,6 +532,9 @@ public class InboxIngestService {
             case "poll_creation" -> "📊 Poll";
             case "call_log" -> "📞 Call";
             case "revoked" -> "This message was deleted";
+            // the parent of several pictures sent together; the pictures arrive as image messages of their own
+            case "album" -> "📷 Photos";
+            case "rich_response" -> "🤖 Bot reply";
             // WhatsApp Web itself cannot show these, so neither can we; the phone can
             case "biz_content_placeholder" -> "💼 Business message";
             case "unknown" -> "Message to view on the phone";

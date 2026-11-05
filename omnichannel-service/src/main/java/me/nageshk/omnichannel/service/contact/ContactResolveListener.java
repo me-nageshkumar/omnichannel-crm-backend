@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.service.contact;
 
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
+import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import me.nageshk.omnichannel.service.inbox.InboxEvents.MessageUpserted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,19 @@ class ContactResolveListener {
         if (!event.inserted() || event.message().getDirection() != MessageDirection.IN || chat.getContactId() == null) {
             return;
         }
+        queue(chat);
+    }
+
+    /**
+     * A chat whose history fetch ended: the phone behind a hidden id is never on a stored message (live tab,
+     * 2026-11-05), only on the device's contact, and the device is online during a fetch by definition.
+     */
+    @EventListener
+    public void on(InboxEvents.ChatFetched event) {
+        if (event.chat().getContactId() != null) queue(event.chat());
+    }
+
+    private void queue(WaWebChat chat) {
         try {
             resolver.afterMessage(chat.getWorkspaceId(), chat.getPhoneNumberId(), chat.getContactId());
         } catch (TaskRejectedException e) {
