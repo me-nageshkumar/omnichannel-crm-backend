@@ -18,8 +18,9 @@ public record PollCreation(
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Option(String name, Integer localId) {}
 
+    /** {@code from_me} is true for our own vote (WhatsApp Web's only; Meta sends no votes with a poll). */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Vote(String voter, List<Integer> selectedOptions, Long at) {}
+    public record Vote(String voter, Boolean fromMe, List<Integer> selectedOptions, Long at) {}
 }

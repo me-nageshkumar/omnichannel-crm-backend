@@ -140,12 +140,16 @@ final class WaWebExtensionTypes {
 
     private static PollCreation poll(JsonNode raw) {
         List<PollCreation.Option> options = new ArrayList<>();
-        raw.path("pollOptions").forEach(o -> options.add(new PollCreation.Option(text(o.path("name")),
+        // raw {name, localId} objects, or plain strings on a poll the console sent before it used that shape
+        raw.path("pollOptions").forEach(o -> options.add(new PollCreation.Option(
+                text(o.isObject() ? o.path("name") : o),
                 o.path("localId").isNumber() ? o.path("localId").asInt() : null)));
         List<PollCreation.Vote> votes = new ArrayList<>();
         raw.path("pollVotes").forEach(v -> {
             var vote = PollVotes.parse(v);
-            if (vote != null) votes.add(new PollCreation.Vote(vote.voter(), vote.options(), vote.at().toEpochMilli()));
+            if (vote != null) {
+                votes.add(new PollCreation.Vote(vote.voter(), vote.fromMe(), vote.options(), vote.at().toEpochMilli()));
+            }
         });
         return new PollCreation(text(raw.path("pollName")), options,
                 raw.path("pollSelectableOptionsCount").asInt(1) != 1, votes.isEmpty() ? null : votes);

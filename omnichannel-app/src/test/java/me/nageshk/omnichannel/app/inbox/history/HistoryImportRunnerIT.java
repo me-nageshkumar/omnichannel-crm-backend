@@ -13,6 +13,8 @@ import me.nageshk.omnichannel.db.inbox.HistoryChatStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryImportStatus;
 import me.nageshk.omnichannel.db.inbox.HistorySkipReason;
 import me.nageshk.omnichannel.db.inbox.HistoryWaiting;
+import me.nageshk.omnichannel.db.inbox.MessageDirection;
+import me.nageshk.omnichannel.db.inbox.MessageStatus;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
@@ -54,6 +56,30 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
             WaWebChat chat = chats.findAll().get(0);
             assertThat(chat.getLastMessageAt().getEpochSecond()).isEqualTo(1_700_000_300L);
             assertThat(chat.getLastMessage().text()).isEqualTo("newest");
+        }
+    }
+
+    @Test
+    void aFetchedPageIsStoredThroughTheConverter() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            // a voice note a person sent, which the phone has marked as played
+            ObjectNode ptt = HistoryDevice.msg(A, false, 1_700_000_100L, 2, null).put("type", "ptt")
+                    .put("directPath", "/v/t62/ptt").put("mimetype", "audio/ogg; codecs=opus").put("size", 8000);
+            ptt.remove("body");
+            device.chats.put(A, List.of(ptt));
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            WaWebMessage stored = messages.findAll().getFirst();
+            assertThat(stored.getType()).isEqualTo("ptt");
+            assertThat(stored.getDirection()).isEqualTo(MessageDirection.IN);
+            assertThat(stored.getMedia()).isNotNull();
+            assertThat(stored.getMedia().mimetype()).isEqualTo("audio/ogg; codecs=opus");
+            assertThat(stored.getMedia().size()).isEqualTo(8000L);
+            // an inbound message has no delivery state, and an import records no status times
+            assertThat(stored.getStatus()).isEqualTo(MessageStatus.PENDING);
+            assertThat(stored.getStatusTimes()).isNull();
         }
     }
 

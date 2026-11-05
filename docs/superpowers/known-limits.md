@@ -70,5 +70,5 @@ a decision or more investigation.
 ## Click-to-WhatsApp ads: known limits
 
 - The `ctwaContext` field names come from the wa-js model and are unconfirmed until the end-to-end check, which needs the
-  user to tap one of their own ads from a named phone. If the real shape differs, fix `MessagePayloads.adClick` from
-  the stored `adClick.raw`.
+  user to tap one of their own ads from a named phone. If the real shape differs, fix `WaWebWebhookConverter.referral`
+  from the stored `adClick.raw`.

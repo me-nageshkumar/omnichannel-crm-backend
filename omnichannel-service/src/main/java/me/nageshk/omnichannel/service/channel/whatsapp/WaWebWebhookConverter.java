@@ -39,7 +39,11 @@ public final class WaWebWebhookConverter {
 
     static final String CHANGE_FIELD = "messages";
     static final String ECHO_FIELD = "smb_message_echoes";
-    private static final Set<String> NOTICE_TYPES = Set.of("notification_template", "e2e_notification", "notification",
+    /**
+     * WhatsApp's own notices, such as "this chat is with a business": no text (the phone draws the words) and not part
+     * of the conversation. By type only, as a dropped notice is gone for good and a flag on an unknown type must not.
+     */
+    public static final Set<String> NOTICE_TYPES = Set.of("notification_template", "e2e_notification", "notification",
             "group_notification", "broadcast_notification");
     private static final Set<String> MEDIA_TYPES = Set.of("image", "video", "audio", "ptt", "document", "sticker");
     private static final int FREQUENTLY_FORWARDED = 5;
@@ -160,7 +164,7 @@ public final class WaWebWebhookConverter {
     /** The shared parts; null for a notice, a chat of no person, a message with no id and a type not carried. */
     private static Parts parts(JsonNode raw, Instant fallbackTime) {
         String rawType = rawType(raw);
-        if (NOTICE_TYPES.contains(rawType)) return null;
+        if (isNoticeType(rawType)) return null;
         String chatId = chatIdOf(raw);
         if (!isPersonChat(chatId)) return null;
         String id = WaIds.messageId(raw.path("id"));
@@ -188,6 +192,11 @@ public final class WaWebWebhookConverter {
     public Contact contactOf(Message m, JsonNode raw) {
         String name = senderName(raw);
         return new Contact(name == null ? null : new Contact.Profile(name, null), m.from(), m.fromUserId());
+    }
+
+    /** True for a type of {@link #NOTICE_TYPES}; false for null. */
+    public static boolean isNoticeType(String type) {
+        return type != null && NOTICE_TYPES.contains(type);
     }
 
     /** The chat id the message belongs to, e.g. {@code 919812345678@c.us}. */
@@ -254,15 +263,25 @@ public final class WaWebWebhookConverter {
         return MessageBodies.readable(rawType, raw.path("body").isTextual() ? raw.path("body").asString() : null);
     }
 
-    /** {@code id} is the message id: the page downloads media by it. */
+    /**
+     * {@code id} is the message id: the page downloads media by it. The caption is {@code caption}, else a body that is
+     * no thumbnail (what some models carry in its place).
+     */
     private static Media media(JsonNode raw, String id, String rawType) {
         JsonNode data = raw.path("_data");
         String filename = "document".equals(rawType) ? firstText(raw.path("filename"), data.path("filename")) : null;
         Boolean voice = "ptt".equals(rawType) ? Boolean.TRUE : null;
         Boolean animated = "sticker".equals(rawType) && raw.path("isAnimated").asBoolean(false) ? Boolean.TRUE : null;
         return new Media(id, firstText(raw.path("mimetype"), data.path("mimetype")),
-                firstText(raw.path("filehash"), data.path("filehash")), text(raw.path("caption")), filename, voice,
+                firstText(raw.path("filehash"), data.path("filehash")), caption(raw, rawType), filename, voice,
                 animated);
+    }
+
+    private static String caption(JsonNode raw, String rawType) {
+        String caption = text(raw.path("caption"));
+        if (caption != null) return caption;
+        String body = body(raw, rawType);
+        return body == null || body.isEmpty() ? null : body;
     }
 
     private static Long fileSize(JsonNode raw) {

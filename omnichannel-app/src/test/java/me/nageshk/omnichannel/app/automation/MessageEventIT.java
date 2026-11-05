@@ -17,10 +17,10 @@ import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageSource;
 import me.nageshk.omnichannel.service.automation.AutomationGate;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
-import me.nageshk.omnichannel.service.inbox.InboxIngestService;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
 import me.nageshk.omnichannel.service.inbox.InboxSettingService;
 import me.nageshk.omnichannel.service.inbox.RoutingSetting;
+import me.nageshk.omnichannel.service.inbox.history.FetchedMessageImporter;
 import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentMatchers;
 import org.junit.jupiter.api.Test;
@@ -36,7 +36,7 @@ class MessageEventIT extends AutomationTestBase {
     private static final String RAVI = "919811100002@c.us";
 
     @Autowired me.nageshk.omnichannel.service.automation.AutomationWorker worker;
-    @Autowired InboxIngestService ingest;
+    @Autowired FetchedMessageImporter importer;
     @Autowired InboxSettingService settings;
     @MockitoSpyBean AutomationGate gate;
 
@@ -106,7 +106,7 @@ class MessageEventIT extends AutomationTestBase {
 
     @Test
     void fetchedChatIsNotNew() {
-        ingest.importMessage(new ImportContext(acme.getId(), brand.getId(), n1.getId()),
+        importer.importMessage(new ImportContext(acme.getId(), brand.getId(), n1.getId()),
                 payload(ASHA, false, "chat", "Old one", "Asha"));
         assertThat(queued()).isEmpty();
 

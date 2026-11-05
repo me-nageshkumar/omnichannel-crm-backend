@@ -25,6 +25,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatActionRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
+import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookConverter;
 import me.nageshk.omnichannel.service.contact.ContactService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +34,6 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import tools.jackson.databind.JsonNode;
 
 /**
  * Persists the chats and messages seen by a WhatsApp Web number (contact, chat row, then the chat summary, then the
@@ -174,21 +174,40 @@ public class InboxIngestService {
     }
 
     /**
-     * A message read from the phone's history. Unlike {@link #ingestInbound} it publishes no event, never reopens
-     * a chat or counts it unread, creates chats {@code CLOSED}, records no status times and names only a nameless
-     * contact; SKIPPED when it is not a person's chat or has no usable phone or id.
+     * A person's message read from the phone's history, with the {@code contacts[]} entry that names them (null when
+     * none does). Unlike {@link #ingestInbound} it publishes no event, never reopens a chat or counts it unread,
+     * creates chats {@code CLOSED}, records no status times and names only a nameless contact; SKIPPED when it is not
+     * a person's chat or has no id. Stored {@code PENDING}: an inbound message has no delivery state.
      */
-    public ImportResult importMessage(ImportContext ctx, JsonNode payload) {
-        if (payload == null || !payload.isObject() || MessagePayloads.isNotice(payload)) return SKIPPED;
-        String remote = MessagePayloads.remote(payload);
-        boolean lid = remote.endsWith("@lid");
-        if (!lid && !remote.endsWith("@c.us")) return SKIPPED;
-        String waMessageId = MessagePayloads.waMessageId(payload);
-        if (waMessageId.isEmpty()) return SKIPPED;
+    public ImportResult importMessage(ImportContext ctx,
+            me.nageshk.omnichannel.common.channel.whatsapp.webhook.Contact contact, Message message) {
+        if (message == null) return SKIPPED;
+        Instant at = MessageFields.timestampOf(message.timestamp(), clock.instant());
+        return imported(ctx, new Incoming(MessageFields.chatId(message), message.id(), false, at,
+                MessageFields.senderNameOf(contact), MessageFields.lidPhoneOf(message), MessageFields.of(message),
+                MessageFields.adClickOf(message, at), 0));
+    }
+
+    /**
+     * Our own message read from the phone's history, with the ack WhatsApp Web had for it ({@code wa_web.ack}); the
+     * same rules as {@link #importMessage}.
+     */
+    public ImportResult importEcho(ImportContext ctx, MessageEcho echo) {
+        if (echo == null) return SKIPPED;
+        Integer ack = echo.waWeb() == null ? null : echo.waWeb().ack();
+        return imported(ctx, new Incoming(MessageFields.chatId(echo), echo.id(), true,
+                MessageFields.timestampOf(echo.timestamp(), clock.instant()), null, null, MessageFields.of(echo), null,
+                ack == null ? 0 : ack));
+    }
+
+    private ImportResult imported(ImportContext ctx, Incoming in) {
+        if (!MessageFields.isPersonChat(in.remote()) || in.waMessageId() == null || in.waMessageId().isEmpty()) {
+            return SKIPPED;
+        }
         try {
-            return retrying(() -> storeImported(ctx, payload, remote, lid, waMessageId));
+            return retrying(() -> storeImported(ctx, in));
         } catch (DataAccessException e) {
-            throw new IngestionFailedException("history_import", waMessageId, e);
+            throw new IngestionFailedException("history_import", in.waMessageId(), e);
         }
     }
 
@@ -196,20 +215,19 @@ public class InboxIngestService {
      * Like {@link #storeMessage}, the chat summary is saved before the message row: a retry after a failed chat save
      * folds again, and a duplicate key on the insert re-reads the message as existing.
      */
-    private ImportResult storeImported(ImportContext ctx, JsonNode p, String remote, boolean lid,
-            String waMessageId) {
-        boolean fromMe = MessagePayloads.fromMe(p);
-        Instant at = MessagePayloads.timestamp(p, clock.instant());
+    private ImportResult storeImported(ImportContext ctx, Incoming in) {
+        String remote = in.remote();
+        Instant at = in.at();
         // the import walks backwards, so a push name it reads is older than the one the contact has; the name WhatsApp
         // lists the chat under is current, serves a chat we only wrote to, and goes on below as a name of record
-        String senderName = ctx.chatName() != null || fromMe ? null : MessagePayloads.senderName(p);
+        String senderName = ctx.chatName() != null ? null : in.senderName();
         if (senderName != null) {
             Contact known = contacts.findForChat(ctx.workspaceId(), remote);
             if (known != null && known.getName() != null) senderName = null;
         }
-        // on our own message senderPn is the business's number, not the person's
+        // on our own message the phone behind a lid is the business's number, so an echo carries none
         Contact contact = contacts.upsertFromChat(ctx.workspaceId(), ctx.customerId(), remote, senderName,
-                lid && !fromMe ? MessagePayloads.lidPhone(p) : null, at);
+                in.lidPhone(), at);
         if (contact == null) return SKIPPED;
         // not over a name cleared by hand; of record, or the contact's next push name would replace it
         if (ctx.chatName() != null && !contact.isNameEdited()) {
@@ -231,12 +249,14 @@ public class InboxIngestService {
             chat = chats.save(chat);
         }
 
-        int ack = MessagePayloads.ack(p);
-        WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(ctx.phoneNumberId(), waMessageId)
+        int ack = in.ack();
+        WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(ctx.phoneNumberId(), in.waMessageId())
                 .orElse(null);
         if (message != null) {
             boolean acked = applyAck(message, ack, null);
-            if (!fillIn(message, p) && !acked) return new ImportResult(ImportOutcome.UNCHANGED, chat, message);
+            if (!fillIn(message, in.content()) && !acked) {
+                return new ImportResult(ImportOutcome.UNCHANGED, chat, message);
+            }
             message = messages.save(message);
             if (isLast(chat, message)) {
                 chat.setLastMessage(new WaWebChat.LastMessage(message.getDirection(), message.getType(),
@@ -246,11 +266,11 @@ public class InboxIngestService {
             return new ImportResult(ImportOutcome.UPDATED, chat, message);
         }
 
-        message = newMessage(ctx.customerId(), ctx.workspaceId(), ctx.phoneNumberId(), p, chat, waMessageId,
-                fromMe, at);
+        message = newMessage(ctx.customerId(), ctx.workspaceId(), ctx.phoneNumberId(), chat, in);
+        message.setAck(ack);
         message.setStatus(MessageStatus.ofAck(ack));
         message.setStatusTimes(null);
-        fillIn(message, p);
+        fillIn(message, in.content());
         foldPreview(chat, message, at);
         keepFirstAd(chat, message);
         if (message.getDirection() == MessageDirection.IN) chat.setLastInboundAt(later(chat.getLastInboundAt(), at));
@@ -264,22 +284,22 @@ public class InboxIngestService {
      * Takes what only a fetch tells: the votes on a poll, a call stored before calls were read, and what was stored
      * before it was read: a business tag, and the channel name of an invite. Never replaces what is stored.
      */
-    private static boolean fillIn(WaWebMessage message, JsonNode p) {
-        WaWebMessage.Call call = MessagePayloads.call(p);
+    private static boolean fillIn(WaWebMessage message, MessageFields.Content c) {
+        WaWebMessage.Call call = MessageFields.callOf(c);
         boolean changed = call != null && !call.equals(message.getCall());
         if (changed) message.setCall(call);
-        String tag = MessagePayloads.businessTag(p);
+        String tag = MessageFields.businessTagOf(c);
         if (message.getBusinessTag() == null && tag != null) {
             message.setBusinessTag(tag);
             changed = true;
         }
-        String body = "newsletter_follower_invite".equals(message.getType()) ? MessagePayloads.body(p) : null;
+        String body = "newsletter_follower_invite".equals(message.getType()) ? MessageFields.bodyOf(c) : null;
         if (message.getBody() == null && body != null) {
             message.setBody(body);
             changed = true;
         }
         List<WaWebMessage.PollVote> votes = message.getPollVotes();
-        for (WaWebMessage.PollVote vote : MessagePayloads.pollVotes(p)) votes = PollVotes.merged(votes, vote);
+        for (WaWebMessage.PollVote vote : MessageFields.pollVotesOf(c)) votes = PollVotes.merged(votes, vote);
         if (votes == message.getPollVotes()) return changed;
         message.setPollVotes(votes);
         return true;
@@ -287,7 +307,8 @@ public class InboxIngestService {
 
     /**
      * A webhook message or echo as the store needs it: {@code remote} is the chat id, {@code ack} the status that came
-     * with our own message (null when none did; always null for a person's message).
+     * with our own message (null when none did; always null for a person's message). An import's {@code ack} is never
+     * null: 0 for a person's message, else WhatsApp Web's ack of ours.
      */
     private record Incoming(String remote, String waMessageId, boolean fromMe, Instant at, String senderName,
             String lidPhone, MessageFields.Content content, AdClick adClick, Integer ack) {
@@ -448,43 +469,25 @@ public class InboxIngestService {
         return Optional.of(new Ingested(chat, poll, false, false, false));
     }
 
-    /** What a live and an imported row share: who, where, which way and when. */
-    private static WaWebMessage baseMessage(String customerId, String workspaceId, String phoneNumberId,
-            WaWebChat chat, String waMessageId, boolean fromMe, Instant at) {
+    /** A row read from a webhook message or echo; ack 0 until a status moves it. */
+    private static WaWebMessage newMessage(ChannelContext ctx, WaWebChat chat, Incoming in) {
+        return newMessage(ctx.customerId(), ctx.workspaceId(), ctx.channelAccountId(), chat, in);
+    }
+
+    /** A row of a live event or a history import, {@code PENDING} with ack 0. */
+    private static WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId,
+            WaWebChat chat, Incoming in) {
         WaWebMessage m = new WaWebMessage();
         m.setCustomerId(customerId);
         m.setWorkspaceId(workspaceId);
         m.setPhoneNumberId(phoneNumberId);
         m.setChatId(chat.getId());
-        m.setWaMessageId(waMessageId);
-        m.setDirection(fromMe ? MessageDirection.OUT : MessageDirection.IN);
-        m.setSource(fromMe ? MessageSource.WHATSAPP_WEB : MessageSource.CONTACT);
-        m.setTimestamp(at);
+        m.setWaMessageId(in.waMessageId());
+        m.setDirection(in.fromMe() ? MessageDirection.OUT : MessageDirection.IN);
+        m.setSource(in.fromMe() ? MessageSource.WHATSAPP_WEB : MessageSource.CONTACT);
+        m.setTimestamp(in.at());
         m.setStatus(MessageStatus.PENDING);
         m.setStatusTimes(new WaWebMessage.StatusTimes());
-        return m;
-    }
-
-    /** A row read from the raw model, for the history import. */
-    private static WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId, JsonNode p,
-            WaWebChat chat, String waMessageId, boolean fromMe, Instant at) {
-        WaWebMessage m = baseMessage(customerId, workspaceId, phoneNumberId, chat, waMessageId, fromMe, at);
-        m.setType(MessagePayloads.type(p));
-        m.setBody(MessagePayloads.body(p));
-        m.setMedia(MessagePayloads.media(p));
-        m.setLocation(MessagePayloads.location(p));
-        m.setPollOptions(MessagePayloads.pollOptions(p));
-        m.setCall(MessagePayloads.call(p));
-        m.setBusinessTag(MessagePayloads.businessTag(p));
-        m.setAdClick(fromMe ? null : MessagePayloads.adClick(p, at));
-        m.setAck(MessagePayloads.ack(p));
-        return m;
-    }
-
-    /** A row read from a webhook message or echo; ack 0 until a status moves it. */
-    private static WaWebMessage newMessage(ChannelContext ctx, WaWebChat chat, Incoming in) {
-        WaWebMessage m = baseMessage(ctx.customerId(), ctx.workspaceId(), ctx.channelAccountId(), chat,
-                in.waMessageId(), in.fromMe(), in.at());
         MessageFields.Content c = in.content();
         m.setType(MessageFields.storedType(c));
         m.setBody(MessageFields.bodyOf(c));
@@ -574,7 +577,7 @@ public class InboxIngestService {
 
     /** A label for body-less or non-text types, else the whole body (the caption); the console cuts it to fit. */
     static String preview(String type, String body, String filename) {
-        if (MessagePayloads.isNoticeType(type)) return "WhatsApp notice";
+        if (WaWebWebhookConverter.isNoticeType(type)) return "WhatsApp notice";
         String text = MessageBodies.readable(type, body);
         if (!labelFirst(type) && text != null && !text.isBlank()) return text;
         return switch (type == null ? "" : type) {

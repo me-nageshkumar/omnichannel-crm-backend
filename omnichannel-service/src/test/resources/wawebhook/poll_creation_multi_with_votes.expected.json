@@ -43,6 +43,7 @@
                   "votes": [
                     {
                       "voter": "919912345678@c.us",
+                      "from_me": false,
                       "selected_options": [
                         0,
                         2

@@ -19,8 +19,8 @@ import me.nageshk.omnichannel.db.inbox.AdClick;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 
 /**
- * Reads the stored fields of a message from the typed Cloud API webhook records, as {@link MessagePayloads} reads them
- * from WhatsApp Web's raw model. Every reader tolerates missing objects.
+ * Reads the stored fields of a message from the typed Cloud API webhook records, the only shape the store reads (the
+ * raw WhatsApp Web model goes through {@code WaWebWebhookConverter} first). Every reader tolerates missing objects.
  */
 public final class MessageFields {
 
@@ -175,16 +175,13 @@ public final class MessageFields {
         return names.isEmpty() ? null : names;
     }
 
-    /**
-     * The votes sent with a fetched poll; empty for anything else. The webhook's vote does not say whose side the
-     * voter is on, so {@code fromMe} is false.
-     */
+    /** The votes sent with a fetched poll; empty for anything else. A vote not saying it is ours is a person's. */
     static List<WaWebMessage.PollVote> pollVotesOf(Content c) {
         List<WaWebMessage.PollVote> votes = new ArrayList<>();
         if (c.pollCreation() == null || c.pollCreation().votes() == null) return votes;
         for (PollCreation.Vote v : c.pollCreation().votes()) {
             if (v == null || !notBlank(v.voter())) continue;
-            votes.add(new WaWebMessage.PollVote(v.voter(), false,
+            votes.add(new WaWebMessage.PollVote(v.voter(), Boolean.TRUE.equals(v.fromMe()),
                     v.selectedOptions() == null ? List.of() : v.selectedOptions(),
                     Instant.ofEpochMilli(v.at() == null ? 0 : v.at())));
         }

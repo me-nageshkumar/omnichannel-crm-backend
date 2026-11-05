@@ -33,7 +33,6 @@ import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportRepository;
 import me.nageshk.omnichannel.service.inbox.InboxDevices;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
-import me.nageshk.omnichannel.service.inbox.InboxIngestService;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportOutcome;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportResult;
@@ -79,7 +78,7 @@ public class HistoryImportRunner {
     private final WaWebChatRepository chats;
     private final InboxDevices devices;
     private final HistoryDeviceClient client;
-    private final InboxIngestService ingest;
+    private final FetchedMessageImporter importer;
     private final HistoryImportCounter counter;
     private final ApplicationEventPublisher events;
     private final Clock clock;
@@ -92,7 +91,7 @@ public class HistoryImportRunner {
 
     HistoryImportRunner(MongoTemplate mongo, WaWebHistoryImportRepository imports,
             WaWebHistoryImportChatRepository items, WaWebChatRepository chats, InboxDevices devices,
-            HistoryDeviceClient client, InboxIngestService ingest, HistoryImportCounter counter,
+            HistoryDeviceClient client, FetchedMessageImporter importer, HistoryImportCounter counter,
             ApplicationEventPublisher events, Clock clock, @Qualifier("historyImportScheduler") Executor executor,
             OmnichannelProperties props, FetchedChatOpener opener) {
         this.mongo = mongo;
@@ -101,7 +100,7 @@ public class HistoryImportRunner {
         this.chats = chats;
         this.devices = devices;
         this.client = client;
-        this.ingest = ingest;
+        this.importer = importer;
         this.counter = counter;
         this.events = events;
         this.clock = clock;
@@ -337,7 +336,7 @@ public class HistoryImportRunner {
                 paced |= page.asked();
                 if (moved) {
                     for (JsonNode m : page.messages()) {
-                        ImportResult r = ingest.importMessage(ctx, m);
+                        ImportResult r = importer.importMessage(ctx, m);
                         seen++;
                         if (r.outcome() == ImportOutcome.INSERTED) inserted++;
                         else if (r.outcome() == ImportOutcome.UPDATED) updated++;
