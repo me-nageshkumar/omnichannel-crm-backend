@@ -71,6 +71,11 @@ WhatsApp messages: take care sharing it or a backup.
   import `2026-10-31-`, calls and poll votes `2026-11-01-`), plans in `docs/superpowers/plans/`,
   `crm-deferred-fixes.md` (small findings and outcomes), `crm-rulings.md` (calls made while building). `README.md` has
   the API and demo-seed sections.
+- **WhatsApp Web events as Cloud webhooks:** the webhook model is in `omnichannel-common`
+  (`common.channel.whatsapp.webhook`); the converter (`WaWebWebhookConverter`, `WaIds`) in `omnichannel-service`
+  `service.channel.whatsapp`, with `WhatsAppWebhookProcessor` and `WaWebWebhookListener`; the store is
+  `ChannelWebhookEventStore` (collection `channelWebhookEvents`). Spec `specs/2026-11-05-cloud-webhook-shape-design.md`,
+  plan `plans/2026-11-05-cloud-webhook-shape-backend.md`, field evidence `whatsapp-web-storage-analysis.md`.
 - **Running on AWS cheaply** (nothing deployed yet): `aws-deployment.md` next to this file.
 - **Backup** from before the 2026-11-01 inbox reset:
   `/Users/nagesh/Projects/WhatsAppWebJS/SCM/backups/mongo/omnichannel_crm-20261101-1147-before-chat-reset`.

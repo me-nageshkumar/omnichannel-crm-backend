@@ -16,6 +16,10 @@ are merged and deployed.
 - One-contact check (console plan `plans/2026-11-04-one-contact-console.md`, Task 3): count the demo brand's contacts
   lacking a phone or a hidden id, press "Resolve hidden numbers" as demo-manager and compare; then write from a phone the
   user names with the number hidden and confirm one contact, the "WhatsApp ids" row and the header's other-chat line.
+- Cloud webhook shape check (backend plan `plans/2026-11-05-cloud-webhook-shape-backend.md`, "Verification before the
+  merge"): after the deploy, a text, a photo and a voice note from a phone the user names appear in the inbox as
+  before; `db.channelWebhookEvents.find().sort({_id:-1}).limit(3)` shows the events; and
+  `db.waWebMessages.distinct("type")` has no `chat`, `ptt`, `vcard`, `multi_vcard` or `unknown`.
 All need the demo-manager password typed into the session. Never message anyone the user has not named.
 
 ## Parked features
@@ -37,7 +41,8 @@ a decision or more investigation.
   follow-on. A link to a chat the agent cannot open shows the inbox's error.
 - A console send whose model never came back is stored as `console:<id>` and again under its real id.
 - The console shows poll votes but cannot vote.
-- `interactive` business messages lose their buttons: which fields carry them is unknown.
+- The buttons of a business interactive message travel in the stored webhook event (`interactive.action.buttons`); the
+  row keeps the text only.
 - WhatsApp's own notices are not stored: showing their words needs a table of subtypes (each skipped one logs its
   subtype, the place to start).
 - A dated fetch leaves out chats last active over a day before its range; whether `chat.t` always covers a chat's
@@ -75,3 +80,24 @@ a decision or more investigation.
   `mediaType` (a number) and `mediaUrl` only, so an ad now needs `sourceId`, `conversionSource` or a click id; a
   context with none is logged by its field names. If the real ad carries none of those, fix
   `WaWebWebhookConverter.referral` from that log line and the stored `adClick.raw`.
+
+## WhatsApp Web events as Cloud webhooks
+
+Spec `specs/2026-11-05-cloud-webhook-shape-design.md` (§7), plus what the reviews found.
+
+- Inbound rows carry no ack or status; the stored webhook event has it in `wa_web.ack`.
+- A real Cloud `contacts` message would render nothing: it has no vCard text, and our rows get their text from the
+  vCard.
+- The page does not forward reactions or edits. They map to Meta's `reaction` and to the echo's `edit` / `revoke`
+  when they do arrive.
+- `poll_vote` and its deterministic id (`vote:<poll>:<voter>`) are ours; Meta has no such message.
+- The webhook store doubles the writes per message (the event, then the row). `omnichannel.webhooks.retention` bounds
+  it (30d).
+- `WaWebMessage.Media.mediaId` is the GridFS cache id; a Cloud media id has no field yet.
+- A real Meta body (no `wa_web`) stores no `Media`, because `media_available` is absent.
+- A `rich_response` with text starts TEXT automations; a textless one is `unsupported`.
+- Raw types Meta has no name for store `unsupported` ("Message to view on the phone").
+- `product` keeps its caption through `wa_web.body`.
+- The migration (`MessageTypeMigration`) renames only the table in spec §4.7; older `rich_response` and `product`
+  rows keep their names.
+- The console accepts the old and the new type names for one release; console plan Task C2 drops the old ones.
