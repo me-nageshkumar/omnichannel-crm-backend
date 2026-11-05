@@ -244,7 +244,7 @@ the page sees them all) becomes an echo:
 | `id`, `timestamp`, `type`, type object, `context` | as §4.3 |
 
 Meta's echoes support `text`, `image`, `video`, `document`, `revoke`, `edit`; ours carry every type of §4.3
-**(my call)**, since a WhatsApp Web number sends polls, locations and cards too. When the echo's `ack` is 1 or more, the
+**(my call)**, since a WhatsApp Web number sends polls, locations and cards too. When the echo's `ack` has a status (1 to 4, or −1 for failed; 0 has none), the
 same entry gets a second change `{field: "messages", value: {statuses: [<§4.5>]}}`, so the stored webhook event says
 what Meta would have said in two webhooks.
 

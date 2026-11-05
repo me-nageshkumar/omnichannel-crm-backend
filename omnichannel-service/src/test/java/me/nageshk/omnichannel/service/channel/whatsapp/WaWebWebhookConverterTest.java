@@ -34,7 +34,7 @@ class WaWebWebhookConverterTest {
             "text_cus", "text_lid_with_sender_pn", "text_lid_without_phone", "text_key_dollar1", "text_remote_string",
             "text_template", "text_link_preview", "image_caption", "image_view_once", "video_gif", "ptt", "document",
             "sticker", "location", "vcard", "multi_vcard", "reply_quoted", "forwarded", "ad_referral",
-            "link_preview_not_ad", "notice_dropped", "group_dropped", "no_id_dropped", "message_event_ignored", "echo_text_ack0",
+            "link_preview_not_ad", "notice_dropped", "group_dropped", "no_id_dropped", "message_event_ignored", "echo_text_ack0", "echo_text_ack_failed",
             "echo_image_ack2", "echo_lid_unknown_phone", "ack_read_ours", "ack_failed_ours", "ack_inbound_dropped",
             "ack_pending_dropped"})
     void convertsToTheExpectedWebhook(String name) throws IOException {
