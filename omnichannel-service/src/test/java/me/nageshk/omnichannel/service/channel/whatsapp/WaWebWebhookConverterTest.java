@@ -91,6 +91,75 @@ class WaWebWebhookConverterTest {
         assertThat(WaWebWebhookConverter.isPersonChat("1203@g.us")).isFalse();
     }
 
+    private ObjectNode text() throws IOException {
+        return (ObjectNode) read("text_cus.raw.json");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void adContextIsKeptWithoutImagesDottedKeysAndDollarKeys() throws IOException {
+        ObjectNode raw = text();
+        ObjectNode ad = raw.putObject("ctwaContext");
+        ad.put("sourceId", "1").put("mediaUrl", "u").put("originalImageUrl", "o").put("thumbnailUrl", "t")
+                .put("keep", "yes");
+        ad.putObject("nested").put("a.b", 1).put("$x", 2).put("ok", 3);
+        java.util.Map<String, Object> kept = convertRaw(raw, CAPTURED).messages().get(0).waWeb().ctwaContext();
+        assertThat(kept).containsOnlyKeys("sourceId", "keep", "nested");
+        assertThat(((java.util.Map<String, Object>) kept.get("nested")).keySet()).containsExactly("ok");
+    }
+
+    @Test
+    void adContextOver4KbIsDroppedButTheReferralStays() throws IOException {
+        ObjectNode raw = text();
+        raw.putObject("ctwaContext").put("sourceId", "1").put("big", "x".repeat(5000));
+        Message m = convertRaw(raw, CAPTURED).messages().get(0);
+        assertThat(m.referral().sourceId()).isEqualTo("1");
+        assertThat(m.waWeb().ctwaContext()).isNull();
+    }
+
+    @Test
+    void theKeyIsRebuiltWhenItHasNeitherSerializedNorDollar1() throws IOException {
+        ObjectNode raw = text();
+        ObjectNode id = (ObjectNode) raw.get("id");
+        id.remove("_serialized");
+        assertThat(convertRaw(raw, CAPTURED).messages().get(0).id()).isEqualTo("false_919912345678@c.us_3EB0ABC");
+    }
+
+    @Test
+    void timeReadsTheTimestampFieldWhenThereIsNoT() throws IOException {
+        ObjectNode raw = text();
+        raw.remove("t");
+        raw.put("timestamp", 1700000000L);
+        assertThat(convertRaw(raw, CAPTURED).messages().get(0).timestamp()).isEqualTo("1700000000");
+    }
+
+    @Test
+    void theNameComesFromDataNotifyNameThenPushname() throws IOException {
+        ObjectNode raw = text();
+        raw.remove("notifyName");
+        raw.putObject("_data").put("notifyName", "Data Name");
+        raw.put("pushname", "Push");
+        assertThat(convertRaw(raw, CAPTURED).contacts().get(0).profile().name()).isEqualTo("Data Name");
+        raw.remove("_data");
+        assertThat(convertRaw(raw, CAPTURED).contacts().get(0).profile().name()).isEqualTo("Push");
+    }
+
+    @Test
+    void hasMediaWithoutDirectPathMakesMediaAvailable() throws IOException {
+        ObjectNode raw = (ObjectNode) read("image_view_once.raw.json");
+        raw.put("hasMedia", true);
+        assertThat(convertRaw(raw, CAPTURED).messages().get(0).waWeb().mediaAvailable()).isTrue();
+    }
+
+    @Test
+    void aLowForwardingScoreIsForwardedButNotFrequently() throws IOException {
+        ObjectNode raw = text();
+        raw.put("isForwarded", true).put("forwardingScore", 4);
+        Message m = convertRaw(raw, CAPTURED).messages().get(0);
+        assertThat(m.context().forwarded()).isTrue();
+        assertThat(m.context().frequentlyForwarded()).isNull();
+    }
+
     private Value convert(String name) throws IOException {
         return convertRaw(read(name + ".raw.json"), CAPTURED);
     }
