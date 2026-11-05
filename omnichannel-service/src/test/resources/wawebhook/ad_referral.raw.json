@@ -1,0 +1,28 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0AD",
+    "_serialized": "false_919912345678@c.us_3EB0AD"
+  },
+  "type": "chat",
+  "t": 1793872800,
+  "ack": 1,
+  "body": "Hi, interested",
+  "ctwaContext": {
+    "sourceId": "120210000000",
+    "sourceUrl": "https://fb.me/ad",
+    "sourceApp": "facebook",
+    "conversionSource": "FB_Ads",
+    "title": "Big sale",
+    "description": "50% off",
+    "ctwaClid": "AfabcCLID",
+    "mediaType": 1,
+    "thumbnail": "AAAA",
+    "conversionData": "BBBB"
+  }
+}

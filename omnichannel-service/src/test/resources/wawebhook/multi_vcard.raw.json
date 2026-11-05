@@ -1,0 +1,26 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0MV",
+    "_serialized": "false_919912345678@c.us_3EB0MV"
+  },
+  "type": "multi_vcard",
+  "t": 1793872800,
+  "ack": 1,
+  "body": "",
+  "vcardList": [
+    {
+      "displayName": "Meera Rao",
+      "vcard": "BEGIN:VCARD\nVERSION:3.0\nN:Rao;Meera;;;\nFN:Meera Rao\nTEL;type=CELL;waid=919811122233:+91 98111 22233\nEND:VCARD"
+    },
+    {
+      "displayName": "Ravi Das",
+      "vcard": "BEGIN:VCARD\nVERSION:3.0\nN:Das;Ravi;;;\nFN:Ravi Das\nTEL:+91 98000 11122\nEND:VCARD"
+    }
+  ]
+}

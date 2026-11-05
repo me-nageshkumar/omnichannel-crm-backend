@@ -1,0 +1,17 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0ABC",
+    "$1": "false_919912345678@c.us_3EB0ABC"
+  },
+  "type": "chat",
+  "t": 1793872800,
+  "ack": 1,
+  "body": "Hello",
+  "notifyName": "Asha"
+}

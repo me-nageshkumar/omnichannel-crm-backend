@@ -1,0 +1,23 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0GIF",
+    "_serialized": "false_919912345678@c.us_3EB0GIF"
+  },
+  "type": "video",
+  "t": 1793872800,
+  "ack": 1,
+  "directPath": "/v/t62/gif",
+  "filehash": "n4g1xk0o0y2d9o1m7mQ4m1o3b8Qmv0f6y8c0tY5z2Zc=",
+  "mimetype": "video/mp4",
+  "isGif": true,
+  "caption": "lol",
+  "_data": {
+    "size": 99000
+  }
+}

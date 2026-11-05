@@ -1,0 +1,22 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0DOC",
+    "_serialized": "false_919912345678@c.us_3EB0DOC"
+  },
+  "type": "document",
+  "t": 1793872800,
+  "ack": 1,
+  "directPath": "/v/t62/doc",
+  "filehash": "n4g1xk0o0y2d9o1m7mQ4m1o3b8Qmv0f6y8c0tY5z2Zc=",
+  "mimetype": "application/pdf",
+  "size": 120000,
+  "filename": "invoice.pdf",
+  "caption": "Invoice",
+  "pageCount": 2
+}

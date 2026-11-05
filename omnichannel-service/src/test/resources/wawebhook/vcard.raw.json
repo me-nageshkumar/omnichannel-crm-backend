@@ -1,0 +1,17 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0VC",
+    "_serialized": "false_919912345678@c.us_3EB0VC"
+  },
+  "type": "vcard",
+  "t": 1793872800,
+  "ack": 1,
+  "body": "BEGIN:VCARD\nVERSION:3.0\nN:Rao;Meera;;;\nFN:Meera Rao\nTEL;type=CELL;waid=919811122233:+91 98111 22233\nEND:VCARD",
+  "vcardFormattedName": "Meera Rao"
+}
