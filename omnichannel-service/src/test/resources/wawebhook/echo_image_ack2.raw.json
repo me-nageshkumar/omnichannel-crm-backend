@@ -1,0 +1,22 @@
+{
+  "id": {
+    "fromMe": true,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0E2",
+    "_serialized": "true_919912345678@c.us_3EB0E2"
+  },
+  "type": "image",
+  "t": 1793872800,
+  "ack": 2,
+  "body": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/",
+  "directPath": "/v/t62/abc",
+  "filehash": "n4g1xk0o0y2d9o1m7mQ4m1o3b8Qmv0f6y8c0tY5z2Zc=",
+  "mimetype": "image/jpeg",
+  "size": 34567,
+  "caption": "Look at this",
+  "mediaKey": "k"
+}

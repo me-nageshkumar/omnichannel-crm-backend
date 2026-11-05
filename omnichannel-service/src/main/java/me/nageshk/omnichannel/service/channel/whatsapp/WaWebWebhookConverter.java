@@ -14,7 +14,10 @@ import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Context;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Location;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Media;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.MessageEcho;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.MessageError;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Referral;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Status;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Text;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Value;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WaWeb;
@@ -34,6 +37,7 @@ import tools.jackson.databind.node.ObjectNode;
 public final class WaWebWebhookConverter {
 
     private static final String CHANGE_FIELD = "messages";
+    private static final String ECHO_FIELD = "smb_message_echoes";
     private static final Set<String> NOTICE_TYPES = Set.of("notification_template", "e2e_notification", "notification",
             "group_notification", "broadcast_notification");
     private static final Set<String> MEDIA_TYPES = Set.of("image", "video", "audio", "ptt", "document", "sticker");
@@ -44,43 +48,129 @@ public final class WaWebWebhookConverter {
             "conversionData");
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** One event for a {@code message_create} of a person's message; empty for any other event or message. */
+    /**
+     * One event for a {@code message_create} (a person's message, or our own as an echo) or a {@code message_ack}
+     * (a status of our message); empty for any other event or message.
+     */
     public Optional<WebhookEvent> convert(ChannelContext ctx, String eventName, JsonNode payload, Instant capturedAt) {
-        if (!"message_create".equals(eventName) || payload == null) return Optional.empty();
+        if (payload == null) return Optional.empty();
+        if ("message_ack".equals(eventName)) {
+            return status(ctx, payload, capturedAt).map(st -> WebhookEvent.of(ctx,
+                    List.of(new Change(CHANGE_FIELD, Value.of(ctx).withStatuses(List.of(st))))));
+        }
+        if (!"message_create".equals(eventName)) return Optional.empty();
+        if (fromMe(payload)) return echoEvent(ctx, payload, capturedAt);
         return message(ctx, payload, capturedAt).map(m -> {
             Value value = Value.of(ctx).withContacts(List.of(contactOf(m, payload))).withMessages(List.of(m));
             return WebhookEvent.of(ctx, List.of(new Change(CHANGE_FIELD, value)));
         });
     }
 
+    /** The echo as a change, followed by a {@code messages} change with its status when the ack is 1 or more. */
+    private Optional<WebhookEvent> echoEvent(ChannelContext ctx, JsonNode raw, Instant capturedAt) {
+        return echo(ctx, raw, capturedAt, null).map(e -> {
+            List<Change> changes = new ArrayList<>();
+            changes.add(new Change(ECHO_FIELD, Value.of(ctx).withMessageEchoes(List.of(e))));
+            Status st = statusOf(e.id(), e.waWeb().ack(), capturedAt, e.waWeb().chatId(),
+                    recipientDigits(e.waWeb().chatId()));
+            if (st != null) changes.add(new Change(CHANGE_FIELD, Value.of(ctx).withStatuses(List.of(st))));
+            return WebhookEvent.of(ctx, changes);
+        });
+    }
+
     /** An inbound message; empty for ours, for a notice, a chat of no person and a message with no id. */
     public Optional<Message> message(ChannelContext ctx, JsonNode raw, Instant fallbackTime) {
         if (fromMe(raw)) return Optional.empty();
-        String rawType = rawType(raw);
-        if (NOTICE_TYPES.contains(rawType)) return Optional.empty();
-        String chatId = chatIdOf(raw);
-        if (!isPersonChat(chatId)) return Optional.empty();
-        String id = WaIds.messageId(raw.path("id"));
-        if (id.isEmpty()) return Optional.empty();
-        String type = cloudType(rawType);
-        if (type == null) return Optional.empty();
-
-        String user = WaIds.user(chatId);
-        boolean lid = chatId.endsWith("@lid");
+        Parts p = parts(raw, fallbackTime);
+        if (p == null) return Optional.empty();
+        String user = WaIds.user(p.chatId);
+        boolean lid = p.chatId.endsWith("@lid");
         String from = lid ? lidPhone(raw) : user;
         String fromUserId = lid ? user : null;
+        return Optional.of(new Message(from, fromUserId, p.id, timestamp(raw, fallbackTime), p.type, p.context,
+                p.referral, null, p.text, p.image, p.video, p.audio, p.document, p.sticker, p.location, p.contacts,
+                null, null, null, null, null, null, null, null, null, null, null, p.waWeb));
+    }
+
+    /**
+     * Our own message as Meta's echo; empty for a message from a person, a notice, a chat of no person and a message
+     * with no id. {@code to} is the chat's digits, or for a {@code @lid} chat {@code toDigitsIfKnown} (else absent).
+     */
+    public Optional<MessageEcho> echo(ChannelContext ctx, JsonNode raw, Instant fallbackTime, String toDigitsIfKnown) {
+        if (!fromMe(raw)) return Optional.empty();
+        Parts p = parts(raw, fallbackTime);
+        if (p == null) return Optional.empty();
+        String to = p.chatId.endsWith("@lid") ? toDigitsIfKnown : WaIds.user(p.chatId);
+        return Optional.of(new MessageEcho(ctx.displayPhoneNumber(), to, p.id, timestamp(raw, fallbackTime), p.type,
+                p.context, p.text, p.image, p.video, p.audio, p.document, p.sticker, p.location, p.contacts, null,
+                null, null, null, null, null, null, null, null, null, null, p.waWeb));
+    }
+
+    /** The status of our message from a {@code message_ack} payload; empty for a person's message or an ack of 0. */
+    public Optional<Status> status(ChannelContext ctx, JsonNode ackPayload, Instant capturedAt) {
+        JsonNode raw = ackPayload.path("message");
+        if (!fromMe(raw)) return Optional.empty();
+        String chatId = chatIdOf(raw);
+        String id = WaIds.messageId(raw.path("id"));
+        if (!isPersonChat(chatId) || id.isEmpty()) return Optional.empty();
+        return Optional.ofNullable(
+                statusOf(id, ackPayload.path("ack").asInt(0), capturedAt, chatId, recipientDigits(chatId)));
+    }
+
+    /** The chat's digits for a {@code @c.us} chat; null for a {@code @lid} chat, whose phone is not invented. */
+    private static String recipientDigits(String chatId) {
+        return chatId.endsWith("@c.us") ? WaIds.user(chatId) : null;
+    }
+
+    /**
+     * Meta's status for a WhatsApp Web ack: 1 sent, 2 delivered, 3 read, 4 played, -1 failed; null for 0 or any other.
+     * {@code at} is the time of the status (now when null). A {@code @lid} chat gives {@code recipient_user_id}.
+     */
+    public static Status statusOf(String messageId, int ack, Instant at, String chatId, String recipientDigits) {
+        String status = switch (ack) {
+            case 1 -> "sent";
+            case 2 -> "delivered";
+            case 3 -> "read";
+            case 4 -> "played";
+            case -1 -> "failed";
+            default -> null;
+        };
+        if (status == null) return null;
+        String lidUser = chatId != null && chatId.endsWith("@lid") ? WaIds.user(chatId) : null;
+        List<MessageError> errors = ack == -1 ? List.of(new MessageError(0, "Not sent",
+                "WhatsApp Web reported the message as failed", null, null)) : null;
+        long seconds = (at == null ? Instant.now() : at).getEpochSecond();
+        WaWeb waWeb = new WaWeb(chatId, ack, null, null, null, null, null, null, null, null,
+                at == null ? null : at.toEpochMilli());
+        return new Status(messageId, status, String.valueOf(seconds), recipientDigits, lidUser, null, null, errors, null,
+                waWeb);
+    }
+
+    /** What a message and an echo share: the type object and everything around it. */
+    private record Parts(String id, String chatId, String type, Context context, Referral referral, Text text,
+            Media image, Media video, Media audio, Media document, Media sticker, Location location,
+            List<ContactCard> contacts, WaWeb waWeb) {}
+
+    /** The shared parts; null for a notice, a chat of no person, a message with no id and a type not carried. */
+    private static Parts parts(JsonNode raw, Instant fallbackTime) {
+        String rawType = rawType(raw);
+        if (NOTICE_TYPES.contains(rawType)) return null;
+        String chatId = chatIdOf(raw);
+        if (!isPersonChat(chatId)) return null;
+        String id = WaIds.messageId(raw.path("id"));
+        if (id.isEmpty()) return null;
+        String type = cloudType(rawType);
+        if (type == null) return null;
 
         List<String> vcards = "contacts".equals(type) ? vcardTexts(raw) : null;
         Text text = "text".equals(type) ? new Text(body(raw, rawType)) : null;
         Media media = MEDIA_TYPES.contains(rawType) ? media(raw, id, rawType) : null;
         Referral referral = referral(raw);
-        Message m = new Message(from, fromUserId, id, timestamp(raw, fallbackTime), type, context(raw), referral, null,
-                text, "image".equals(type) ? media : null, "video".equals(type) ? media : null,
-                "audio".equals(type) ? media : null, "document".equals(type) ? media : null,
-                "sticker".equals(type) ? media : null, "location".equals(type) ? location(raw) : null,
-                vcards == null ? null : VcardCards.parse(vcards), null, null, null, null, null, null, null, null, null,
-                null, null, waWeb(raw, chatId, rawType, type, referral, vcards, fallbackTime));
-        return Optional.of(m);
+        return new Parts(id, chatId, type, context(raw), referral, text, "image".equals(type) ? media : null,
+                "video".equals(type) ? media : null, "audio".equals(type) ? media : null,
+                "document".equals(type) ? media : null, "sticker".equals(type) ? media : null,
+                "location".equals(type) ? location(raw) : null, vcards == null ? null : VcardCards.parse(vcards),
+                waWeb(raw, chatId, rawType, type, referral, vcards, fallbackTime));
     }
 
     /** The one contact of the event: the person who wrote, by phone and lid, with the name WhatsApp showed. */

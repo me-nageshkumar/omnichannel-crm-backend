@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import me.nageshk.omnichannel.common.channel.ChannelContext;
 import me.nageshk.omnichannel.common.channel.ChannelKind;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Change;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Value;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WebhookEvent;
@@ -32,9 +34,12 @@ class WaWebWebhookConverterTest {
             "text_cus", "text_lid_with_sender_pn", "text_lid_without_phone", "text_key_dollar1", "text_remote_string",
             "text_template", "text_link_preview", "image_caption", "image_view_once", "video_gif", "ptt", "document",
             "sticker", "location", "vcard", "multi_vcard", "reply_quoted", "forwarded", "ad_referral",
-            "link_preview_not_ad", "notice_dropped", "group_dropped", "no_id_dropped", "message_event_ignored"})
+            "link_preview_not_ad", "notice_dropped", "group_dropped", "no_id_dropped", "message_event_ignored", "echo_text_ack0",
+            "echo_image_ack2", "echo_lid_unknown_phone", "ack_read_ours", "ack_failed_ours", "ack_inbound_dropped",
+            "ack_pending_dropped"})
     void convertsToTheExpectedWebhook(String name) throws IOException {
-        String event = name.equals("message_event_ignored") ? "message" : "message_create";
+        String event = name.startsWith("ack_") ? "message_ack"
+                : name.equals("message_event_ignored") ? "message" : "message_create";
         Optional<WebhookEvent> result = converter.convert(CTX, event, read(name + ".raw.json"), CAPTURED);
         JsonNode expected = readOrNull(name + ".expected.json");
         if (expected == null) {
@@ -79,7 +84,33 @@ class WaWebWebhookConverterTest {
     void ourOwnMessageIsNotInboundHere() throws IOException {
         ObjectNode raw = (ObjectNode) read("text_cus.raw.json");
         raw.put("fromMe", true);
-        assertThat(converter.convert(CTX, "message_create", raw, CAPTURED)).isEmpty();
+        assertThat(converter.message(CTX, raw, CAPTURED)).isEmpty();
+    }
+
+    @Test
+    void anEchoWithAnAckCarriesItsStatusInTheSameEntry() throws IOException {
+        WebhookEvent e = converter.convert(CTX, "message_create", read("echo_image_ack2.raw.json"), CAPTURED)
+                .orElseThrow();
+        List<Change> changes = e.entry().get(0).changes();
+        assertThat(changes).extracting(Change::field).containsExactly("smb_message_echoes", "messages");
+        assertThat(changes.get(1).value().statuses().get(0).id())
+                .isEqualTo(changes.get(0).value().messageEchoes().get(0).id());
+    }
+
+    @Test
+    void anEchoToAnUnknownLidTakesTheDigitsWhenGiven() throws IOException {
+        var echo = converter.echo(CTX, read("echo_lid_unknown_phone.raw.json"), CAPTURED, "919912345678");
+        assertThat(echo.orElseThrow().to()).isEqualTo("919912345678");
+        assertThat(converter.echo(CTX, read("text_cus.raw.json"), CAPTURED, null)).isEmpty();
+    }
+
+    @Test
+    void anAckMapsToMetasStatuses() {
+        assertThat(WaWebWebhookConverter.statusOf("i", 1, CAPTURED, "1@c.us", "1").status()).isEqualTo("sent");
+        assertThat(WaWebWebhookConverter.statusOf("i", 2, CAPTURED, "1@c.us", "1").status()).isEqualTo("delivered");
+        assertThat(WaWebWebhookConverter.statusOf("i", 4, CAPTURED, "1@c.us", "1").status()).isEqualTo("played");
+        assertThat(WaWebWebhookConverter.statusOf("i", 0, CAPTURED, "1@c.us", "1")).isNull();
+        assertThat(WaWebWebhookConverter.statusOf("i", 7, CAPTURED, "1@c.us", "1")).isNull();
     }
 
     @Test

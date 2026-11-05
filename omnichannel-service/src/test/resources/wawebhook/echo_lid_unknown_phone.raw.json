@@ -1,0 +1,16 @@
+{
+  "id": {
+    "fromMe": true,
+    "remote": {
+      "server": "lid",
+      "user": "148073477075110",
+      "_serialized": "148073477075110@lid"
+    },
+    "id": "3EB0E3",
+    "_serialized": "true_148073477075110@lid_3EB0E3"
+  },
+  "type": "chat",
+  "t": 1793872800,
+  "ack": 1,
+  "body": "Hello"
+}

@@ -1,0 +1,60 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "pn-1",
+      "changes": [
+        {
+          "field": "smb_message_echoes",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "919928088743",
+              "phone_number_id": "pn-1"
+            },
+            "message_echoes": [
+              {
+                "from": "919928088743",
+                "id": "true_148073477075110@lid_3EB0E3",
+                "timestamp": "1793872800",
+                "type": "text",
+                "text": {
+                  "body": "Hello"
+                },
+                "wa_web": {
+                  "chat_id": "148073477075110@lid",
+                  "ack": 1,
+                  "captured_at": 1793872800000,
+                  "original_type": "chat"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "919928088743",
+              "phone_number_id": "pn-1"
+            },
+            "statuses": [
+              {
+                "id": "true_148073477075110@lid_3EB0E3",
+                "status": "sent",
+                "timestamp": "1793872800",
+                "recipient_user_id": "148073477075110",
+                "wa_web": {
+                  "chat_id": "148073477075110@lid",
+                  "ack": 1,
+                  "captured_at": 1793872800000
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
