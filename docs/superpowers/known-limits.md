@@ -3,8 +3,9 @@
 Behaviour a future reader might take for a bug, and features parked by the user. Each limit needs a decision or more
 investigation before it becomes a task; decisions already made live in the specs, history in git. The rules and
 commands are in `project-rules.md` next to this file. Nothing is queued: the CRM port, the inbox work, Automations
-(spec `specs/2026-11-03-automations-design.md`) and click-to-WhatsApp ad leads (spec
-`specs/2026-11-04-ctwa-leads-design.md`) are merged and deployed.
+(spec `specs/2026-11-03-automations-design.md`), click-to-WhatsApp ad leads (spec
+`specs/2026-11-04-ctwa-leads-design.md`) and one contact across two ids (spec `specs/2026-11-04-one-contact-design.md`)
+are merged and deployed.
 
 ## Checks still owed by the user
 
@@ -12,7 +13,10 @@ commands are in `project-rules.md` next to this file. Nothing is queued: the CRM
   rule, test it on a contact the user names, publish, move back to draft.
 - Click-to-WhatsApp ad check (console plan `plans/2026-11-04-ctwa-leads-console.md`, Task 4): the user taps one of
   their own ads from a phone they name; confirm the inbox line, the CRM origin and a draft rule "Ad is yes".
-Both need the demo-manager password typed into the session. Never message anyone the user has not named.
+- One-contact check (console plan `plans/2026-11-04-one-contact-console.md`, Task 3): count the demo brand's contacts
+  lacking a phone or a hidden id, press "Resolve hidden numbers" as demo-manager and compare; then write from a phone the
+  user names with the number hidden and confirm one contact, the "WhatsApp ids" row and the header's other-chat line.
+All need the demo-manager password typed into the session. Never message anyone the user has not named.
 
 ## Parked features
 
