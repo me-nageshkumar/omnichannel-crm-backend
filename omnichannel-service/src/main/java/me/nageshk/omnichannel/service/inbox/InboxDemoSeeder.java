@@ -69,7 +69,7 @@ public class InboxDemoSeeder implements ApplicationRunner {
     private record Line(MessageSource source, String type, String text, long minutesAgo, MessageStatus status,
             Staff by) {
         static Line in(String text, long ago) {
-            return new Line(MessageSource.CONTACT, "chat", text, ago, MessageStatus.PENDING, null);
+            return new Line(MessageSource.CONTACT, "text", text, ago, MessageStatus.PENDING, null);
         }
 
         static Line image(String caption, long ago) {
@@ -77,11 +77,11 @@ public class InboxDemoSeeder implements ApplicationRunner {
         }
 
         static Line console(Staff by, String text, long ago, MessageStatus status) {
-            return new Line(MessageSource.CONSOLE, "chat", text, ago, status, by);
+            return new Line(MessageSource.CONSOLE, "text", text, ago, status, by);
         }
 
         static Line phone(String text, long ago, MessageStatus status) {
-            return new Line(MessageSource.WHATSAPP_WEB, "chat", text, ago, status, null);
+            return new Line(MessageSource.WHATSAPP_WEB, "text", text, ago, status, null);
         }
     }
 

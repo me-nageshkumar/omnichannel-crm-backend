@@ -48,7 +48,7 @@ public class ChatPreviewBackfill implements ApplicationRunner {
             Query stale = new Query(new Criteria().orOperator(
                     Criteria.where(TEXT).regex("^[\\s\\S]{" + CUT_LENGTH + "}$"),
                     Criteria.where(TEXT).is("Unsupported message").and("lastMessage.type").in(labelled()),
-                    Criteria.where(TEXT).is("👤 Contact card").and("lastMessage.type").is("vcard")));
+                    Criteria.where(TEXT).is("👤 Contact card").and("lastMessage.type").is("contacts")));
             long n = mongo.find(stale, WaWebChat.class).stream().filter(this::rebuild).count();
             if (n > 0) log.info("rebuilt the preview of {} chat(s)", n);
         } catch (RuntimeException e) {
@@ -73,8 +73,8 @@ public class ChatPreviewBackfill implements ApplicationRunner {
     /** The types that were saved as "Unsupported message" and now have a label of their own. */
     private static List<String> labelled() {
         List<String> types = new ArrayList<>(WaWebWebhookConverter.NOTICE_TYPES);
-        types.addAll(List.of("call_log", "biz_content_placeholder", "unknown", "newsletter_follower_invite", "album",
-                "rich_response"));
+        types.addAll(List.of("call_log", "biz_content_placeholder", "unsupported", "newsletter_follower_invite",
+                "album", "rich_response"));
         return types;
     }
 

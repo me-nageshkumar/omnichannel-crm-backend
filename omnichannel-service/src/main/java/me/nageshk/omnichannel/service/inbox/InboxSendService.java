@@ -180,7 +180,7 @@ public class InboxSendService {
         switch (r.type()) {
             case TEXT -> {
                 if (c.getLinkPreview() != null) options.put("linkPreview", c.getLinkPreview());
-                return new Outgoing(c.getBody(), options, "chat", c.getBody(), null, null, null, templateId);
+                return new Outgoing(c.getBody(), options, "text", c.getBody(), null, null, null, templateId);
             }
             case IMAGE, VIDEO, DOCUMENT, AUDIO -> {
                 String caption = c.getCaption() == null ? "" : c.getCaption();
@@ -201,7 +201,7 @@ public class InboxSendService {
                     case IMAGE -> "image";
                     case VIDEO -> "video";
                     case DOCUMENT -> "document";
-                    default -> voice ? "ptt" : "audio";
+                    default -> "audio";
                 };
                 WaWebMessage.Media stored = new WaWebMessage.Media(file.mimeType(), file.fileName(), file.size(),
                         null, null);
@@ -268,8 +268,7 @@ public class InboxSendService {
         String id = waMessageId;
         Instant at = echo == null ? now : MessageFields.timestampOf(echo.timestamp(), now);
         int ack = echo == null || echo.waWeb().ack() == null ? 0 : echo.waWeb().ack();
-        String type = echo != null && out.type() == null ? MessageFields.storedType(MessageFields.of(echo))
-                : out.type();
+        String type = echo != null && out.type() == null ? echo.type() : out.type();
         // a chat started from the console was addressed to phone@c.us; WhatsApp mostly answers under the person's
         // @lid, and that is the chat the message (and its message_create event) belong to
         String lidPhone = typedPhone;
@@ -281,7 +280,7 @@ public class InboxSendService {
         String phone = lidPhone;
 
         Recorded recorded = InboxIngestService.retrying(
-                () -> record(actor, sent, out, type == null ? "chat" : type, id, at, ack, now, phone));
+                () -> record(actor, sent, out, type == null ? "text" : type, id, at, ack, now, phone));
         WaWebChat chat = recorded.chat();
         if (actor instanceof UserActor user) {
             try {

@@ -489,7 +489,7 @@ public class InboxIngestService {
         m.setStatus(MessageStatus.PENDING);
         m.setStatusTimes(new WaWebMessage.StatusTimes());
         MessageFields.Content c = in.content();
-        m.setType(MessageFields.storedType(c));
+        m.setType(c.type() == null ? "text" : c.type());
         m.setBody(MessageFields.bodyOf(c));
         m.setMedia(MessageFields.mediaOf(c));
         m.setLocation(MessageFields.locationOf(c));
@@ -583,11 +583,11 @@ public class InboxIngestService {
         return switch (type == null ? "" : type) {
             case "image" -> "📷 Photo";
             case "video" -> "🎥 Video";
-            case "audio", "ptt" -> "🎤 Voice message";
+            case "audio" -> "🎤 Voice message";
             case "document" -> "📄 " + (filename == null || filename.isBlank() ? "Document" : filename);
             case "sticker" -> "Sticker";
             case "location" -> "📍 Location";
-            case "vcard", "multi_vcard" -> ContactCards.preview(text);
+            case "contacts" -> ContactCards.preview(text);
             case "poll_creation" -> "📊 Poll";
             case "call_log" -> "📞 Call";
             case "revoked" -> "This message was deleted";
@@ -596,7 +596,7 @@ public class InboxIngestService {
             case "rich_response" -> "🤖 Bot reply";
             // WhatsApp Web itself cannot show these, so neither can we; the phone can
             case "biz_content_placeholder" -> "💼 Business message";
-            case "unknown" -> "Message to view on the phone";
+            case "unsupported" -> "Message to view on the phone";
             case "newsletter_follower_invite" ->
                     text == null || text.isBlank() ? "📢 Channel invite" : "📢 Channel invite: " + text;
             default -> "Unsupported message";
@@ -606,7 +606,7 @@ public class InboxIngestService {
     /** For these types the body is a thumbnail or raw card text, never a caption. */
     private static boolean labelFirst(String type) {
         return switch (type == null ? "" : type) {
-            case "location", "vcard", "multi_vcard", "sticker", "poll_creation", "revoked",
+            case "location", "contacts", "sticker", "poll_creation", "revoked",
                     "newsletter_follower_invite" -> true;
             default -> false;
         };

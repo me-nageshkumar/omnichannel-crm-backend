@@ -263,9 +263,10 @@ public final class WaWebWebhookConverter {
 
     // ---- text and media
 
-    /** The text a person wrote: the body, unless it is a media thumbnail. */
+    /** The text a person wrote: the body, unless it is a media thumbnail (a {@code chat} body is always text). */
     private static String body(JsonNode raw, String rawType) {
-        return MessageBodies.readable(rawType, raw.path("body").isTextual() ? raw.path("body").asString() : null);
+        return MessageBodies.readable("chat".equals(rawType) ? "text" : rawType,
+                raw.path("body").isTextual() ? raw.path("body").asString() : null);
     }
 
     /**

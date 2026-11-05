@@ -80,27 +80,6 @@ public final class MessageFields {
     // ---- the row
 
     /**
-     * The type as rows store it today: WhatsApp Web's name ({@code wa_web.original_type} whenever the webhook type
-     * differs from it), else Meta's type mapped back ({@code text} → {@code chat}, a voice {@code audio} →
-     * {@code ptt}, {@code contacts} → {@code vcard}/{@code multi_vcard}). Task 8 stores Meta's names and removes this.
-     */
-    static String storedType(Content c) {
-        if (c.waWeb() != null && notBlank(c.waWeb().originalType())) return c.waWeb().originalType();
-        String type = c.type() == null ? "text" : c.type();
-        return switch (type) {
-            case "text" -> "chat";
-            case "audio" -> c.audio() != null && Boolean.TRUE.equals(c.audio().voice()) ? "ptt" : "audio";
-            case "contacts" -> cardCount(c) == 1 ? "vcard" : "multi_vcard";
-            default -> type;
-        };
-    }
-
-    private static int cardCount(Content c) {
-        if (c.waWeb() != null && c.waWeb().vcards() != null) return c.waWeb().vcards().size();
-        return c.contacts() == null ? 0 : c.contacts().size();
-    }
-
-    /**
      * What the sender wrote: the text, a media caption, the vCards of a card message, the question of a poll, the
      * label of a button or list reply, the body of a business message, the channel of an invite; else
      * {@code wa_web.body}, the text of a message Meta's shape has no place for; else null.

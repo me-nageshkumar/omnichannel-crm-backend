@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  */
 public final class MessageBodies {
 
-    private static final Set<String> TEXT_TYPES = Set.of("chat", "text");
+    private static final Set<String> TEXT_TYPES = Set.of("text");
     /** How base64 of a JPEG, PNG and WebP starts: a long token in a caption is text, not a thumbnail. */
     private static final List<String> IMAGE_STARTS = List.of("/9j/", "iVBOR", "UklGR");
     private static final int MIN_THUMBNAIL_LENGTH = 64;
