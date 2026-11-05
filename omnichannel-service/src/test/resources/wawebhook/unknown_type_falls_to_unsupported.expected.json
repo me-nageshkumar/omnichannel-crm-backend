@@ -1,0 +1,49 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "pn-1",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "919928088743",
+              "phone_number_id": "pn-1"
+            },
+            "contacts": [
+              {
+                "wa_id": "919912345678"
+              }
+            ],
+            "messages": [
+              {
+                "id": "false_919912345678@c.us_SCH1",
+                "timestamp": "1793872800",
+                "type": "unsupported",
+                "from": "919912345678",
+                "errors": [
+                  {
+                    "code": 131051,
+                    "title": "Message type unknown",
+                    "message": "Message type unknown",
+                    "error_data": {
+                      "details": "scheduled_event_creation"
+                    }
+                  }
+                ],
+                "wa_web": {
+                  "chat_id": "919912345678@c.us",
+                  "ack": 1,
+                  "captured_at": 1793872800000,
+                  "original_type": "scheduled_event_creation"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "BR1",
+    "_serialized": "false_919912345678@c.us_BR1"
+  },
+  "type": "buttons_response",
+  "t": 1793872800,
+  "ack": 1,
+  "selectedButtonId": "0004_hindi_0",
+  "body": "English"
+}

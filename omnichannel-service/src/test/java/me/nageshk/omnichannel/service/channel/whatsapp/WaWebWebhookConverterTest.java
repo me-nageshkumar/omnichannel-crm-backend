@@ -36,9 +36,15 @@ class WaWebWebhookConverterTest {
             "sticker", "location", "vcard", "multi_vcard", "reply_quoted", "forwarded", "ad_referral",
             "link_preview_not_ad", "notice_dropped", "group_dropped", "no_id_dropped", "message_event_ignored", "echo_text_ack0", "echo_text_ack_failed",
             "echo_image_ack2", "echo_lid_unknown_phone", "ack_read_ours", "ack_failed_ours", "ack_inbound_dropped",
-            "ack_pending_dropped"})
+            "ack_pending_dropped",
+            "poll_creation_single", "poll_creation_multi_with_votes", "vote_inbound", "vote_ours", "call_missed",
+            "call_rejected", "call_completed_video", "revoked_sender", "biz_placeholder_auth", "newsletter_invite",
+            "album", "unknown_phone_only", "interactive_quick_reply_with_video", "interactive_cta_url",
+            "buttons_response", "list_response", "rich_response_text", "order_minimal",
+            "unknown_type_falls_to_unsupported"})
     void convertsToTheExpectedWebhook(String name) throws IOException {
         String event = name.startsWith("ack_") ? "message_ack"
+                : name.startsWith("vote_") ? "vote_update"
                 : name.equals("message_event_ignored") ? "message" : "message_create";
         Optional<WebhookEvent> result = converter.convert(CTX, event, read(name + ".raw.json"), CAPTURED);
         JsonNode expected = readOrNull(name + ".expected.json");
@@ -50,6 +56,18 @@ class WaWebWebhookConverterTest {
         // through text, so that numbers take the same node types as the parsed expectation
         JsonNode actual = mapper.readTree(mapper.writeValueAsString(result.get()));
         assertThat(actual).isEqualTo(expected);
+    }
+
+    @Test
+    void aVoteIsAMessageAboutThePollWithADeterministicId() throws IOException {
+        Value v = converter.convert(CTX, "vote_update", read("vote_inbound.raw.json"), CAPTURED).orElseThrow()
+                .entry().get(0).changes().get(0).value();
+        Message vote = v.messages().get(0);
+        assertThat(vote.type()).isEqualTo("poll_vote");
+        assertThat(vote.id()).isEqualTo("vote:true_919912345678@c.us_POLL1:919912345678@c.us");
+        assertThat(vote.pollVote().selectedOptions()).containsExactly(0, 2);
+        assertThat(vote.waWeb().chatId()).isEqualTo("919912345678@c.us");
+        assertThat(v.contacts()).isNull();
     }
 
     @Test

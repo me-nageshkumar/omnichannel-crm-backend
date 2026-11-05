@@ -1,0 +1,30 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "INT2",
+    "_serialized": "false_919912345678@c.us_INT2"
+  },
+  "type": "interactive",
+  "t": 1793872800,
+  "ack": 1,
+  "nativeFlowName": "cta_url",
+  "interactiveType": "native_flow",
+  "interactiveHeader": {
+    "hasMediaAttachment": false
+  },
+  "interactivePayload": {
+    "buttons": [
+      {
+        "name": "cta_url",
+        "buttonParamsJson": "{\"display_text\": \"Visit\", \"id\": \"u1\", \"url\": \"https://example.com\"}"
+      }
+    ]
+  },
+  "body": "See our site",
+  "footer": "Thanks"
+}

@@ -36,8 +36,8 @@ import tools.jackson.databind.node.ObjectNode;
 @Component
 public final class WaWebWebhookConverter {
 
-    private static final String CHANGE_FIELD = "messages";
-    private static final String ECHO_FIELD = "smb_message_echoes";
+    static final String CHANGE_FIELD = "messages";
+    static final String ECHO_FIELD = "smb_message_echoes";
     private static final Set<String> NOTICE_TYPES = Set.of("notification_template", "e2e_notification", "notification",
             "group_notification", "broadcast_notification");
     private static final Set<String> MEDIA_TYPES = Set.of("image", "video", "audio", "ptt", "document", "sticker");
@@ -58,6 +58,7 @@ public final class WaWebWebhookConverter {
             return status(ctx, payload, capturedAt).map(st -> WebhookEvent.of(ctx,
                     List.of(new Change(CHANGE_FIELD, Value.of(ctx).withStatuses(List.of(st))))));
         }
+        if ("vote_update".equals(eventName)) return WaWebExtensionTypes.vote(ctx, payload, capturedAt);
         if (!"message_create".equals(eventName)) return Optional.empty();
         if (fromMe(payload)) return echoEvent(ctx, payload, capturedAt);
         return message(ctx, payload, capturedAt).map(m -> {
@@ -88,8 +89,10 @@ public final class WaWebWebhookConverter {
         String from = lid ? lidPhone(raw) : user;
         String fromUserId = lid ? user : null;
         return Optional.of(new Message(from, fromUserId, p.id, timestamp(raw, fallbackTime), p.type, p.context,
-                p.referral, null, p.text, p.image, p.video, p.audio, p.document, p.sticker, p.location, p.contacts,
-                null, null, null, null, null, null, null, null, null, null, null, p.waWeb));
+                p.referral, p.ext.errors(), p.text, p.image, p.video, p.audio, p.document, p.sticker, p.location,
+                p.contacts, p.ext.button(), p.ext.interactive(), p.ext.order(), null, p.ext.pollCreation(), null,
+                p.ext.callLog(), p.ext.revoked(), p.ext.bizContentPlaceholder(), p.ext.newsletterFollowerInvite(),
+                p.ext.album(), p.waWeb));
     }
 
     /**
@@ -102,8 +105,10 @@ public final class WaWebWebhookConverter {
         if (p == null) return Optional.empty();
         String to = p.chatId.endsWith("@lid") ? toDigitsIfKnown : WaIds.user(p.chatId);
         return Optional.of(new MessageEcho(ctx.displayPhoneNumber(), to, p.id, timestamp(raw, fallbackTime), p.type,
-                p.context, p.text, p.image, p.video, p.audio, p.document, p.sticker, p.location, p.contacts, null,
-                null, null, null, null, null, null, null, null, null, null, p.waWeb));
+                p.context, p.text, p.image, p.video, p.audio, p.document, p.sticker, p.location, p.contacts,
+                p.ext.button(), p.ext.interactive(), p.ext.order(), null, p.ext.pollCreation(), null, p.ext.callLog(),
+                p.ext.revoked(), p.ext.bizContentPlaceholder(), p.ext.newsletterFollowerInvite(), p.ext.album(),
+                p.waWeb));
     }
 
     /** The status of our message from a {@code message_ack} payload; empty for a person's message or an ack of 0. */
@@ -149,7 +154,7 @@ public final class WaWebWebhookConverter {
     /** What a message and an echo share: the type object and everything around it. */
     private record Parts(String id, String chatId, String type, Context context, Referral referral, Text text,
             Media image, Media video, Media audio, Media document, Media sticker, Location location,
-            List<ContactCard> contacts, WaWeb waWeb) {}
+            List<ContactCard> contacts, WaWeb waWeb, WaWebExtensionTypes.Mapped ext) {}
 
     /** The shared parts; null for a notice, a chat of no person, a message with no id and a type not carried. */
     private static Parts parts(JsonNode raw, Instant fallbackTime) {
@@ -160,17 +165,22 @@ public final class WaWebWebhookConverter {
         String id = WaIds.messageId(raw.path("id"));
         if (id.isEmpty()) return null;
         String type = cloudType(rawType);
-        if (type == null) return null;
+        WaWebExtensionTypes.Mapped ext = WaWebExtensionTypes.Mapped.NONE;
+        if (type == null) {
+            ext = WaWebExtensionTypes.map(raw, id, rawType);
+            type = ext.type();
+        }
 
         List<String> vcards = "contacts".equals(type) ? vcardTexts(raw) : null;
-        Text text = "text".equals(type) ? new Text(body(raw, rawType)) : null;
+        Text text = ext.text() != null ? ext.text()
+                : "text".equals(type) && ext.type() == null ? new Text(body(raw, rawType)) : null;
         Media media = MEDIA_TYPES.contains(rawType) ? media(raw, id, rawType) : null;
         Referral referral = referral(raw);
         return new Parts(id, chatId, type, context(raw), referral, text, "image".equals(type) ? media : null,
                 "video".equals(type) ? media : null, "audio".equals(type) ? media : null,
                 "document".equals(type) ? media : null, "sticker".equals(type) ? media : null,
                 "location".equals(type) ? location(raw) : null, vcards == null ? null : VcardCards.parse(vcards),
-                waWeb(raw, chatId, rawType, type, referral, vcards, fallbackTime));
+                waWeb(raw, chatId, rawType, type, referral, vcards, fallbackTime, ext.media()), ext);
     }
 
     /** The one contact of the event: the person who wrote, by phone and lid, with the name WhatsApp showed. */
@@ -374,11 +384,11 @@ public final class WaWebWebhookConverter {
     // ---- wa_web
 
     private static WaWeb waWeb(JsonNode raw, String chatId, String rawType, String type, Referral referral,
-            List<String> vcards, Instant capturedAt) {
+            List<String> vcards, Instant capturedAt, boolean extMedia) {
         boolean media = MEDIA_TYPES.contains(rawType);
         JsonNode ctx = raw.path("ctwaContext");
         return new WaWeb(chatId, raw.path("ack").asInt(0), rawType.equals(type) ? null : rawType,
-                media ? fileSize(raw) : null, media ? mediaAvailable(raw) : null, text(raw.path("hsmTag")),
+                media ? fileSize(raw) : null, media || extMedia ? mediaAvailable(raw) : null, text(raw.path("hsmTag")),
                 referral == null ? null : adRaw(ctx), referral == null ? null : adText(ctx.path("sourceApp")),
                 referral == null ? null : adText(ctx.path("conversionSource")), vcards,
                 capturedAt == null ? null : capturedAt.toEpochMilli());

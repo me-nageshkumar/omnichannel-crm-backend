@@ -1,0 +1,18 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "CALL3",
+    "_serialized": "false_919912345678@c.us_CALL3"
+  },
+  "type": "call_log",
+  "t": 1793872800,
+  "ack": 1,
+  "callOutcome": "Completed",
+  "isVideoCall": true,
+  "callDuration": 42
+}

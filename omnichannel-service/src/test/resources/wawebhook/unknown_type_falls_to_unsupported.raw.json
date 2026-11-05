@@ -1,0 +1,15 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "SCH1",
+    "_serialized": "false_919912345678@c.us_SCH1"
+  },
+  "type": "scheduled_event_creation",
+  "t": 1793872800,
+  "ack": 1
+}

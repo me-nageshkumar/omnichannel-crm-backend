@@ -1,0 +1,23 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "REV1",
+    "_serialized": "false_919912345678@c.us_REV1"
+  },
+  "type": "revoked",
+  "t": 1793872800,
+  "ack": 1,
+  "protocolMessageKey": {
+    "fromMe": false,
+    "remote": {
+      "$1": "919912345678@c.us"
+    },
+    "id": "3EB0ORIG",
+    "$1": "false_919912345678@c.us_3EB0ORIG"
+  }
+}

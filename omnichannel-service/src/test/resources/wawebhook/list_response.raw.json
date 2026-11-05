@@ -1,0 +1,21 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "LR1",
+    "_serialized": "false_919912345678@c.us_LR1"
+  },
+  "type": "list_response",
+  "t": 1793872800,
+  "ack": 1,
+  "listResponse": {
+    "singleSelectReply": {
+      "selectedRowId": "row1"
+    }
+  },
+  "body": "Row One"
+}

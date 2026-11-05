@@ -1,0 +1,18 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "ORD1",
+    "_serialized": "false_919912345678@c.us_ORD1"
+  },
+  "type": "order",
+  "t": 1793872800,
+  "ack": 1,
+  "orderId": "o1",
+  "orderTitle": "Two shirts",
+  "itemCount": 2
+}
