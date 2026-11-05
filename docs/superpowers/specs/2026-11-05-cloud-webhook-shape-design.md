@@ -5,10 +5,9 @@ WhatsApp Web gives it, as it is; the backend turns each such event into the shap
 everything after that point works on the Cloud shape only. The user skipped the brainstorming questions (the standing
 choice); every decision marked **(my call)** is the builder's and can be reversed.
 
-The analysis behind this document is in §3. One check could not be done: the WhatsApp Web tab was not reachable from
-this session (the Claude in Chrome tools were not connected), so the raw field names in §4 come from the
-whatsapp-web.js sources, our own tests and the stored messages, not from a live model. §7 lists what to confirm on the
-tab before the converter is written.
+The analysis behind this document is in §3; the live WhatsApp Web tab was read afterwards and its findings are in
+`../whatsapp-web-storage-analysis.md` and §6 here. The raw field names in §4 are confirmed against that build
+(2.3000.1053060988) unless §6 says otherwise.
 
 ## 1. Intent
 
@@ -211,10 +210,10 @@ Type objects, with Meta's field names:
 | `contacts` | `[{name: {formatted_name, first_name}, phones: [{phone, wa_id, type}]}]` | parsed from each vCard's `FN`, `N`, `TEL;waid=` lines (`vcard` body, `multi_vcard` `vcardList[].vcard`); the texts also go to `wa_web.vcards` |
 | `button` | `{payload, text}` | `buttons_response` / `template_button_reply`: `selectedButtonId` → `payload`, `body` → `text` |
 | `interactive` (a customer's reply) | `{type: "list_reply", list_reply: {id, title, description}}` | `list_response`: `listResponse.singleSelectReply.selectedRowId` → `id`, `body` → `title` |
-| `interactive` (business-authored) | `{type: "list" \| "button" \| "template" \| "flow", body: {text}, header, footer}` — Meta's own shape for an interactive message a business sends | whatsapp-web.js `interactive`, `list`, `buttons`, `hsm`, `template`, `native_flow`: `body` → `body.text`, `title`/`footer` when present; the buttons themselves are not read (known limit). A business message with a picture (16 of the demo's 28 `interactive` rows carry media) gets `header: {type: "image" \| "video" \| "document", <type>: {id, mime_type, sha256, filename}}` and `wa_web.media_available`, and the processor records `Media` from the header as it does for a media type |
+| `interactive` (business-authored) | `{type: "button" \| "cta_url" \| "list", header, body: {text}, footer: {text}, action: {buttons: [{type: "reply", reply: {id, title}}]}}` — Meta's own shape for an interactive message a business sends | whatsapp-web.js `interactive` (and `list`, `buttons`, `hsm`, `template`, `native_flow`): `type` from `nativeFlowName`, `caption` → `body.text`, `footer`, `title`, buttons from `interactivePayload.buttons[].buttonParamsJson` (`id`, `display_text`, `url`); see §6. A business message with a picture (63 of the tab's 87, 16 of the demo's 28 rows) gets `header: {type: "image" \| "video" \| "document", <type>: {id, mime_type, sha256, filename}}` and `wa_web.media_available`, and the processor records `Media` from the header as it does for a media type |
 | `order` | `{catalog_id, text, product_items}` | `orderId`, `orderTitle`, `itemCount` as far as the model has them; else `unsupported` |
 | `unsupported` | `errors[]` as above | `unknown`, `ciphertext` (never forwarded anyway), and any type this table does not name |
-| `poll_creation` (ext.) | `{name, options: [{name, local_id}], allow_multiple_answers}` | `pollName`, `pollOptions`, `allowMultipleAnswers`; a fetched poll's `pollVotes` → `votes[]` in the same shape as §4.5 |
+| `poll_creation` (ext.) | `{name, options: [{name, local_id}], allow_multiple_answers}` | `pollName`, `pollOptions`, `pollSelectableOptionsCount != 1`; a fetched poll's `pollVotes` → `votes[]` in the same shape as §4.6 |
 | `call_log` (ext.) | `{video, missed, duration}` | `isVideoCall`, `callOutcome` contains "miss", `callDuration`/`duration` |
 | `revoked` (ext.) | `{original_message_id}` | `protocolMessageKey` when present |
 | `biz_content_placeholder` (ext.) | `{}` | the tag is in `wa_web.business_tag` |
@@ -386,17 +385,55 @@ for them. They keep flowing as `WhatsAppEvent` to `DeviceSession`, `SenderEvents
 and `RecentEventsStore`. `RecentEventsStore` and `GET …/events` keep showing the raw events (they are the debugging
 view of the bridge).
 
-## 6. Where to confirm the raw field names (the live-tab check that is still owed)
+## 6. The raw field names, confirmed on the live tab (2026-11-05, build 2.3000.1053060988)
 
-The converter reads these raw fields; each is known from `whatsapp-web.js/src/structures/Message.js`, from our tests
-or from stored rows, and should be confirmed on a live model in the WhatsApp Web tab (`window.require('WAWebCollections').Msg.getModelsArray()`,
-then `WWebJS.getMessageModel(m)`) before the fixtures are written: `filehash` (base64 SHA-256, the Cloud `sha256`
-format), `mimetype`, `size`, `caption`, `filename`, `isGif`, `isViewOnce`, `duration`; `quotedStanzaID`,
-`quotedParticipant`, `quotedMsg`; `isForwarded`, `forwardingScore`; `senderPn`; `notifyName`; `ctwaContext`;
-`vcardList[].vcard`; `pollName`, `pollOptions[].{name, localId}`, `allowMultipleAnswers`; `isVideoCall`,
-`callOutcome`, `callDuration`; `protocolMessageKey`; `selectedButtonId`, `listResponse`; `orderId`, `orderTitle`,
-`itemCount`; `hsmTag`; `newsletterFollowerInviteInfo.newsletterName`. A field missing on the live build changes the
-converter's reading, never the Cloud shape.
+Read from 1 023 in-memory message models of the Main line's tab (`whatsapp-web-storage-analysis.md` §2 has the full
+table). What the converter reads, and what changed against the first draft:
+
+- **Keys and ids.** `id` = `{fromMe, remote, id, $1, participant, self}`: `_serialized` is absent from message keys
+  and `$1` carries its value; Wids (`remote`, `author`, `callCreator`, `quotedParticipant`) still have
+  `{server, user, _serialized}`. The converter uses the page's `messageKey`/`widKey` logic (both forms).
+- **Media.** `directPath`, `mediaKey`, `mediaKeyTimestamp`, `filehash` (44-char base64 of the SHA-256, so it is the
+  Cloud `sha256` as is), `encFilehash`, `mimetype`, `size`, `width`, `height`, `caption`, `filename`, `pageCount`,
+  `duration`, `waveform`; `body` is the base64 thumbnail. A view-once image has `mimetype` but no `directPath`:
+  `wa_web.media_available` is false for it. `isGif` and `isViewOnce` exist as flags.
+- **Text.** `body`; a link preview is `chat` with `subtype: url` plus `title`, `description`, `matchedText`,
+  `canonicalUrl`, thumbnails: still `text` (Meta has no preview object on inbound text). A business template is
+  `chat` with `hsmTag`, `hsmCategory`, `templateId`, `isFromTemplate`, `hydratedButtons[]`, `footer`, `title`: still
+  `text` (today's behaviour, including automations), its tag in `wa_web.business_tag`.
+- **Replies and forwards.** `quotedStanzaID`, `quotedParticipant` (wid), `quotedMsg` (the whole quoted model);
+  `isForwarded`, `forwardingScore`.
+- **Polls.** `pollName`, `pollOptions[{name, localId}]`, `pollSelectableOptionsCount` (1 = single choice; the draft
+  said `allowMultipleAnswers`, which does not exist here: `allow_multiple_answers = pollSelectableOptionsCount != 1`),
+  `pollType`, `pollContentType`.
+- **Calls.** `callOutcome` ∈ {`Completed`, `Missed`, `Rejected`, `AcceptedElsewhere`}, `callDuration`, `isVideoCall`,
+  `callCreator`, `callParticipants[{participant, outcome}]`; no `ack` (so no status).
+- **Revokes.** `protocolMessageKey` (a key with `$1`), `revokeSender`, `revokeTimestamp`, `subtype: sender`.
+- **Cards.** `vcard`: `body` = the vCard text, `vcardFormattedName`; `multi_vcard`: `vcardList[].vcard`.
+- **Business interactive messages** (87, all inbound): `interactiveType` (`native_flow`, `carousel`),
+  `nativeFlowName` (`quick_reply`, `cta_url`, `cta_copy`, `mixed`), `interactiveHeader {hasMediaAttachment,
+  mediaType}`, `interactivePayload.buttons[{name, buttonParamsJson}]` where the JSON holds `display_text` and `id`
+  (and a `url` for `cta_url`), `title`, `footer`, `caption` (the text), `hsmTag`, `templateId`; 63 of 87 carry media.
+  The converter therefore fills Meta's business interactive shape fully: `interactive.type` from `nativeFlowName`
+  (`quick_reply` → `button`, `cta_url` → `cta_url`, else `list`), `header` from the media, `body.text` from
+  `caption`, `footer.text`, and `action.buttons[{type: "reply", reply: {id, title}}]` from the payload. That lifts
+  the "buttons are lost" limit of `known-limits.md`; the processor still stores the text only.
+- **Other.** `biz_content_placeholder` has `bizContentPlaceholderType` and `hsmTag`; `newsletter_follower_invite`
+  has `newsletterFollowerInviteInfo {newsletterId, newsletterName, inviteMessage}`; `unknown` has `subtype`,
+  `futureproofParams`, `hsmTag`; `album` groups pictures; `rich_response` (a bot answer) → `text` from
+  `unifiedResponse` text when present, else `unsupported`. `orderId`/`orderTitle`/`itemCount`,
+  `selectedButtonId`, `listResponse` were not present on any model: those rows of §4.3 stay as whatsapp-web.js
+  documents them, unverified.
+- **Not on stored models.** `senderPn` (0 of 839 lid messages) and `notifyName` (1) arrive only with a live stanza;
+  the converter reads them when present and the contact fallback (`resolveIds`) stays the way a lid gets its phone.
+- **`ctwaContext`.** Present on one message: a business's link preview of a group invite, with `sourceUrl`,
+  `title`, `description`, `thumbnail`, `thumbnailUrl`, `mediaType` (a number), `mediaUrl`, and none of `sourceId`,
+  `conversionSource`, `ctwaClid`, `sourceApp`. Today's ad rule (`sourceUrl` alone suffices) would have called it an
+  ad. The converter keeps today's rule so the stored data does not change under this feature, and the question of
+  tightening it to `sourceId`/`conversionSource`/`ctwaClid` goes to the owed ad-tap check **(flagged for the user)**;
+  `media_type` is written as Meta's string (`image`/`video`) from the numeric code, best effort.
+- **Storage.** Message content in IndexedDB is encrypted (`msgRowOpaqueData`), so a fetch of history through the page's
+  decrypted models is the only way to read old messages; nothing here changes the history import.
 
 ## 7. Limits and follow-ons
 
