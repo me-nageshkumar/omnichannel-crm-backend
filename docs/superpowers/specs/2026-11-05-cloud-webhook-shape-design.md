@@ -302,6 +302,11 @@ Meta has the type; WhatsApp Web's name for the extension types; nothing else cha
 | `buttons_response`, `template_button_reply` | `button` | none stored today |
 | `image`, `video`, `audio`, `document`, `sticker`, `location`, `interactive`, `poll_creation`, `call_log`, `revoked`, `biz_content_placeholder`, `newsletter_follower_invite` | unchanged | |
 
+Raw types Meta has no name for (`product`, `order` without a title, a `rich_response` without text, and anything not
+in §4.3) are stored as `unsupported` and preview as "Message to view on the phone" (they previewed as "Unsupported
+message", and a textless bot reply as "🤖 Bot reply", before). Rows stored under the old names before the migration
+keep them; the migration renames only the table above.
+
 `MessageTypeMigration` runs at every startup from `CollectionRenames.afterSingletonsInstantiated()`, like
 `ContactIdsMigration`: `updateMany` on `waWebMessages.type` and `waWebChats.lastMessage.type`, idempotent because
 every old name in the table differs from every new name (which is why `interactive` is not renamed). The demo database
@@ -456,6 +461,9 @@ table). What the converter reads, and what changed against the first draft:
   nothing; `retention` bounds the collection.
 - The Cloud channel itself (webhook controller, verification, Graph API media and sending) is the next feature; this
   one makes `WhatsAppWebhookProcessor` the place it will call.
+- A `rich_response` with text is stored as `text` and can start a TEXT automation, as any text can; before it started
+  none (bot chats are dropped as non-person chats, so this touches a bot reply inside a person's chat only).
+- The `preview` label and the `labelled()` entry for `rich_response` apply to rows stored before the migration only.
 
 ## 8. Left to the builder
 
