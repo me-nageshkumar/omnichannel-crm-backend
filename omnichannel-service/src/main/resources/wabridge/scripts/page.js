@@ -25,9 +25,9 @@
     mod
   ));
 
-  // ../../../whatsapp-web.js/src/util/Injected/Utils.js
+  // ../whatsapp-web.js/src/util/Injected/Utils.js
   var require_Utils = __commonJS({
-    "../../../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
+    "../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
       "use strict";
       exports.LoadUtils = () => {
         window.WWebJS = {};
@@ -371,6 +371,9 @@
             ...botOptions,
             ...extraOptions
           };
+          if (message.__x_id) {
+            delete message.__x_id;
+          }
           if (botOptions) {
             delete message.canonicalUrl;
           }
@@ -425,7 +428,7 @@
           const [msgPromise, sendMsgResultPromise] = window.require("WAWebSendMsgChatAction").addAndSendMsgToChat(chat, message);
           await msgPromise;
           if (options.waitUntilMsgSent) await sendMsgResultPromise;
-          return window.require("WAWebCollections").Msg.get(newMsgKey._serialized);
+          return window.require("WAWebCollections").Msg.get(newMsgKey._serialized || newMsgKey.$1);
         };
         window.WWebJS.editMessage = async (msg, content, options = {}) => {
           const extraOptions = options.extraOptions || {};
@@ -458,7 +461,7 @@
             ...extraOptions
           };
           await window.require("WAWebSendMessageEditAction").sendMessageEdit(msg, content, internalOptions);
-          return window.require("WAWebCollections").Msg.get(msg.id._serialized);
+          return window.require("WAWebCollections").Msg.get(msg.id._serialized || msg.id.$1);
         };
         window.WWebJS.toStickerData = async (mediaInfo) => {
           if (mediaInfo.mimetype == "image/webp") return mediaInfo;
@@ -611,8 +614,11 @@
           }
           if (typeof msg.id.remote === "object") {
             msg.id = Object.assign({}, msg.id, {
-              remote: msg.id.remote._serialized
+              remote: msg.id.remote._serialized || msg.id.remote.$1
             });
+          }
+          if (msg.id && msg.id._serialized == null && msg.id.$1 != null) {
+            msg.id = Object.assign({}, msg.id, { _serialized: msg.id.$1 });
           }
           delete msg.pendingAckUpdate;
           return msg;
@@ -685,7 +691,7 @@
           }
           if (chat.groupMetadata) {
             model.isGroup = true;
-            const chatWid = window.require("WAWebWidFactory").createWid(chat.id._serialized);
+            const chatWid = window.require("WAWebWidFactory").createWid(chat.id._serialized || chat.id.$1);
             const groupMetadata = window.require("WAWebCollections").GroupMetadata || window.require("WAWebCollections").WAWebGroupMetadataCollection;
             await groupMetadata.update(chatWid);
             const { toPn } = window.require("WAWebLidMigrationUtils");
@@ -704,9 +710,8 @@
           }
           model.lastMessage = null;
           if (model.msgs && model.msgs.length) {
-            const lastMessage = chat.lastReceivedKey ? window.require("WAWebCollections").Msg.get(chat.lastReceivedKey._serialized) || (await window.require("WAWebCollections").Msg.getMessagesById([
-              chat.lastReceivedKey._serialized
-            ]))?.messages?.[0] : null;
+            const _lastReceivedKeyId = chat.lastReceivedKey ? chat.lastReceivedKey._serialized || chat.lastReceivedKey.$1 : null;
+            const lastMessage = _lastReceivedKeyId ? window.require("WAWebCollections").Msg.get(_lastReceivedKeyId) || (await window.require("WAWebCollections").Msg.getMessagesById([_lastReceivedKeyId]))?.messages?.[0] : null;
             lastMessage && (model.lastMessage = window.WWebJS.getMessageModel(lastMessage));
           }
           delete model.msgs;
@@ -941,7 +946,8 @@
           return void 0;
         };
         window.WWebJS.rejectCall = async (peerJid, id) => {
-          let userId = window.require("WAWebUserPrefsMeUser").getMaybeMePnUser()._serialized;
+          const _meUser = window.require("WAWebUserPrefsMeUser").getMaybeMePnUser();
+          let userId = _meUser._serialized || _meUser.$1;
           const stanza = window.require("WAWap").wap(
             "call",
             {
@@ -1156,7 +1162,10 @@
                   const [_] = value.participant.map((p) => {
                     const error = toApprove ? value.participant[0].membershipRequestsActionAcceptParticipantMixins?.value.error : value.participant[0].membershipRequestsActionRejectParticipantMixins?.value.error;
                     return {
-                      requesterId: window.require("WAWebWidFactory").createWid(p.jid)._serialized,
+                      requesterId: (() => {
+                        const _w = window.require("WAWebWidFactory").createWid(p.jid);
+                        return _w._serialized || _w.$1;
+                      })(),
                       ...error ? {
                         error: +error,
                         message: membReqResCodes[error] || membReqResCodes.default
@@ -1169,9 +1178,12 @@
                 }
               } else {
                 result.push({
-                  requesterId: window.require("WAWebJidToWid").userJidToUserWid(
-                    participant.participantArgs[0].participantJid
-                  )._serialized,
+                  requesterId: (() => {
+                    const _w = window.require("WAWebJidToWid").userJidToUserWid(
+                      participant.participantArgs[0].participantJid
+                    );
+                    return _w._serialized || _w.$1;
+                  })(),
                   message: "ServerStatusCodeError"
                 });
               }
@@ -1263,9 +1275,9 @@
     }
   });
 
-  // ../../../whatsapp-web.js/src/util/Constants.js
+  // ../whatsapp-web.js/src/util/Constants.js
   var require_Constants = __commonJS({
-    "../../../whatsapp-web.js/src/util/Constants.js"(exports) {
+    "../whatsapp-web.js/src/util/Constants.js"(exports) {
       "use strict";
       exports.WhatsWebURL = "https://web.whatsapp.com/";
       exports.DefaultOptions = {
@@ -1504,7 +1516,17 @@
   }
 
   // src/page/model.js
-  var serializedOf = (wid) => wid && typeof wid === "object" ? wid._serialized : wid;
+  function widKey(wid) {
+    if (wid == null) return null;
+    if (typeof wid === "string") return wid;
+    if (typeof wid !== "object") return null;
+    if (typeof wid._serialized === "string" && wid._serialized)
+      return wid._serialized;
+    if (typeof wid.$1 === "string" && wid.$1) return wid.$1;
+    if (wid.user != null && wid.server) return `${wid.user}@${wid.server}`;
+    return null;
+  }
+  var serializedOf = widKey;
   function messageKey(id) {
     if (!id || typeof id !== "object") return null;
     if (typeof id._serialized === "string" && id._serialized)
@@ -1568,7 +1590,7 @@
     const voter = vote.author ?? vote.from ?? vote.sender;
     return {
       pollMessageId,
-      voter: voter?._serialized ?? voter ?? null,
+      voter: widKey(voter),
       fromMe: isFromMe(vote.id ?? vote.msgKey),
       options: optionPositions(vote.selectedOptionLocalIds, options),
       at: Number(vote.senderTimestampMs ?? vote.t ?? 0)
@@ -1593,9 +1615,9 @@
     err.code = code;
     return err;
   }
-  var remoteOf = (m) => m.id?.remote?._serialized ?? m.id?.remote;
+  var remoteOf = (m) => widKey(m.id?.remote);
   async function waitForCaptured(captured, chat, content) {
-    const chatId = chat.id?._serialized;
+    const chatId = widKey(chat.id);
     const exact = (m) => m.body === content && remoteOf(m) === chatId;
     const loose = (m) => m.body === content;
     for (let waited = 0; waited <= CAPTURE_WAIT_MS; waited += CAPTURE_POLL_MS) {
@@ -1651,7 +1673,7 @@
             if (msg) {
               console.info(
                 "[wabridge] sendMessage: key lookup missed, used captured message",
-                msg.id?._serialized
+                messageKey(msg.id)
               );
             } else {
               console.warn(
@@ -1685,10 +1707,12 @@
       if (!result || result.wid === void 0) return null;
       let lid = null;
       try {
-        lid = window.require("WAWebApiContact").getCurrentLid(result.wid)?._serialized ?? null;
+        lid = widKey(
+          window.require("WAWebApiContact").getCurrentLid(result.wid)
+        );
       } catch {
       }
-      return { phone: result.wid._serialized, lid };
+      return { phone: widKey(result.wid), lid };
     });
     methods.set("resolveIds", async ({ id } = {}) => {
       if (typeof window.WWebJS === "undefined") {
@@ -1709,7 +1733,7 @@
       const lookup = () => {
         try {
           const other2 = isLid ? contact.getPhoneNumber(wid) : contact.getCurrentLid(wid);
-          return other2?._serialized ?? null;
+          return widKey(other2);
         } catch {
           return null;
         }
@@ -1764,15 +1788,12 @@
       const { Chat } = window.require("WAWebCollections");
       const info = getInfo();
       const own = new Set(
-        [
-          info?.wid?._serialized,
-          info?.pnWid?._serialized ?? info?.pnWid
-        ].filter(Boolean)
+        [widKey(info?.wid), widKey(info?.pnWid)].filter(Boolean)
       );
-      return Chat.getModelsArray().filter(
-        (chat) => !chat.isPSA && chat.id._serialized !== "0@c.us" && !own.has(chat.id._serialized) && (chat.id.server === "c.us" || chat.id.server === "lid") && !chat.isGroup && !chat.isNewsletter && !chat.isBroadcast && chat.id._serialized !== "status@broadcast"
-      ).map((chat) => ({
-        id: chat.id._serialized,
+      return Chat.getModelsArray().map((chat) => ({ chat, id: widKey(chat.id) })).filter(
+        ({ chat, id }) => !chat.isPSA && id !== "0@c.us" && !own.has(id) && (chat.id.server === "c.us" || chat.id.server === "lid") && !chat.isGroup && !chat.isNewsletter && !chat.isBroadcast && id !== "status@broadcast"
+      ).map(({ chat, id }) => ({
+        id,
         name: chatName(chat),
         t: typeof chat.t === "number" ? chat.t : null,
         unreadCount: chat.unreadCount ?? 0
@@ -1965,7 +1986,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "26ca6daffdca" : "dev";
+  var BUILD = true ? "9697d65d4df9" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {
@@ -1983,7 +2004,7 @@
       ...window.require("WAWebConnModel").Conn.serialize(),
       wid: me.getMaybeMePnUser() || me.getMaybeMeLidUser(),
       // the phone-number id, so the server can confirm the number even when wid is a privacy id
-      pnWid: me.getMaybeMePnUser()?._serialized ?? null,
+      pnWid: widKey(me.getMaybeMePnUser()),
       waVersion: window.Debug.VERSION
     };
   }
@@ -2053,7 +2074,7 @@
       console.info(
         TAG,
         "ready (server-delivered)",
-        ctl.info.wid?._serialized,
+        widKey(ctl.info.wid),
         window.Debug.VERSION,
         "build",
         BUILD
