@@ -17,6 +17,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatAction;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
+import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookListener;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService;
@@ -85,6 +86,7 @@ class ImportMessageIT {
     }
 
     @Autowired InboxIngestService ingest;
+    @Autowired WaWebWebhookListener live;
     @Autowired ContactRepository contacts;
     @Autowired WaWebChatRepository chats;
     @Autowired WaWebMessageRepository messages;
@@ -260,7 +262,7 @@ class ImportMessageIT {
 
     @Test
     void liveStatusIsKeptWhenImportSeesLower() {
-        ingest.ingestMessage(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
+        live.on(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
                 msg("m1", REMOTE, true, 100, 3, "hello"), null, null));
         Instant readAt = onlyMessage().getStatusTimes().getReadAt();
         recorder.events.clear();
@@ -440,7 +442,7 @@ class ImportMessageIT {
         ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "old"));
         assertThat(onlyChat().getStatus()).isEqualTo(ChatStatus.CLOSED);
 
-        ingest.ingestMessage(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
+        live.on(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
                 msg("m2", REMOTE, false, 200, 0, "new"), null, null));
 
         WaWebChat chat = onlyChat();
