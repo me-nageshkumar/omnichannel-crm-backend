@@ -52,11 +52,11 @@ public final class MessageFields {
 
     // ---- the chat
 
-    /** {@code wa_web.chat_id}, else the sender's lid or phone chat; null without either. */
+    /** {@code wa_web.chat_id}, else the sender's phone or lid chat; null without either. */
     public static String chatId(Message m) {
         if (m.waWeb() != null && notBlank(m.waWeb().chatId())) return m.waWeb().chatId();
-        if (notBlank(m.fromUserId())) return m.fromUserId() + LID;
-        return notBlank(m.from()) ? m.from() + PHONE : null;
+        if (notBlank(m.from())) return m.from() + PHONE;
+        return notBlank(m.fromUserId()) ? m.fromUserId() + LID : null;
     }
 
     /** {@code wa_web.chat_id}, else the recipient's phone chat; null without either. */
@@ -65,11 +65,11 @@ public final class MessageFields {
         return notBlank(e.to()) ? e.to() + PHONE : null;
     }
 
-    /** {@code wa_web.chat_id}, else the recipient's lid or phone chat; null without either. */
+    /** {@code wa_web.chat_id}, else the recipient's phone or lid chat; null without either. */
     public static String chatId(Status s) {
         if (s.waWeb() != null && notBlank(s.waWeb().chatId())) return s.waWeb().chatId();
-        if (notBlank(s.recipientUserId())) return s.recipientUserId() + LID;
-        return notBlank(s.recipientId()) ? s.recipientId() + PHONE : null;
+        if (notBlank(s.recipientId())) return s.recipientId() + PHONE;
+        return notBlank(s.recipientUserId()) ? s.recipientUserId() + LID : null;
     }
 
     /** True for a chat with a person: {@code @c.us} or {@code @lid}. */

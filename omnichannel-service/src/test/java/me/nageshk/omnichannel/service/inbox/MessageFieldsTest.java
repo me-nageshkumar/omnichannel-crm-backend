@@ -462,4 +462,28 @@ class MessageFieldsTest {
         assertThat(ad.sourceId()).isEqualTo("1200");
         assertThat(ad.conversionSource()).isEqualTo("7");
     }
+
+    // ---- chat id of a real Meta body
+
+    @Test
+    void aMetaBodyWithAPhoneAndAUserIdIsAPhoneChat() {
+        var m = new me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message("919912345678", "abc123", "m1", "1", "text",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
+        assertThat(MessageFields.chatId(m)).isEqualTo("919912345678@c.us");
+        var lidOnly = new me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message(null, "abc123", "m1", "1", "text",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
+        assertThat(MessageFields.chatId(lidOnly)).isEqualTo("abc123@lid");
+    }
+
+    @Test
+    void aMetaStatusWithAPhoneAndAUserIdIsAPhoneChat() {
+        var s = new me.nageshk.omnichannel.common.channel.whatsapp.webhook.Status("m1", "sent", "1", "919912345678",
+                "abc123", null, null, null, null, null);
+        assertThat(MessageFields.chatId(s)).isEqualTo("919912345678@c.us");
+        var lidOnly = new me.nageshk.omnichannel.common.channel.whatsapp.webhook.Status("m1", "sent", "1", null,
+                "abc123", null, null, null, null, null);
+        assertThat(MessageFields.chatId(lidOnly)).isEqualTo("abc123@lid");
+    }
 }

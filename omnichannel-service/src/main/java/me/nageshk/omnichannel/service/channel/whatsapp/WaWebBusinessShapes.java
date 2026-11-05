@@ -7,6 +7,7 @@ import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Button;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Interactive;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Media;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Order;
+import me.nageshk.omnichannel.service.inbox.MessageBodies;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -26,7 +27,8 @@ final class WaWebBusinessShapes {
         JsonNode header = raw.path("interactiveHeader");
         boolean hasMedia = header.path("hasMediaAttachment").asBoolean(false);
         Interactive.Header h = hasMedia ? mediaHeader(raw, header, id) : textHeader(raw);
-        String bodyText = hasMedia ? text(raw.path("caption")) : text(raw.path("body"));
+        String bodyText = text(raw.path("caption"));
+        if (bodyText == null) bodyText = MessageBodies.readable("interactive", text(raw.path("body")));
         String footer = text(raw.path("footer"));
         List<Interactive.ActionButton> buttons = buttons(raw.path("interactivePayload").path("buttons"));
         return new Built(new Interactive(interactiveType(raw), h, bodyText == null ? null : new Interactive.Body(bodyText),

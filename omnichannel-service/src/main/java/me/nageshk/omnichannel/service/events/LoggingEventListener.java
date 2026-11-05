@@ -3,6 +3,8 @@ package me.nageshk.omnichannel.service.events;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import me.nageshk.omnichannel.service.channel.whatsapp.WaIds;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
@@ -34,6 +36,7 @@ public class LoggingEventListener {
     }
 
     @EventListener
+    @Order(Ordered.HIGHEST_PRECEDENCE)
     public void on(WhatsAppEvent event) {
         JsonNode p = event.payload();
         switch (event.name()) {

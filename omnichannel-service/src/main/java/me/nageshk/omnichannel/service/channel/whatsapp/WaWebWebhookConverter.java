@@ -169,7 +169,11 @@ public final class WaWebWebhookConverter {
     /** The shared parts; null for a notice, a chat of no person, a message with no id and a type not carried. */
     private static Parts parts(JsonNode raw, Instant fallbackTime) {
         String rawType = rawType(raw);
-        if (isNoticeType(rawType)) return null;
+        if (isNoticeType(rawType)) {
+            log.info("skipping WhatsApp notice {}, subtype {}, fields {}", rawType, raw.path("subtype").asString(""),
+                    new TreeSet<>(raw.propertyNames()));
+            return null;
+        }
         String chatId = chatIdOf(raw);
         if (!isPersonChat(chatId)) return null;
         String id = WaIds.messageId(raw.path("id"));

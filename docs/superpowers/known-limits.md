@@ -101,3 +101,5 @@ Spec `specs/2026-11-05-cloud-webhook-shape-design.md` (§7), plus what the revie
 - The migration (`MessageTypeMigration`) renames only the table in spec §4.7; older `rich_response` and `product`
   rows keep their names.
 - The console accepts the old and the new type names for one release; console plan Task C2 drops the old ones.
+- A poll vote's time is kept to the second (the webhook `timestamp`), so a live vote and an imported vote of the same
+  voter within one second may be ordered wrongly; main kept milliseconds.

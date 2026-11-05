@@ -40,6 +40,7 @@ class WaWebWebhookConverterTest {
             "poll_creation_single", "poll_creation_multi_with_votes", "vote_inbound", "vote_ours", "call_missed",
             "call_rejected", "call_completed_video", "revoked_sender", "biz_placeholder_auth", "newsletter_invite",
             "album", "unknown_phone_only", "interactive_quick_reply_with_video", "interactive_cta_url",
+            "interactive_caption_only", "interactive_media_body_only",
             "buttons_response", "list_response", "rich_response_text", "order_minimal",
             "unknown_type_falls_to_unsupported"})
     void convertsToTheExpectedWebhook(String name) throws IOException {

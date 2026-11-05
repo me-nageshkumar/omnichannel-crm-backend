@@ -267,12 +267,13 @@ public class InboxSendService {
         }
         String id = waMessageId;
         Instant at = echo == null ? now : MessageFields.timestampOf(echo.timestamp(), now);
-        int ack = echo == null || echo.waWeb().ack() == null ? 0 : echo.waWeb().ack();
+        int ack = echo == null || echo.waWeb() == null || echo.waWeb().ack() == null ? 0 : echo.waWeb().ack();
         String type = echo != null && out.type() == null ? echo.type() : out.type();
         // a chat started from the console was addressed to phone@c.us; WhatsApp mostly answers under the person's
         // @lid, and that is the chat the message (and its message_create event) belong to
         String lidPhone = typedPhone;
-        String reported = echo == null || echo.waWeb().chatId() == null ? "" : echo.waWeb().chatId();
+        String reported = echo == null || echo.waWeb() == null || echo.waWeb().chatId() == null ? ""
+                : echo.waWeb().chatId();
         if (sent.getId() == null && !reported.isEmpty() && !reported.equals(sent.getRemoteId())) {
             if (lidPhone == null) lidPhone = phoneOf(sent.getRemoteId());
             sent.setRemoteId(reported);
