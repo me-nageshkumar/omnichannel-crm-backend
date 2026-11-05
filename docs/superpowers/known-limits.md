@@ -69,6 +69,9 @@ a decision or more investigation.
 
 ## Click-to-WhatsApp ads: known limits
 
-- The `ctwaContext` field names come from the wa-js model and are unconfirmed until the end-to-end check, which needs the
-  user to tap one of their own ads from a named phone. If the real shape differs, fix `WaWebWebhookConverter.referral`
-  from the stored `adClick.raw`.
+- The `ctwaContext` field names of a real ad are unconfirmed until the end-to-end check, which needs the user to tap
+  one of their own ads from a named phone. The live tab (2026-11-05, `whatsapp-web-storage-analysis.md` §2.3) showed
+  the object on a business's link preview with `sourceUrl`, `title`, `description`, `thumbnail`, `thumbnailUrl`,
+  `mediaType` (a number) and `mediaUrl` only, so an ad now needs `sourceId`, `conversionSource` or a click id; a
+  context with none is logged by its field names. If the real ad carries none of those, fix
+  `WaWebWebhookConverter.referral` from that log line and the stored `adClick.raw`.

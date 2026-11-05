@@ -162,6 +162,21 @@ class MessageFieldsTest {
     }
 
     @Test
+    void aRejectedCallIsMissed() {
+        // the live outcomes (2026-11-05): Completed, Missed, Rejected, AcceptedElsewhere
+        assertThat(MessageFields.callOf(content(raw("call_log").put("callOutcome", "Rejected"))))
+                .isEqualTo(new WaWebMessage.Call(false, true, null));
+    }
+
+    @Test
+    void aCallAcceptedElsewhereIsNotMissed() {
+        assertThat(MessageFields.callOf(content(raw("call_log").put("callOutcome", "AcceptedElsewhere")
+                .put("callDuration", 9)))).isEqualTo(new WaWebMessage.Call(false, false, 9));
+        assertThat(MessageFields.callOf(content(raw("call_log").put("callOutcome", "Completed"))))
+                .isEqualTo(new WaWebMessage.Call(false, false, null));
+    }
+
+    @Test
     void aDurationOfZeroIsNoDuration() {
         assertThat(MessageFields.callOf(content(raw("call_log").put("duration", 0))))
                 .isEqualTo(new WaWebMessage.Call(false, false, null));
@@ -374,6 +389,33 @@ class MessageFieldsTest {
         p.putObject("ctwaContext").put("conversionSource", "FB_Ads");
         assertThat(ad(p)).isNotNull();
         p.putObject("ctwaContext").put("ctwaClid", "CLK");
+        assertThat(ad(p)).isNotNull();
+    }
+
+    @Test
+    void aSourceUrlAloneIsALinkPreviewNotAnAd() {
+        // seen live 2026-11-05: a business's preview of a group invite carries a ctwaContext with no ad identity
+        ObjectNode p = raw("chat").put("body", "hi");
+        p.putObject("ctwaContext").put("sourceUrl", "https://chat.whatsapp.com/GQ4yn")
+                .put("title", "Motilal Oswal Group")
+                .put("description", "Motilal Oswal Group").put("mediaType", 1).put("thumbnail", "AAAA");
+        assertThat(ad(p)).isNull();
+    }
+
+    @Test
+    void aClickIdAloneMakesAnAd() {
+        ObjectNode p = raw("chat").put("body", "hi");
+        p.putObject("ctwaContext").put("sourceUrl", "https://fb.me/x").put("ctwaClid", "CLK");
+        AdClick ad = ad(p);
+        assertThat(ad).isNotNull();
+        assertThat(ad.clickId()).isEqualTo("CLK");
+        assertThat(ad.sourceUrl()).isEqualTo("https://fb.me/x");
+    }
+
+    @Test
+    void aConversionSourceAloneMakesAnAd() {
+        ObjectNode p = raw("chat").put("body", "hi");
+        p.putObject("ctwaContext").put("conversionSource", "FB_Ads");
         assertThat(ad(p)).isNotNull();
     }
 

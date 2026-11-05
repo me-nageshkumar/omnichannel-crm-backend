@@ -73,7 +73,8 @@ public class ChatPreviewBackfill implements ApplicationRunner {
     /** The types that were saved as "Unsupported message" and now have a label of their own. */
     private static List<String> labelled() {
         List<String> types = new ArrayList<>(WaWebWebhookConverter.NOTICE_TYPES);
-        types.addAll(List.of("call_log", "biz_content_placeholder", "unknown", "newsletter_follower_invite"));
+        types.addAll(List.of("call_log", "biz_content_placeholder", "unknown", "newsletter_follower_invite", "album",
+                "rich_response"));
         return types;
     }
 

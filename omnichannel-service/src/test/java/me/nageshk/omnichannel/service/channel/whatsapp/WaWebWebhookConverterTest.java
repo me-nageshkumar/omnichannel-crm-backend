@@ -210,6 +210,18 @@ class WaWebWebhookConverterTest {
     }
 
     @Test
+    void aSourceUrlAloneIsALinkPreviewNotAnAd() throws IOException {
+        // seen live 2026-11-05: a business's preview of a group invite carries a ctwaContext with no ad identity
+        ObjectNode raw = text();
+        raw.putObject("ctwaContext").put("sourceUrl", "https://chat.whatsapp.com/GQ4yn")
+                .put("title", "Motilal Oswal Group")
+                .put("description", "Motilal Oswal Group").put("mediaType", 1).put("thumbnail", "AAAA");
+        Message m = convertRaw(raw, CAPTURED).messages().get(0);
+        assertThat(m.referral()).isNull();
+        assertThat(m.waWeb().ctwaContext()).isNull();
+    }
+
+    @Test
     void textWithNoPlaceInMetasShapeGoesToWaWebBody() {
         ObjectNode raw = mapper.createObjectNode();
         raw.putObject("id").put("fromMe", false).put("remote", "919912345678@c.us").put("id", "P1")

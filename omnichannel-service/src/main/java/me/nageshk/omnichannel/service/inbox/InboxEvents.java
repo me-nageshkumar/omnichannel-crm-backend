@@ -49,4 +49,8 @@ public final class InboxEvents {
     /** A page of a history import stored messages in the chat; an open thread should fetch them. */
     public record HistoryStored(WaWebChat chat) {
     }
+
+    /** A history import finished fetching the chat (whether or not it stored anything); the device is online. */
+    public record ChatFetched(WaWebChat chat) {
+    }
 }

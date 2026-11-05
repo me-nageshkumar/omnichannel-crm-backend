@@ -215,7 +215,7 @@ Type objects, with Meta's field names:
 | `order` | `{catalog_id, text, product_items}` | `orderId`, `orderTitle`, `itemCount` as far as the model has them; else `unsupported` |
 | `unsupported` | `errors[]` as above | `unknown`, `ciphertext` (never forwarded anyway), and any type this table does not name |
 | `poll_creation` (ext.) | `{name, options: [{name, local_id}], allow_multiple_answers}` | `pollName`, `pollOptions`, `pollSelectableOptionsCount != 1`; a fetched poll's `pollVotes` → `votes[]` in the same shape as §4.6 |
-| `call_log` (ext.) | `{video, missed, duration}` | `isVideoCall`, `callOutcome` contains "miss", `callDuration`/`duration` |
+| `call_log` (ext.) | `{video, missed, duration}` | `isVideoCall`, `callOutcome` contains "miss" or "reject" (`Missed` and `Rejected` are missed; `Completed` and `AcceptedElsewhere` are not; main's rule since 2026-11-05), `callDuration`/`duration` |
 | `revoked` (ext.) | `{original_message_id}` | `protocolMessageKey` when present |
 | `biz_content_placeholder` (ext.) | `{}` | the tag is in `wa_web.business_tag` |
 | `newsletter_follower_invite` (ext.) | `{name}` | `newsletterFollowerInviteInfo.newsletterName` |

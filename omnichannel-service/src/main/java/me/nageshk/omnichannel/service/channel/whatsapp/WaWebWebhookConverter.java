@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import me.nageshk.omnichannel.common.channel.ChannelContext;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Change;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Contact;
@@ -24,6 +25,8 @@ import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Value;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WaWeb;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WebhookEvent;
 import me.nageshk.omnichannel.service.inbox.MessageBodies;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
@@ -36,6 +39,8 @@ import tools.jackson.databind.node.ObjectNode;
  */
 @Component
 public final class WaWebWebhookConverter {
+
+    private static final Logger log = LoggerFactory.getLogger(WaWebWebhookConverter.class);
 
     static final String CHANGE_FIELD = "messages";
     static final String ECHO_FIELD = "smb_message_echoes";
@@ -364,9 +369,21 @@ public final class WaWebWebhookConverter {
         return id != null ? id : adText(ctx.path("ctwa_clid"));
     }
 
+    /**
+     * Meta's referral for a {@code ctwaContext} naming an ad; null otherwise. A source url alone is not an ad: a
+     * business's link preview carries the same object with only {@code sourceUrl}, {@code title}, {@code description}
+     * and a thumbnail (seen live 2026-11-05). On a person's message such a context is logged by its field names, so a
+     * real ad's shape can be checked against it.
+     */
     private static Referral referral(JsonNode raw) {
         JsonNode ctx = raw.path("ctwaContext");
-        if (!isAd(ctx)) return null;
+        if (!isAd(ctx)) {
+            if (ctx.isObject() && adText(ctx.path("sourceUrl")) != null && !fromMe(raw)) {
+                log.info("ctwaContext without an ad identity (a link preview?), fields {}",
+                        new TreeSet<>(ctx.propertyNames()));
+            }
+            return null;
+        }
         String headline = adText(ctx.path("title"));
         if (headline == null) headline = adText(ctx.path("headline"));
         String welcome = adText(ctx.path("greetingMessageBody"));

@@ -54,8 +54,14 @@ Anti-goals
 ### 4.1 Detecting an ad click
 
 A message **came from an ad** when it is inbound (not `fromMe`), its payload has an object `ctwaContext`, and that
-object has a non-blank `sourceUrl`, `sourceId` or `conversionSource`. Outbound messages and messages without the
-object are unchanged. `MessagePayloads.adClick(JsonNode)` returns an `AdClick` or null.
+object has a non-blank `sourceId`, `conversionSource` or click id (`ctwaClid` / `ctwa_clid`). Outbound messages and
+messages without the object are unchanged. `MessagePayloads.adClick(JsonNode)` returns an `AdClick` or null.
+
+*Changed 2026-11-05:* `sourceUrl` alone no longer counts. The live tab showed a business's link preview of a group
+invite carrying a `ctwaContext` with only `sourceUrl`, `title`, `description`, `thumbnail`, `thumbnailUrl`,
+`mediaType` (a number) and `mediaUrl`, which the first rule would have called an ad. Such a context is now logged
+with its field names (`ctwaContext without an ad identity`), so the owed ad-tap check can confirm what a real ad
+carries; if a real ad turns out to carry none of the three, the rule needs another marker, not `sourceUrl`.
 
 `AdClick` (a record on `WaWebMessage`, also on `WaWebChat`):
 

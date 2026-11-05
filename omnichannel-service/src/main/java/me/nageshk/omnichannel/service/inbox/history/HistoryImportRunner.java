@@ -498,6 +498,9 @@ public class HistoryImportRunner {
         } catch (RuntimeException e) {
             log.warn("could not open fetched chat {}", item.getRemoteId(), e);
         }
+        // the contact resolver listens: the phone behind a hidden id is on the device, not on any stored message
+        chats.findByPhoneNumberIdAndRemoteId(item.getPhoneNumberId(), item.getRemoteId())
+                .ifPresent(chat -> events.publishEvent(new InboxEvents.ChatFetched(chat)));
     }
 
     /** Tells the open consoles the chat changed, and that an open thread has new messages to fetch. */
