@@ -380,7 +380,8 @@ public final class WaWebWebhookConverter {
         boolean media = MEDIA_TYPES.contains(rawType);
         JsonNode ctx = raw.path("ctwaContext");
         return new WaWeb(chatId, raw.path("ack").asInt(0), rawType.equals(type) ? null : rawType,
-                media ? fileSize(raw) : null, media || extMedia ? mediaAvailable(raw) : null, text(raw.path("hsmTag")),
+                media || extMedia ? fileSize(raw) : null, media || extMedia ? mediaAvailable(raw) : null,
+                text(raw.path("hsmTag")),
                 referral == null ? null : adRaw(ctx), referral == null ? null : adText(ctx.path("sourceApp")),
                 referral == null ? null : adText(ctx.path("conversionSource")), vcards,
                 capturedAt == null ? null : capturedAt.toEpochMilli());

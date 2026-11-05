@@ -672,6 +672,25 @@ class WaWebWebhookListenerIT {
     }
 
     @Test
+    void businessMessageWithADocumentHeaderKeepsItsMedia() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "interactive");
+        p.put("body", "");
+        p.put("caption", "Your invoice");
+        p.putObject("interactiveHeader").put("hasMediaAttachment", true).put("mediaType", "DOCUMENT");
+        p.put("directPath", "/v/t62/doc");
+        p.put("mimetype", "application/pdf");
+        p.put("filename", "invoice.pdf");
+        p.put("size", 4321);
+        create(p);
+
+        WaWebMessage m = onlyMessage();
+        assertThat(m.getType()).isEqualTo("interactive");
+        assertThat(m.getBody()).isEqualTo("Your invoice");
+        assertThat(m.getMedia()).isEqualTo(new WaWebMessage.Media("application/pdf", "invoice.pdf", 4321L, null, null));
+    }
+
+    @Test
     void messageWithoutMediaHasNoMedia() {
         create(message("919911111111@c.us", false, T));
         assertThat(onlyMessage().getMedia()).isNull();
