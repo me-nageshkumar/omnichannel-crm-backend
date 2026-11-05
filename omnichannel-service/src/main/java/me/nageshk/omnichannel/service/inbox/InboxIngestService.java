@@ -5,8 +5,12 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.List;
 import java.util.Optional;
-import java.util.TreeSet;
 import java.util.function.Supplier;
+import me.nageshk.omnichannel.common.channel.ChannelContext;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.MessageEcho;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.PollVote;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Status;
 import me.nageshk.omnichannel.common.events.IngestionFailedException;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.inbox.ActionType;
@@ -22,7 +26,6 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
 import me.nageshk.omnichannel.service.contact.ContactService;
-import me.nageshk.omnichannel.service.events.WhatsAppEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -99,58 +102,79 @@ public class InboxIngestService {
         this.clock = clock;
     }
 
-    /** A {@code vote_update} event; empty when the poll is not stored or the vote names no voter. */
-    public Optional<Ingested> ingestPollVote(WhatsAppEvent event) {
-        JsonNode p = event.payload();
-        if (p == null || !p.isObject() || !p.path("pollMessageId").isString()) return Optional.empty();
-        String pollId = p.path("pollMessageId").asString();
-        WaWebMessage.PollVote vote = PollVotes.parse(p);
-        if (vote == null) return Optional.empty();
-        try {
-            return retrying(() -> storeVote(event, pollId, vote));
-        } catch (DataAccessException e) {
-            throw new IngestionFailedException(event.name(), pollId, e);
-        }
-    }
-
-    /** A {@code message_create} event; empty when it is not a person's chat or has no usable phone or id. */
-    public Optional<Ingested> ingestMessage(WhatsAppEvent event) {
-        JsonNode p = event.payload();
-        if (p == null || !p.isObject()) return Optional.empty();
-        String remote = MessagePayloads.remote(p);
-        boolean lid = remote.endsWith("@lid");
-        if (!lid && !remote.endsWith("@c.us")) return Optional.empty();
-        if (MessagePayloads.isNotice(p)) {
-            // names only: which notices arrive, and what they carry, is not published
-            log.info("skipping WhatsApp notice {}, subtype {}, fields {}", MessagePayloads.type(p),
-                    p.path("subtype").asString(""), new TreeSet<>(p.propertyNames()));
+    /**
+     * A person's vote on a poll ({@code fromMe} false) or ours, folded into the poll row; empty when the poll is not
+     * stored or the vote names no voter. {@code chatId} is the poll's chat, for the log.
+     */
+    public Optional<Ingested> ingestVote(ChannelContext ctx, String chatId, PollVote pollVote, String voter,
+            boolean fromMe, Instant at) {
+        if (pollVote == null || pollVote.messageId() == null || voter == null || voter.isBlank()) {
             return Optional.empty();
         }
-        String waMessageId = MessagePayloads.waMessageId(p);
-        if (waMessageId.isEmpty()) return Optional.empty();
-        Progress progress = new Progress();
+        String pollId = pollVote.messageId();
+        WaWebMessage.PollVote vote = new WaWebMessage.PollVote(voter, fromMe,
+                pollVote.selectedOptions() == null ? List.of() : List.copyOf(pollVote.selectedOptions()), at);
         try {
-            return publish(retrying(() -> storeMessage(event, p, remote, lid, waMessageId, progress)));
+            return retrying(() -> storeVote(ctx, chatId, pollId, vote));
         } catch (DataAccessException e) {
-            throw new IngestionFailedException(event.name(), waMessageId, e);
-        }
-    }
-
-    /** A {@code message_ack} event; an ack for a message we never stored is dropped. */
-    public Optional<Ingested> ingestAck(WhatsAppEvent event) {
-        JsonNode p = event.payload();
-        if (p == null || !p.isObject()) return Optional.empty();
-        String waMessageId = MessagePayloads.waMessageId(p.path("message"));
-        if (waMessageId.isEmpty()) return Optional.empty();
-        try {
-            return publish(retrying(() -> storeAck(event, p, waMessageId)));
-        } catch (DataAccessException e) {
-            throw new IngestionFailedException(event.name(), waMessageId, e);
+            throw new IngestionFailedException("poll_vote", pollId, e);
         }
     }
 
     /**
-     * A message read from the phone's history. Unlike {@link #ingestMessage} it publishes no event, never reopens
+     * A person's message, with the {@code contacts[]} entry that names them (null when none does); empty when it is
+     * not a person's chat or has no usable phone or id. It is stored {@code PENDING} with ack 0: an inbound message
+     * has no delivery state.
+     */
+    public Optional<Ingested> ingestInbound(ChannelContext ctx,
+            me.nageshk.omnichannel.common.channel.whatsapp.webhook.Contact contact, Message message) {
+        if (message == null) return Optional.empty();
+        String remote = MessageFields.chatId(message);
+        if (!MessageFields.isPersonChat(remote) || message.id() == null || message.id().isEmpty()) {
+            return Optional.empty();
+        }
+        Instant at = MessageFields.timestampOf(message.timestamp(), clock.instant());
+        Incoming in = new Incoming(remote, message.id(), false, at, MessageFields.senderNameOf(contact),
+                MessageFields.lidPhoneOf(message), MessageFields.of(message), MessageFields.adClickOf(message, at),
+                null);
+        return ingest(ctx, in, "messages");
+    }
+
+    /**
+     * Our own message, with the status that came with it in the same webhook entry (null when none did); empty when it
+     * is not a person's chat or has no id. A row the console or a campaign already stored only takes the status.
+     */
+    public Optional<Ingested> ingestEcho(ChannelContext ctx, MessageEcho echo, Status status) {
+        if (echo == null) return Optional.empty();
+        String remote = MessageFields.chatId(echo);
+        if (!MessageFields.isPersonChat(remote) || echo.id() == null || echo.id().isEmpty()) return Optional.empty();
+        Instant at = MessageFields.timestampOf(echo.timestamp(), clock.instant());
+        Incoming in = new Incoming(remote, echo.id(), true, at, null, null, MessageFields.of(echo), null,
+                status == null ? null : MessageFields.ackOf(status));
+        return ingest(ctx, in, "smb_message_echoes");
+    }
+
+    /** The delivery state of our message; a status for a message we never stored is dropped. */
+    public Optional<Ingested> ingestStatus(ChannelContext ctx, Status status) {
+        if (status == null || status.id() == null || status.id().isEmpty()) return Optional.empty();
+        try {
+            return publish(retrying(() -> storeStatus(ctx, status)));
+        } catch (DataAccessException e) {
+            throw new IngestionFailedException("statuses", status.id(), e);
+        }
+    }
+
+    private Optional<Ingested> ingest(ChannelContext ctx, Incoming in, String field) {
+        Progress progress = new Progress();
+        try {
+            return publish(retrying(() -> storeMessage(ctx, in, progress)));
+        } catch (DataAccessException e) {
+            throw new IngestionFailedException(field, in.waMessageId(), e);
+        }
+    }
+
+    /**
+     * A message read from the phone's history. Unlike {@link #ingestInbound} it publishes no event, never reopens
      * a chat or counts it unread, creates chats {@code CLOSED}, records no status times and names only a nameless
      * contact; SKIPPED when it is not a person's chat or has no usable phone or id.
      */
@@ -261,6 +285,14 @@ public class InboxIngestService {
         return true;
     }
 
+    /**
+     * A webhook message or echo as the store needs it: {@code remote} is the chat id, {@code ack} the status that came
+     * with our own message (null when none did; always null for a person's message).
+     */
+    private record Incoming(String remote, String waMessageId, boolean fromMe, Instant at, String senderName,
+            String lidPhone, MessageFields.Content content, AdClick adClick, Integer ack) {
+    }
+
     /** What earlier attempts of one ingestion already persisted, so a retry still reports it. */
     private static final class Progress {
         boolean chatCreated;
@@ -274,22 +306,21 @@ public class InboxIngestService {
      * The chat summary is saved before the message row, so a failed chat save retries cleanly and a duplicate
      * key on the message insert means the chat already counts it ({@code progress.folded}).
      */
-    private Optional<Stored> storeMessage(WhatsAppEvent event, JsonNode p, String remote, boolean lid,
-            String waMessageId, Progress progress) {
-        boolean fromMe = MessagePayloads.fromMe(p);
-        Instant at = MessagePayloads.timestamp(p, event);
-        // on our own message senderPn is the business's number, not the person's
-        Contact contact = contacts.upsertFromChat(event.workspaceId(), event.customerId(), remote,
-                fromMe ? null : MessagePayloads.senderName(p), lid && !fromMe ? MessagePayloads.lidPhone(p) : null,
-                at);
+    private Optional<Stored> storeMessage(ChannelContext ctx, Incoming in, Progress progress) {
+        String phoneNumberId = ctx.channelAccountId();
+        String remote = in.remote();
+        Instant at = in.at();
+        // a name and the phone behind a lid only on a person's message: on ours they are the business's
+        Contact contact = contacts.upsertFromChat(ctx.workspaceId(), ctx.customerId(), remote, in.senderName(),
+                in.lidPhone(), at);
         if (contact == null) return Optional.empty();
 
-        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(event.phoneNumberId(), remote).orElse(null);
+        WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remote).orElse(null);
         if (chat == null) {
             chat = new WaWebChat();
-            chat.setCustomerId(event.customerId());
-            chat.setWorkspaceId(event.workspaceId());
-            chat.setPhoneNumberId(event.phoneNumberId());
+            chat.setCustomerId(ctx.customerId());
+            chat.setWorkspaceId(ctx.workspaceId());
+            chat.setPhoneNumberId(phoneNumberId);
             chat.setRemoteId(remote);
             chat.setContactId(contact.getId());
             chat.setStatus(ChatStatus.OPEN);
@@ -298,11 +329,11 @@ public class InboxIngestService {
         }
 
         Instant now = clock.instant();
-        WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(event.phoneNumberId(), waMessageId)
+        WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(phoneNumberId, in.waMessageId())
                 .orElse(null);
         if (message != null && !progress.folded) {
-            // a message we already stored: only its status can move
-            boolean statusChanged = applyAck(message, MessagePayloads.ack(p), now);
+            // a message we already stored: only the status that came with our own can move it
+            boolean statusChanged = in.ack() != null && applyAck(message, in.ack(), now);
             if (statusChanged) {
                 message = messages.save(message);
                 if (isLast(chat, message)) {
@@ -315,9 +346,8 @@ public class InboxIngestService {
         }
 
         if (message == null) {
-            message = newMessage(event.customerId(), event.workspaceId(), event.phoneNumberId(), p, chat,
-                    waMessageId, fromMe, at);
-            applyAck(message, MessagePayloads.ack(p), now);
+            message = newMessage(ctx, chat, in);
+            if (in.ack() != null) applyAck(message, in.ack(), now);
         }
         if (!progress.folded) {
             // a campaign chat waits unassigned for the contact's first reply since our last message; a reopen is
@@ -381,15 +411,15 @@ public class InboxIngestService {
         chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
     }
 
-    private Optional<Stored> storeAck(WhatsAppEvent event, JsonNode p, String waMessageId) {
-        WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(event.phoneNumberId(), waMessageId)
+    private Optional<Stored> storeStatus(ChannelContext ctx, Status status) {
+        WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(ctx.channelAccountId(), status.id())
                 .orElse(null);
         WaWebChat chat = message == null ? null : chats.findById(message.getChatId()).orElse(null);
         if (chat == null) {
-            log.debug("dropping ack for unknown message {} of {}", waMessageId, event.phoneNumberId());
+            log.debug("dropping status for unknown message {} of {}", status.id(), ctx.channelAccountId());
             return Optional.empty();
         }
-        boolean changed = applyAck(message, MessagePayloads.ack(p), clock.instant());
+        boolean changed = applyAck(message, MessageFields.ackOf(status), clock.instant());
         if (changed) {
             message = messages.save(message);
             if (isLast(chat, message)) {
@@ -400,11 +430,12 @@ public class InboxIngestService {
         return Optional.of(new Stored(new Ingested(chat, message, false, false, false), changed, null, false));
     }
 
-    private Optional<Ingested> storeVote(WhatsAppEvent event, String pollId, WaWebMessage.PollVote vote) {
-        WaWebMessage poll = messages.findByPhoneNumberIdAndWaMessageId(event.phoneNumberId(), pollId).orElse(null);
+    private Optional<Ingested> storeVote(ChannelContext ctx, String chatId, String pollId,
+            WaWebMessage.PollVote vote) {
+        WaWebMessage poll = messages.findByPhoneNumberIdAndWaMessageId(ctx.channelAccountId(), pollId).orElse(null);
         WaWebChat chat = poll == null ? null : chats.findById(poll.getChatId()).orElse(null);
         if (chat == null) {
-            log.debug("dropping vote on unknown poll {} of {}", pollId, event.phoneNumberId());
+            log.debug("dropping vote on unknown poll {} in {} of {}", pollId, chatId, ctx.channelAccountId());
             return Optional.empty();
         }
         List<WaWebMessage.PollVote> merged = PollVotes.merged(poll.getPollVotes(), vote);
@@ -417,7 +448,8 @@ public class InboxIngestService {
         return Optional.of(new Ingested(chat, poll, false, false, false));
     }
 
-    private static WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId, JsonNode p,
+    /** What a live and an imported row share: who, where, which way and when. */
+    private static WaWebMessage baseMessage(String customerId, String workspaceId, String phoneNumberId,
             WaWebChat chat, String waMessageId, boolean fromMe, Instant at) {
         WaWebMessage m = new WaWebMessage();
         m.setCustomerId(customerId);
@@ -427,6 +459,16 @@ public class InboxIngestService {
         m.setWaMessageId(waMessageId);
         m.setDirection(fromMe ? MessageDirection.OUT : MessageDirection.IN);
         m.setSource(fromMe ? MessageSource.WHATSAPP_WEB : MessageSource.CONTACT);
+        m.setTimestamp(at);
+        m.setStatus(MessageStatus.PENDING);
+        m.setStatusTimes(new WaWebMessage.StatusTimes());
+        return m;
+    }
+
+    /** A row read from the raw model, for the history import. */
+    private static WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId, JsonNode p,
+            WaWebChat chat, String waMessageId, boolean fromMe, Instant at) {
+        WaWebMessage m = baseMessage(customerId, workspaceId, phoneNumberId, chat, waMessageId, fromMe, at);
         m.setType(MessagePayloads.type(p));
         m.setBody(MessagePayloads.body(p));
         m.setMedia(MessagePayloads.media(p));
@@ -435,10 +477,24 @@ public class InboxIngestService {
         m.setCall(MessagePayloads.call(p));
         m.setBusinessTag(MessagePayloads.businessTag(p));
         m.setAdClick(fromMe ? null : MessagePayloads.adClick(p, at));
-        m.setTimestamp(at);
-        m.setStatus(MessageStatus.PENDING);
         m.setAck(MessagePayloads.ack(p));
-        m.setStatusTimes(new WaWebMessage.StatusTimes());
+        return m;
+    }
+
+    /** A row read from a webhook message or echo; ack 0 until a status moves it. */
+    private static WaWebMessage newMessage(ChannelContext ctx, WaWebChat chat, Incoming in) {
+        WaWebMessage m = baseMessage(ctx.customerId(), ctx.workspaceId(), ctx.channelAccountId(), chat,
+                in.waMessageId(), in.fromMe(), in.at());
+        MessageFields.Content c = in.content();
+        m.setType(MessageFields.storedType(c));
+        m.setBody(MessageFields.bodyOf(c));
+        m.setMedia(MessageFields.mediaOf(c));
+        m.setLocation(MessageFields.locationOf(c));
+        m.setPollOptions(MessageFields.pollOptionsOf(c));
+        m.setCall(MessageFields.callOf(c));
+        m.setBusinessTag(MessageFields.businessTagOf(c));
+        m.setAdClick(in.fromMe() ? null : in.adClick());
+        m.setAck(0);
         return m;
     }
 

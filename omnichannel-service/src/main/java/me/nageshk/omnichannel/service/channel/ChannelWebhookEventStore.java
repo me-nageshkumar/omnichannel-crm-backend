@@ -9,7 +9,6 @@ import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WebhookEvent;
 import me.nageshk.omnichannel.common.config.OmnichannelProperties;
 import me.nageshk.omnichannel.db.channel.ChannelWebhookEvent;
 import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
@@ -61,7 +60,7 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
                 }
             }
             return mongo.save(doc);
-        } catch (DataAccessException e) {
+        } catch (RuntimeException e) {
             log.warn("Could not store the webhook event of {}: {}", ctx.channelAccountId(), e.toString());
             return null;
         }
@@ -77,7 +76,7 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
     public void afterSingletonsInstantiated() {
         try {
             ensureTtlIndex();
-        } catch (DataAccessException e) {
+        } catch (RuntimeException e) {
             log.warn("Could not set up the {} index: {}", TTL_INDEX, e.toString());
         }
     }
