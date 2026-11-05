@@ -7,7 +7,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties(prefix = "omnichannel")
 public record OmnichannelProperties(
         Jwt jwt, SuperAdmin superAdmin, TwoFactor twoFactor, Ws ws, Rpc rpc, History history,
-        Automation automation, @DefaultValue Contacts contacts) {
+        Automation automation, @DefaultValue Contacts contacts,
+        @DefaultValue Webhooks webhooks) {
 
     public record Jwt(String secret, @DefaultValue("12h") Duration ttl) {}
 
@@ -65,4 +66,10 @@ public record OmnichannelProperties(
             @DefaultValue("1h") Duration resolveRetry,
             @DefaultValue("300ms") Duration resolvePace,
             @DefaultValue("500") int resolveBatch) {}
+
+    /** Converted webhook events: how long they are kept, and whether (and up to what size) the raw model is kept. */
+    public record Webhooks(
+            @DefaultValue("30d") Duration retention,
+            @DefaultValue("true") boolean keepRaw,
+            @DefaultValue("65536") int rawMaxBytes) {}
 }

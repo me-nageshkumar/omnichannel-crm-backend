@@ -21,6 +21,10 @@ logging:
     me.nageshk.omnichannel: INFO
 
 omnichannel:
+  webhooks:
+    retention: 30d
+    keep-raw: true
+    raw-max-bytes: 65536
   jwt:
     # Must be at least 32 bytes. Override in production: OMNICHANNEL_JWT_SECRET=...
     secret: ${OMNICHANNEL_JWT_SECRET:dev-only-secret-please-change-me-0123456789}
