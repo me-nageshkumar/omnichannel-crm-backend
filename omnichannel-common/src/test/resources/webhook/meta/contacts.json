@@ -1,0 +1,53 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "736653748959456",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "phone_number_id": "765164890017157",
+              "display_phone_number": "919999000006"
+            },
+            "contacts": [
+              {
+                "wa_id": "919999000007",
+                "profile": {
+                  "name": "Test Contact"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "919999000007",
+                "id": "wamid.HBgMOTE5ODI5MDEzMzY5FQIAEhggQUNBREU4MjIzNDA2QTMwQjg0M0M5MDVDRjcxODJBQ0IA",
+                "type": "contacts",
+                "timestamp": "1774485299",
+                "contacts": [
+                  {
+                    "name": {
+                      "formatted_name": "Ravi Ji Unnati",
+                      "first_name": "Ravi",
+                      "last_name": "Unnati",
+                      "middle_name": "Ji"
+                    },
+                    "phones": [
+                      {
+                        "phone": "+91 98283 00010",
+                        "type": "Main",
+                        "wa_id": "919999000008"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "529870480213899",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "phone_number_id": "558214737370188",
+              "display_phone_number": "919999000003"
+            },
+            "contacts": [
+              {
+                "wa_id": "919928088743",
+                "profile": {
+                  "name": "Nagesh Kumar"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "919928088743",
+                "id": "wamid.HBgMOTE5OTI4MDg4NzQzFQIAEhgUM0FCOUJGM0QyMjBCMDA0NUJDMjQA",
+                "type": "reaction",
+                "timestamp": "1743787380",
+                "reaction": {
+                  "message_id": "wamid.HBgMOTE5OTI4MDg4NzQzFQIAEhgUM0EwQ0YwRUUxQzNCQUM5RDg5MTIA",
+                  "emoji": "🙏"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

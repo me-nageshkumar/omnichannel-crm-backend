@@ -1,0 +1,46 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "105998519073832",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "phone_number_id": "105036225837218",
+              "display_phone_number": "919650403225"
+            },
+            "contacts": [
+              {
+                "wa_id": "919928088743",
+                "profile": {
+                  "name": "Nagesh Kumar"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "919928088743",
+                "id": "wamid.HBgMOTE5OTI4MDg4NzQzFQIAEhgUM0FFMEUxQUNCODE2QzMwNTA2RDMA",
+                "type": "location",
+                "timestamp": "1728375852",
+                "context": {
+                  "from": "919650403225",
+                  "id": "wamid.HBgMOTE5OTI4MDg4NzQzFQIAERgSMjVGQTIzRjY4RUFDODIyNzc1AA=="
+                },
+                "location": {
+                  "longitude": "78.786201477051",
+                  "latitude": "26.565000534058",
+                  "name": "Bhind",
+                  "address": "Bhind"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

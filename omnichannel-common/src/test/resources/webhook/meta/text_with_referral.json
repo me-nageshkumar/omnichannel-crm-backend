@@ -1,0 +1,53 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "474815075725193",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "phone_number_id": "501654573039446",
+              "display_phone_number": "919650403225"
+            },
+            "contacts": [
+              {
+                "wa_id": "919999000013",
+                "profile": {
+                  "name": "Test Contact"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "919999000013",
+                "id": "wamid.HBgMOTE5MTY2NjQ2NjcxFQIAEhggQUNGRjgzNEYyMzZFOEEyQzNBRjg3OEMxMjI5QjI0NTAA",
+                "type": "text",
+                "timestamp": "1762909724",
+                "referral": {
+                  "source_url": "https://fb.me/5GvYwMzOz",
+                  "source_id": "120234880794530738",
+                  "source_type": "ad",
+                  "body": "Automate your business",
+                  "headline": "Chat with us",
+                  "media_type": "video",
+                  "video_url": "https://example.com/video",
+                  "thumbnail_url": "https://example.com/thumb.jpg",
+                  "ctwa_clid": "AffTestClickId0000000000000000000000000000000000000000000000",
+                  "welcome_message": {
+                    "text": "Hi! Please let us know how we can help you."
+                  }
+                },
+                "text": {
+                  "body": "Hello! Can I get more info on this?"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

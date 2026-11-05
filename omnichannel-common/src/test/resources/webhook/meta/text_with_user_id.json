@@ -1,0 +1,41 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "529870480213899",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "phone_number_id": "558214737370188",
+              "display_phone_number": "919999000003"
+            },
+            "contacts": [
+              {
+                "wa_id": "919999000015",
+                "user_id": "IN.1976699579621058",
+                "profile": {
+                  "name": "Test Contact"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "919999000015",
+                "from_user_id": "IN.1976699579621058",
+                "id": "wamid.HBgMOTE5NDM0MDE2OTY1FQIAEhggQUNEQ0NGQ0IwQkI4QTczQTEzMUVGRTg2NEJEOUFDMDkA",
+                "type": "text",
+                "timestamp": "1790659886",
+                "text": {
+                  "body": "Hi from a hidden number"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

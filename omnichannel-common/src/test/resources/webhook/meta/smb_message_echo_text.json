@@ -1,0 +1,32 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "522968180892389",
+      "changes": [
+        {
+          "field": "smb_message_echoes",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "phone_number_id": "532491956618190",
+              "display_phone_number": "919999000014"
+            },
+            "message_echoes": [
+              {
+                "from": "919999000014",
+                "id": "wamid.HBgMOTE5MDAxNTczNTI0FQIAERgUM0E4REI2M0Q2RUE4QjZGNjNDQUMA",
+                "type": "text",
+                "timestamp": "1746620305",
+                "text": {
+                  "body": "test message"
+                },
+                "to": "919928088743"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
