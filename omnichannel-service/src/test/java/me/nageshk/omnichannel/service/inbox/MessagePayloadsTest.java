@@ -108,6 +108,19 @@ class MessagePayloadsTest {
     }
 
     @Test
+    void aRejectedCallIsMissed() {
+        // the live outcomes (2026-11-05): Completed, Missed, Rejected, AcceptedElsewhere
+        assertThat(MessagePayloads.call(message("call_log").put("callOutcome", "Rejected")))
+                .isEqualTo(new WaWebMessage.Call(false, true, null));
+    }
+
+    @Test
+    void aCallAcceptedElsewhereIsNotMissed() {
+        assertThat(MessagePayloads.call(message("call_log").put("callOutcome", "AcceptedElsewhere").put("callDuration", 9)))
+                .isEqualTo(new WaWebMessage.Call(false, false, 9));
+    }
+
+    @Test
     void aDurationOfZeroIsNoDuration() {
         assertThat(MessagePayloads.call(message("call_log").put("duration", 0)))
                 .isEqualTo(new WaWebMessage.Call(false, false, null));
@@ -300,6 +313,32 @@ class MessagePayloadsTest {
         p.putObject("ctwaContext").put("sourceUrl", "  ").put("sourceId", "").put("title", "only a title");
         assertThat(MessagePayloads.adClick(p, AD_AT)).isNull();
         assertThat(MessagePayloads.adClick(withContext(false), AD_AT)).isNull();
+    }
+
+    @Test
+    void aSourceUrlAloneIsALinkPreviewNotAnAd() {
+        // seen live 2026-11-05: a business's preview of a group invite carries a ctwaContext with no ad identity
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceUrl", "https://chat.whatsapp.com/GQ4yn").put("title", "Motilal Oswal Group")
+                .put("description", "Motilal Oswal Group").put("mediaType", 1).put("thumbnail", "AAAA");
+        assertThat(MessagePayloads.adClick(p, AD_AT)).isNull();
+    }
+
+    @Test
+    void aClickIdAloneMakesAnAd() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("sourceUrl", "https://fb.me/x").put("ctwaClid", "CLK");
+        AdClick ad = MessagePayloads.adClick(p, AD_AT);
+        assertThat(ad).isNotNull();
+        assertThat(ad.clickId()).isEqualTo("CLK");
+        assertThat(ad.sourceUrl()).isEqualTo("https://fb.me/x");
+    }
+
+    @Test
+    void aConversionSourceAloneMakesAnAd() {
+        ObjectNode p = withContext(false);
+        p.putObject("ctwaContext").put("conversionSource", "FB_Ads");
+        assertThat(MessagePayloads.adClick(p, AD_AT)).isNotNull();
     }
 
     @Test

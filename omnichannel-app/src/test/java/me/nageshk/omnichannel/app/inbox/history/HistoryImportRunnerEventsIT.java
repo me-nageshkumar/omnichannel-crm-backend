@@ -52,6 +52,11 @@ class HistoryImportRunnerEventsIT extends HistoryImportTestBase {
         }
 
         @EventListener
+        void on(InboxEvents.ChatFetched e) {
+            events.add(e);
+        }
+
+        @EventListener
         void on(InboxEvents.ActionRecorded e) {
             events.add(e);
         }
@@ -77,8 +82,11 @@ class HistoryImportRunnerEventsIT extends HistoryImportTestBase {
             runner.tick().get(10, SECONDS);
 
             assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
-            // A has three messages: two pages. B has two: one page.
-            assertThat(recorder.events).hasSize(6);
+            // A has three messages: two pages. B has two: one page. Each chat is announced fetched once at its end.
+            assertThat(recorder.events).hasSize(8);
+            assertThat(recorder.events.stream().filter(e -> e instanceof InboxEvents.ChatFetched)
+                    .map(e -> ((InboxEvents.ChatFetched) e).chat().getRemoteId()))
+                    .containsExactlyInAnyOrder(A, B);
             assertThat(recorder.events.stream().filter(e -> e instanceof InboxEvents.ChatChanged)
                     .map(e -> ((InboxEvents.ChatChanged) e).chat().getRemoteId()))
                     .containsExactlyInAnyOrder(A, A, B);
@@ -100,7 +108,10 @@ class HistoryImportRunnerEventsIT extends HistoryImportTestBase {
             runner.tick().get(10, SECONDS);
 
             assertThat(reload(again).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
-            assertThat(recorder.events).isEmpty();
+            // a chat whose fetch ended is still announced fetched, so its contact can be looked up; nothing else
+            assertThat(recorder.events).allMatch(e -> e instanceof InboxEvents.ChatFetched);
+            assertThat(recorder.events.stream().map(e -> ((InboxEvents.ChatFetched) e).chat().getRemoteId()))
+                    .containsExactlyInAnyOrder(A, B);
         }
     }
 }

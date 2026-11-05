@@ -7,16 +7,21 @@ import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.TreeSet;
 import me.nageshk.omnichannel.db.inbox.AdClick;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.events.LoggingEventListener;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 /** Reads the fields of a whatsapp-web.js message payload; every helper tolerates missing nodes. */
 final class MessagePayloads {
+
+    private static final Logger log = LoggerFactory.getLogger(MessagePayloads.class);
 
     private static final String LOCATION_TYPE = "location";
     private static final String POLL_TYPE = "poll_creation";
@@ -157,7 +162,10 @@ final class MessagePayloads {
 
     /**
      * The click-to-WhatsApp ad behind an inbound message, from its {@code ctwaContext}; null for anything else: a
-     * message we sent, no such object, or one naming no source url, id or conversion source.
+     * message we sent, no such object, or one naming no ad identity (a source id, a conversion source or a click id).
+     * A source url alone is not an ad: a business's link preview carries the same object with only {@code sourceUrl},
+     * {@code title}, {@code description} and a thumbnail (seen live 2026-11-05). Such a context is logged by its field
+     * names, so a real ad's shape can be checked against it.
      */
     static AdClick adClick(JsonNode p, Instant at) {
         JsonNode ctx = p.path("ctwaContext");
@@ -165,11 +173,17 @@ final class MessagePayloads {
         String sourceUrl = adText(ctx.path("sourceUrl"));
         String sourceId = adText(ctx.path("sourceId"));
         String conversionSource = adText(ctx.path("conversionSource"));
-        if (sourceUrl == null && sourceId == null && conversionSource == null) return null;
-        String headline = adText(ctx.path("title"));
-        if (headline == null) headline = adText(ctx.path("headline"));
         String clickId = adText(ctx.path("ctwaClid"));
         if (clickId == null) clickId = adText(ctx.path("ctwa_clid"));
+        if (sourceId == null && conversionSource == null && clickId == null) {
+            if (sourceUrl != null) {
+                log.info("ctwaContext without an ad identity (a link preview?), fields {}",
+                        new TreeSet<>(ctx.propertyNames()));
+            }
+            return null;
+        }
+        String headline = adText(ctx.path("title"));
+        if (headline == null) headline = adText(ctx.path("headline"));
         return new AdClick(sourceId, sourceUrl, adText(ctx.path("sourceApp")), headline,
                 adText(ctx.path("description")), conversionSource, clickId, at, adRaw((ObjectNode) ctx));
     }
@@ -238,12 +252,15 @@ final class MessagePayloads {
     /**
      * What the payload says of a call; null unless it is a {@code call_log}. A real one carries {@code isVideoCall},
      * {@code callDuration}, {@code callOutcome} and {@code callParticipants} and no {@code subtype} (seen on a phone,
-     * 2026-11-02); {@code duration} is the published model's name. A call saying none of this is still a call.
+     * 2026-11-02); {@code duration} is the published model's name. A call saying none of this is still a call. The
+     * outcomes seen live (2026-11-05) are {@code Completed}, {@code Missed}, {@code Rejected} and
+     * {@code AcceptedElsewhere}: a call nobody took, missed or rejected, counts as missed.
      */
     static WaWebMessage.Call call(JsonNode p) {
         if (!CALL_TYPE.equals(type(p))) return null;
         boolean video = p.path("isVideoCall").asBoolean(false);
-        boolean missed = lowerText(p.path("callOutcome")).contains("miss");
+        String outcome = lowerText(p.path("callOutcome"));
+        boolean missed = outcome.contains("miss") || outcome.contains("reject");
         int seconds = Math.max(p.path("callDuration").asInt(0), p.path("duration").asInt(0));
         return new WaWebMessage.Call(video, missed, seconds > 0 ? seconds : null);
     }
