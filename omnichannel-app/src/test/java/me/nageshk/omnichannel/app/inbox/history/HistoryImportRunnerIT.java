@@ -72,7 +72,7 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
             runner.tick().get(10, SECONDS);
 
             WaWebMessage stored = messages.findAll().getFirst();
-            assertThat(stored.getType()).isEqualTo("ptt");
+            assertThat(stored.getType()).isEqualTo("audio");
             assertThat(stored.getDirection()).isEqualTo(MessageDirection.IN);
             assertThat(stored.getMedia()).isNotNull();
             assertThat(stored.getMedia().mimetype()).isEqualTo("audio/ogg; codecs=opus");

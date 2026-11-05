@@ -190,7 +190,7 @@ class InboxSendIT extends InboxApiTestBase {
         assertThat(stored.getDirection()).isEqualTo(MessageDirection.OUT);
         assertThat(stored.getSource()).isEqualTo(MessageSource.CONSOLE);
         assertThat(stored.getStatus()).isEqualTo(MessageStatus.SENT);
-        assertThat(stored.getType()).isEqualTo("chat");
+        assertThat(stored.getType()).isEqualTo("text");
         assertThat(stored.getBody()).isEqualTo("hello");
         assertThat(stored.getSentByUserId()).isEqualTo(manager.getId());
         assertThat(stored.getSentByName()).isEqualTo(manager.getName());
@@ -429,7 +429,7 @@ class InboxSendIT extends InboxApiTestBase {
         WaWebMessage stored = only(chat);
         assertThat(stored.getTemplateId()).isEqualTo(id);
         assertThat(stored.getBody()).isEqualTo("Hi Aarav");
-        assertThat(stored.getType()).isEqualTo("chat");
+        assertThat(stored.getType()).isEqualTo("text");
     }
 
     @Test

@@ -95,7 +95,7 @@ class CampaignRepliesIT extends CampaignTestBase {
         m.setWaMessageId(waId);
         m.setDirection(MessageDirection.OUT);
         m.setSource(source);
-        m.setType("chat");
+        m.setType("text");
         m.setBody("Hi");
         m.setTimestamp(at);
         m.setStatus(MessageStatus.SENT);

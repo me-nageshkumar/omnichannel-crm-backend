@@ -83,14 +83,14 @@ class MessageFieldsTest {
                 .add(JSON.createObjectNode().put("displayName", "B").put("vcard", "CARD B"));
         MessageFields.Content c = content(p);
         assertThat(MessageFields.bodyOf(c)).isEqualTo("CARD A\nCARD B");
-        assertThat(MessageFields.storedType(c)).isEqualTo("multi_vcard");
+        assertThat(c.type()).isEqualTo("contacts");
     }
 
     @Test
     void aContactCardIsItsBody() {
         MessageFields.Content c = content(raw("vcard").put("body", "BEGIN:VCARD\nFN:A\nEND:VCARD"));
         assertThat(MessageFields.bodyOf(c)).isEqualTo("BEGIN:VCARD\nFN:A\nEND:VCARD");
-        assertThat(MessageFields.storedType(c)).isEqualTo("vcard");
+        assertThat(c.type()).isEqualTo("contacts");
     }
 
     @Test
@@ -212,7 +212,7 @@ class MessageFieldsTest {
     void anyMediaTypeUsesTheCaptionAndDropsTheThumbnail() {
         // not one of Meta's types: unsupported under its own name, its text carried in wa_web.body
         ObjectNode product = raw("product").put("directPath", "/v/t62/abc").put("body", THUMBNAIL);
-        assertThat(MessageFields.storedType(content(product))).isEqualTo("product");
+        assertThat(content(product).type()).isEqualTo("unsupported");
         assertThat(MessageFields.bodyOf(content(product))).isNull();
         assertThat(MessageFields.bodyOf(content(product.put("caption", "Blue kurta")))).isEqualTo("Blue kurta");
     }

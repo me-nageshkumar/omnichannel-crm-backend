@@ -86,7 +86,7 @@ class InboxViewsIT {
         chat.setAssignedTeamId(teamId);
         chat.setUnreadCount(3);
         chat.setLastMessageAt(Instant.parse("2026-01-01T10:00:00Z"));
-        chat.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "chat", "hello", MessageStatus.SENT));
+        chat.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "text", "hello", MessageStatus.SENT));
         return chat;
     }
 
@@ -110,7 +110,7 @@ class InboxViewsIT {
         assertThat(first.assignedUser()).isEqualTo(new ChatView.Ref(agent.getId(), "Agent Smith"));
         assertThat(first.assignedTeam()).isEqualTo(new ChatView.Ref(support.getId(), "Support"));
         assertThat(first.unreadCount()).isEqualTo(3);
-        assertThat(first.lastMessage()).isEqualTo(new ChatView.LastMessage(MessageDirection.IN, "chat", "hello", MessageStatus.SENT));
+        assertThat(first.lastMessage()).isEqualTo(new ChatView.LastMessage(MessageDirection.IN, "text", "hello", MessageStatus.SENT));
         ChatView second = out.get(1);
         assertThat(second.contact().numberHidden()).isTrue();
         assertThat(second.contact().phone()).isNull();

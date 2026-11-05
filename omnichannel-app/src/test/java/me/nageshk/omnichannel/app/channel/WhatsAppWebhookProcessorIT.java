@@ -133,8 +133,7 @@ class WhatsAppWebhookProcessorIT {
         WaWebChat chat = chats.findByPhoneNumberIdAndRemoteId("pn-1", "919928088743@c.us").orElseThrow();
         WaWebMessage m = messages.findByPhoneNumberIdAndWaMessageId("pn-1",
                 "wamid.HBgMOTE5OTI4MDg4NzQzFQIAEhgUM0EwMUMyQjk2NDBDMTE5N0Y3RkQA").orElseThrow();
-        // today's stored vocabulary until Task 8 switches the stored type to Meta's ("text")
-        assertThat(m.getType()).isEqualTo("chat");
+        assertThat(m.getType()).isEqualTo("text");
         assertThat(m.getBody()).isEqualTo("Hi");
         assertThat(m.getDirection()).isEqualTo(MessageDirection.IN);
         assertThat(m.getStatus()).isEqualTo(MessageStatus.PENDING);
@@ -169,7 +168,7 @@ class WhatsAppWebhookProcessorIT {
         chat.setRemoteId("919912345678@c.us");
         chat.setStatus(ChatStatus.OPEN);
         chat.setLastMessageAt(Instant.ofEpochSecond(T));
-        chat.setLastMessage(new WaWebChat.LastMessage(MessageDirection.OUT, "chat", "Hello", MessageStatus.SENT));
+        chat.setLastMessage(new WaWebChat.LastMessage(MessageDirection.OUT, "text", "Hello", MessageStatus.SENT));
         chat = chats.save(chat);
         WaWebMessage sent = new WaWebMessage();
         sent.setCustomerId("cust-1");
@@ -179,7 +178,7 @@ class WhatsAppWebhookProcessorIT {
         sent.setWaMessageId("true_919912345678@c.us_C1");
         sent.setDirection(MessageDirection.OUT);
         sent.setSource(MessageSource.CONSOLE);
-        sent.setType("chat");
+        sent.setType("text");
         sent.setBody("Hello");
         sent.setTimestamp(Instant.ofEpochSecond(T));
         sent.setStatus(MessageStatus.SENT);

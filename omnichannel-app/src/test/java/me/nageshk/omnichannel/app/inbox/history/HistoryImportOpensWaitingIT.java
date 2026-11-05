@@ -270,7 +270,7 @@ class HistoryImportOpensWaitingIT extends HistoryImportTestBase {
         old.setStatus(ChatStatus.CLOSED);
         old.setLastInboundAt(START.minus(Duration.ofHours(5)));
         old.setLastMessageAt(START.minus(Duration.ofHours(5)));
-        old.setLastMessage(new WaWebChat.LastMessage(me.nageshk.omnichannel.db.inbox.MessageDirection.IN, "chat",
+        old.setLastMessage(new WaWebChat.LastMessage(me.nageshk.omnichannel.db.inbox.MessageDirection.IN, "text",
                 "earlier", null));
         chats.save(old);
         try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {

@@ -64,7 +64,7 @@ class InboxIndexesIT {
         m.setWaMessageId(waMessageId);
         m.setDirection(MessageDirection.IN);
         m.setSource(MessageSource.CONTACT);
-        m.setType("chat");
+        m.setType("text");
         m.setTimestamp(Instant.now());
         m.setStatus(MessageStatus.PENDING);
         return m;

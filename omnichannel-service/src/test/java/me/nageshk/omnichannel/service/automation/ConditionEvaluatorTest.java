@@ -149,8 +149,8 @@ class ConditionEvaluatorTest {
 
     @Test
     void kindsOfRealTypes() {
-        assertThat(MessageKinds.kindOf("ptt")).contains("AUDIO");
-        assertThat(MessageKinds.kindOf("multi_vcard")).contains("CONTACT_CARD");
+        assertThat(MessageKinds.kindOf("audio")).contains("AUDIO");
+        assertThat(MessageKinds.kindOf("contacts")).contains("CONTACT_CARD");
         assertThat(MessageKinds.kindOf("poll_creation")).contains("POLL");
         for (String t : List.of("call_log", "revoked", "reaction", "ciphertext", "e2e_notification")) {
             assertThat(MessageKinds.kindOf(t)).isEmpty();

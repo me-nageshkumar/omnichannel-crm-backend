@@ -55,7 +55,7 @@ class FetchedChatOpenerTest {
         c.setStatus(status);
         c.setAssignedUserId(assignedUserId);
         c.setLastInboundAt(NOW.minus(Duration.ofHours(1)));
-        c.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "chat", "hello", null));
+        c.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "text", "hello", null));
         return c;
     }
 

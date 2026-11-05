@@ -323,7 +323,7 @@ class WaWebWebhookListenerIT {
         assertThat(chat.getUnreadCount()).isEqualTo(1);
         assertThat(chat.getLastMessage().text()).isEqualTo("hi");
         assertThat(chat.getLastMessage().direction()).isEqualTo(MessageDirection.IN);
-        assertThat(chat.getLastMessage().type()).isEqualTo("chat");
+        assertThat(chat.getLastMessage().type()).isEqualTo("text");
         assertThat(chat.getLastMessage().status()).isEqualTo(MessageStatus.PENDING);
         assertThat(chat.getLastMessageAt()).isEqualTo(Instant.ofEpochSecond(T));
         assertThat(chat.getLastInboundAt()).isEqualTo(Instant.ofEpochSecond(T));
@@ -334,7 +334,7 @@ class WaWebWebhookListenerIT {
         assertThat(m.getWaMessageId()).isEqualTo("false_919911111111@c.us_ABC" + T);
         assertThat(m.getDirection()).isEqualTo(MessageDirection.IN);
         assertThat(m.getSource()).isEqualTo(MessageSource.CONTACT);
-        assertThat(m.getType()).isEqualTo("chat");
+        assertThat(m.getType()).isEqualTo("text");
         assertThat(m.getBody()).isEqualTo("hi");
         assertThat(m.getStatus()).isEqualTo(MessageStatus.PENDING);
         assertThat(m.getAck()).isZero();
@@ -345,6 +345,22 @@ class WaWebWebhookListenerIT {
         assertThat(recorder.of(InboxEvents.MessageUpserted.class)).singleElement()
                 .satisfies(e -> assertThat(e.inserted()).isTrue());
         assertThat(recorder.of(InboxEvents.ChatReopened.class)).isEmpty();
+    }
+
+    @Test
+    void aRawTextIsStoredUnderMetasName() {
+        create(message("919911111111@c.us", false, T).put("type", "chat"));
+        assertThat(onlyMessage().getType()).isEqualTo("text");
+        assertThat(onlyChat().getLastMessage().type()).isEqualTo("text");
+    }
+
+    @Test
+    void aRawVoiceNoteIsStoredAsAudio() {
+        ObjectNode p = message("919911111111@c.us", false, T).put("type", "ptt");
+        p.remove("body");
+        create(p);
+        assertThat(onlyMessage().getType()).isEqualTo("audio");
+        assertThat(onlyChat().getLastMessage().type()).isEqualTo("audio");
     }
 
     @Test

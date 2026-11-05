@@ -155,7 +155,7 @@ abstract class InboxApiTestBase {
         c.setStatus(ChatStatus.OPEN);
         c.setUnreadCount(2);
         c.setLastMessageAt(T0.plusSeconds(minutes * 60));
-        c.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "chat", "hello", null));
+        c.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "text", "hello", null));
         return chats.save(c);
     }
 
@@ -175,7 +175,7 @@ abstract class InboxApiTestBase {
         m.setWaMessageId(UUID.randomUUID().toString());
         m.setDirection(MessageDirection.IN);
         m.setSource(MessageSource.CONTACT);
-        m.setType("chat");
+        m.setType("text");
         m.setBody(body);
         m.setTimestamp(T0.plusSeconds(seconds));
         return messages.save(m);
