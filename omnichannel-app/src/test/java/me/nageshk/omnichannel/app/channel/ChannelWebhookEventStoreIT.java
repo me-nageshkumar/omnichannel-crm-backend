@@ -12,12 +12,14 @@ import java.util.Map;
 import me.nageshk.omnichannel.common.channel.ChannelContext;
 import me.nageshk.omnichannel.common.channel.ChannelKind;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Change;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Value;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WebhookEvent;
 import me.nageshk.omnichannel.common.config.OmnichannelProperties;
 import me.nageshk.omnichannel.db.channel.ChannelWebhookEvent;
 import me.nageshk.omnichannel.db.channel.ChannelWebhookEventRepository;
 import me.nageshk.omnichannel.service.channel.ChannelWebhookEventStore;
 import me.nageshk.omnichannel.service.inbox.InboxCleanup;
+import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +54,7 @@ class ChannelWebhookEventStoreIT {
     }
 
     private static WebhookEvent event(ChannelContext ctx) {
-        return WebhookEvent.of(ctx, List.of(new Change("messages", null)));
+        return WebhookEvent.of(ctx, List.of(new Change("messages", Value.of(ctx))));
     }
 
     private JsonNode json(String s) {
@@ -66,17 +68,12 @@ class ChannelWebhookEventStoreIT {
         ChannelWebhookEvent saved = store.save(c, event(c), json("{\"id\":\"x\",\"body\":\"hi\"}"), 7L, at);
 
         ChannelWebhookEvent found = repo.findById(saved.getId()).orElseThrow();
-        assertThat(found.getChannelKind()).isEqualTo(ChannelKind.WHATSAPP_WEB);
-        assertThat(found.getChannelAccountId()).isEqualTo("p1");
-        assertThat(found.getWorkspaceId()).isEqualTo("w1");
-        assertThat(found.getCustomerId()).isEqualTo("c1");
-        assertThat(found.getField()).isEqualTo("messages");
         assertThat(found.getSeq()).isEqualTo(7L);
         assertThat(found.getCapturedAt()).isEqualTo(at);
         assertThat(found.getCreationTime()).isNotNull();
         assertThat(found.isRawDropped()).isFalse();
         assertThat(found.getRaw()).containsEntry("body", "hi");
-        assertThat(found.getEvent()).containsEntry("object", "whatsapp_business_account");
+        assertThat(found.getEvent()).containsEntry("object", "whatsapp_web_account");
         assertThat((List<?>) found.getEvent().get("entry")).hasSize(1);
     }
 
@@ -133,6 +130,44 @@ class ChannelWebhookEventStoreIT {
 
         cleanup.deleteForNumber("p1");
 
-        assertThat(repo.findAll()).extracting(ChannelWebhookEvent::getChannelAccountId).containsExactly("p2");
+        assertThat(repo.findAll()).hasSize(1);
+        assertThat(mongo.findAll(Document.class, "channelWebhookEvents").getFirst()
+                .get("event", Document.class).getList("entry", Document.class).getFirst()
+                .getList("changes", Document.class).getFirst().get("value", Document.class)
+                .get("metadata", Document.class).getString("phone_number_id")).isEqualTo("p2");
+    }
+
+    @Test
+    void theDocumentHoldsTheEventAndNothingElseAboutTheChannel() {
+        ChannelContext c = ctx("p1");
+        store.save(c, event(c), json("{}"), 1L, null);
+
+        Document d = mongo.findAll(Document.class, "channelWebhookEvents").getFirst();
+        assertThat(d).doesNotContainKeys("channelKind", "channelAccountId", "workspaceId", "customerId", "field");
+        assertThat(d.get("event", Document.class).getList("entry", Document.class).getFirst().getString("id"))
+                .isEqualTo("w1");
+    }
+
+    @Test
+    void anUnconvertibleRawIsStillFoundByNumber() {
+        ChannelContext c = ctx("p1");
+        store.save(c, null, json("{\"body\":\"hi\"}"), 1L, null);
+
+        Document d = mongo.findAll(Document.class, "channelWebhookEvents").getFirst();
+        Document ev = d.get("event", Document.class);
+        assertThat(ev.getString("object")).isEqualTo("whatsapp_web_account");
+        assertThat(ev.getList("entry", Document.class).getFirst().getList("changes", Document.class).getFirst()
+                .get("value", Document.class).get("metadata", Document.class).getString("phone_number_id"))
+                .isEqualTo("p1");
+        assertThat(d.get("raw", Document.class).getString("body")).isEqualTo("hi");
+        cleanup.deleteForNumber("p1");
+        assertThat(repo.findAll()).isEmpty();
+    }
+
+    @Test
+    void theNumberIndexExists() {
+        assertThat(mongo.indexOps(ChannelWebhookEvent.class).getIndexInfo()).anyMatch(i ->
+                i.getIndexFields().stream().map(f -> f.getKey()).toList()
+                        .equals(List.of("event.entry.changes.value.metadata.phone_number_id", "creationTime")));
     }
 }

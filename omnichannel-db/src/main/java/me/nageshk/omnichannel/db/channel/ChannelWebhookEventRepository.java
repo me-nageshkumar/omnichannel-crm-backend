@@ -1,12 +1,10 @@
 package me.nageshk.omnichannel.db.channel;
 
-import java.util.List;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 
 public interface ChannelWebhookEventRepository extends MongoRepository<ChannelWebhookEvent, String> {
 
-    void deleteByChannelAccountId(String channelAccountId);
-
-    List<ChannelWebhookEvent> findByChannelAccountIdOrderByCreationTimeDesc(String channelAccountId, Pageable page);
+    @Query(value = "{'event.entry.changes.value.metadata.phone_number_id': ?0}", delete = true)
+    long deleteByNumber(String phoneNumberId);
 }

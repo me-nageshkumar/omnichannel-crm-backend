@@ -365,6 +365,29 @@ Then edit `WaWebInboxListenerIT` → `WaWebWebhookListenerIT`: keep every test; 
 
 ---
 
+### Task 10: A self-describing webhook event; the store keeps the event only
+
+Requested by the user on 2026-11-06 after seeing the first documents. Spec amendments are part of this task.
+
+**Files:**
+- Modify: `omnichannel-common/.../common/channel/whatsapp/webhook/WebhookEvent.java` (`WebhookEvent.of(ctx, changes)`: `object` = `"whatsapp_web_account"` when `ctx.kind() == WHATSAPP_WEB`, `"whatsapp_business_account"` when `WHATSAPP_CLOUD`; `Entry.id` = `ctx.workspaceId()`)
+- Modify: `omnichannel-db/.../db/channel/ChannelWebhookEvent.java` — remove `channelKind`, `channelAccountId`, `workspaceId`, `customerId`, `field`; keep `id, event, raw, rawDropped, seq, capturedAt, creationTime`; replace the compound index with `{"event.entry.changes.value.metadata.phone_number_id": 1, "creationTime": -1}` (name `number_time`)
+- Modify: `ChannelWebhookEventRepository` — `deleteByChannelAccountId` becomes a delete by the nested path (a `@Query`/`@DeleteQuery` on `event.entry.changes.value.metadata.phone_number_id`, or a `MongoTemplate` remove in the store); the find-by-account method likewise, or dropped if unused
+- Modify: `omnichannel-service/.../service/channel/ChannelWebhookEventStore.java` — stop setting the removed fields; when `event` is null (an unconvertible raw) the document has no number path, so give it `event = {object, entry: [{id: workspaceId, changes: [{field: null, value: {messaging_product, metadata}}]}]}` built from the context via `Value.of(ctx)` so the raw is still found by number — **(my call)**; cleanup in `InboxCleanup.deleteForNumber` keeps working through the nested path
+- Modify: `WaWebWebhookConverter` only if it builds `WebhookEvent`/`Entry` other than through `WebhookEvent.of` (make it use the factory)
+- Modify: every golden `*.expected.json` under `omnichannel-service/src/test/resources/wawebhook/` (`object` and `entry[0].id` change; a sed over the files is fine), `WebhookEventJsonTest.ourOwnEventRoundTripsInSnakeCaseWithoutNulls`, `ChannelWebhookEventStoreIT` (asserts on the removed fields → asserts on `event.object`, `event.entry[0].id`, the nested number path; the cleanup test stays), `WhatsAppWebhookProcessorIT`/`WaWebWebhookListenerIT` if they read the removed fields
+- Modify docs: spec §4.1 (envelope: `object` is `whatsapp_web_account` for a converted event, `whatsapp_business_account` for a real one; `entry[].id` is the workspace id, the brand being the analogue of Meta's business account), §5.4 (the document's fields and the nested index), README (`channelWebhookEvents` paragraph), `known-limits.md` if it names the fields
+
+**Interfaces:**
+- Consumes: `ChannelContext(kind, customerId, workspaceId, channelAccountId, displayPhoneNumber)`; `Value.of(ctx)` (sets `metadata.phone_number_id = channelAccountId`).
+- Produces: `WebhookEvent.object ∈ {whatsapp_web_account, whatsapp_business_account}`, `Entry.id = workspaceId`; `ChannelWebhookEvent{id, event, raw, rawDropped, seq, capturedAt, creationTime}`.
+
+- [ ] **Step 1: Write the failing tests** — in `WebhookEventJsonTest`: `aConvertedEventSaysWhereItCameFrom` (`WebhookEvent.of(webCtx, …).object()` is `whatsapp_web_account`, `entry().get(0).id()` is the workspace id; a `WHATSAPP_CLOUD` context gives `whatsapp_business_account`); in `ChannelWebhookEventStoreIT`: `theDocumentHoldsTheEventAndNothingElseAboutTheChannel` (saved document has no `channelKind/channelAccountId/workspaceId/customerId/field` keys — read it back as a raw `Document` — and `event.entry[0].id` equals the workspace id), `anUnconvertibleRawIsStillFoundByNumber` (save with `event = null` → the document's `event.entry[0].changes[0].value.metadata.phone_number_id` is the number and `raw` is kept), `cleanupDeletesTheNumbersEvents` kept, `theNumberIndexExists` (an index on the nested path + creationTime).
+- [ ] **Step 2: Run** — `./mvnw -q -pl omnichannel-common test -Dtest=WebhookEventJsonTest` and `./mvnw -q -pl omnichannel-app -am test -Dtest=ChannelWebhookEventStoreIT -Dsurefire.failIfNoSpecifiedTests=false` — Expected: FAIL.
+- [ ] **Step 3: Implement**, update the goldens and the docs.
+- [ ] **Step 4: Run** — the two above, then `./mvnw -q -pl omnichannel-service -am test` and `./mvnw -q -pl omnichannel-app -am test -Dtest='WhatsAppWebhookProcessorIT,WaWebWebhookListenerIT,InboxSendIT,HistoryImportRunnerIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: PASS.
+- [ ] **Step 5: Commit** — `feat: a self-describing webhook event; the store keeps the event only`
+
 ## Verification before the merge
 
 - `./mvnw -q verify` once in the worktree (all modules; expect every surefire report at 0 failures, 0 errors).

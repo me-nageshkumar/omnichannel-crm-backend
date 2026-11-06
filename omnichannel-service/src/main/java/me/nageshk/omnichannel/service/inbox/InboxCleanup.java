@@ -39,7 +39,7 @@ public class InboxCleanup {
         chats.deleteByPhoneNumberId(phoneNumberId);
         historyImports.deleteByPhoneNumberId(phoneNumberId);
         historyImportChats.deleteByPhoneNumberId(phoneNumberId);
-        webhookEvents.deleteByChannelAccountId(phoneNumberId);
+        webhookEvents.deleteByNumber(phoneNumberId);
         media.deleteByPhoneNumber(phoneNumberId);
     }
 }

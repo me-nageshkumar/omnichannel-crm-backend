@@ -130,4 +130,15 @@ class WebhookEventJsonTest {
         assertThat(value.at("/messages/0").has("from_user_id")).isFalse();
         assertThat(mapper.treeToValue(json, WebhookEvent.class)).isEqualTo(e);
     }
+
+    @Test
+    void aConvertedEventSaysWhereItCameFrom() {
+        ChannelContext web = new ChannelContext(ChannelKind.WHATSAPP_WEB, "cust", "ws", "pn-1", "919928088743");
+        WebhookEvent e = WebhookEvent.of(web, List.of(new Change("messages", null)));
+        assertThat(e.object()).isEqualTo("whatsapp_web_account");
+        assertThat(e.entry().get(0).id()).isEqualTo("ws");
+        ChannelContext cloud = new ChannelContext(ChannelKind.WHATSAPP_CLOUD, "cust", "ws", "pn-1", "919928088743");
+        assertThat(WebhookEvent.of(cloud, List.of(new Change("messages", null))).object())
+                .isEqualTo("whatsapp_business_account");
+    }
 }

@@ -2,9 +2,12 @@ package me.nageshk.omnichannel.service.channel;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import me.nageshk.omnichannel.common.channel.ChannelContext;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Change;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Value;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WebhookEvent;
 import me.nageshk.omnichannel.common.config.OmnichannelProperties;
 import me.nageshk.omnichannel.db.channel.ChannelWebhookEvent;
@@ -40,16 +43,13 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
     public ChannelWebhookEvent save(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt) {
         try {
             ChannelWebhookEvent doc = new ChannelWebhookEvent();
-            doc.setChannelKind(ctx.kind());
-            doc.setChannelAccountId(ctx.channelAccountId());
-            doc.setWorkspaceId(ctx.workspaceId());
-            doc.setCustomerId(ctx.customerId());
             doc.setSeq(seq);
             doc.setCapturedAt(capturedAt);
-            if (event != null) {
-                doc.setField(firstField(event));
-                doc.setEvent(mapper.convertValue(event, MAP));
-            }
+            // An unconvertible raw gets an event shell so the document is still found by number.
+            WebhookEvent toStore = event != null
+                    ? event
+                    : WebhookEvent.of(ctx, List.of(new Change(null, Value.of(ctx))));
+            doc.setEvent(mapper.convertValue(toStore, MAP));
             if (raw != null && !raw.isNull()) {
                 JsonNode kept = raw.deepCopy();
                 MongoKeys.dropRefused(kept);
@@ -64,12 +64,6 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
             log.warn("Could not store the webhook event of {}: {}", ctx.channelAccountId(), e.toString());
             return null;
         }
-    }
-
-    private static String firstField(WebhookEvent event) {
-        if (event.entry() == null || event.entry().isEmpty()) return null;
-        var changes = event.entry().getFirst().changes();
-        return changes == null || changes.isEmpty() ? null : changes.getFirst().field();
     }
 
     @Override

@@ -1,8 +1,8 @@
 {
-  "object": "whatsapp_business_account",
+  "object": "whatsapp_web_account",
   "entry": [
     {
-      "id": "pn-1",
+      "id": "ws",
       "changes": [
         {
           "field": "messages",

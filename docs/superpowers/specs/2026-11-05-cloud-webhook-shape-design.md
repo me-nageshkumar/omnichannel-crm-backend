@@ -150,8 +150,9 @@ One bridge event becomes one webhook event, Meta's wire shape and names:
 }
 ```
 
-- `entry[].id` is Meta's business-account id; ours is the phone number's id, the same as `metadata.phone_number_id`
-  (a WhatsApp Web number has no business account). `display_phone_number` is the number's digits.
+- `object` says where the event came from: `whatsapp_web_account` for an event we converted from WhatsApp Web,
+  `whatsapp_business_account` for a real Cloud API one. `entry[].id` is Meta's business-account id; ours is the
+  workspace id (the brand, the analogue of the business account); the number is `metadata.phone_number_id`. `display_phone_number` is the number's digits.
 - One bridge event may yield two changes in one entry: an echo (`field: "smb_message_echoes"`) and the status it
   already carries (`field: "messages"` with `statuses`), see §4.4. Meta sends one change per webhook; the arrays allow
   more. The processor handles an **entry** as a unit: a status whose `id` matches an echo in the same entry is
@@ -369,13 +370,17 @@ outside the converter (they log, they do not store) — or they call the convert
 ### 5.4 Persisted webhook events: collection `channelWebhookEvents`
 
 ```
-id, channelKind: WHATSAPP_WEB | WHATSAPP_CLOUD, channelAccountId, workspaceId, customerId
-field: messages | smb_message_echoes          (the first change's field, for filtering)
-event: <the webhook event as JSON>             raw: <the bridge payload as JSON, capped>
+id
+event: <the webhook event as JSON; says its origin (object), workspace (entry.id) and number>
+raw: <the bridge payload as JSON, capped>, rawDropped
 seq, capturedAt, creationTime
 ```
 
-- Indexes: `(channelAccountId, creationTime desc)`, TTL on `creationTime` with `omnichannel.webhooks.retention`
+- The document holds no copy of the channel, workspace or customer; everything comes from `event`. When a raw
+  cannot be converted, `event` is a shell (`object`, `entry[0].id`, one change whose value has only
+  `messaging_product` and `metadata`) so the raw is still found by number **(my call)**.
+
+- Indexes: `(event.entry.changes.value.metadata.phone_number_id, creationTime desc)` (name `number_time`; cleanup of a number deletes by that path), TTL on `creationTime` with `omnichannel.webhooks.retention`
   (default `30d`) created programmatically at startup so the property rules **(my call)**.
 - `raw` is kept when `omnichannel.webhooks.keep-raw` is true (default) and the payload is at most
   `omnichannel.webhooks.raw-max-bytes` (default 65 536) as JSON; larger payloads store `raw: null` and

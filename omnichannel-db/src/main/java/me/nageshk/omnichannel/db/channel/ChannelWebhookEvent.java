@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
-import me.nageshk.omnichannel.common.channel.ChannelKind;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
@@ -15,20 +14,15 @@ import org.springframework.data.mongodb.core.mapping.Document;
  * store (its expiry comes from a property), not by an annotation.
  */
 @Document("channelWebhookEvents")
-@CompoundIndex(name = "account_time", def = "{'channelAccountId': 1, 'creationTime': -1}")
+@CompoundIndex(name = "number_time",
+        def = "{'event.entry.changes.value.metadata.phone_number_id': 1, 'creationTime': -1}")
 @Getter
 @Setter
 public class ChannelWebhookEvent {
 
     @Id
     private String id;
-    private ChannelKind channelKind;
-    private String channelAccountId;
-    private String workspaceId;
-    private String customerId;
-    /** The first change's field; null when the event has none. */
-    private String field;
-    /** The webhook JSON (snake_case keys); null when conversion failed and only the raw is kept. */
+    /** The webhook JSON (snake_case keys); says its own origin, workspace and number. */
     private Map<String, Object> event;
     /** WhatsApp Web's own model; null when not kept or over the size cap. */
     private Map<String, Object> raw;
