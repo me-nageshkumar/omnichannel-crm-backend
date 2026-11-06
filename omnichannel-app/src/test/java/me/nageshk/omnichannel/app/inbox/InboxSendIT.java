@@ -201,6 +201,17 @@ class InboxSendIT extends InboxApiTestBase {
     }
 
     @Test
+    void textSendAsksForALinkPreview() throws Exception {
+        // whatsapp-web.js's Client.sendMessage defaults linkPreview to true; the page script takes our options as
+        // its internal options verbatim, so a text with a link only gets a preview when we say so.
+        WaWebChat chat = chatWithAarav();
+        Exchange ex = sendOk(managerToken, chat, Map.of("text", "watch https://www.youtube.com/watch?v=XVyHk82-pEI"),
+                "true_" + chat.getRemoteId() + "_1", "watch https://www.youtube.com/watch?v=XVyHk82-pEI", "chat");
+
+        assertThat(ex.request().params().get("options").get("linkPreview").asBoolean()).isTrue();
+    }
+
+    @Test
     void laterMessageCreateKeepsConsoleSource() throws Exception {
         WaWebChat chat = chatWithAarav();
         String serialized = "true_" + chat.getRemoteId() + "_2";
