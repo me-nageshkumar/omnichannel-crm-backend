@@ -42,6 +42,10 @@ class HistoryDevice implements AutoCloseable {
     volatile boolean oldPageScript = false;
     /** The receipt times (seconds) {@code messageInfo} gives a message id; all null when absent. */
     final Map<String, Long[]> receipts = new ConcurrentHashMap<>();
+    /** Ids {@code messageInfo} answers {@code {id, error: true}} for, as the page does for a message it cannot read. */
+    final Set<String> receiptErrors = ConcurrentHashMap.newKeySet();
+    /** Ids {@code messageInfo} leaves out of its answer. */
+    final Set<String> receiptsLeftOut = ConcurrentHashMap.newKeySet();
     volatile Function<Envelope, Envelope> override = null;
 
     private final FakeDevice device;
@@ -113,6 +117,11 @@ class HistoryDevice implements AutoCloseable {
         ArrayNode out = result.putArray("receipts");
         req.params().path("ids").forEach(i -> {
             String id = i.asString();
+            if (receiptsLeftOut.contains(id)) return;
+            if (receiptErrors.contains(id)) {
+                out.addObject().put("id", id).put("error", true);
+                return;
+            }
             Long[] times = receipts.getOrDefault(id, new Long[3]);
             ObjectNode r = out.addObject().put("id", id);
             String[] names = {"delivered", "read", "played"};

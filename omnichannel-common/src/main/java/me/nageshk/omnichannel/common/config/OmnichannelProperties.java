@@ -34,7 +34,7 @@ public record OmnichannelProperties(
     /**
      * Chat history import: the runner's tick and how hard it pulls from the phone. {@code receipts}: after a page, our
      * messages the fetch found delivered or later get their receipt times from the page, {@code receiptsBatch} ids per
-     * call (the page takes at most 100).
+     * call (the page takes at most 100, and reads each id in turn, so a call must end well inside the RPC timeout).
      */
     public record History(
             @DefaultValue("true") boolean autoTick,
@@ -50,7 +50,7 @@ public record OmnichannelProperties(
             @DefaultValue("3") int maxTimeoutsPerChat,
             @DefaultValue("7d") Duration waitingWindow,
             @DefaultValue("true") boolean receipts,
-            @DefaultValue("100") int receiptsBatch) {}
+            @DefaultValue("25") int receiptsBatch) {}
 
     /** Automations: the worker's tick and lease, retries, and how long a live test may sit idle. */
     public record Automation(

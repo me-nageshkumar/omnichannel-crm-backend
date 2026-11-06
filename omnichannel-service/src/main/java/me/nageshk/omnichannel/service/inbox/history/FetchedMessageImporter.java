@@ -3,9 +3,11 @@ package me.nageshk.omnichannel.service.inbox.history;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import me.nageshk.omnichannel.common.channel.ChannelContext;
@@ -119,10 +121,12 @@ public class FetchedMessageImporter {
     /**
      * The receipts of {@code wanted}, the stored rows of our messages a page found delivered or later
      * ({@link ImportResult#receiptsWanted}), asked of the page {@code omnichannel.history.receipts-batch} ids at a
-     * time. Each state from delivered up to the row's status becomes a status event, timed by WhatsApp's receipt, or by
-     * {@code fetchedAt} with {@code wa_web.estimated} when WhatsApp has none for it; a message's events are stored, the
-     * first with the page's receipt as its raw, then processed in order. A call that fails (a timeout, the device
-     * gone) is logged and its batch skipped: the rows keep their ticks, and the next fetch asks again.
+     * time. Each state from delivered up to the row's status becomes a status event, timed by WhatsApp's receipt; a
+     * state WhatsApp has none for is {@code wa_web.estimated}, timed by the earliest real receipt of a later state, else
+     * by {@code fetchedAt}. A message's events are stored, the first with the page's receipt as its raw, then processed
+     * in order. A call that fails (a timeout, the device gone) is logged and its batch skipped, and so is a message the
+     * answer leaves out or marks {@code error}: the rows keep their ticks and lack their times, so the next fetch asks
+     * again.
      */
     public void importReceipts(ImportContext ctx, DeviceSession device, List<WaWebMessage> wanted, Instant fetchedAt) {
         if (wanted == null || wanted.isEmpty()) return;
@@ -148,8 +152,8 @@ public class FetchedMessageImporter {
             for (WaWebMessage m : batch) {
                 String remote = remoteIds.computeIfAbsent(m.getChatId(),
                         id -> chats.findById(id).map(WaWebChat::getRemoteId).orElse(null));
-                if (remote == null) continue;
-                Receipt r = byId.getOrDefault(m.getWaMessageId(), new Receipt(m.getWaMessageId(), null, null, null));
+                Receipt r = byId.get(m.getWaMessageId());
+                if (remote == null || r == null) continue;
                 receiptsOf(channel, m, remote, r, fetchedAt);
             }
         }
@@ -158,14 +162,14 @@ public class FetchedMessageImporter {
     /** One message's status events, delivered first, stored and then processed as one unit. */
     private void receiptsOf(ChannelContext channel, WaWebMessage m, String chatId, Receipt r, Instant fetchedAt) {
         List<WebhookEvent> events = new ArrayList<>();
-        for (MessageStatus state : RECEIPT_STATES) {
+        List<Instant> times = Arrays.asList(r.delivered(), r.read(), r.played());
+        for (int i = 0; i < RECEIPT_STATES.size(); i++) {
+            MessageStatus state = RECEIPT_STATES.get(i);
             if (!m.getStatus().isAtLeast(state)) break;
-            Instant at = switch (state) {
-                case DELIVERED -> r.delivered();
-                case READ -> r.read();
-                default -> r.played();
-            };
-            Status status = receiptStatus(m.getWaMessageId(), state, at, chatId, fetchedAt);
+            Instant at = times.get(i);
+            boolean estimated = at == null;
+            if (estimated) at = earliest(times.subList(i + 1, times.size()), fetchedAt);
+            Status status = receiptStatus(m.getWaMessageId(), state, at, estimated, chatId, fetchedAt);
             WebhookEvent event = WebhookEvent.of(channel, List.of(new Change(WaWebWebhookConverter.CHANGE_FIELD,
                     Value.of(channel).withStatuses(List.of(status)))));
             store.save(channel, event, events.isEmpty() ? rawOf(r) : null, null, fetchedAt, events.size(), true);
@@ -180,18 +184,26 @@ public class FetchedMessageImporter {
     }
 
     /**
-     * The status of one receipt state, as the converter builds a live one; {@code at} null (no receipt) uses the fetch
-     * time and says {@code estimated}. {@code captured_at} is the fetch time.
+     * A state reached before a later one was reached no later than it: the earliest real receipt of a later state,
+     * else the fetch time.
      */
-    static Status receiptStatus(String messageId, MessageStatus state, Instant at, String chatId, Instant fetchedAt) {
+    private static Instant earliest(List<Instant> later, Instant fetchedAt) {
+        return later.stream().filter(Objects::nonNull).min(Instant::compareTo).orElse(fetchedAt);
+    }
+
+    /**
+     * The status of one receipt state at {@code at}, as the converter builds a live one; {@code estimated} when
+     * WhatsApp had no receipt for the state. {@code captured_at} is the fetch time.
+     */
+    static Status receiptStatus(String messageId, MessageStatus state, Instant at, boolean estimated, String chatId,
+            Instant fetchedAt) {
         int ack = switch (state) {
             case DELIVERED -> 2;
             case READ -> 3;
             case PLAYED -> 4;
             default -> throw new IllegalArgumentException("no receipt for " + state);
         };
-        boolean estimated = at == null;
-        Status s = WaWebWebhookConverter.statusOf(messageId, ack, estimated ? fetchedAt : at, chatId,
+        Status s = WaWebWebhookConverter.statusOf(messageId, ack, at, chatId,
                 WaWebWebhookConverter.recipientDigits(chatId));
         WaWeb waWeb = new WaWeb(chatId, ack, null, null, null, null, null, null, null, null, fetchedAt.toEpochMilli(),
                 null, true, estimated ? Boolean.TRUE : null);

@@ -67,14 +67,17 @@ public class HistoryDeviceClient {
         return p;
     }
 
-    /** The page's {@code {receipts: [{id, delivered, read, played}]}}, seconds or null; an entry with no id is left out. */
+    /**
+     * The page's {@code {receipts: [{id, delivered, read, played}]}}, seconds or null. An entry with no id is left out,
+     * and so is {@code {id, error: true}}: the page could not find or read the message, which is no answer.
+     */
     static List<Receipt> receipts(JsonNode result) {
         List<Receipt> out = new ArrayList<>();
         JsonNode list = result == null ? null : result.get("receipts");
         if (list == null || !list.isArray()) return out;
         for (JsonNode r : list) {
             String id = text(r, "id");
-            if (id == null || id.isEmpty()) continue;
+            if (id == null || id.isEmpty() || r.path("error").asBoolean(false)) continue;
             out.add(new Receipt(id, seconds(r, "delivered"), seconds(r, "read"), seconds(r, "played")));
         }
         return out;

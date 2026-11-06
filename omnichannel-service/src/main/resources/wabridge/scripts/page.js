@@ -1796,11 +1796,20 @@
       };
       const receipts = [];
       for (const id of ids) {
-        const empty = { id, delivered: null, read: null, played: null };
+        const failed = { id, error: true };
         try {
           const msg = Msg.get(id) ?? (await Msg.getMessagesById([id]))?.messages?.[0];
-          if (!msg || !msg.id?.fromMe) {
-            receipts.push(empty);
+          if (!msg) {
+            receipts.push(failed);
+            continue;
+          }
+          if (!msg.id?.fromMe) {
+            receipts.push({
+              id,
+              delivered: null,
+              read: null,
+              played: null
+            });
             continue;
           }
           const info = await window.require("WAWebApiMessageInfoStore").queryMsgInfo(msg.id);
@@ -1812,7 +1821,7 @@
           });
         } catch (err) {
           console.warn("[wabridge] messageInfo failed:", id, err);
-          receipts.push(empty);
+          receipts.push(failed);
         }
       }
       return { receipts };
@@ -2025,7 +2034,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "e488db67aab2" : "dev";
+  var BUILD = true ? "9daa2336bb05" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {

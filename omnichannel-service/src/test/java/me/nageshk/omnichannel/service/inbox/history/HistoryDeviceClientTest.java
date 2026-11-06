@@ -119,9 +119,12 @@ class HistoryDeviceClientTest {
     }
 
     @Test
-    void receiptsOfNothingAreEmpty() {
+    void receiptsOfNothingOrOfAMessageThePageCouldNotReadAreLeftOut() {
         assertThat(HistoryDeviceClient.receipts(null)).isEmpty();
         assertThat(HistoryDeviceClient.receipts(mapper.createObjectNode())).isEmpty();
+        ObjectNode failed = mapper.createObjectNode();
+        failed.putArray("receipts").addObject().put("id", "a").put("error", true);
+        assertThat(HistoryDeviceClient.receipts(failed)).isEmpty();
         ObjectNode noId = mapper.createObjectNode();
         noId.putArray("receipts").addObject().put("delivered", 100L);
         assertThat(HistoryDeviceClient.receipts(noId)).isEmpty();

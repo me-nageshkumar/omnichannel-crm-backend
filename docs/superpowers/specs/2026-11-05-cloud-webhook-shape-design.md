@@ -375,12 +375,15 @@ extension ──ws event──▶ BridgeWebSocketHandler ──WhatsAppEvent (ra
   the page delay, the runner takes the rows `importMessage` marked `receiptsWanted`: our own message whose row is new
   at delivered or later, was moved up to delivered or later by the fetch, or still lacks the time of its status (an
   earlier ask failed) **(my call: the last case makes "the next fetch retries" true)**. `importReceipts` asks the
-  page's `messageInfo({ids})` for them, `omnichannel.history.receipts-batch` ids per call (default 100, the page's
-  cap), and for each message builds one status per state from `delivered` up to the row's status (`delivered`,
+  page's `messageInfo({ids})` for them, `omnichannel.history.receipts-batch` ids per call (default 25: the page
+  reads each id in turn, so a call must end well inside the 30 s RPC timeout; the page takes at most 100), and for each message builds one status per state from `delivered` up to the row's status (`delivered`,
   `read`, then `played`; never `sent`): `timestamp` is WhatsApp's receipt time, `recipient_id` / `recipient_user_id`
   from the chat as for a live status, `wa_web {chat_id, ack: 2|3|4, captured_at: <fetch time ms>, imported: true}`.
-  When WhatsApp has no receipt for a state the row's ack implies, the event is still made, with the **fetch time** as
-  its `timestamp` and `wa_web.estimated: true`. Each status is its own one-change `messages` event, stored with
+  When WhatsApp has no receipt for a state the row's ack implies, the event is still made with
+  `wa_web.estimated: true`, timed by the **earliest real receipt of a later state** (a missing `delivered` takes the
+  `read` time, else the `played` time), and only when no later state has one by the **fetch time**. A message the
+  page could not find or read comes back as `{id, error: true}` (or is missing from the answer): it gets no events
+  and no times, so the row still lacks its time and the next fetch asks again. Each status is its own one-change `messages` event, stored with
   `ordinal` its position (0, 1, 2), the page's receipt object `{id, delivered, read, played}` as the raw of ordinal 0;
   then the message's events go through `WhatsAppWebhookProcessor.process` in order, exactly as live statuses do. The
   store stamps `statusTimes` with an imported status's own `timestamp` (a live status keeps the clock), the first

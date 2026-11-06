@@ -63,7 +63,7 @@ omnichannel:
     waiting-window: 7d
     # after a page, our delivered/read/played messages get their times from WhatsApp's receipts (ids per page call)
     receipts: true
-    receipts-batch: 100
+    receipts-batch: 25
   automation:
     auto-tick: true
     tick: 2s

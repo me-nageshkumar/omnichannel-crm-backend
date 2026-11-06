@@ -273,6 +273,85 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
     }
 
     @Test
+    void aMissingDeliveredReceiptIsEstimatedFromTheReadOne() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 3, "seen");
+            device.chats.put(A, List.of(out));
+            device.receipt(out, null, SENT + 200, null);
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            WaWebMessage row = messages.findAll().getFirst();
+            assertThat(row.getStatusTimes().getReadAt()).isEqualTo(Instant.ofEpochSecond(SENT + 200));
+            assertThat(row.getStatusTimes().getDeliveredAt()).isEqualTo(row.getStatusTimes().getReadAt());
+            // the same second: the order they were generated in keeps delivered first
+            List<Document> statuses = statusEvents();
+            assertThat(statuses).extracting(d -> status(d).getString("status")).containsExactly("delivered", "read");
+            Document delivered = status(statuses.get(0));
+            assertThat(delivered.getString("timestamp")).isEqualTo(String.valueOf(SENT + 200));
+            assertThat(delivered.get("wa_web", Document.class).getBoolean("estimated")).isTrue();
+            assertThat(status(statuses.get(1)).get("wa_web", Document.class).containsKey("estimated")).isFalse();
+        }
+    }
+
+    @Test
+    void aMessageThePageCouldNotReadIsSkippedAndAskedAgain() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode failed = HistoryDevice.msg(A, true, SENT, 3, "unreadable");
+            ObjectNode fine = HistoryDevice.msg(A, true, SENT + 1, 2, "fine");
+            device.chats.put(A, List.of(failed, fine));
+            device.receipt(failed, SENT + 100, SENT + 200, null);
+            device.receipt(fine, SENT + 101, null, null);
+            device.receiptErrors.add(HistoryDevice.id(failed));
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(row(failed).getStatus()).isEqualTo(MessageStatus.READ);
+            assertThat(row(failed).getStatusTimes()).isNull();
+            assertThat(row(fine).getStatusTimes().getDeliveredAt()).isEqualTo(Instant.ofEpochSecond(SENT + 101));
+            assertThat(statusEvents()).extracting(d -> status(d).getString("id"))
+                    .containsExactly(HistoryDevice.id(fine));
+
+            device.receiptErrors.clear();
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+
+            assertThat(row(failed).getStatusTimes().getReadAt()).isEqualTo(Instant.ofEpochSecond(SENT + 200));
+            assertThat(device.requests("messageInfo").getLast().params().path("ids").valueStream()
+                    .map(JsonNode::asString).toList()).containsExactly(HistoryDevice.id(failed));
+        }
+    }
+
+    @Test
+    void aMessageLeftOutOfTheAnswerIsSkippedAndAskedAgain() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 3, "seen");
+            device.chats.put(A, List.of(out));
+            device.receipt(out, SENT + 100, SENT + 200, null);
+            device.receiptsLeftOut.add(HistoryDevice.id(out));
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(row(out).getStatusTimes()).isNull();
+            assertThat(statusEvents()).isEmpty();
+
+            device.receiptsLeftOut.clear();
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+
+            assertThat(row(out).getStatusTimes().getDeliveredAt()).isEqualTo(Instant.ofEpochSecond(SENT + 100));
+            assertThat(statusEvents()).hasSize(2);
+        }
+    }
+
+    WaWebMessage row(ObjectNode message) {
+        return messages.findByPhoneNumberIdAndWaMessageId(n1.getId(), HistoryDevice.id(message)).orElseThrow();
+    }
+
+    @Test
     void aRowTheFetchMovesUpGetsItsReceipts() throws Exception {
         try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
             ObjectNode out = HistoryDevice.msg(A, true, SENT, 1, "sent");
