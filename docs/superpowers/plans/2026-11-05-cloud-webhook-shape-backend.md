@@ -388,6 +388,31 @@ Requested by the user on 2026-11-06 after seeing the first documents. Spec amend
 - [ ] **Step 4: Run** — the two above, then `./mvnw -q -pl omnichannel-service -am test` and `./mvnw -q -pl omnichannel-app -am test -Dtest='WhatsAppWebhookProcessorIT,WaWebWebhookListenerIT,InboxSendIT,HistoryImportRunnerIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: PASS.
 - [ ] **Step 5: Commit** — `feat: a self-describing webhook event; the store keeps the event only`
 
+---
+
+### Task 11: One change per webhook event
+
+Requested by the user on 2026-11-06: Meta never sends more than one object in `changes[]`, so a bridge event that yields an echo and its status becomes **two** webhook events, in sequence (echo first, then status), each with one `entry` holding one `change`. Stored as two documents, in that order. The processor still handles the events of one bridge event as a unit, so an echo and its status remain one row write and one set of `InboxEvents` (plan Review Focus 1, spec §4.1).
+
+**Files:**
+- Modify: `omnichannel-service/.../service/channel/whatsapp/WaWebWebhookConverter.java` — `convert(...)` returns `List<WebhookEvent>` (empty, one or two); every event has exactly one entry with exactly one change; the echo event comes first.
+- Modify: `omnichannel-service/.../service/channel/whatsapp/WaWebWebhookListener.java` — stores each event in order (`store.save` per event, same `seq` and `capturedAt`), then `processor.process(ctx, events)` once with the whole list.
+- Modify: `omnichannel-service/.../service/channel/whatsapp/WhatsAppWebhookProcessor.java` — `process(ChannelContext, List<WebhookEvent>)` treats the list as one unit: statuses anywhere in the list are indexed by id first; an echo takes its status; the rest go to `ingestStatus`. Keep `process(ChannelContext, WebhookEvent)` as a one-element convenience (a real Cloud webhook arrives one at a time).
+- Modify: `omnichannel-db/.../db/channel/ChannelWebhookEvent.java` — add `ordinal` (int, 0-based position of the event within its bridge event) so two documents of one `seq` keep their order even when sorted by anything but `_id`; `ChannelWebhookEventStore.save(ctx, event, raw, seq, capturedAt, ordinal)`. The `raw` is stored on the first document only (`ordinal 0`); later documents of the same bridge event carry `raw = null`, `rawDropped = false` **(my call: the raw is one payload; storing it twice doubles the biggest part of the document for nothing)**.
+- Modify: `WaWebWebhookConverterTest` — golden expected files for the echo-with-status cases (`echo_image_ack2`, `echo_text_ack_failed`, any other case with two changes) become a JSON array of two events; the test compares `convert(...)` as a list against the expected file (an object counts as a one-element list, so the single-event goldens stay as they are); the targeted test `anEchoWithAnAckCarriesItsStatusInTheSameEntry` becomes `anEchoWithAnAckIsFollowedByItsStatusEvent` (two events, `changes` size 1 each, the status event's id equals the echo's, order echo → status).
+- Modify: `WaWebWebhookListenerTest` (store called once per event in order; processor called once with the list), `WhatsAppWebhookProcessorIT` (`anEchoAndItsStatusInOneEntryAreOneWrite` → `anEchoAndItsStatusFromOneBridgeEventAreOneWrite`: feed the two-event list; still one `MessageUpserted`), `ChannelWebhookEventStoreIT` (ordinal stored; raw only on ordinal 0).
+- Modify docs: spec §4.1 (the arrays hold one element each; a bridge event may yield two webhook events, echo then status, stored as two documents in order; the processor treats one bridge event's events as a unit), §4.4 ("the same entry gets a second change" → "a second webhook event follows, with the status"), §5.1 (the listener/processor signature), §5.4 (`ordinal`; raw on the first document only); README paragraph.
+
+**Interfaces:**
+- Produces: `List<WebhookEvent> WaWebWebhookConverter.convert(ChannelContext, String, JsonNode, Instant)`; `void WhatsAppWebhookProcessor.process(ChannelContext, List<WebhookEvent>)`; `ChannelWebhookEvent.ordinal`; `ChannelWebhookEventStore.save(ctx, event, raw, seq, capturedAt, ordinal)`.
+- Consumes: everything else as it is; `InboxIngestService` is untouched.
+
+- [ ] **Step 1: Write the failing tests** (the renamed/changed cases above, plus `ChannelWebhookEventStoreIT.theSecondEventOfABridgeEventCarriesNoRaw`).
+- [ ] **Step 2: Run** — `./mvnw -q -pl omnichannel-service -am test -Dtest='WaWebWebhookConverterTest,WaWebWebhookListenerTest' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** — the above, then `./mvnw -q -pl omnichannel-app -am test -Dtest='WhatsAppWebhookProcessorIT,WaWebWebhookListenerIT,ChannelWebhookEventStoreIT,InboxSendIT,HistoryImportRunnerIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: PASS.
+- [ ] **Step 5: Commit** — `feat: one change per webhook event; an echo and its status are two events in sequence`
+
 ## Verification before the merge
 
 - `./mvnw -q verify` once in the worktree (all modules; expect every surefire report at 0 failures, 0 errors).

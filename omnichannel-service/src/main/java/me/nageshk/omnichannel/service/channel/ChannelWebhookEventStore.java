@@ -39,18 +39,23 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
         this.props = props.webhooks();
     }
 
-    /** Saves the event; returns the saved document, or null after a logged failure. Never throws. */
-    public ChannelWebhookEvent save(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt) {
+    /**
+     * Saves the event, the {@code ordinal}-th (0-based) of its bridge event; the raw is kept on the first only, as it
+     * is one payload. Returns the saved document, or null after a logged failure. Never throws.
+     */
+    public ChannelWebhookEvent save(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt,
+            int ordinal) {
         try {
             ChannelWebhookEvent doc = new ChannelWebhookEvent();
             doc.setSeq(seq);
             doc.setCapturedAt(capturedAt);
+            doc.setOrdinal(ordinal);
             // An unconvertible raw gets an event shell so the document is still found by number.
             WebhookEvent toStore = event != null
                     ? event
                     : WebhookEvent.of(ctx, List.of(new Change(null, Value.of(ctx))));
             doc.setEvent(mapper.convertValue(toStore, MAP));
-            if (raw != null && !raw.isNull()) {
+            if (ordinal == 0 && raw != null && !raw.isNull()) {
                 JsonNode kept = raw.deepCopy();
                 MongoKeys.dropRefused(kept);
                 if (props.keepRaw() && mapper.writeValueAsBytes(kept).length <= props.rawMaxBytes()) {

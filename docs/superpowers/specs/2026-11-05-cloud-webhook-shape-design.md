@@ -131,7 +131,7 @@ contact resolution, media) works on stored rows and is untouched by this feature
 
 ### 4.1 Envelope **(my call)**
 
-One bridge event becomes one webhook event, Meta's wire shape and names:
+One bridge event becomes one webhook event (two for an echo with its status, below), Meta's wire shape and names:
 
 ```json
 {
@@ -153,11 +153,13 @@ One bridge event becomes one webhook event, Meta's wire shape and names:
 - `object` says where the event came from: `whatsapp_web_account` for an event we converted from WhatsApp Web,
   `whatsapp_business_account` for a real Cloud API one. `entry[].id` is Meta's business-account id; ours is the
   workspace id (the brand, the analogue of the business account); the number is `metadata.phone_number_id`. `display_phone_number` is the number's digits.
-- One bridge event may yield two changes in one entry: an echo (`field: "smb_message_echoes"`) and the status it
-  already carries (`field: "messages"` with `statuses`), see §4.4. Meta sends one change per webhook; the arrays allow
-  more. The processor handles an **entry** as a unit: a status whose `id` matches an echo in the same entry is
-  applied while the echo is stored, so the row is inserted with its status and one set of `InboxEvents` is published,
-  exactly as `storeMessage` does today. A status with no echo in its entry is processed on its own.
+- The arrays hold one element each: every webhook event has one `entry` with one `change`, as Meta sends them
+  (amended 2026-11-06, plan Task 11). One bridge event may yield **two** webhook events, in sequence: an echo
+  (`field: "smb_message_echoes"`), then the status it already carries (`field: "messages"` with `statuses`), see
+  §4.4. They are stored as two documents in that order (§5.4). The processor handles the events of **one bridge
+  event** as a unit: a status whose `id` matches an echo among them is applied while the echo is stored, so the row
+  is inserted with its status and one set of `InboxEvents` is published, exactly as `storeMessage` does today. A
+  status with no echo among them is processed on its own. A real Cloud webhook arrives one event at a time.
 - The typed model: records with Jackson's snake-case naming, `@JsonIgnoreProperties(ignoreUnknown = true)`, nulls left
   out on the wire. A real Meta body (any of the 19 300) must deserialise into it without error; the test fixtures use
   a dozen real ones (numbers replaced).
@@ -246,9 +248,9 @@ the page sees them all) becomes an echo:
 | `id`, `timestamp`, `type`, type object, `context` | as §4.3 |
 
 Meta's echoes support `text`, `image`, `video`, `document`, `revoke`, `edit`; ours carry every type of §4.3
-**(my call)**, since a WhatsApp Web number sends polls, locations and cards too. When the echo's `ack` has a status (1 to 4, or −1 for failed; 0 has none), the
-same entry gets a second change `{field: "messages", value: {statuses: [<§4.5>]}}`, so the stored webhook event says
-what Meta would have said in two webhooks.
+**(my call)**, since a WhatsApp Web number sends polls, locations and cards too. When the echo's `ack` has a status (1 to 4, or −1 for failed; 0 has none), a
+second webhook event follows, with the status: one change `{field: "messages", value: {statuses: [<§4.5>]}}`, so the
+stored events say what Meta would have said, in the same two webhooks.
 
 ### 4.5 Delivery state: `value.statuses[]`
 
@@ -324,10 +326,10 @@ the processor; it would make a future Cloud number's rows look like WhatsApp Web
 
 ```
 extension ──ws event──▶ BridgeWebSocketHandler ──WhatsAppEvent (raw, unchanged)──▶ WaWebWebhookListener
-                                                                                     │ converter.convert(event)      → 0..1 WebhookEvent
-                                                                                     │ store.save(ctx, event, raw)   → channelWebhookEvents
+                                                                                     │ converter.convert(event)      → 0..2 WebhookEvent (echo, then status)
+                                                                                     │ store.save(ctx, event, raw, seq, capturedAt, ordinal) per event, in order → channelWebhookEvents
                                                                                      ▼
-                                                                          WhatsAppWebhookProcessor.process(ctx, webhookEvent)
+                                                                          WhatsAppWebhookProcessor.process(ctx, List<WebhookEvent>)  (one bridge event = one unit)
                                                                                      │ per change: contacts → messages → message_echoes → statuses
                                                                                      ▼
                                                                           InboxIngestService (typed: ingestInbound / ingestEcho / ingestStatus / ingestVote)
@@ -338,10 +340,10 @@ extension ──ws event──▶ BridgeWebSocketHandler ──WhatsAppEvent (ra
 | Piece | Module and package | Role |
 |---|---|---|
 | `WebhookEvent`, `Entry`, `Change`, `Value`, `Metadata`, `Contact`, `Message`, `MessageEcho`, `Status`, the type objects, `WaWeb` (the `wa_web` object) | `omnichannel-common`, `common.channel.whatsapp.webhook` | the typed Cloud shape; pure data, snake-case Jackson naming; shared by service and app |
-| `WaWebWebhookConverter` | `omnichannel-service`, `service.channel.whatsapp` | raw `JsonNode` → `Optional<WebhookEvent>`; the only reader of WhatsApp Web's raw model; also `message(JsonNode)` and `echo(JsonNode)` for the two other entry points (§5.3). Pure, unit-tested against fixtures |
+| `WaWebWebhookConverter` | `omnichannel-service`, `service.channel.whatsapp` | raw `JsonNode` → `List<WebhookEvent>` (empty, one, or an echo then its status), each with one entry holding one change; the only reader of WhatsApp Web's raw model; also `message(JsonNode)` and `echo(JsonNode)` for the two other entry points (§5.3). Pure, unit-tested against fixtures |
 | `ChannelWebhookEventStore` + `ChannelWebhookEvent` | `omnichannel-service` + `omnichannel-db` (`db.channel`) | §5.4 |
-| `WhatsAppWebhookProcessor` | `omnichannel-service`, `service.channel.whatsapp` | walks a webhook event and calls the ingest; the entry point a Cloud controller would call later |
-| `WaWebWebhookListener` | `omnichannel-service`, `service.channel.whatsapp` | `@EventListener` on `WhatsAppEvent`; replaces `WaWebInboxListener`; converts, stores, processes; keeps the failure contract (§5.2) |
+| `WhatsAppWebhookProcessor` | `omnichannel-service`, `service.channel.whatsapp` | `process(ctx, List<WebhookEvent>)` walks the events of one bridge event as a unit and calls the ingest; `process(ctx, WebhookEvent)` is the one-event form a Cloud controller would call later |
+| `WaWebWebhookListener` | `omnichannel-service`, `service.channel.whatsapp` | `@EventListener` on `WhatsAppEvent`; replaces `WaWebInboxListener`; converts, stores each event in order (same `seq` and `capturedAt`, `ordinal` 0, 1), then processes the list once; keeps the failure contract (§5.2) |
 | `InboxIngestService` | unchanged place | its `JsonNode` methods and `MessagePayloads` go; typed methods take `Message`/`MessageEcho`/`Status` plus a `ChannelContext(customerId, workspaceId, channelAccountId)`; the stored rows and the published events are exactly today's |
 | `ChannelContext` | `omnichannel-common` | who the webhook is for; `channelAccountId` is the phone number id today (channel-neutral name, per the project rules) |
 
@@ -372,9 +374,16 @@ outside the converter (they log, they do not store) — or they call the convert
 ```
 id
 event: <the webhook event as JSON; says its origin (object), workspace (entry.id) and number>
-raw: <the bridge payload as JSON, capped>, rawDropped
-seq, capturedAt, creationTime
+raw: <the bridge payload as JSON, capped; on the first document of a bridge event only>, rawDropped
+seq, capturedAt, ordinal, creationTime
 ```
+
+- `ordinal` is the 0-based position of the event among those one bridge event gave: 0 for the first (or only), 1 for
+  the status event that follows an echo. The documents of one `seq` keep their order however they are sorted. A real
+  Cloud webhook is always 0. A conversion failure stores one document (ordinal 0, the shell event, the raw).
+- The raw is stored on the first document only (`ordinal` 0); later documents of the same bridge event carry
+  `raw: null`, `rawDropped: false` **(my call: the raw is one payload; storing it twice doubles the biggest part of
+  the document for nothing)**.
 
 - The document holds no copy of the channel, workspace or customer; everything comes from `event`. When a raw
   cannot be converted, `event` is a shell (`object`, `entry[0].id`, one change whose value has only

@@ -65,7 +65,7 @@ class ChannelWebhookEventStoreIT {
     void savesTheEventAndTheRaw() {
         ChannelContext c = ctx("p1");
         Instant at = Instant.parse("2026-11-05T10:00:00Z");
-        ChannelWebhookEvent saved = store.save(c, event(c), json("{\"id\":\"x\",\"body\":\"hi\"}"), 7L, at);
+        ChannelWebhookEvent saved = store.save(c, event(c), json("{\"id\":\"x\",\"body\":\"hi\"}"), 7L, at, 0);
 
         ChannelWebhookEvent found = repo.findById(saved.getId()).orElseThrow();
         assertThat(found.getSeq()).isEqualTo(7L);
@@ -78,9 +78,32 @@ class ChannelWebhookEventStoreIT {
     }
 
     @Test
+    void theSecondEventOfABridgeEventCarriesNoRaw() {
+        ChannelContext c = ctx("p1");
+        Instant at = Instant.parse("2026-11-05T10:00:00Z");
+        JsonNode raw = json("{\"id\":\"x\",\"body\":\"hi\"}");
+        ChannelWebhookEvent first = store.save(c, event(c), raw, 7L, at, 0);
+        ChannelWebhookEvent second = store.save(c, event(c), raw, 7L, at, 1);
+
+        ChannelWebhookEvent a = repo.findById(first.getId()).orElseThrow();
+        ChannelWebhookEvent b = repo.findById(second.getId()).orElseThrow();
+        assertThat(a.getOrdinal()).isZero();
+        assertThat(a.getRaw()).containsEntry("body", "hi");
+        assertThat(b.getOrdinal()).isEqualTo(1);
+        assertThat(b.getSeq()).isEqualTo(7L);
+        assertThat(b.getCapturedAt()).isEqualTo(at);
+        assertThat(b.getRaw()).isNull();
+        assertThat(b.isRawDropped()).isFalse();
+        assertThat(b.getEvent()).isNotNull();
+        Document d = mongo.findById(second.getId(), Document.class, "channelWebhookEvents");
+        assertThat(d.getInteger("ordinal")).isEqualTo(1);
+    }
+
+    @Test
     void dropsARawOverTheCap() {
         ChannelContext c = ctx("p1");
-        ChannelWebhookEvent saved = store.save(c, event(c), json("{\"blob\":\"" + "x".repeat(1024) + "\"}"), 1L, null);
+        ChannelWebhookEvent saved =
+                store.save(c, event(c), json("{\"blob\":\"" + "x".repeat(1024) + "\"}"), 1L, null, 0);
 
         ChannelWebhookEvent found = repo.findById(saved.getId()).orElseThrow();
         assertThat(found.getRaw()).isNull();
@@ -92,7 +115,7 @@ class ChannelWebhookEventStoreIT {
     void removesKeysMongoRefuses() {
         ChannelContext c = ctx("p1");
         ChannelWebhookEvent saved = store.save(c, event(c),
-                json("{\"a.b\":1,\"$c\":2,\"ok\":3,\"n\":{\"x.y\":1,\"keep\":2}}"), null, null);
+                json("{\"a.b\":1,\"$c\":2,\"ok\":3,\"n\":{\"x.y\":1,\"keep\":2}}"), null, null, 0);
 
         Map<String, Object> raw = repo.findById(saved.getId()).orElseThrow().getRaw();
         assertThat(raw).containsOnlyKeys("ok", "n");
@@ -117,16 +140,16 @@ class ChannelWebhookEventStoreIT {
         ChannelWebhookEventStore s = new ChannelWebhookEventStore(broken, mapper, props);
 
         ChannelContext c = ctx("p1");
-        assertThat(s.save(c, event(c), json("{}"), 1L, null)).isNull();
+        assertThat(s.save(c, event(c), json("{}"), 1L, null, 0)).isNull();
     }
 
     @Test
     void cleanupDeletesTheNumbersEvents() {
         ChannelContext a = ctx("p1");
         ChannelContext b = ctx("p2");
-        store.save(a, event(a), json("{}"), 1L, null);
-        store.save(a, event(a), json("{}"), 2L, null);
-        store.save(b, event(b), json("{}"), 1L, null);
+        store.save(a, event(a), json("{}"), 1L, null, 0);
+        store.save(a, event(a), json("{}"), 2L, null, 0);
+        store.save(b, event(b), json("{}"), 1L, null, 0);
 
         cleanup.deleteForNumber("p1");
 
@@ -140,7 +163,7 @@ class ChannelWebhookEventStoreIT {
     @Test
     void theDocumentHoldsTheEventAndNothingElseAboutTheChannel() {
         ChannelContext c = ctx("p1");
-        store.save(c, event(c), json("{}"), 1L, null);
+        store.save(c, event(c), json("{}"), 1L, null, 0);
 
         Document d = mongo.findAll(Document.class, "channelWebhookEvents").getFirst();
         assertThat(d).doesNotContainKeys("channelKind", "channelAccountId", "workspaceId", "customerId", "field");
@@ -151,7 +174,7 @@ class ChannelWebhookEventStoreIT {
     @Test
     void anUnconvertibleRawIsStillFoundByNumber() {
         ChannelContext c = ctx("p1");
-        store.save(c, null, json("{\"body\":\"hi\"}"), 1L, null);
+        store.save(c, null, json("{\"body\":\"hi\"}"), 1L, null, 0);
 
         Document d = mongo.findAll(Document.class, "channelWebhookEvents").getFirst();
         Document ev = d.get("event", Document.class);

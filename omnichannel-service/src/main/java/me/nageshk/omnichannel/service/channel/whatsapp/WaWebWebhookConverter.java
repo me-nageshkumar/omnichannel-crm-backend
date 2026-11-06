@@ -59,34 +59,39 @@ public final class WaWebWebhookConverter {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
-     * One event for a {@code message_create} (a person's message, or our own as an echo) or a {@code message_ack}
-     * (a status of our message); empty for any other event or message.
+     * The webhook events of one bridge event, each with one entry holding one change, as Meta sends them: one for a
+     * {@code message_create} (a person's message, or our own as an echo) or a {@code message_ack} (a status of our
+     * message); two for an echo whose ack is 1 or more, the echo then its status; none for any other event or message.
      */
-    public Optional<WebhookEvent> convert(ChannelContext ctx, String eventName, JsonNode payload, Instant capturedAt) {
-        if (payload == null) return Optional.empty();
+    public List<WebhookEvent> convert(ChannelContext ctx, String eventName, JsonNode payload, Instant capturedAt) {
+        if (payload == null) return List.of();
         if ("message_ack".equals(eventName)) {
-            return status(ctx, payload, capturedAt).map(st -> WebhookEvent.of(ctx,
-                    List.of(new Change(CHANGE_FIELD, Value.of(ctx).withStatuses(List.of(st))))));
+            return status(ctx, payload, capturedAt).map(st -> List.of(statusEvent(ctx, st))).orElse(List.of());
         }
-        if ("vote_update".equals(eventName)) return WaWebExtensionTypes.vote(ctx, payload, capturedAt);
-        if (!"message_create".equals(eventName)) return Optional.empty();
-        if (fromMe(payload)) return echoEvent(ctx, payload, capturedAt);
+        if ("vote_update".equals(eventName)) {
+            return WaWebExtensionTypes.vote(ctx, payload, capturedAt).map(List::of).orElse(List.of());
+        }
+        if (!"message_create".equals(eventName)) return List.of();
+        if (fromMe(payload)) return echoEvents(ctx, payload, capturedAt);
         return message(ctx, payload, capturedAt).map(m -> {
             Value value = Value.of(ctx).withContacts(List.of(contactOf(m, payload))).withMessages(List.of(m));
-            return WebhookEvent.of(ctx, List.of(new Change(CHANGE_FIELD, value)));
-        });
+            return List.of(WebhookEvent.of(ctx, List.of(new Change(CHANGE_FIELD, value))));
+        }).orElse(List.of());
     }
 
-    /** The echo as a change, followed by a {@code messages} change with its status when the ack is 1 or more. */
-    private Optional<WebhookEvent> echoEvent(ChannelContext ctx, JsonNode raw, Instant capturedAt) {
+    /** The echo as an event, followed by an event with its status when the ack is 1 or more. */
+    private List<WebhookEvent> echoEvents(ChannelContext ctx, JsonNode raw, Instant capturedAt) {
         return echo(ctx, raw, capturedAt, null).map(e -> {
-            List<Change> changes = new ArrayList<>();
-            changes.add(new Change(ECHO_FIELD, Value.of(ctx).withMessageEchoes(List.of(e))));
+            WebhookEvent echoEvent = WebhookEvent.of(ctx,
+                    List.of(new Change(ECHO_FIELD, Value.of(ctx).withMessageEchoes(List.of(e)))));
             Status st = statusOf(e.id(), e.waWeb().ack(), capturedAt, e.waWeb().chatId(),
                     recipientDigits(e.waWeb().chatId()));
-            if (st != null) changes.add(new Change(CHANGE_FIELD, Value.of(ctx).withStatuses(List.of(st))));
-            return WebhookEvent.of(ctx, changes);
-        });
+            return st == null ? List.of(echoEvent) : List.of(echoEvent, statusEvent(ctx, st));
+        }).orElse(List.of());
+    }
+
+    private static WebhookEvent statusEvent(ChannelContext ctx, Status st) {
+        return WebhookEvent.of(ctx, List.of(new Change(CHANGE_FIELD, Value.of(ctx).withStatuses(List.of(st)))));
     }
 
     /** An inbound message; empty for ours, for a notice, a chat of no person and a message with no id. */

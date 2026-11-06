@@ -1,8 +1,8 @@
 package me.nageshk.omnichannel.service.channel.whatsapp;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,12 +21,13 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Turns the conversation events of a WhatsApp Web number into Cloud API shaped webhook events, keeps each one, and
- * hands it to the {@link WhatsAppWebhookProcessor}. Synchronous on the publishing thread: an
- * {@link IngestionFailedException} (the database failed) reaches the publisher so the event is not acknowledged and
- * is replayed; anything else wrong with an event is logged and the event acknowledged, since a replay would fail the
- * same way. {@code message_create} fires for both directions, so {@code message} (inbound only) is ignored; device
- * events ({@code ready}, {@code change_state}, {@code disconnected}) are not conversation events.
+ * Turns the conversation events of a WhatsApp Web number into Cloud API shaped webhook events (one, or two for an echo
+ * and its status), keeps each one in order, and hands them together to the {@link WhatsAppWebhookProcessor}.
+ * Synchronous on the publishing thread: an {@link IngestionFailedException} (the database failed) reaches the
+ * publisher so the event is not acknowledged and is replayed; anything else wrong with an event is logged and the
+ * event acknowledged, since a replay would fail the same way. {@code message_create} fires for both directions, so
+ * {@code message} (inbound only) is ignored; device events ({@code ready}, {@code change_state},
+ * {@code disconnected}) are not conversation events.
  */
 @Component
 public class WaWebWebhookListener {
@@ -56,13 +57,13 @@ public class WaWebWebhookListener {
                 event.phoneNumberId(), digitsOf(event.phoneNumberId()));
         Instant capturedAt = event.ts() == null ? null : Instant.ofEpochMilli(event.ts());
 
-        Optional<WebhookEvent> converted;
+        List<WebhookEvent> converted;
         try {
             converted = converter.convert(ctx, event.name(), event.payload(), capturedAt);
         } catch (RuntimeException e) {
             log.warn("could not convert {} event {} of {} (fields {}): {}", event.name(), idOf(event),
                     event.phoneNumberId(), fieldsOf(event.payload()), e.toString());
-            save(ctx, null, event, capturedAt);
+            save(ctx, null, event, capturedAt, 0);
             return;
         }
         if (converted.isEmpty()) {
@@ -70,10 +71,10 @@ public class WaWebWebhookListener {
             log.debug("no webhook for {} event {} of {}", event.name(), idOf(event), event.phoneNumberId());
             return;
         }
-        save(ctx, converted.get(), event, capturedAt);
+        for (int i = 0; i < converted.size(); i++) save(ctx, converted.get(i), event, capturedAt, i);
 
         try {
-            processor.process(ctx, converted.get());
+            processor.process(ctx, converted);
         } catch (IngestionFailedException e) {
             // the database failed: the event must not be acknowledged, so the extension replays it
             throw e;
@@ -84,9 +85,9 @@ public class WaWebWebhookListener {
     }
 
     /** Best effort: the stored event is for debugging and replay, the message is what matters. */
-    private void save(ChannelContext ctx, WebhookEvent webhook, WhatsAppEvent event, Instant capturedAt) {
+    private void save(ChannelContext ctx, WebhookEvent webhook, WhatsAppEvent event, Instant capturedAt, int ordinal) {
         try {
-            store.save(ctx, webhook, event.payload(), event.seq(), capturedAt);
+            store.save(ctx, webhook, event.payload(), event.seq(), capturedAt, ordinal);
         } catch (RuntimeException e) {
             log.warn("could not keep {} event {} of {}: {}", event.name(), idOf(event), event.phoneNumberId(),
                     e.toString());

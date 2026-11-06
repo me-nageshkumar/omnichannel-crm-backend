@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import me.nageshk.omnichannel.common.channel.ChannelContext;
 import me.nageshk.omnichannel.common.channel.ChannelKind;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Change;
@@ -47,21 +46,26 @@ class WaWebWebhookConverterTest {
         String event = name.startsWith("ack_") ? "message_ack"
                 : name.startsWith("vote_") ? "vote_update"
                 : name.equals("message_event_ignored") ? "message" : "message_create";
-        Optional<WebhookEvent> result = converter.convert(CTX, event, read(name + ".raw.json"), CAPTURED);
+        List<WebhookEvent> result = converter.convert(CTX, event, read(name + ".raw.json"), CAPTURED);
         JsonNode expected = readOrNull(name + ".expected.json");
         if (expected == null) {
             assertThat(result).isEmpty();
             return;
         }
-        assertThat(result).isPresent();
+        // an expected object is a one-element list; an echo with its status expects an array of two events
+        if (expected.isObject()) expected = mapper.createArrayNode().add(expected);
+        assertThat(result).allSatisfy(e -> {
+            assertThat(e.entry()).hasSize(1);
+            assertThat(e.entry().get(0).changes()).hasSize(1);
+        });
         // through text, so that numbers take the same node types as the parsed expectation
-        JsonNode actual = mapper.readTree(mapper.writeValueAsString(result.get()));
+        JsonNode actual = mapper.readTree(mapper.writeValueAsString(result));
         assertThat(actual).isEqualTo(expected);
     }
 
     @Test
     void aVoteIsAMessageAboutThePollWithADeterministicId() throws IOException {
-        Value v = converter.convert(CTX, "vote_update", read("vote_inbound.raw.json"), CAPTURED).orElseThrow()
+        Value v = converter.convert(CTX, "vote_update", read("vote_inbound.raw.json"), CAPTURED).getFirst()
                 .entry().get(0).changes().get(0).value();
         Message vote = v.messages().get(0);
         assertThat(vote.type()).isEqualTo("poll_vote");
@@ -107,13 +111,26 @@ class WaWebWebhookConverterTest {
     }
 
     @Test
-    void anEchoWithAnAckCarriesItsStatusInTheSameEntry() throws IOException {
-        WebhookEvent e = converter.convert(CTX, "message_create", read("echo_image_ack2.raw.json"), CAPTURED)
-                .orElseThrow();
-        List<Change> changes = e.entry().get(0).changes();
-        assertThat(changes).extracting(Change::field).containsExactly("smb_message_echoes", "messages");
-        assertThat(changes.get(1).value().statuses().get(0).id())
-                .isEqualTo(changes.get(0).value().messageEchoes().get(0).id());
+    void anEchoWithAnAckIsFollowedByItsStatusEvent() throws IOException {
+        List<WebhookEvent> events =
+                converter.convert(CTX, "message_create", read("echo_image_ack2.raw.json"), CAPTURED);
+        assertThat(events).hasSize(2);
+        assertThat(events).allSatisfy(e -> {
+            assertThat(e.entry()).hasSize(1);
+            assertThat(e.entry().get(0).changes()).hasSize(1);
+        });
+        Change echo = events.get(0).entry().get(0).changes().get(0);
+        Change status = events.get(1).entry().get(0).changes().get(0);
+        assertThat(echo.field()).isEqualTo("smb_message_echoes");
+        assertThat(status.field()).isEqualTo("messages");
+        assertThat(status.value().statuses().get(0).id()).isEqualTo(echo.value().messageEchoes().get(0).id());
+    }
+
+    @Test
+    void anEchoWithoutAnAckIsOneEvent() throws IOException {
+        assertThat(converter.convert(CTX, "message_create", read("echo_text_ack0.raw.json"), CAPTURED))
+                .singleElement().satisfies(e -> assertThat(e.entry().get(0).changes()).extracting(Change::field)
+                        .containsExactly("smb_message_echoes"));
     }
 
     @Test
@@ -245,7 +262,7 @@ class WaWebWebhookConverterTest {
     }
 
     private Value convertRaw(JsonNode raw, Instant capturedAt) {
-        WebhookEvent e = converter.convert(CTX, "message_create", raw, capturedAt).orElseThrow();
+        WebhookEvent e = converter.convert(CTX, "message_create", raw, capturedAt).getFirst();
         return e.entry().get(0).changes().get(0).value();
     }
 

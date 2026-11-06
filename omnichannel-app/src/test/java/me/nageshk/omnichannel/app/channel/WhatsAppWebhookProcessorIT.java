@@ -96,26 +96,33 @@ class WhatsAppWebhookProcessorIT {
         return mapper.readValue(json, WebhookEvent.class);
     }
 
-    /** Our text to 919912345678 as an echo, and in the same entry the status its ack gives. */
-    private WebhookEvent echoWithStatus(String id, int ack) {
+    /**
+     * Our text to 919912345678 as the two webhook events one bridge event gives: the echo, then the status its ack
+     * gives, each with one change.
+     */
+    private List<WebhookEvent> echoWithStatus(String id, int ack) {
         String status = switch (ack) {
             case 1 -> "sent";
             case 2 -> "delivered";
             case 3 -> "read";
             default -> throw new IllegalArgumentException("ack " + ack);
         };
-        return event("""
+        WebhookEvent echo = event("""
                 {"object": "whatsapp_business_account", "entry": [{"id": "pn-1", "changes": [
                   {"field": "smb_message_echoes", "value": {"messaging_product": "whatsapp",
                     "metadata": {"display_phone_number": "919928088743", "phone_number_id": "pn-1"},
                     "message_echoes": [{"from": "919928088743", "to": "919912345678", "id": "%1$s",
                       "timestamp": "%2$d", "type": "text", "text": {"body": "Hello"},
-                      "wa_web": {"chat_id": "919912345678@c.us", "ack": %3$d}}]}},
+                      "wa_web": {"chat_id": "919912345678@c.us", "ack": %3$d}}]}}
+                ]}]}""".formatted(id, T, ack));
+        WebhookEvent statusEvent = event("""
+                {"object": "whatsapp_business_account", "entry": [{"id": "pn-1", "changes": [
                   {"field": "messages", "value": {"messaging_product": "whatsapp",
                     "metadata": {"display_phone_number": "919928088743", "phone_number_id": "pn-1"},
                     "statuses": [{"id": "%1$s", "status": "%4$s", "timestamp": "%2$d",
                       "recipient_id": "919912345678", "wa_web": {"chat_id": "919912345678@c.us", "ack": %3$d}}]}}
                 ]}]}""".formatted(id, T, ack, status));
+        return List.of(echo, statusEvent);
     }
 
     private WebhookEvent statusOnly(String id, String status) {
@@ -145,7 +152,7 @@ class WhatsAppWebhookProcessorIT {
     }
 
     @Test
-    void anEchoAndItsStatusInOneEntryAreOneWrite() {
+    void anEchoAndItsStatusFromOneBridgeEventAreOneWrite() {
         processor.process(CTX, echoWithStatus("true_919912345678@c.us_E1", 2));
 
         assertThat(messages.findByPhoneNumberIdAndWaMessageId("pn-1", "true_919912345678@c.us_E1"))

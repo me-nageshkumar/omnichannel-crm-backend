@@ -67,7 +67,10 @@ Set `OMNICHANNEL_JWT_SECRET` to a random string of at least 32 bytes outside dev
 Every WhatsApp Web conversation event is turned into the shape of a Cloud API webhook event and kept in the
 collection `channelWebhookEvents` before the inbox processes it (model in `omnichannel-common`
 `common.channel.whatsapp.webhook`). A document holds the converted event, its origin (`object`), the workspace (`entry[].id`) and the number (`metadata.phone_number_id`) inside it, and the
-capture time, and, when `keep-raw` is on and the payload is under `raw-max-bytes`, the raw payload as WhatsApp Web sent it. A TTL index removes
+capture time, and, when `keep-raw` is on and the payload is under `raw-max-bytes`, the raw payload as WhatsApp Web sent it. Each event
+holds one entry with one change, as Meta sends them; our own message whose ack already has a status gives two events,
+the echo then its status, stored as two documents with the same `seq` and `ordinal` 0 and 1 (the raw is on the first
+only), and the inbox processes them together as one write. A TTL index removes
 documents after `retention`. There is no endpoint for it; read it in MongoDB. Configuration (`omnichannel.webhooks.*`,
 defaults):
 

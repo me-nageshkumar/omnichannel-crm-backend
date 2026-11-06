@@ -25,9 +25,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Walks a Cloud API shaped webhook event and hands each message, echo, vote and status to the inbox ingest. An entry
- * is one unit: a status whose id matches an echo of the same entry is applied while the echo is stored, so the row is
- * written once with its status; the other statuses follow on their own. The entry point a Cloud controller would call.
+ * Walks Cloud API shaped webhook events and hands each message, echo, vote and status to the inbox ingest. The events
+ * of one call are one unit (one bridge event may give two: an echo, then its status): a status whose id matches an
+ * echo of the same call is applied while the echo is stored, so the row is written once with its status; the other
+ * statuses follow on their own. The entry point a Cloud controller would call, one event at a time.
  */
 @Component
 public class WhatsAppWebhookProcessor {
@@ -41,17 +42,18 @@ public class WhatsAppWebhookProcessor {
         this.ingest = ingest;
     }
 
+    /** One webhook event, as a Cloud webhook delivers it. */
     public void process(ChannelContext ctx, WebhookEvent event) {
-        if (event == null || event.entry() == null) return;
-        for (Entry entry : event.entry()) {
-            if (entry != null) process(ctx, entry);
-        }
+        process(ctx, event == null ? List.of() : List.of(event));
     }
 
-    private void process(ChannelContext ctx, Entry entry) {
-        List<Value> values = entry.changes() == null ? List.of()
-                : entry.changes().stream().filter(Objects::nonNull).map(Change::value).filter(Objects::nonNull)
-                        .toList();
+    /** The webhook events of one bridge event, in order, as one unit. */
+    public void process(ChannelContext ctx, List<WebhookEvent> events) {
+        if (events == null) return;
+        List<Value> values = events.stream().filter(Objects::nonNull).map(WebhookEvent::entry).filter(Objects::nonNull)
+                .flatMap(List::stream).filter(Objects::nonNull).map(Entry::changes).filter(Objects::nonNull)
+                .flatMap(List::stream).filter(Objects::nonNull).map(Change::value).filter(Objects::nonNull)
+                .toList();
         List<Status> statuses = new ArrayList<>();
         Map<String, Status> statusById = new HashMap<>();
         for (Value v : values) {

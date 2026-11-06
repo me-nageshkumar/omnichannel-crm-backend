@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.service.channel.whatsapp;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
@@ -64,41 +65,57 @@ class WaWebWebhookListenerTest {
 
     @Test
     void aConvertedEventIsStoredThenProcessed() {
-        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(Optional.of(event));
+        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(List.of(event));
 
         listener.on(bridgeEvent("message_create"));
 
         InOrder order = inOrder(converter, store, processor);
         order.verify(converter).convert(CTX, "message_create", payload, CAPTURED);
-        order.verify(store).save(CTX, event, payload, 7L, CAPTURED);
-        order.verify(processor).process(CTX, event);
+        order.verify(store).save(CTX, event, payload, 7L, CAPTURED, 0);
+        order.verify(processor).process(CTX, List.of(event));
     }
 
     @Test
     void anIngestionFailureReachesTheHandler() {
-        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(Optional.of(event));
+        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(List.of(event));
         IngestionFailedException failure = new IngestionFailedException("messages", "A1", new RuntimeException("db"));
-        doThrow(failure).when(processor).process(CTX, event);
+        doThrow(failure).when(processor).process(CTX, List.of(event));
 
         assertThatThrownBy(() -> listener.on(bridgeEvent("message_create"))).isSameAs(failure);
     }
 
     @Test
     void anyOtherProcessingFailureIsLoggedAndAcknowledged() {
-        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(Optional.of(event));
-        doThrow(new IllegalStateException("subscriber failed")).when(processor).process(CTX, event);
+        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(List.of(event));
+        doThrow(new IllegalStateException("subscriber failed")).when(processor).process(CTX, List.of(event));
 
         assertThatCode(() -> listener.on(bridgeEvent("message_create"))).doesNotThrowAnyException();
     }
 
     @Test
     void aStoreFailureDoesNotStopTheMessage() {
-        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(Optional.of(event));
-        when(store.save(any(), any(), any(), any(), any())).thenThrow(new IllegalStateException("mongo down"));
+        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(List.of(event));
+        when(store.save(any(), any(), any(), any(), any(), anyInt()))
+                .thenThrow(new IllegalStateException("mongo down"));
 
         listener.on(bridgeEvent("message_create"));
 
-        verify(processor).process(CTX, event);
+        verify(processor).process(CTX, List.of(event));
+    }
+
+    @Test
+    void anEchoAndItsStatusAreStoredInOrderThenProcessedTogether() {
+        WebhookEvent echo = WebhookEvent.of(CTX, List.of(new Change("smb_message_echoes", null)));
+        WebhookEvent status = WebhookEvent.of(CTX, List.of(new Change("messages", null)));
+        when(converter.convert(CTX, "message_create", payload, CAPTURED)).thenReturn(List.of(echo, status));
+
+        listener.on(bridgeEvent("message_create"));
+
+        InOrder order = inOrder(store, processor);
+        order.verify(store).save(CTX, echo, payload, 7L, CAPTURED, 0);
+        order.verify(store).save(CTX, status, payload, 7L, CAPTURED, 1);
+        order.verify(processor).process(CTX, List.of(echo, status));
+        verify(processor, never()).process(any(), any(WebhookEvent.class));
     }
 
     @Test
@@ -108,13 +125,13 @@ class WaWebWebhookListenerTest {
 
         assertThatCode(() -> listener.on(bridgeEvent("message_create"))).doesNotThrowAnyException();
 
-        verify(store).save(eq(CTX), isNull(), eq(payload), eq(7L), eq(CAPTURED));
+        verify(store).save(eq(CTX), isNull(), eq(payload), eq(7L), eq(CAPTURED), eq(0));
         verifyNoInteractions(processor);
     }
 
     @Test
     void anEventWithNoWebhookIsNeitherStoredNorProcessed() {
-        when(converter.convert(CTX, "message_ack", payload, CAPTURED)).thenReturn(Optional.empty());
+        when(converter.convert(CTX, "message_ack", payload, CAPTURED)).thenReturn(List.of());
 
         listener.on(bridgeEvent("message_ack"));
 
@@ -139,7 +156,7 @@ class WaWebWebhookListenerTest {
 
     @Test
     void theNumberIsLookedUpOnceAndAMissingNumberStillConverts() {
-        when(converter.convert(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(converter.convert(any(), any(), any(), any())).thenReturn(List.of());
 
         listener.on(bridgeEvent("message_create"));
         listener.on(bridgeEvent("message_ack"));
