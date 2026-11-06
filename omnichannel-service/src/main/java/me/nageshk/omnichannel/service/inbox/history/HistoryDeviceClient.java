@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.inbox.history;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -13,7 +14,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
-/** Typed wrapper over the extension's {@code listChats} and {@code fetchChatHistory} page methods. */
+/** Typed wrapper over the extension's {@code listChats}, {@code fetchChatHistory} and {@code messageInfo} page methods. */
 @Component
 @RequiredArgsConstructor
 public class HistoryDeviceClient {
@@ -32,6 +33,12 @@ public class HistoryDeviceClient {
     public record HistoryPage(List<JsonNode> messages, Long oldestT, List<String> oldestIds, boolean hasMore,
             boolean loaded, Integer unreadCount, Boolean business, boolean asked) {}
 
+    /**
+     * When WhatsApp has the recipient's receipt of our message for each state; null for a state it has none for (or
+     * not our message, or not found).
+     */
+    public record Receipt(String id, Instant delivered, Instant read, Instant played) {}
+
     private final RpcDispatcher dispatcher;
     private final ObjectMapper mapper;
 
@@ -46,6 +53,39 @@ public class HistoryDeviceClient {
 
     public CompletableFuture<HistoryPage> fetchChatHistory(DeviceSession device, FetchRequest req) {
         return dispatcher.call(device, "fetchChatHistory", params(req)).thenApply(HistoryDeviceClient::page);
+    }
+
+    /** The receipts of our messages {@code ids} (at most 100), in their order. */
+    public CompletableFuture<List<Receipt>> messageInfo(DeviceSession device, List<String> ids) {
+        return dispatcher.call(device, "messageInfo", messageInfoParams(ids)).thenApply(HistoryDeviceClient::receipts);
+    }
+
+    static ObjectNode messageInfoParams(List<String> ids) {
+        ObjectNode p = JsonNodeFactory.instance.objectNode();
+        ArrayNode list = p.putArray("ids");
+        ids.forEach(list::add);
+        return p;
+    }
+
+    /**
+     * The page's {@code {receipts: [{id, delivered, read, played}]}}, seconds or null. An entry with no id is left out,
+     * and so is {@code {id, error: true}}: the page could not find or read the message, which is no answer.
+     */
+    static List<Receipt> receipts(JsonNode result) {
+        List<Receipt> out = new ArrayList<>();
+        JsonNode list = result == null ? null : result.get("receipts");
+        if (list == null || !list.isArray()) return out;
+        for (JsonNode r : list) {
+            String id = text(r, "id");
+            if (id == null || id.isEmpty() || r.path("error").asBoolean(false)) continue;
+            out.add(new Receipt(id, seconds(r, "delivered"), seconds(r, "read"), seconds(r, "played")));
+        }
+        return out;
+    }
+
+    private static Instant seconds(JsonNode n, String field) {
+        Long s = longOrNull(n, field);
+        return s == null || s <= 0 ? null : Instant.ofEpochSecond(s);
     }
 
     static ObjectNode params(FetchRequest req) {

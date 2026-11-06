@@ -45,8 +45,8 @@ class FetchedChatOpenerTest {
 
     private static OmnichannelProperties props() {
         var history = new OmnichannelProperties.History(true, Duration.ofSeconds(5), 100, 20, Duration.ZERO,
-                Duration.ZERO, 5000, 3, 25, Duration.ofSeconds(60), 3, Duration.ofDays(7));
-        return new OmnichannelProperties(null, null, null, null, null, history, null, null);
+                Duration.ZERO, 5000, 3, 25, Duration.ofSeconds(60), 3, Duration.ofDays(7), true, 25);
+        return new OmnichannelProperties(null, null, null, null, null, history, null, null, null);
     }
 
     private static WaWebChat chat(ChatStatus status, String assignedUserId) {
@@ -55,7 +55,7 @@ class FetchedChatOpenerTest {
         c.setStatus(status);
         c.setAssignedUserId(assignedUserId);
         c.setLastInboundAt(NOW.minus(Duration.ofHours(1)));
-        c.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "chat", "hello", null));
+        c.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "text", "hello", null));
         return c;
     }
 

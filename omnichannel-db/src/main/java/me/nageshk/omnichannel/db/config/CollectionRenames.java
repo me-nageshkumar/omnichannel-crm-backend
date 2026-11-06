@@ -21,7 +21,8 @@ import org.springframework.stereotype.Component;
  * documents and indexes, and the code's indexes are created again; an empty old leftover next to a non-empty new
  * collection is dropped; two non-empty collections are left alone and logged. A fresh or already migrated database
  * is not touched. Then {@link ClassAliasRenames} brings the stored type hints up to the current package names, and
- * {@link ContactIdsMigration} moves the contacts' {@code waId} into {@code waIds}.
+ * {@link ContactIdsMigration} moves the contacts' {@code waId} into {@code waIds}, and {@link MessageTypeMigration}
+ * moves the stored message types to the Cloud API webhook's names.
  */
 @Slf4j
 @Component
@@ -36,11 +37,14 @@ public class CollectionRenames implements SmartInitializingSingleton {
     private final MongoTemplate mongo;
     private final ClassAliasRenames classAliases;
     private final ContactIdsMigration contactIds;
+    private final MessageTypeMigration messageTypes;
 
-    public CollectionRenames(MongoTemplate mongo, ClassAliasRenames classAliases, ContactIdsMigration contactIds) {
+    public CollectionRenames(MongoTemplate mongo, ClassAliasRenames classAliases, ContactIdsMigration contactIds,
+            MessageTypeMigration messageTypes) {
         this.mongo = mongo;
         this.classAliases = classAliases;
         this.contactIds = contactIds;
+        this.messageTypes = messageTypes;
     }
 
     private static Map<String, String> renames() {
@@ -77,6 +81,7 @@ public class CollectionRenames implements SmartInitializingSingleton {
         migrate();
         classAliases.migrate();
         contactIds.migrate();
+        messageTypes.migrate();
     }
 
     public void migrate() {

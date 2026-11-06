@@ -1,0 +1,26 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0TPL",
+    "_serialized": "false_919912345678@c.us_3EB0TPL"
+  },
+  "type": "chat",
+  "t": 1793872800,
+  "ack": 1,
+  "body": "Your code is 123456",
+  "hsmTag": "UTILITY",
+  "templateId": "tpl-1",
+  "hydratedButtons": [
+    {
+      "index": 0,
+      "urlButton": {
+        "displayText": "Copy"
+      }
+    }
+  ]
+}

@@ -63,6 +63,25 @@ export OMNICHANNEL_SEED_DEMO=true   # optional
 ```
 
 Set `OMNICHANNEL_JWT_SECRET` to a random string of at least 32 bytes outside development.
+
+Every WhatsApp Web conversation event is turned into the shape of a Cloud API webhook event and kept in the
+collection `channelWebhookEvents` before the inbox processes it (model in `omnichannel-common`
+`common.channel.whatsapp.webhook`). A document holds the converted event, its origin (`object`), the workspace (`entry[].id`) and the number (`metadata.phone_number_id`) inside it, and the
+capture time, and, when `keep-raw` is on and the payload is under `raw-max-bytes`, the raw payload as WhatsApp Web sent it. Each event
+holds one entry with one change, as Meta sends them; our own message whose ack already has a status gives two events,
+the echo then its status, stored as two documents with the same `seq` and `ordinal` 0 and 1 (the raw is on the first
+only), and the inbox processes them together as one write. The history import stores each fetched message the
+same way, marked `wa_web.imported: true`, with its raw. Each document has an `eventKey` (`message:<id>`,
+`history:<id>`, `status:<id>:<status>`, `vote:<id>:<timestamp>`; none when the conversion failed) under a unique
+index, so a replayed event or a refetched message is stored once. The `_id` is made from the event's own time (the
+message's or status's timestamp, to the second), so sorting by `_id` gives conversation order; `creationTime` is when
+it was stored. A TTL index on `creationTime` removes documents after `retention`. There is no endpoint for it; read it in MongoDB. Configuration (`omnichannel.webhooks.*`,
+defaults):
+
+- `retention` 30d: how long a stored event is kept.
+- `keep-raw` true: keep the raw payload beside the converted event.
+- `raw-max-bytes` 65536: a raw payload larger than this is not stored.
+
 Tests run against an embedded MongoDB (downloaded on first run) and seed their own users.
 
 ## Console
@@ -256,7 +275,7 @@ the same request. Status shown per number: `DISABLED` (with `disabledBecause` NU
 
 ### Import chat history
 
-"Import chat history" pulls the existing WhatsApp Web history of a connected number into the inbox: for all chats, chosen contacts, or one chat, optionally within a date range. It is idempotent and resumable (re-running skips messages already imported, and an interrupted import continues where it stopped); chats it creates start closed and are not routed. In the console: phone numbers page kebab "Import chat history…", the chat header "Fetch history", and the page Inbox → History imports. Requires the authority `inbox:import-history`. Configuration (`omnichannel.history.*`, defaults): `tick` 5s, `page-size` 100, `max-loads` 20, `page-delay` 400ms, `chat-delay` 1s, `max-messages-per-chat` 5000, `max-empty-pages` 50, `max-timeouts-per-chat` 3, `time-budget` 60s, `auto-tick` true.
+"Import chat history" pulls the existing WhatsApp Web history of a connected number into the inbox: for all chats, chosen contacts, or one chat, optionally within a date range. It is idempotent and resumable (re-running skips messages already imported, and an interrupted import continues where it stopped); chats it creates start closed and are not routed. In the console: phone numbers page kebab "Import chat history…", the chat header "Fetch history", and the page Inbox → History imports. Requires the authority `inbox:import-history`. Configuration (`omnichannel.history.*`, defaults): `tick` 5s, `page-size` 100, `max-loads` 20, `page-delay` 400ms, `chat-delay` 1s, `max-messages-per-chat` 5000, `max-empty-pages` 50, `max-timeouts-per-chat` 3, `time-budget` 60s, `auto-tick` true, `receipts` true (after each page, our messages the fetch found delivered, read or played get their times from WhatsApp's receipts through the page's `messageInfo`, each state stored as a `status:` webhook event; a state WhatsApp has no receipt for takes the earliest real receipt of a later state, else the fetch time, and is marked `wa_web.estimated`; an estimated event never stamps the row's time, which `statusTimes.estimatedAt` replaces so it is not asked again; a message the page could not read is asked for again on the next fetch), `receipts-batch` 25 (ids per `messageInfo` call; the page reads each in turn and takes at most 100).
 
 ## Contacts
 

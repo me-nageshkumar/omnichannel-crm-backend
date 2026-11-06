@@ -190,7 +190,7 @@ class InboxSendIT extends InboxApiTestBase {
         assertThat(stored.getDirection()).isEqualTo(MessageDirection.OUT);
         assertThat(stored.getSource()).isEqualTo(MessageSource.CONSOLE);
         assertThat(stored.getStatus()).isEqualTo(MessageStatus.SENT);
-        assertThat(stored.getType()).isEqualTo("chat");
+        assertThat(stored.getType()).isEqualTo("text");
         assertThat(stored.getBody()).isEqualTo("hello");
         assertThat(stored.getSentByUserId()).isEqualTo(manager.getId());
         assertThat(stored.getSentByName()).isEqualTo(manager.getName());
@@ -303,6 +303,25 @@ class InboxSendIT extends InboxApiTestBase {
     }
 
     @Test
+    void aSendResultWithADollarOneKeyIsStoredUnderItsRealId() throws Exception {
+        // newer WhatsApp Web builds mangle the key: `$1` holds it and `_serialized` is gone
+        WaWebChat chat = chatWithAarav();
+        String key = "true_" + chat.getRemoteId() + "_3EB0D0LLAR";
+        ObjectNode result = model(chat, key, "hello", "chat", 1);
+        ObjectNode id = (ObjectNode) result.get("id");
+        id.remove("_serialized");
+        id.put("$1", key);
+
+        Exchange ex = sendOk(managerToken, chat, Map.of("text", "hello"), result);
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        WaWebMessage stored = only(chat);
+        assertThat(stored.getWaMessageId()).isEqualTo(key);
+        assertThat(stored.getStatus()).isEqualTo(MessageStatus.SENT);
+        assertThat(messages.findAll()).noneMatch(m -> m.getWaMessageId().startsWith("console:"));
+    }
+
+    @Test
     void deviceFailureStoresNothing() throws Exception {
         WaWebChat chat = chatWithAarav();
         Exchange ex = viaDevice(managerToken, chat, Map.of("text", "console says hi"),
@@ -410,7 +429,7 @@ class InboxSendIT extends InboxApiTestBase {
         WaWebMessage stored = only(chat);
         assertThat(stored.getTemplateId()).isEqualTo(id);
         assertThat(stored.getBody()).isEqualTo("Hi Aarav");
-        assertThat(stored.getType()).isEqualTo("chat");
+        assertThat(stored.getType()).isEqualTo("text");
     }
 
     @Test

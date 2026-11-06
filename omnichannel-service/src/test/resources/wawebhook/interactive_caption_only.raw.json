@@ -1,0 +1,30 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "INT3",
+    "_serialized": "false_919912345678@c.us_INT3"
+  },
+  "type": "interactive",
+  "t": 1793872800,
+  "ack": 1,
+  "nativeFlowName": "quick_reply",
+  "interactiveType": "native_flow",
+  "interactiveHeader": {
+    "hasMediaAttachment": false
+  },
+  "interactivePayload": {
+    "buttons": [
+      {
+        "name": "quick_reply",
+        "buttonParamsJson": "{\"display_text\": \"Yes\", \"id\": \"y1\"}"
+      }
+    ]
+  },
+  "footer": "Thanks",
+  "caption": "Pick one"
+}

@@ -13,6 +13,9 @@ import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import me.nageshk.omnichannel.common.api.NoDeviceException;
 import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.common.channel.ChannelContext;
+import me.nageshk.omnichannel.common.channel.ChannelKind;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.MessageEcho;
 import me.nageshk.omnichannel.common.inbox.ChatClosedException;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.inbox.ChatStatus;
@@ -28,6 +31,7 @@ import me.nageshk.omnichannel.db.template.TemplateType;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.UserRepository;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookConverter;
 import me.nageshk.omnichannel.service.contact.ContactService;
 import me.nageshk.omnichannel.service.rpc.RpcDispatcher;
 import me.nageshk.omnichannel.service.template.RenderRequest;
@@ -75,6 +79,7 @@ public class InboxSendService {
     }
 
     private final InboxDevices devices;
+    private final WaWebWebhookConverter converter;
     private final RpcDispatcher dispatcher;
     private final ObjectMapper mapper;
     private final ChatMediaService chatMedia;
@@ -175,7 +180,7 @@ public class InboxSendService {
         switch (r.type()) {
             case TEXT -> {
                 if (c.getLinkPreview() != null) options.put("linkPreview", c.getLinkPreview());
-                return new Outgoing(c.getBody(), options, "chat", c.getBody(), null, null, null, templateId);
+                return new Outgoing(c.getBody(), options, "text", c.getBody(), null, null, null, templateId);
             }
             case IMAGE, VIDEO, DOCUMENT, AUDIO -> {
                 String caption = c.getCaption() == null ? "" : c.getCaption();
@@ -196,7 +201,7 @@ public class InboxSendService {
                     case IMAGE -> "image";
                     case VIDEO -> "video";
                     case DOCUMENT -> "document";
-                    default -> voice ? "ptt" : "audio";
+                    default -> "audio";
                 };
                 WaWebMessage.Media stored = new WaWebMessage.Media(file.mimeType(), file.fileName(), file.size(),
                         null, null);
@@ -252,22 +257,23 @@ public class InboxSendService {
     private MessageView afterSend(SendActor actor, WaWebChat sent, Outgoing out, JsonNode result,
             String typedPhone) {
         Instant now = clock.instant();
-        boolean model = result != null && result.isObject();
-        String waMessageId = model ? MessagePayloads.waMessageId(result) : "";
+        MessageEcho echo = echoOf(sent, result, now, typedPhone);
+        String waMessageId = echo == null ? "" : echo.id();
         if (waMessageId.isEmpty()) {
             waMessageId = "console:" + new ObjectId();
-            model = false;
+            echo = null;
             log.warn("sendMessage on {} returned no message model; stored {} and it will not merge with the later "
                     + "message_create event", sent.getPhoneNumberId(), waMessageId);
         }
         String id = waMessageId;
-        Instant at = model ? MessagePayloads.timestamp(result, now) : now;
-        int ack = model ? MessagePayloads.ack(result) : 0;
-        String type = model && out.type() == null ? MessagePayloads.type(result) : out.type();
+        Instant at = echo == null ? now : MessageFields.timestampOf(echo.timestamp(), now);
+        int ack = echo == null || echo.waWeb() == null || echo.waWeb().ack() == null ? 0 : echo.waWeb().ack();
+        String type = echo != null && out.type() == null ? echo.type() : out.type();
         // a chat started from the console was addressed to phone@c.us; WhatsApp mostly answers under the person's
         // @lid, and that is the chat the message (and its message_create event) belong to
         String lidPhone = typedPhone;
-        String reported = model ? MessagePayloads.remote(result) : "";
+        String reported = echo == null || echo.waWeb() == null || echo.waWeb().chatId() == null ? ""
+                : echo.waWeb().chatId();
         if (sent.getId() == null && !reported.isEmpty() && !reported.equals(sent.getRemoteId())) {
             if (lidPhone == null) lidPhone = phoneOf(sent.getRemoteId());
             sent.setRemoteId(reported);
@@ -275,7 +281,7 @@ public class InboxSendService {
         String phone = lidPhone;
 
         Recorded recorded = InboxIngestService.retrying(
-                () -> record(actor, sent, out, type == null ? "chat" : type, id, at, ack, now, phone));
+                () -> record(actor, sent, out, type == null ? "text" : type, id, at, ack, now, phone));
         WaWebChat chat = recorded.chat();
         if (actor instanceof UserActor user) {
             try {
@@ -295,6 +301,23 @@ public class InboxSendService {
         publisher.publishEvent(new InboxEvents.MessageUpserted(chat, recorded.message(), recorded.inserted()));
         publisher.publishEvent(new InboxEvents.ChatChanged(chat));
         return views.message(recorded.message());
+    }
+
+    /**
+     * The model {@code sendMessage} returned, as the echo of our message; null when it returned none (or one with no
+     * id), or one the converter could not read: the message was sent, so it is still stored.
+     */
+    private MessageEcho echoOf(WaWebChat sent, JsonNode result, Instant now, String typedPhone) {
+        if (result == null || !result.isObject()) return null;
+        ChannelContext ctx = new ChannelContext(ChannelKind.WHATSAPP_WEB, sent.getCustomerId(), sent.getWorkspaceId(),
+                sent.getPhoneNumberId(), devices.digitsOf(sent.getPhoneNumberId()));
+        try {
+            return converter.echo(ctx, result, now, typedPhone).orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("could not read the sendMessage result on {} (fields {}): {}", sent.getPhoneNumberId(),
+                    result.propertyNames(), e.toString());
+            return null;
+        }
     }
 
     /**

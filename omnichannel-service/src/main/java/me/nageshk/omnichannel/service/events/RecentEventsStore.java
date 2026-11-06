@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
@@ -23,6 +25,7 @@ public class RecentEventsStore {
     private long seq = 0;
 
     @EventListener
+    @Order(Ordered.HIGHEST_PRECEDENCE)
     public synchronized void on(WhatsAppEvent event) {
         Deque<StoredEvent> q = byNumber.computeIfAbsent(event.phoneNumberId(), u -> new ArrayDeque<>());
         Instant capturedAt = event.ts() == null ? null : Instant.ofEpochMilli(event.ts());

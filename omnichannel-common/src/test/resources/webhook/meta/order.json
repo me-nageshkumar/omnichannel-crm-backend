@@ -1,0 +1,48 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "105998519073832",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "phone_number_id": "105036225837218",
+              "display_phone_number": "919650403225"
+            },
+            "contacts": [
+              {
+                "wa_id": "919928088743",
+                "profile": {
+                  "name": "Nagesh Kumar"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "919928088743",
+                "id": "wamid.HBgMOTE5OTI4MDg4NzQzFQIAEhgUM0EyMzdFNjc0Q0QzQzI2RDU2OEQA",
+                "type": "order",
+                "timestamp": "1726492195",
+                "order": {
+                  "catalog_id": "1136343427606561",
+                  "text": "",
+                  "product_items": [
+                    {
+                      "product_retailer_id": "47360879",
+                      "quantity": "1",
+                      "item_price": "70",
+                      "currency": "INR"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

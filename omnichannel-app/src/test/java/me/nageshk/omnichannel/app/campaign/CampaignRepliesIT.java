@@ -95,7 +95,7 @@ class CampaignRepliesIT extends CampaignTestBase {
         m.setWaMessageId(waId);
         m.setDirection(MessageDirection.OUT);
         m.setSource(source);
-        m.setType("chat");
+        m.setType("text");
         m.setBody("Hi");
         m.setTimestamp(at);
         m.setStatus(MessageStatus.SENT);
@@ -108,9 +108,12 @@ class CampaignRepliesIT extends CampaignTestBase {
                 null));
     }
 
+    /** {@code waMessageId} is {@code fromMe_remote_key}; the page sends the key's parts with it. */
     private void ack(String waMessageId, int ack) {
+        String[] key = waMessageId.split("_", 3);
         ObjectNode p = mapper.createObjectNode();
-        p.putObject("message").putObject("id").put("_serialized", waMessageId);
+        p.putObject("message").putObject("id").put("fromMe", Boolean.parseBoolean(key[0])).put("remote", key[1])
+                .put("id", key[2]).put("_serialized", waMessageId);
         p.put("ack", ack);
         publish("message_ack", p);
     }

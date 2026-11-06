@@ -1,0 +1,22 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "RR1",
+    "_serialized": "false_919912345678@c.us_RR1"
+  },
+  "type": "rich_response",
+  "t": 1793872800,
+  "ack": 1,
+  "unifiedResponse": {
+    "sections": [
+      {
+        "text": "Hello from AI"
+      }
+    ]
+  }
+}

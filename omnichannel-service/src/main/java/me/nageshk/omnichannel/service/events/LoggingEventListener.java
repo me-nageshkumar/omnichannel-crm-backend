@@ -3,6 +3,9 @@ package me.nageshk.omnichannel.service.events;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import me.nageshk.omnichannel.service.channel.whatsapp.WaIds;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
@@ -17,26 +20,12 @@ public class LoggingEventListener {
 
     /** WhatsApp ids arrive either flattened to a string or as a Wid object {server,user,_serialized}. */
     public static String wid(JsonNode node) {
-        if (node == null || node.isMissingNode() || node.isNull()) return "";
-        if (node.isTextual()) return node.asString();
-        if (node.isObject()) {
-            JsonNode s = node.get("_serialized");
-            if (s != null && s.isTextual()) return s.asString();
-            JsonNode user = node.get("user");
-            JsonNode server = node.get("server");
-            if (user != null && server != null) return user.asString() + "@" + server.asString();
-        }
-        return node.toString();
+        return WaIds.wid(node);
     }
 
-    /** Message key: `_serialized` when present, otherwise rebuilt from its parts. */
+    /** Message key: `_serialized` when present, then `$1`, otherwise rebuilt from its parts. */
     static String messageId(JsonNode id) {
-        if (id == null || !id.isObject()) return "";
-        String s = id.path("_serialized").asString("");
-        if (!s.isEmpty()) return s;
-        String remote = wid(id.get("remote"));
-        if (remote.isEmpty() || !id.hasNonNull("id")) return "";
-        return id.path("fromMe").asBoolean(false) + "_" + remote + "_" + id.path("id").asString();
+        return WaIds.messageId(id);
     }
 
     /** " seq=N capturedAt=ISO" for durable events, empty otherwise. */
@@ -47,6 +36,7 @@ public class LoggingEventListener {
     }
 
     @EventListener
+    @Order(Ordered.HIGHEST_PRECEDENCE)
     public void on(WhatsAppEvent event) {
         JsonNode p = event.payload();
         switch (event.name()) {

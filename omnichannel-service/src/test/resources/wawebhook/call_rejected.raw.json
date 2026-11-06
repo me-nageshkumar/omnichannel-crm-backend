@@ -1,0 +1,17 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "CALL2",
+    "_serialized": "false_919912345678@c.us_CALL2"
+  },
+  "type": "call_log",
+  "t": 1793872800,
+  "ack": 1,
+  "callOutcome": "Rejected",
+  "isVideoCall": false
+}

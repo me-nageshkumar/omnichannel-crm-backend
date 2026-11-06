@@ -12,12 +12,12 @@ class InboxIngestServicePreviewTest {
         assertThat(InboxIngestService.preview("image", null, null)).isEqualTo("📷 Photo");
         assertThat(InboxIngestService.preview("video", "", null)).isEqualTo("🎥 Video");
         assertThat(InboxIngestService.preview("audio", " ", null)).isEqualTo("🎤 Voice message");
-        assertThat(InboxIngestService.preview("ptt", null, null)).isEqualTo("🎤 Voice message");
+        assertThat(InboxIngestService.preview("audio", null, null)).isEqualTo("🎤 Voice message");
         assertThat(InboxIngestService.preview("document", null, "a.pdf")).isEqualTo("📄 a.pdf");
         assertThat(InboxIngestService.preview("document", null, null)).isEqualTo("📄 Document");
         assertThat(InboxIngestService.preview("sticker", null, null)).isEqualTo("Sticker");
         assertThat(InboxIngestService.preview("location", null, null)).isEqualTo("📍 Location");
-        assertThat(InboxIngestService.preview("vcard", null, null)).isEqualTo("👤 Contact card");
+        assertThat(InboxIngestService.preview("contacts", null, null)).isEqualTo("👤 Contact card");
         assertThat(InboxIngestService.preview("poll_creation", null, null)).isEqualTo("📊 Poll");
         assertThat(InboxIngestService.preview("call_log", null, null)).isEqualTo("📞 Call");
         assertThat(InboxIngestService.preview("notification_template", "", null)).isEqualTo("WhatsApp notice");
@@ -25,10 +25,9 @@ class InboxIngestServicePreviewTest {
         assertThat(InboxIngestService.preview("whatever", null, null)).isEqualTo("Unsupported message");
         assertThat(InboxIngestService.preview("album", null, null)).isEqualTo("📷 Photos");
         assertThat(InboxIngestService.preview("rich_response", null, null)).isEqualTo("🤖 Bot reply");
-        assertThat(InboxIngestService.preview("multi_vcard", null, null)).isEqualTo("👤 Contact card");
         assertThat(InboxIngestService.preview("image", "caption", null)).isEqualTo("caption");
         assertThat(InboxIngestService.preview("document", "report", "a.pdf")).isEqualTo("report");
-        assertThat(InboxIngestService.preview("chat", "hello", null)).isEqualTo("hello");
+        assertThat(InboxIngestService.preview("text", "hello", null)).isEqualTo("hello");
     }
 
     private static final String WIFE = "BEGIN:VCARD\nVERSION:3.0\nN:;Wife;;;\nFN:Wife\n"
@@ -37,24 +36,31 @@ class InboxIngestServicePreviewTest {
 
     @Test
     void aContactCardPreviewsAsTheNameOnIt() {
-        assertThat(InboxIngestService.preview("vcard", WIFE, null)).isEqualTo("👤 Wife");
+        assertThat(InboxIngestService.preview("contacts", WIFE, null)).isEqualTo("👤 Wife");
+    }
+
+    @Test
+    void metasTypeNamesPreviewAsTheirOwn() {
+        assertThat(InboxIngestService.preview("text", "hello", null)).isEqualTo("hello");
+        assertThat(InboxIngestService.preview("contacts", WIFE, null)).isEqualTo("👤 Wife");
+        assertThat(InboxIngestService.preview("unsupported", null, null)).isEqualTo("Message to view on the phone");
     }
 
     @Test
     void severalContactCardsPreviewAsHowMany() {
-        assertThat(InboxIngestService.preview("multi_vcard", WIFE + "\n" + ASHA, null)).isEqualTo("👤 2 contacts");
+        assertThat(InboxIngestService.preview("contacts", WIFE + "\n" + ASHA, null)).isEqualTo("👤 2 contacts");
     }
 
     @Test
     void aCardWithoutANamePreviewsAsAContactCard() {
-        assertThat(InboxIngestService.preview("vcard", "BEGIN:VCARD\nTEL:+1\nEND:VCARD", null))
+        assertThat(InboxIngestService.preview("contacts", "BEGIN:VCARD\nTEL:+1\nEND:VCARD", null))
                 .isEqualTo("👤 Contact card");
     }
 
     @Test
     void whatWhatsAppWebCannotShowHasALabel() {
         assertThat(InboxIngestService.preview("biz_content_placeholder", null, null)).isEqualTo("💼 Business message");
-        assertThat(InboxIngestService.preview("unknown", null, null)).isEqualTo("Message to view on the phone");
+        assertThat(InboxIngestService.preview("unsupported", null, null)).isEqualTo("Message to view on the phone");
         assertThat(InboxIngestService.preview("newsletter_follower_invite", null, null)).isEqualTo("📢 Channel invite");
     }
 
@@ -77,7 +83,7 @@ class InboxIngestServicePreviewTest {
     @Test
     void previewKeepsTheWholeBody() {
         String whole = "x".repeat(300);
-        assertThat(InboxIngestService.preview("chat", whole, null)).isEqualTo(whole);
+        assertThat(InboxIngestService.preview("text", whole, null)).isEqualTo(whole);
     }
 
     @Test

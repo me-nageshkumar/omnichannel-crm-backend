@@ -56,7 +56,7 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
 
     @Test
     void aContactCardShownByTypeGetsTheNameOnIt() {
-        WaWebChat c = chatWith("vcard", "BEGIN:VCARD\nFN:Wife\nEND:VCARD", "👤 Contact card", AT_LAST_MESSAGE);
+        WaWebChat c = chatWith("contacts", "BEGIN:VCARD\nFN:Wife\nEND:VCARD", "👤 Contact card", AT_LAST_MESSAGE);
         backfill.run(null);
         assertThat(reload(c).getLastMessage().text()).isEqualTo("👤 Wife");
     }
@@ -94,7 +94,7 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
     @Test
     void cutPreviewGetsTheWholeMessage() {
         String whole = "x".repeat(300);
-        WaWebChat c = chatWith("chat", whole, whole.substring(0, 120), AT_LAST_MESSAGE);
+        WaWebChat c = chatWith("text", whole, whole.substring(0, 120), AT_LAST_MESSAGE);
         backfill.run(null);
         assertThat(reload(c).getLastMessage().text()).isEqualTo(whole);
     }
@@ -109,7 +109,7 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
 
     @Test
     void shortPreviewIsLeftAlone() {
-        WaWebChat c = chatWith("chat", "something else", "hello", AT_LAST_MESSAGE);
+        WaWebChat c = chatWith("text", "something else", "hello", AT_LAST_MESSAGE);
         backfill.run(null);
         assertThat(reload(c).getLastMessage().text()).isEqualTo("hello");
     }
@@ -117,7 +117,7 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
     @Test
     void previewOfAnotherMessageIsLeftAlone() {
         String cut = "y".repeat(120);
-        WaWebChat c = chatWith("chat", "x".repeat(300), cut, AT_LAST_MESSAGE + 1);
+        WaWebChat c = chatWith("text", "x".repeat(300), cut, AT_LAST_MESSAGE + 1);
         backfill.run(null);
         assertThat(reload(c).getLastMessage().text()).isEqualTo(cut);
     }
@@ -125,7 +125,7 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
     @Test
     void previewOfAnotherTypeIsLeftAlone() {
         String cut = "y".repeat(120);
-        WaWebChat c = chatWith("chat", "x".repeat(300), cut, AT_LAST_MESSAGE);
+        WaWebChat c = chatWith("text", "x".repeat(300), cut, AT_LAST_MESSAGE);
         c.setLastMessage(new WaWebChat.LastMessage(MessageDirection.IN, "image", cut, null));
         chats.save(c);
         backfill.run(null);
@@ -135,14 +135,14 @@ class ChatPreviewBackfillIT extends InboxApiTestBase {
     @Test
     void wholePreviewLongerThanTheOldCutIsNotRevisited() {
         String preview = "y".repeat(130);
-        WaWebChat c = chatWith("chat", "x".repeat(300), preview, AT_LAST_MESSAGE);
+        WaWebChat c = chatWith("text", "x".repeat(300), preview, AT_LAST_MESSAGE);
         backfill.run(null);
         assertThat(reload(c).getLastMessage().text()).isEqualTo(preview);
     }
 
     @Test
     void secondRunChangesNothing() {
-        WaWebChat c = chatWith("chat", "x".repeat(300), "x".repeat(120), AT_LAST_MESSAGE);
+        WaWebChat c = chatWith("text", "x".repeat(300), "x".repeat(120), AT_LAST_MESSAGE);
         backfill.run(null);
         Long version = reload(c).getVersion();
         backfill.run(null);

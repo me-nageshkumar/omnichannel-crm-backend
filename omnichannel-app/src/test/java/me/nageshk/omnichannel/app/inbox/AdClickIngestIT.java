@@ -12,8 +12,8 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
-import me.nageshk.omnichannel.service.inbox.InboxIngestService;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
+import me.nageshk.omnichannel.service.inbox.history.FetchedMessageImporter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +37,7 @@ class AdClickIngestIT {
     @Autowired ApplicationEventPublisher publisher;
     @Autowired WaWebChatRepository chats;
     @Autowired WaWebMessageRepository messages;
-    @Autowired InboxIngestService ingest;
+    @Autowired FetchedMessageImporter importer;
     @Autowired MongoTemplate mongo;
     @Autowired TestUsers testUsers;
     @Autowired ObjectMapper mapper;
@@ -124,7 +124,7 @@ class AdClickIngestIT {
         p.putObject("id").put("_serialized", "false_" + REMOTE + "_H1").put("remote", REMOTE).put("fromMe", false);
         p.put("t", T);
 
-        ingest.importMessage(new ImportContext(CUSTOMER, WS, "pn-1"), p);
+        importer.importMessage(new ImportContext(CUSTOMER, WS, "pn-1"), p);
 
         assertThat(onlyChat().getAdClick().sourceId()).isEqualTo("1200");
         assertThat(onlyChat().getAdClick().at()).isEqualTo(Instant.ofEpochSecond(T));
@@ -141,10 +141,10 @@ class AdClickIngestIT {
     @Test
     void importOfAnOlderAdReplacesTheChatAd() {
         ImportContext ctx = new ImportContext(CUSTOMER, WS, "pn-1");
-        ingest.importMessage(ctx, historyAd("NEW", T + 600, "2000"));
+        importer.importMessage(ctx, historyAd("NEW", T + 600, "2000"));
         assertThat(onlyChat().getAdClick().sourceId()).isEqualTo("2000");
 
-        ingest.importMessage(ctx, historyAd("OLD", T, "1000"));
+        importer.importMessage(ctx, historyAd("OLD", T, "1000"));
 
         assertThat(onlyChat().getAdClick().sourceId()).isEqualTo("1000");
         assertThat(onlyChat().getAdClick().at()).isEqualTo(Instant.ofEpochSecond(T));

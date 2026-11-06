@@ -1,0 +1,19 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0LOC",
+    "_serialized": "false_919912345678@c.us_3EB0LOC"
+  },
+  "type": "location",
+  "t": 1793872800,
+  "ack": 1,
+  "lat": 12.9716,
+  "lng": 77.5946,
+  "loc": "Cubbon Park\nKasturba Road, Bengaluru",
+  "body": ""
+}

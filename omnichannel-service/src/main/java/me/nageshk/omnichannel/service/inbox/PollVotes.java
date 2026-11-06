@@ -7,13 +7,13 @@ import me.nageshk.omnichannel.db.inbox.WaWebMessage.PollVote;
 import tools.jackson.databind.JsonNode;
 
 /** The votes on a poll: one entry per voter, holding their latest choice. */
-final class PollVotes {
+public final class PollVotes {
 
     private PollVotes() {
     }
 
     /** The vote in a {@code vote_update} payload, or in a fetched poll's list; null without a voter. */
-    static PollVote parse(JsonNode vote) {
+    public static PollVote parse(JsonNode vote) {
         String voter = vote.path("voter").isString() ? vote.path("voter").asString() : "";
         if (voter.isEmpty()) return null;
         List<Integer> options = new ArrayList<>();

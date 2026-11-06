@@ -50,7 +50,7 @@ does not disturb the live inbox.
 | "All chats" | WhatsApp's own chat list on the phone, filtered to `@c.us` / `@lid`. Unknown contacts and chats are created. |
 | "Selected contacts" | Phone digits or CRM contact ids → remote ids `<digits>@c.us` plus the contact's `waId` when known. No chat on the device → item `SKIPPED` / `NO_CHAT`. |
 | Date range | Optional `from` / `to`. The page walks backwards with `loadEarlierMsgs` until the oldest loaded message is older than `from` or nothing more loads; `to` only filters, and is clamped to the request time (§5). Per-chat cap `maxMessagesPerChat` (5 000) → `DONE`, `capped`. |
-| Status of imported rows | `status` from `ack`; `statusTimes` **empty**. Existing rows: status only moves up, `statusTimes` untouched. |
+| Status of imported rows | `status` from `ack`; `statusTimes` **empty**. Existing rows: status only moves up, `statusTimes` untouched. Since 2026-11-06 the delivered/read/played times fill in from WhatsApp's receipts (`2026-11-05-cloud-webhook-shape-design.md` §5.3). |
 | Pacing | One page in flight per device; `pageDelay` 400 ms between pages, `chatDelay` 1 s between chats; at most one active import per number (others wait `QUEUED`). |
 | Authority | New `inbox:import-history` (BRAND; default roles Customer Admin, Workspace Manager). |
 

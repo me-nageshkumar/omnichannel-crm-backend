@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.service.inbox;
 
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import me.nageshk.omnichannel.db.channel.ChannelWebhookEventRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatActionRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
@@ -25,9 +26,10 @@ public class InboxCleanup {
     private final WaWebChatActionRepository actions;
     private final WaWebHistoryImportRepository historyImports;
     private final WaWebHistoryImportChatRepository historyImportChats;
+    private final ChannelWebhookEventRepository webhookEvents;
     private final ChatMediaService media;
 
-    /** Deletes the number's chats, messages, chat actions, history imports, routing settings and media. Safe to run again. */
+    /** Deletes the number's chats, messages, chat actions, history imports, webhook events, routing settings and media. Safe to run again. */
     public void deleteForNumber(String phoneNumberId) {
         List<String> chatIds = chats.findIdsByPhoneNumberId(phoneNumberId).stream().map(WaWebChat::getId).toList();
         for (int from = 0; from < chatIds.size(); from += BATCH) {
@@ -37,6 +39,7 @@ public class InboxCleanup {
         chats.deleteByPhoneNumberId(phoneNumberId);
         historyImports.deleteByPhoneNumberId(phoneNumberId);
         historyImportChats.deleteByPhoneNumberId(phoneNumberId);
+        webhookEvents.deleteByNumber(phoneNumberId);
         media.deleteByPhoneNumber(phoneNumberId);
     }
 }

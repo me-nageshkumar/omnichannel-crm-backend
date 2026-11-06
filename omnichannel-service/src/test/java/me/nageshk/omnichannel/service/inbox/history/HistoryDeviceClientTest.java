@@ -2,10 +2,12 @@ package me.nageshk.omnichannel.service.inbox.history;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import java.util.List;
 import me.nageshk.omnichannel.service.inbox.history.HistoryDeviceClient.ChatRow;
 import me.nageshk.omnichannel.service.inbox.history.HistoryDeviceClient.FetchRequest;
 import me.nageshk.omnichannel.service.inbox.history.HistoryDeviceClient.HistoryPage;
+import me.nageshk.omnichannel.service.inbox.history.HistoryDeviceClient.Receipt;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -102,5 +104,35 @@ class HistoryDeviceClientTest {
         assertThat(q.path("from").asLong()).isEqualTo(1L);
         assertThat(q.path("to").asLong()).isEqualTo(2L);
         assertThat(q.get("excludeIds")).hasSize(1);
+    }
+
+    @Test
+    void receiptsAreSecondsOrNullInTheOrderGiven() {
+        ObjectNode r = mapper.createObjectNode();
+        ArrayNode list = r.putArray("receipts");
+        list.addObject().put("id", "a").put("delivered", 100L).put("read", 200L).putNull("played");
+        list.addObject().put("id", "b").putNull("delivered").putNull("read").putNull("played");
+        list.addObject().put("id", "c").put("delivered", 0).put("read", "x");
+        assertThat(HistoryDeviceClient.receipts(r)).containsExactly(
+                new Receipt("a", Instant.ofEpochSecond(100), Instant.ofEpochSecond(200), null),
+                new Receipt("b", null, null, null), new Receipt("c", null, null, null));
+    }
+
+    @Test
+    void receiptsOfNothingOrOfAMessageThePageCouldNotReadAreLeftOut() {
+        assertThat(HistoryDeviceClient.receipts(null)).isEmpty();
+        assertThat(HistoryDeviceClient.receipts(mapper.createObjectNode())).isEmpty();
+        ObjectNode failed = mapper.createObjectNode();
+        failed.putArray("receipts").addObject().put("id", "a").put("error", true);
+        assertThat(HistoryDeviceClient.receipts(failed)).isEmpty();
+        ObjectNode noId = mapper.createObjectNode();
+        noId.putArray("receipts").addObject().put("delivered", 100L);
+        assertThat(HistoryDeviceClient.receipts(noId)).isEmpty();
+    }
+
+    @Test
+    void messageInfoAsksForTheIds() {
+        assertThat(HistoryDeviceClient.messageInfoParams(List.of("a", "b")).toString())
+                .isEqualTo("{\"ids\":[\"a\",\"b\"]}");
     }
 }

@@ -17,12 +17,13 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatAction;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
+import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookListener;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
-import me.nageshk.omnichannel.service.inbox.InboxIngestService;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportOutcome;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportResult;
+import me.nageshk.omnichannel.service.inbox.history.FetchedMessageImporter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,7 +85,8 @@ class ImportMessageIT {
         }
     }
 
-    @Autowired InboxIngestService ingest;
+    @Autowired FetchedMessageImporter importer;
+    @Autowired WaWebWebhookListener live;
     @Autowired ContactRepository contacts;
     @Autowired WaWebChatRepository chats;
     @Autowired WaWebMessageRepository messages;
@@ -154,24 +156,24 @@ class ImportMessageIT {
     @Test
     void aNoticeIsNotImported() {
         ObjectNode p = msg("n1", "919811100001@c.us", false, 100, 0, null).put("type", "notification_template");
-        assertThat(ingest.importMessage(ctx, p).outcome()).isEqualTo(ImportOutcome.SKIPPED);
+        assertThat(importer.importMessage(ctx, p).outcome()).isEqualTo(ImportOutcome.SKIPPED);
         assertThat(messages.count()).isZero();
     }
 
     @Test
     void aCallIsStoredWithWhatIsKnownOfIt() {
-        ingest.importMessage(ctx, call("c1", "MISSED"));
+        importer.importMessage(ctx, call("c1", "MISSED"));
         assertThat(onlyMessage().getCall()).isEqualTo(new WaWebMessage.Call(false, true, null));
     }
 
     @Test
     void aCallStoredBeforeCallsWereReadIsFilledIn() {
-        ingest.importMessage(ctx, call("c1", "MISSED"));
+        importer.importMessage(ctx, call("c1", "MISSED"));
         WaWebMessage stored = onlyMessage();
         stored.setCall(null);
         messages.save(stored);
 
-        ImportResult r = ingest.importMessage(ctx, call("c1", "MISSED"));
+        ImportResult r = importer.importMessage(ctx, call("c1", "MISSED"));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
         assertThat(onlyMessage().getCall()).isEqualTo(new WaWebMessage.Call(false, true, null));
@@ -179,13 +181,13 @@ class ImportMessageIT {
 
     @Test
     void aCallAlreadyFilledInIsUnchanged() {
-        ingest.importMessage(ctx, call("c1", "MISSED"));
-        assertThat(ingest.importMessage(ctx, call("c1", "MISSED")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+        importer.importMessage(ctx, call("c1", "MISSED"));
+        assertThat(importer.importMessage(ctx, call("c1", "MISSED")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
     }
 
     @Test
     void aFetchedPollBringsItsVotes() {
-        ingest.importMessage(ctx, poll("p1", 5000));
+        importer.importMessage(ctx, poll("p1", 5000));
         assertThat(onlyMessage().getPollVotes()).extracting(WaWebMessage.PollVote::voter).containsExactly("1@lid");
     }
 
@@ -193,9 +195,9 @@ class ImportMessageIT {
     void aFetchOfAStoredPollAddsItsVotes() {
         ObjectNode bare = poll("p1", 5000);
         bare.remove("pollVotes");
-        ingest.importMessage(ctx, bare);
+        importer.importMessage(ctx, bare);
 
-        ImportResult r = ingest.importMessage(ctx, poll("p1", 5000));
+        ImportResult r = importer.importMessage(ctx, poll("p1", 5000));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
         assertThat(onlyMessage().getPollVotes()).hasSize(1);
@@ -203,20 +205,20 @@ class ImportMessageIT {
 
     @Test
     void aFetchOfAPollWithTheSameVotesIsUnchanged() {
-        ingest.importMessage(ctx, poll("p1", 5000));
-        assertThat(ingest.importMessage(ctx, poll("p1", 5000)).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+        importer.importMessage(ctx, poll("p1", 5000));
+        assertThat(importer.importMessage(ctx, poll("p1", 5000)).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
     }
 
     @Test
     void anOlderFetchDoesNotUndoALaterVote() {
-        ingest.importMessage(ctx, poll("p1", 9000));
-        ingest.importMessage(ctx, poll("p1", 5000));
+        importer.importMessage(ctx, poll("p1", 9000));
+        importer.importMessage(ctx, poll("p1", 5000));
         assertThat(onlyMessage().getPollVotes().getFirst().at()).isEqualTo(java.time.Instant.ofEpochMilli(9000));
     }
 
     @Test
     void insertsMessageAndCreatesClosedChat() {
-        ImportResult r = ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
+        ImportResult r = importer.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.INSERTED);
         WaWebChat chat = onlyChat();
@@ -236,9 +238,9 @@ class ImportMessageIT {
     @Test
     void secondRunIsUnchanged() {
         ObjectNode p = msg("m1", REMOTE, false, 100, 0, "hello");
-        ingest.importMessage(ctx, p);
+        importer.importMessage(ctx, p);
 
-        ImportResult r = ingest.importMessage(ctx, p);
+        ImportResult r = importer.importMessage(ctx, p);
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UNCHANGED);
         assertThat(messages.count()).isEqualTo(1);
@@ -247,9 +249,9 @@ class ImportMessageIT {
 
     @Test
     void higherAckUpdatesStatusWithoutTimes() {
-        ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
+        importer.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
 
-        ImportResult r = ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 3, "hello"));
+        ImportResult r = importer.importMessage(ctx, msg("m1", REMOTE, true, 100, 3, "hello"));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
         WaWebMessage m = onlyMessage();
@@ -260,12 +262,12 @@ class ImportMessageIT {
 
     @Test
     void liveStatusIsKeptWhenImportSeesLower() {
-        ingest.ingestMessage(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
+        live.on(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
                 msg("m1", REMOTE, true, 100, 3, "hello"), null, null));
         Instant readAt = onlyMessage().getStatusTimes().getReadAt();
         recorder.events.clear();
 
-        ImportResult r = ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
+        ImportResult r = importer.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UNCHANGED);
         WaWebMessage m = onlyMessage();
@@ -277,14 +279,14 @@ class ImportMessageIT {
 
     @Test
     void aFetchKeepsWhoSentAStoredMessage() {
-        ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
+        importer.importMessage(ctx, msg("m1", REMOTE, true, 100, 1, "hello"));
         WaWebMessage stored = onlyMessage();
         stored.setSource(MessageSource.CONSOLE);
         stored.setSentByUserId("user-7");
         stored.setSentByName("Asha");
         messages.save(stored);
 
-        ImportResult r = ingest.importMessage(ctx, msg("m1", REMOTE, true, 100, 3, "hello again"));
+        ImportResult r = importer.importMessage(ctx, msg("m1", REMOTE, true, 100, 3, "hello again"));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
         WaWebMessage m = onlyMessage();
@@ -307,7 +309,7 @@ class ImportMessageIT {
         open.setAssignedTeamId("team-1");
         chats.save(open);
 
-        ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
+        importer.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
 
         WaWebChat chat = onlyChat();
         assertThat(chat.getStatus()).isEqualTo(ChatStatus.OPEN);
@@ -322,7 +324,7 @@ class ImportMessageIT {
         p.putArray("vcardList").add(mapper.createObjectNode().put("vcard", "BEGIN:VCARD\nFN:A\nEND:VCARD"))
                 .add(mapper.createObjectNode().put("vcard", "BEGIN:VCARD\nFN:B\nEND:VCARD"));
 
-        ingest.importMessage(ctx, p);
+        importer.importMessage(ctx, p);
 
         assertThat(onlyMessage().getBody()).isEqualTo("BEGIN:VCARD\nFN:A\nEND:VCARD\nBEGIN:VCARD\nFN:B\nEND:VCARD");
         assertThat(onlyChat().getLastMessage().text()).isEqualTo("👤 2 contacts");
@@ -337,16 +339,16 @@ class ImportMessageIT {
 
     @Test
     void aChannelInviteIsStoredWithTheChannelName() {
-        ingest.importMessage(ctx, invite("i1", "Speak English"));
+        importer.importMessage(ctx, invite("i1", "Speak English"));
         assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
         assertThat(onlyChat().getLastMessage().text()).isEqualTo("📢 Channel invite: Speak English");
     }
 
     @Test
     void aFetchFillsInTheChannelNameOfAnInviteStoredWithout() {
-        ingest.importMessage(ctx, invite("i1", null));
+        importer.importMessage(ctx, invite("i1", null));
 
-        ImportResult r = ingest.importMessage(ctx, invite("i1", "Speak English"));
+        ImportResult r = importer.importMessage(ctx, invite("i1", "Speak English"));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
         assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
@@ -357,10 +359,10 @@ class ImportMessageIT {
     void aFetchFillsInTheBusinessTagOfAPlaceholderStoredWithout() {
         ObjectNode bare = msg("b1", REMOTE, false, 100, 0, null).put("type", "biz_content_placeholder");
         bare.remove("body");
-        ingest.importMessage(ctx, bare);
+        importer.importMessage(ctx, bare);
         assertThat(onlyChat().getLastMessage().text()).isEqualTo("💼 Business message");
 
-        ImportResult r = ingest.importMessage(ctx, bare.deepCopy().put("hsmTag", "AUTHENTICATION"));
+        ImportResult r = importer.importMessage(ctx, bare.deepCopy().put("hsmTag", "AUTHENTICATION"));
 
         assertThat(r.outcome()).isEqualTo(ImportOutcome.UPDATED);
         assertThat(onlyMessage().getBusinessTag()).isEqualTo("AUTHENTICATION");
@@ -369,8 +371,8 @@ class ImportMessageIT {
 
     @Test
     void aFetchDoesNotReplaceATextAlreadyStored() {
-        ingest.importMessage(ctx, invite("i1", "Speak English"));
-        assertThat(ingest.importMessage(ctx, invite("i1", "Renamed")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
+        importer.importMessage(ctx, invite("i1", "Speak English"));
+        assertThat(importer.importMessage(ctx, invite("i1", "Renamed")).outcome()).isEqualTo(ImportOutcome.UNCHANGED);
         assertThat(onlyMessage().getBody()).isEqualTo("Speak English");
     }
 
@@ -385,7 +387,7 @@ class ImportMessageIT {
         open.setUnreadCount(4);
         chats.save(open);
 
-        ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
+        importer.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "hello"));
 
         WaWebChat chat = onlyChat();
         assertThat(chat.getStatus()).isEqualTo(ChatStatus.OPEN);
@@ -396,8 +398,8 @@ class ImportMessageIT {
 
     @Test
     void olderMessageDoesNotOverwritePreview() {
-        ingest.importMessage(ctx, msg("m2", REMOTE, false, 200, 0, "new"));
-        ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "old"));
+        importer.importMessage(ctx, msg("m2", REMOTE, false, 200, 0, "new"));
+        importer.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "old"));
 
         WaWebChat chat = onlyChat();
         assertThat(chat.getLastMessage().text()).isEqualTo("new");
@@ -418,7 +420,7 @@ class ImportMessageIT {
         ObjectNode old = msg("m1", REMOTE, false, 100, 0, "hello");
         old.put("notifyName", "Old Name");
 
-        ingest.importMessage(ctx, old);
+        importer.importMessage(ctx, old);
 
         assertThat(contacts.findByWorkspaceIdAndPhone("ws-1", "919911111111").orElseThrow().getName())
                 .isEqualTo("Asha");
@@ -429,7 +431,7 @@ class ImportMessageIT {
         ObjectNode old = msg("m1", REMOTE, false, 100, 0, "hello");
         old.put("notifyName", "Old Name");
 
-        ingest.importMessage(ctx, old);
+        importer.importMessage(ctx, old);
 
         assertThat(contacts.findByWorkspaceIdAndPhone("ws-1", "919911111111").orElseThrow().getName())
                 .isEqualTo("Old Name");
@@ -437,10 +439,10 @@ class ImportMessageIT {
 
     @Test
     void importCreatedChatIsReopenedAndRoutedByALaterLiveMessage() {
-        ingest.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "old"));
+        importer.importMessage(ctx, msg("m1", REMOTE, false, 100, 0, "old"));
         assertThat(onlyChat().getStatus()).isEqualTo(ChatStatus.CLOSED);
 
-        ingest.ingestMessage(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
+        live.on(new WhatsAppEvent(this, "pn-1", "ws-1", "cust-1", "message_create",
                 msg("m2", REMOTE, false, 200, 0, "new"), null, null));
 
         WaWebChat chat = onlyChat();
@@ -454,10 +456,10 @@ class ImportMessageIT {
 
     @Test
     void skipsGroupsAndMissingIds() {
-        ImportResult group = ingest.importMessage(ctx, msg("g1", "120363000000000000@g.us", false, 100, 0, "hi"));
+        ImportResult group = importer.importMessage(ctx, msg("g1", "120363000000000000@g.us", false, 100, 0, "hi"));
         ObjectNode noId = msg("m1", REMOTE, false, 100, 0, "hi");
         noId.remove("id");
-        ImportResult missing = ingest.importMessage(ctx, noId);
+        ImportResult missing = importer.importMessage(ctx, noId);
 
         assertThat(group.outcome()).isEqualTo(ImportOutcome.SKIPPED);
         assertThat(group.chat()).isNull();

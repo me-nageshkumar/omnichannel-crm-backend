@@ -22,8 +22,9 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * A connected, ready fake extension that answers {@code listChats} and {@code fetchChatHistory} from the in-memory
- * {@link #chats} (remote id to messages, any order) on its own thread. Every request is recorded before it is
- * answered. {@link #override}, when set, answers every request instead (null from it never answers).
+ * {@link #chats} (remote id to messages, any order), and {@code messageInfo} from {@link #receipts}, on its own thread.
+ * Every request is recorded before it is answered. {@link #override}, when set, answers every request instead (null
+ * from it never answers).
  */
 class HistoryDevice implements AutoCloseable {
 
@@ -39,6 +40,12 @@ class HistoryDevice implements AutoCloseable {
     final Set<String> business = ConcurrentHashMap.newKeySet();
     /** True to answer like a page script from before {@code unreadCount} and {@code business}. */
     volatile boolean oldPageScript = false;
+    /** The receipt times (seconds) {@code messageInfo} gives a message id; all null when absent. */
+    final Map<String, Long[]> receipts = new ConcurrentHashMap<>();
+    /** Ids {@code messageInfo} answers {@code {id, error: true}} for, as the page does for a message it cannot read. */
+    final Set<String> receiptErrors = ConcurrentHashMap.newKeySet();
+    /** Ids {@code messageInfo} leaves out of its answer. */
+    final Set<String> receiptsLeftOut = ConcurrentHashMap.newKeySet();
     volatile Function<Envelope, Envelope> override = null;
 
     private final FakeDevice device;
@@ -98,9 +105,37 @@ class HistoryDevice implements AutoCloseable {
         return switch (req.method()) {
             case "listChats" -> Envelope.response(req.id(), listChats());
             case "fetchChatHistory" -> fetchChatHistory(req);
+            case "messageInfo" -> Envelope.response(req.id(), messageInfo(req));
             case "getState" -> Envelope.response(req.id(), MAPPER.getNodeFactory().textNode("CONNECTED"));
             default -> Envelope.errorResponse(req.id(), "METHOD_NOT_FOUND", req.method());
         };
+    }
+
+    /** {@code {receipts: [{id, delivered, read, played}]}} in the order of {@code ids}, as the page answers. */
+    private ObjectNode messageInfo(Envelope req) {
+        ObjectNode result = MAPPER.createObjectNode();
+        ArrayNode out = result.putArray("receipts");
+        req.params().path("ids").forEach(i -> {
+            String id = i.asString();
+            if (receiptsLeftOut.contains(id)) return;
+            if (receiptErrors.contains(id)) {
+                out.addObject().put("id", id).put("error", true);
+                return;
+            }
+            Long[] times = receipts.getOrDefault(id, new Long[3]);
+            ObjectNode r = out.addObject().put("id", id);
+            String[] names = {"delivered", "read", "played"};
+            for (int k = 0; k < 3; k++) {
+                if (times[k] == null) r.putNull(names[k]);
+                else r.put(names[k], times[k]);
+            }
+        });
+        return result;
+    }
+
+    /** Sets the receipts of {@code message}: delivered, read and played seconds, each null when WhatsApp has none. */
+    void receipt(ObjectNode message, Long delivered, Long read, Long played) {
+        receipts.put(id(message), new Long[] {delivered, read, played});
     }
 
     private ArrayNode listChats() {
@@ -167,7 +202,7 @@ class HistoryDevice implements AutoCloseable {
         return m.get("t").asLong();
     }
 
-    private static String id(ObjectNode m) {
+    static String id(ObjectNode m) {
         return m.get("id").get("_serialized").asString();
     }
 

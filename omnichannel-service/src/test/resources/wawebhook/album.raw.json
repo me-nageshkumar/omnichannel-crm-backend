@@ -1,0 +1,15 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "ALB1",
+    "_serialized": "false_919912345678@c.us_ALB1"
+  },
+  "type": "album",
+  "t": 1793872800,
+  "ack": 1
+}

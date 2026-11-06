@@ -1,0 +1,42 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "POLL2",
+    "_serialized": "false_919912345678@c.us_POLL2"
+  },
+  "type": "poll_creation",
+  "t": 1793872800,
+  "ack": 1,
+  "pollName": "Pick",
+  "pollOptions": [
+    {
+      "name": "A",
+      "localId": 0
+    },
+    {
+      "name": "B",
+      "localId": 1
+    },
+    {
+      "name": "C",
+      "localId": 2
+    }
+  ],
+  "pollSelectableOptionsCount": 0,
+  "pollVotes": [
+    {
+      "voter": "919912345678@c.us",
+      "fromMe": false,
+      "options": [
+        0,
+        2
+      ],
+      "at": 1793872900000
+    }
+  ]
+}

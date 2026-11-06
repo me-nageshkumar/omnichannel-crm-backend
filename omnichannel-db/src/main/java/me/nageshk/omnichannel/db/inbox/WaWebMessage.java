@@ -77,6 +77,8 @@ public class WaWebMessage {
         private Instant readAt;
         private Instant playedAt;
         private Instant failedAt;
+        /** The fetch time of a history import that tried a receipt WhatsApp had none for; no state time comes from it. */
+        private Instant estimatedAt;
     }
 
     /** One voter's current choice on a poll. {@code options} are positions in {@link #pollOptions}. */

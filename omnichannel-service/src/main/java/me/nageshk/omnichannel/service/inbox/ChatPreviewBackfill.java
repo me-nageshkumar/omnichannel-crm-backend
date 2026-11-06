@@ -6,6 +6,7 @@ import java.util.Objects;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
+import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -47,7 +48,7 @@ public class ChatPreviewBackfill implements ApplicationRunner {
             Query stale = new Query(new Criteria().orOperator(
                     Criteria.where(TEXT).regex("^[\\s\\S]{" + CUT_LENGTH + "}$"),
                     Criteria.where(TEXT).is("Unsupported message").and("lastMessage.type").in(labelled()),
-                    Criteria.where(TEXT).is("👤 Contact card").and("lastMessage.type").is("vcard")));
+                    Criteria.where(TEXT).is("👤 Contact card").and("lastMessage.type").is("contacts")));
             long n = mongo.find(stale, WaWebChat.class).stream().filter(this::rebuild).count();
             if (n > 0) log.info("rebuilt the preview of {} chat(s)", n);
         } catch (RuntimeException e) {
@@ -58,7 +59,7 @@ public class ChatPreviewBackfill implements ApplicationRunner {
     /** A notice no longer counts as the chat's last message: the real one before it takes the preview, time unchanged. */
     private boolean showRealMessage(WaWebChat chat) {
         WaWebMessage real = mongo.findOne(new Query(Criteria.where("chatId").is(chat.getId()).and("type")
-                .nin(MessagePayloads.NOTICE_TYPES)).with(Sort.by(Sort.Direction.DESC, "timestamp", "_id")),
+                .nin(WaWebWebhookConverter.NOTICE_TYPES)).with(Sort.by(Sort.Direction.DESC, "timestamp", "_id")),
                 WaWebMessage.class);
         if (real == null) return false;
         WaWebChat.LastMessage shown = new WaWebChat.LastMessage(real.getDirection(), real.getType(),
@@ -71,15 +72,15 @@ public class ChatPreviewBackfill implements ApplicationRunner {
 
     /** The types that were saved as "Unsupported message" and now have a label of their own. */
     private static List<String> labelled() {
-        List<String> types = new ArrayList<>(MessagePayloads.NOTICE_TYPES);
-        types.addAll(List.of("call_log", "biz_content_placeholder", "unknown", "newsletter_follower_invite", "album",
-                "rich_response"));
+        List<String> types = new ArrayList<>(WaWebWebhookConverter.NOTICE_TYPES);
+        types.addAll(List.of("call_log", "biz_content_placeholder", "unsupported", "newsletter_follower_invite",
+                "album", "rich_response"));
         return types;
     }
 
     private boolean rebuild(WaWebChat chat) {
         WaWebChat.LastMessage last = chat.getLastMessage();
-        if (MessagePayloads.isNoticeType(last.type()) && showRealMessage(chat)) return true;
+        if (WaWebWebhookConverter.isNoticeType(last.type()) && showRealMessage(chat)) return true;
         WaWebMessage newest = messages.findFirstByChatIdOrderByTimestampDescIdDesc(chat.getId()).orElse(null);
         if (newest == null || !Objects.equals(newest.getTimestamp(), chat.getLastMessageAt())
                 || !Objects.equals(newest.getType(), last.type())) {

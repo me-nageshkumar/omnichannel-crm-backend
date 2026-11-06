@@ -1,0 +1,41 @@
+{
+  "object": "whatsapp_web_account",
+  "entry": [
+    {
+      "id": "ws",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "919928088743",
+              "phone_number_id": "pn-1"
+            },
+            "contacts": [
+              {
+                "wa_id": "919912345678"
+              }
+            ],
+            "messages": [
+              {
+                "id": "false_919912345678@c.us_NL1",
+                "timestamp": "1793872800",
+                "type": "newsletter_follower_invite",
+                "from": "919912345678",
+                "newsletter_follower_invite": {
+                  "name": "Daily News"
+                },
+                "wa_web": {
+                  "chat_id": "919912345678@c.us",
+                  "ack": 1,
+                  "captured_at": 1793872800000
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

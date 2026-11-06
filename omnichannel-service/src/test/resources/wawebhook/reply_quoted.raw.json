@@ -1,0 +1,22 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "3EB0RPL",
+    "_serialized": "false_919912345678@c.us_3EB0RPL"
+  },
+  "type": "chat",
+  "t": 1793872800,
+  "ack": 1,
+  "body": "yes",
+  "quotedStanzaID": "3EB0QQ",
+  "quotedParticipant": {
+    "server": "c.us",
+    "user": "919811122233",
+    "_serialized": "919811122233@c.us"
+  }
+}

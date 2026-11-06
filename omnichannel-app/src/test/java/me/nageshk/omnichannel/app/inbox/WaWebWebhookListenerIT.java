@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import me.nageshk.omnichannel.app.support.TestUsers;
+import me.nageshk.omnichannel.db.channel.ChannelWebhookEvent;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.contact.ContactSource;
@@ -25,11 +26,16 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatActionRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
+import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
+import me.nageshk.omnichannel.service.channel.ChannelWebhookEventStore;
+import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookConverter;
+import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookListener;
+import me.nageshk.omnichannel.service.channel.whatsapp.WhatsAppWebhookProcessor;
 import me.nageshk.omnichannel.service.contact.ContactService;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService;
-import me.nageshk.omnichannel.service.inbox.WaWebInboxListener;
+import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +52,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 @SpringBootTest
-class WaWebInboxListenerIT {
+class WaWebWebhookListenerIT {
 
     private static final String WS = "ws-1";
     private static final String CUSTOMER = "cust-1";
@@ -105,6 +111,14 @@ class WaWebInboxListenerIT {
     @Autowired ObjectMapper mapper;
     @Autowired Recorder recorder;
     @Autowired Clock clock;
+    @Autowired WaWebWebhookConverter converter;
+    @Autowired ChannelWebhookEventStore store;
+    @Autowired PhoneNumberRepository phoneNumbers;
+
+    /** The listener over an ingest service built by the test, as the bus would call it. */
+    private WaWebWebhookListener listenerWith(InboxIngestService ingest) {
+        return new WaWebWebhookListener(converter, store, new WhatsAppWebhookProcessor(ingest), phoneNumbers);
+    }
 
     @BeforeEach
     void setUp() {
@@ -118,7 +132,8 @@ class WaWebInboxListenerIT {
 
     private void clean() {
         testUsers.deleteAll();
-        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class))
+        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class,
+                ChannelWebhookEvent.class))
             mongo.remove(new Query(), c);
         recorder.events.clear();
     }
@@ -143,9 +158,12 @@ class WaWebInboxListenerIT {
         publish("message_create", payload);
     }
 
+    /** {@code waMessageId} is {@code fromMe_remote_key}; the page sends the key's parts with it. */
     private void ack(String waMessageId, int ack) {
+        String[] key = waMessageId.split("_", 3);
         ObjectNode p = mapper.createObjectNode();
-        p.putObject("message").putObject("id").put("_serialized", waMessageId);
+        p.putObject("message").putObject("id").put("fromMe", Boolean.parseBoolean(key[0])).put("remote", key[1])
+                .put("id", key[2]).put("_serialized", waMessageId);
         p.put("ack", ack);
         publish("message_ack", p);
     }
@@ -177,6 +195,20 @@ class WaWebInboxListenerIT {
         var list = p.putArray("options");
         for (int o : options) list.add(o);
         publish("vote_update", p);
+    }
+
+    @Test
+    void aReplayedBridgeEventIsStoredOnceAndStillProcessed() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        create(p);
+        create(p);
+
+        List<Document> stored = mongo.findAll(Document.class, "channelWebhookEvents");
+        assertThat(stored).singleElement().satisfies(d -> {
+            assertThat(d.getString("eventKey")).isEqualTo("message:false_919911111111@c.us_ABC" + T);
+            assertThat(d.getObjectId("_id").getTimestamp()).isEqualTo((int) T);
+        });
+        assertThat(onlyMessage().getBody()).isEqualTo("hi");
     }
 
     @Test
@@ -308,7 +340,7 @@ class WaWebInboxListenerIT {
         assertThat(chat.getUnreadCount()).isEqualTo(1);
         assertThat(chat.getLastMessage().text()).isEqualTo("hi");
         assertThat(chat.getLastMessage().direction()).isEqualTo(MessageDirection.IN);
-        assertThat(chat.getLastMessage().type()).isEqualTo("chat");
+        assertThat(chat.getLastMessage().type()).isEqualTo("text");
         assertThat(chat.getLastMessage().status()).isEqualTo(MessageStatus.PENDING);
         assertThat(chat.getLastMessageAt()).isEqualTo(Instant.ofEpochSecond(T));
         assertThat(chat.getLastInboundAt()).isEqualTo(Instant.ofEpochSecond(T));
@@ -319,7 +351,7 @@ class WaWebInboxListenerIT {
         assertThat(m.getWaMessageId()).isEqualTo("false_919911111111@c.us_ABC" + T);
         assertThat(m.getDirection()).isEqualTo(MessageDirection.IN);
         assertThat(m.getSource()).isEqualTo(MessageSource.CONTACT);
-        assertThat(m.getType()).isEqualTo("chat");
+        assertThat(m.getType()).isEqualTo("text");
         assertThat(m.getBody()).isEqualTo("hi");
         assertThat(m.getStatus()).isEqualTo(MessageStatus.PENDING);
         assertThat(m.getAck()).isZero();
@@ -330,6 +362,22 @@ class WaWebInboxListenerIT {
         assertThat(recorder.of(InboxEvents.MessageUpserted.class)).singleElement()
                 .satisfies(e -> assertThat(e.inserted()).isTrue());
         assertThat(recorder.of(InboxEvents.ChatReopened.class)).isEmpty();
+    }
+
+    @Test
+    void aRawTextIsStoredUnderMetasName() {
+        create(message("919911111111@c.us", false, T).put("type", "chat"));
+        assertThat(onlyMessage().getType()).isEqualTo("text");
+        assertThat(onlyChat().getLastMessage().type()).isEqualTo("text");
+    }
+
+    @Test
+    void aRawVoiceNoteIsStoredAsAudio() {
+        ObjectNode p = message("919911111111@c.us", false, T).put("type", "ptt");
+        p.remove("body");
+        create(p);
+        assertThat(onlyMessage().getType()).isEqualTo("audio");
+        assertThat(onlyChat().getLastMessage().type()).isEqualTo("audio");
     }
 
     @Test
@@ -498,6 +546,32 @@ class WaWebInboxListenerIT {
     }
 
     @Test
+    void ackOnAnInboundMessageChangesNothing() {
+        create(message("919911111111@c.us", false, T));
+        String id = onlyMessage().getWaMessageId();
+        recorder.events.clear();
+
+        ack(id, 3);
+
+        WaWebMessage m = onlyMessage();
+        assertThat(m.getStatus()).isEqualTo(MessageStatus.PENDING);
+        assertThat(m.getAck()).isZero();
+        assertThat(onlyChat().getLastMessage().status()).isEqualTo(MessageStatus.PENDING);
+        assertThat(recorder.events).isEmpty();
+    }
+
+    @Test
+    void inboundMessageCarryingAnAckIsStoredPending() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("ack", 3);
+        create(p);
+
+        WaWebMessage m = onlyMessage();
+        assertThat(m.getStatus()).isEqualTo(MessageStatus.PENDING);
+        assertThat(m.getAck()).isZero();
+    }
+
+    @Test
     void ackForUnknownMessageIsIgnored() {
         ack("true_919911111111@c.us_NOPE", 3);
         assertThat(messages.count()).isZero();
@@ -628,6 +702,25 @@ class WaWebInboxListenerIT {
         assertThat(m.getMedia().filename()).isEqualTo("a.pdf");
         assertThat(m.getMedia().size()).isEqualTo(99L);
         assertThat(onlyChat().getLastMessage().text()).isEqualTo("📄 a.pdf");
+    }
+
+    @Test
+    void businessMessageWithADocumentHeaderKeepsItsMedia() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        p.put("type", "interactive");
+        p.put("body", "");
+        p.put("caption", "Your invoice");
+        p.putObject("interactiveHeader").put("hasMediaAttachment", true).put("mediaType", "DOCUMENT");
+        p.put("directPath", "/v/t62/doc");
+        p.put("mimetype", "application/pdf");
+        p.put("filename", "invoice.pdf");
+        p.put("size", 4321);
+        create(p);
+
+        WaWebMessage m = onlyMessage();
+        assertThat(m.getType()).isEqualTo("interactive");
+        assertThat(m.getBody()).isEqualTo("Your invoice");
+        assertThat(m.getMedia()).isEqualTo(new WaWebMessage.Media("application/pdf", "invoice.pdf", 4321L, null, null));
     }
 
     @Test
@@ -792,7 +885,7 @@ class WaWebInboxListenerIT {
                 new org.springframework.dao.OptimisticLockingFailureException("stale"));
         InboxIngestService svc = new InboxIngestService(service, flaky, messages, actions, capturing, clock);
 
-        svc.ingestMessage(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
+        listenerWith(svc).on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919911111111@c.us", false, T), null, null));
 
         WaWebChat chat = onlyChat();
@@ -817,7 +910,7 @@ class WaWebInboxListenerIT {
                 new org.springframework.dao.OptimisticLockingFailureException("stale"));
         InboxIngestService svc = new InboxIngestService(service, flaky, messages, actions, capturing, clock);
 
-        svc.ingestMessage(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
+        listenerWith(svc).on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919911111111@c.us", false, T + 60), null, null));
 
         assertThat(onlyChat().getStatus()).isEqualTo(ChatStatus.OPEN);
@@ -837,7 +930,7 @@ class WaWebInboxListenerIT {
                 new org.springframework.dao.DuplicateKeyException("dup"));
         InboxIngestService svc = new InboxIngestService(service, chats, racing, actions, capturing, clock);
 
-        svc.ingestMessage(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create", payload, null, null));
+        listenerWith(svc).on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create", payload, null, null));
 
         assertThat(messages.count()).isEqualTo(1);
         assertThat(onlyChat().getUnreadCount()).isEqualTo(1);
@@ -1071,7 +1164,7 @@ class WaWebInboxListenerIT {
     @Test
     void listenerSwallowsErrors() {
         // a null payload never reaches the bus (LoggingEventListener would fail on it), so call the listener directly
-        WaWebInboxListener real = new WaWebInboxListener(
+        WaWebWebhookListener real = listenerWith(
                 new InboxIngestService(service, chats, messages, actions, publisher, clock));
         assertThatCode(() -> real.on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create", null, null, null)))
                 .doesNotThrowAnyException();
@@ -1086,7 +1179,7 @@ class WaWebInboxListenerIT {
         ContactService failing = mock(ContactService.class);
         doThrow(new IllegalStateException("db down")).when(failing)
                 .upsertFromChat(any(), any(), any(), any(), any(), any());
-        WaWebInboxListener listener = new WaWebInboxListener(
+        WaWebWebhookListener listener = listenerWith(
                 new InboxIngestService(failing, chats, messages, actions, publisher, clock));
         WhatsAppEvent event = new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919812345678@c.us", false, T), null, null);
@@ -1099,7 +1192,7 @@ class WaWebInboxListenerIT {
         ContactService failing = mock(ContactService.class);
         doThrow(new org.springframework.dao.DataAccessResourceFailureException("db down")).when(failing)
                 .upsertFromChat(any(), any(), any(), any(), any(), any());
-        WaWebInboxListener listener = new WaWebInboxListener(
+        WaWebWebhookListener listener = listenerWith(
                 new InboxIngestService(failing, chats, messages, actions, publisher, clock));
         WhatsAppEvent event = new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919812345678@c.us", false, T), null, null);
@@ -1113,7 +1206,7 @@ class WaWebInboxListenerIT {
     void failureInAnEventSubscriberDoesNotEscape() {
         ApplicationEventPublisher boom = mock(ApplicationEventPublisher.class);
         doThrow(new IllegalStateException("subscriber failed")).when(boom).publishEvent(any(Object.class));
-        WaWebInboxListener listener = new WaWebInboxListener(
+        WaWebWebhookListener listener = listenerWith(
                 new InboxIngestService(service, chats, messages, actions, boom, clock));
         WhatsAppEvent event = new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919812345678@c.us", false, T), null, null);

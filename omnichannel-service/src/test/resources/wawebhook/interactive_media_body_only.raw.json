@@ -1,0 +1,37 @@
+{
+  "id": {
+    "fromMe": false,
+    "remote": {
+      "server": "c.us",
+      "user": "919912345678",
+      "_serialized": "919912345678@c.us"
+    },
+    "id": "INT4",
+    "_serialized": "false_919912345678@c.us_INT4"
+  },
+  "type": "interactive",
+  "t": 1793872800,
+  "ack": 1,
+  "nativeFlowName": "quick_reply",
+  "interactiveType": "native_flow",
+  "interactiveHeader": {
+    "hasMediaAttachment": true,
+    "mediaType": "VIDEO"
+  },
+  "interactivePayload": {
+    "buttons": [
+      {
+        "name": "quick_reply",
+        "buttonParamsJson": "{\"display_text\": \"English\", \"id\": \"0004_hindi_0\"}"
+      }
+    ],
+    "messageParamsJson": "{}"
+  },
+  "body": "Choose a language",
+  "footer": "Reply below",
+  "hsmTag": "MARKETING",
+  "directPath": "/v/t62/x",
+  "mimetype": "video/mp4",
+  "filehash": "abc=",
+  "size": 1000
+}

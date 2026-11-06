@@ -34,7 +34,7 @@ class HistoryImportOpensWaitingIT extends HistoryImportTestBase {
     @Autowired TeamRepository teams;
     @Autowired PhoneNumberRepository phoneNumbers;
     @Autowired InboxSettingService settings;
-    @Autowired me.nageshk.omnichannel.service.inbox.InboxIngestService ingest;
+    @Autowired me.nageshk.omnichannel.service.inbox.history.FetchedMessageImporter importer;
 
     /** Seconds since the epoch, {@code ago} before the clock. */
     private long ago(Duration ago) {
@@ -125,7 +125,7 @@ class HistoryImportOpensWaitingIT extends HistoryImportTestBase {
             var imp = importChats("919811100001");
             var item = itemsOf(imp).getFirst();
             // a first pass stored the page, creating the chat, and the process died before noting it on the item
-            ingest.importMessage(new me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext(
+            importer.importMessage(new me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext(
                     imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId(), null, item.getId()), first);
             assertThat(itemsOf(imp).getFirst().getCreatedChatId()).isNull();
 
@@ -270,7 +270,7 @@ class HistoryImportOpensWaitingIT extends HistoryImportTestBase {
         old.setStatus(ChatStatus.CLOSED);
         old.setLastInboundAt(START.minus(Duration.ofHours(5)));
         old.setLastMessageAt(START.minus(Duration.ofHours(5)));
-        old.setLastMessage(new WaWebChat.LastMessage(me.nageshk.omnichannel.db.inbox.MessageDirection.IN, "chat",
+        old.setLastMessage(new WaWebChat.LastMessage(me.nageshk.omnichannel.db.inbox.MessageDirection.IN, "text",
                 "earlier", null));
         chats.save(old);
         try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {

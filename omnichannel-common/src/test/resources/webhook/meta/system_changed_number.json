@@ -1,0 +1,33 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "529870480213899",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "phone_number_id": "558214737370188",
+              "display_phone_number": "919999000003"
+            },
+            "messages": [
+              {
+                "from": "919999000011",
+                "id": "wamid.HBgMOTE4NTk1MjE1NTIzFQIAEhgKMjI4Mzg2MzcxMQA=",
+                "type": "system",
+                "timestamp": "1786170970",
+                "system": {
+                  "body": "User A changed from 919999000011 to 919999000012",
+                  "wa_id": "919999000012",
+                  "type": "user_changed_number"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
