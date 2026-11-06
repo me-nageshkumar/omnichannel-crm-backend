@@ -381,7 +381,7 @@ extension ──ws event──▶ BridgeWebSocketHandler ──WhatsAppEvent (ra
   from the chat as for a live status, `wa_web {chat_id, ack: 2|3|4, captured_at: <fetch time ms>, imported: true}`.
   When WhatsApp has no receipt for a state the row's ack implies, the event is still made with
   `wa_web.estimated: true`, timed by the **earliest real receipt of a later state** (a missing `delivered` takes the
-  `read` time, else the `played` time), and only when no later state has one by the **fetch time**. A message the
+  `read` time, else the `played` time), and only when no later state has one by the **fetch time**. The row's `statusTimes` are stamped from real receipts only: an estimated event never stamps a time, `statusTimes.estimatedAt` (the fetch time) is set instead so the next fetch does not ask again, and the event in the store keeps its estimated time. A message the
   page could not find or read comes back as `{id, error: true}` (or is missing from the answer): it gets no events
   and no times, so the row still lacks its time and the next fetch asks again. Each status is its own one-change `messages` event, stored with
   `ordinal` its position (0, 1, 2), the page's receipt object `{id, delivered, read, played}` as the raw of ordinal 0;

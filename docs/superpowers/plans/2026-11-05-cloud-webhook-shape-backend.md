@@ -494,6 +494,16 @@ Requested by the user on 2026-11-06. After a history page is stored, the outgoin
 - [ ] **Step 4: Run** — the above, then `./mvnw -q -pl omnichannel-service -am test` and `./mvnw -q -pl omnichannel-app -am test -Dtest='HistoryImportRunnerIT,HistoryImportRunnerPagingIT,HistoryImportNamesIT,HistoryImportRunnerEventsIT,ChannelWebhookEventStoreIT,WaWebWebhookListenerIT,WhatsAppWebhookProcessorIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: PASS.
 - [ ] **Step 5: Commit** — `feat: receipts of fetched messages as status events in sequence` (+ the page script files)
 
+### Task 13c: a row's status times come from real receipts only
+
+User decision 2026-11-06 ("stamp real only") after the live test: three September photos had no receipts, their `status:` events carry the fetch time with `wa_web.estimated: true` (correct for the store), but the rows were stamped with that time and the console showed "read 6 Nov" on a September message.
+
+**Change:** `InboxIngestService.storeStatus` (the imported-status path): the status still moves up (`applyAck` semantics), but the `statusTimes` entry is stamped only when the status's `wa_web.estimated` is not true. An estimated status therefore leaves the row's time empty (blue ticks, no time), exactly as before Task 13 — while the event in `channelWebhookEvents` keeps the estimated time. Live statuses are unchanged. `lacksStatusTime` must not re-ask forever for a row whose only receipts are estimated: `receiptsWanted` is false when the row's current-status time is empty **and** the row already has an estimated status event (simplest: `FetchedMessageImporter`/`importReceipts` skips a message whose receipts came back all-null the last time — check how the importer decides; acceptable alternative: the row gets a marker field `WaWebMessage.statusTimes.estimatedAt` (Instant, the fetch time) set instead of the state times, which both satisfies "no wrong time shown" and stops the re-ask; the console does not show it). Pick the marker approach: `StatusTimes.estimatedAt` set from an estimated event when the state's time is empty; `lacksStatusTime` is false when `estimatedAt` is set. Document it.
+
+**Files:** `InboxIngestService.java` (`storeStatus`/`stamp`, `lacksStatusTime`), `omnichannel-db/.../db/inbox/WaWebMessage.java` (`StatusTimes.estimatedAt`), `HistoryImportRunnerIT` (`aMissingDeliveredReceiptIsEstimatedFromTheReadOne` → the delivered time is **not** stamped, `estimatedAt` is; a fully estimated message → no state times, `estimatedAt` = fetch time, and a second fetch asks nothing for it), spec §5.3 and known-limits (the row's times come from real receipts only; an estimated event never stamps a time; `estimatedAt` records that the fetch tried), README if it describes the stamping.
+
+- [ ] Step 1: failing tests; Step 2: run `./mvnw -q -pl omnichannel-app -am test -Dtest='HistoryImportRunnerIT,HistoryImportReceiptsBatchIT' -Dsurefire.failIfNoSpecifiedTests=false`; Step 3: implement; Step 4: the above plus `./mvnw -q -pl omnichannel-service -am test`; Step 5: commit `fix: a fetched row's status times come from real receipts only` with the trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+
 ## Verification before the merge
 
 - `./mvnw -q verify` once in the worktree (all modules; expect every surefire report at 0 failures, 0 errors).

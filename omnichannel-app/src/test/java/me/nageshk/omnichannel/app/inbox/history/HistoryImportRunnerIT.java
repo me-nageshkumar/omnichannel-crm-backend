@@ -262,7 +262,9 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
             WaWebMessage row = messages.findAll().getFirst();
             assertThat(row.getStatus()).isEqualTo(MessageStatus.READ);
             assertThat(row.getStatusTimes().getDeliveredAt()).isEqualTo(Instant.ofEpochSecond(SENT + 100));
-            assertThat(row.getStatusTimes().getReadAt()).isEqualTo(START);
+            // an estimated event never stamps the row; estimatedAt records that the fetch tried
+            assertThat(row.getStatusTimes().getReadAt()).isNull();
+            assertThat(row.getStatusTimes().getEstimatedAt()).isEqualTo(START);
             List<Document> statuses = statusEvents();
             assertThat(statuses).extracting(d -> status(d).getString("status")).containsExactly("delivered", "read");
             assertThat(status(statuses.get(0)).get("wa_web", Document.class).containsKey("estimated")).isFalse();
@@ -284,8 +286,9 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
 
             WaWebMessage row = messages.findAll().getFirst();
             assertThat(row.getStatusTimes().getReadAt()).isEqualTo(Instant.ofEpochSecond(SENT + 200));
-            assertThat(row.getStatusTimes().getDeliveredAt()).isEqualTo(row.getStatusTimes().getReadAt());
-            // the same second: the order they were generated in keeps delivered first
+            assertThat(row.getStatusTimes().getDeliveredAt()).isNull();
+            assertThat(row.getStatusTimes().getEstimatedAt()).isEqualTo(START);
+            // the event keeps the read time, in the same second: the order they were generated in keeps delivered first
             List<Document> statuses = statusEvents();
             assertThat(statuses).extracting(d -> status(d).getString("status")).containsExactly("delivered", "read");
             Document delivered = status(statuses.get(0));
@@ -411,7 +414,37 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
             assertThat(device.requests("messageInfo")).hasSize(1);
             WaWebMessage.StatusTimes after = messages.findAll().getFirst().getStatusTimes();
             assertThat(after.getDeliveredAt()).isEqualTo(times.getDeliveredAt());
-            assertThat(after.getReadAt()).isEqualTo(START);
+            assertThat(after.getReadAt()).isNull();
+            assertThat(after.getEstimatedAt()).isEqualTo(START);
+        }
+    }
+
+    @Test
+    void aFullyEstimatedMessageGetsNoTimesAndIsNotAskedAgain() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 3, "no receipts");
+            device.chats.put(A, List.of(out));
+            device.receipt(out, null, null, null);
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+
+            WaWebMessage.StatusTimes times = row(out).getStatusTimes();
+            assertThat(row(out).getStatus()).isEqualTo(MessageStatus.READ);
+            assertThat(times.getDeliveredAt()).isNull();
+            assertThat(times.getReadAt()).isNull();
+            assertThat(times.getEstimatedAt()).isEqualTo(START);
+            List<Object> first = statusEvents().stream().map(d -> d.get("_id")).toList();
+            assertThat(first).hasSize(2);
+            assertThat(statusEvents()).allSatisfy(d -> assertThat(status(d).getString("timestamp"))
+                    .isEqualTo(String.valueOf(START.getEpochSecond())));
+
+            clock.set(START.plusSeconds(3600));
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+
+            assertThat(device.requests("messageInfo")).hasSize(1);
+            assertThat(row(out).getStatusTimes().getEstimatedAt()).isEqualTo(START);
+            assertThat(statusEvents()).extracting(d -> d.get("_id")).containsExactlyElementsOf(first);
         }
     }
 

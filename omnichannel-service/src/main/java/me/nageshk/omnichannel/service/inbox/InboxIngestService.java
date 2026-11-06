@@ -298,12 +298,23 @@ public class InboxIngestService {
     private static boolean lacksStatusTime(WaWebMessage message) {
         WaWebMessage.StatusTimes t = message.getStatusTimes();
         if (t == null) return true;
+        if (t.getEstimatedAt() != null) return false; // a fetch already tried and WhatsApp had no receipt
         return switch (message.getStatus()) {
             case DELIVERED -> t.getDeliveredAt() == null;
             case READ -> t.getReadAt() == null;
             case PLAYED -> t.getPlayedAt() == null;
             default -> false;
         };
+    }
+
+    private static boolean isEstimated(Status status) {
+        return status.waWeb() != null && Boolean.TRUE.equals(status.waWeb().estimated());
+    }
+
+    /** When the fetch ran ({@code wa_web.captured_at}), else now. */
+    private Instant fetchTimeOf(Status status) {
+        Long ms = status.waWeb().capturedAt();
+        return ms == null ? clock.instant() : Instant.ofEpochMilli(ms);
     }
 
     private static boolean isImported(Status status) {
@@ -473,7 +484,8 @@ public class InboxIngestService {
         // a fetched message's receipt carries WhatsApp's time; a live status has none of its own
         boolean changed = isImported(status)
                 ? applyReceipt(message, MessageFields.ackOf(status),
-                        MessageFields.timestampOf(status.timestamp(), clock.instant()))
+                        MessageFields.timestampOf(status.timestamp(), clock.instant()), isEstimated(status)
+                                ? fetchTimeOf(status) : null)
                 : applyAck(message, MessageFields.ackOf(status), clock.instant());
         if (changed) {
             message = messages.save(message);
@@ -554,14 +566,33 @@ public class InboxIngestService {
     /**
      * A receipt of a fetched message: {@link #applyAck} with the receipt's time, and also the time of a state the row
      * is already at or past (the fetch set its status without times). The first time stays; returns whether anything
-     * changed.
+     * changed. An estimated receipt ({@code estimatedAt} the fetch time, else null) moves the status up but never
+     * stamps a time: the row's times come from real receipts only, and {@code estimatedAt} is set instead, so the next
+     * fetch does not ask again.
      */
-    static boolean applyReceipt(WaWebMessage message, int ack, Instant at) {
-        if (applyAck(message, ack, at)) return true;
+    static boolean applyReceipt(WaWebMessage message, int ack, Instant at, Instant estimatedAt) {
         MessageStatus state = MessageStatus.ofAck(ack);
-        if (state == MessageStatus.PENDING || state == MessageStatus.FAILED) return false;
-        if (!message.getStatus().isAtLeast(state)) return false;
-        return stamp(message, state, at);
+        if (estimatedAt == null) {
+            if (applyAck(message, ack, at)) return true;
+            if (state == MessageStatus.PENDING || state == MessageStatus.FAILED) return false;
+            if (!message.getStatus().isAtLeast(state)) return false;
+            return stamp(message, state, at);
+        }
+        boolean moved = applyAck(message, ack, null);
+        if (state == MessageStatus.PENDING || state == MessageStatus.FAILED) return moved;
+        if (!message.getStatus().isAtLeast(state)) return moved;
+        if (message.getStatusTimes() == null) message.setStatusTimes(new WaWebMessage.StatusTimes());
+        WaWebMessage.StatusTimes t = message.getStatusTimes();
+        Instant real = switch (state) {
+            case SENT -> t.getSentAt();
+            case DELIVERED -> t.getDeliveredAt();
+            case READ -> t.getReadAt();
+            case PLAYED -> t.getPlayedAt();
+            default -> null;
+        };
+        if (real != null || t.getEstimatedAt() != null) return moved;
+        t.setEstimatedAt(estimatedAt);
+        return true;
     }
 
     /** Sets the time {@code state} was reached unless one is set; returns whether it set it. */
