@@ -183,6 +183,7 @@ not have:
 | `vcards` | `contacts` messages | the vCard texts, for the console's card rendering |
 | `captured_at` | message, echo, status | the extension's capture time (ms), when it had one |
 | `body` | `unsupported`, `album`, an `order` without a title | what the person wrote (the caption, else a body that is no thumbnail) when Meta's shape has no place for it; the store reads it as the row's body |
+| `imported` | message, echo | true on a message the history import fetched and stored (§5.3); absent on a live one |
 
 Types Meta does not have keep WhatsApp Web's name as `type` and get a type-named object, following Meta's own
 convention (the object is named after the type): `poll_creation`, `poll_vote`, `call_log`, `revoked`,
@@ -364,7 +365,11 @@ extension ──ws event──▶ BridgeWebSocketHandler ──WhatsAppEvent (ra
   no model came back stays.
 - `HistoryImportRunner` converts each fetched model with `converter.message(m)` or `converter.echo(m)` by `fromMe`
   and calls the typed `importMessage(ImportContext, Message | MessageEcho)`; the import's own rules (closed chats, no
-  unread, no status times) stay.
+  unread, no status times) stay. Before the import, `FetchedMessageImporter` stores each converted model in
+  `channelWebhookEvents` as a one-change event (`messages` with its contact, or `smb_message_echoes`) marked
+  `wa_web.imported: true`, with the raw model kept (the user's choice, 2026-11-06), `seq` absent, `capturedAt` the
+  fetch time and `ordinal` 0. It stores no status event: a fetched echo's ack is in `wa_web.ack`. A refetch of the
+  same message stores nothing (its `eventKey`, §5.4). Live events have no `wa_web.imported`.
 
 After this, `MessagePayloads` is deleted and `LoggingEventListener.wid/messageId` are the only raw readers left
 outside the converter (they log, they do not store) — or they call the converter's id helpers. **(my call)**
@@ -372,11 +377,25 @@ outside the converter (they log, they do not store) — or they call the convert
 ### 5.4 Persisted webhook events: collection `channelWebhookEvents`
 
 ```
-id
+id: <an ObjectId made from the event's own time>
+eventKey: <what the event is about; unique; absent on a shell>
 event: <the webhook event as JSON; says its origin (object), workspace (entry.id) and number>
 raw: <the bridge payload as JSON, capped; on the first document of a bridge event only>, rawDropped
 seq, capturedAt, ordinal, creationTime
 ```
+
+- `eventKey` makes a replayed bridge event or a refetched history message insert nothing. It is read from the single
+  change's value: `message:<id>` for a live message or echo, `history:<id>` for one the history import wrote,
+  `status:<id>:<status>` for a status (one per state), `vote:<id>:<timestamp>` for a message or echo of type
+  `poll_vote` (its id is already `vote:<poll>:<voter>`), none for a shell. A unique **sparse** index
+  `eventKey_unique` holds it. The store inserts (never upserts); a duplicate key means the event is already stored:
+  logged at DEBUG, the stored document returned, nothing thrown. A live message and its imported copy are two
+  documents (`message:` and `history:`).
+- `_id` is `new ObjectId(<event time>)`, the event time being the message's or status's `timestamp`, else
+  `capturedAt`, else now. Sorting by `_id` is conversation order: a fetched two-day-old message sorts into its place,
+  and a status sorts at its own time, not beside its message. Two caveats: the time is in seconds, and events of the
+  same second sort by the order they were generated in (the ObjectId counter), not by WhatsApp's order.
+  `creationTime` keeps the insertion time and drives the expiry.
 
 - `ordinal` is the 0-based position of the event among those one bridge event gave: 0 for the first (or only), 1 for
   the status event that follows an echo. The documents of one `seq` keep their order however they are sorted. A real
@@ -389,7 +408,9 @@ seq, capturedAt, ordinal, creationTime
   cannot be converted, `event` is a shell (`object`, `entry[0].id`, one change whose value has only
   `messaging_product` and `metadata`) so the raw is still found by number **(my call)**.
 
-- Indexes: `(event.entry.changes.value.metadata.phone_number_id, creationTime desc)` (name `number_time`; cleanup of a number deletes by that path), TTL on `creationTime` with `omnichannel.webhooks.retention`
+- Indexes: `(event.entry.changes.value.metadata.phone_number_id, _id desc)` (name `number_order`, which replaced
+  `number_time` on `creationTime`; cleanup of a number deletes by that path), `eventKey_unique` (unique, sparse), TTL
+  on `creationTime` with `omnichannel.webhooks.retention`
   (default `30d`) created programmatically at startup so the property rules **(my call)**.
 - `raw` is kept when `omnichannel.webhooks.keep-raw` is true (default) and the payload is at most
   `omnichannel.webhooks.raw-max-bytes` (default 65 536) as JSON; larger payloads store `raw: null` and

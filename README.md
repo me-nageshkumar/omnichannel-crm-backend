@@ -70,8 +70,12 @@ collection `channelWebhookEvents` before the inbox processes it (model in `omnic
 capture time, and, when `keep-raw` is on and the payload is under `raw-max-bytes`, the raw payload as WhatsApp Web sent it. Each event
 holds one entry with one change, as Meta sends them; our own message whose ack already has a status gives two events,
 the echo then its status, stored as two documents with the same `seq` and `ordinal` 0 and 1 (the raw is on the first
-only), and the inbox processes them together as one write. A TTL index removes
-documents after `retention`. There is no endpoint for it; read it in MongoDB. Configuration (`omnichannel.webhooks.*`,
+only), and the inbox processes them together as one write. The history import stores each fetched message the
+same way, marked `wa_web.imported: true`, with its raw. Each document has an `eventKey` (`message:<id>`,
+`history:<id>`, `status:<id>:<status>`, `vote:<id>:<timestamp>`; none when the conversion failed) under a unique
+index, so a replayed event or a refetched message is stored once. The `_id` is made from the event's own time (the
+message's or status's timestamp, to the second), so sorting by `_id` gives conversation order; `creationTime` is when
+it was stored. A TTL index on `creationTime` removes documents after `retention`. There is no endpoint for it; read it in MongoDB. Configuration (`omnichannel.webhooks.*`,
 defaults):
 
 - `retention` 30d: how long a stored event is kept.

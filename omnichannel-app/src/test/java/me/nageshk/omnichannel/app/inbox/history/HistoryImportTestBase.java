@@ -6,6 +6,7 @@ import java.util.Set;
 import me.nageshk.omnichannel.app.support.MutableClock;
 import me.nageshk.omnichannel.app.support.TestDevices;
 import me.nageshk.omnichannel.app.support.TestUsers;
+import me.nageshk.omnichannel.db.channel.ChannelWebhookEvent;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatAction;
@@ -115,7 +116,7 @@ abstract class HistoryImportTestBase {
     private void clean() {
         testUsers.deleteAll();
         for (Class<?> c : List.of(WaWebHistoryImport.class, WaWebHistoryImportChat.class, WaWebChat.class,
-                WaWebMessage.class, WaWebChatAction.class, Contact.class)) {
+                WaWebMessage.class, WaWebChatAction.class, Contact.class, ChannelWebhookEvent.class)) {
             mongo.remove(new Query(), c);
         }
         clock.set(START);

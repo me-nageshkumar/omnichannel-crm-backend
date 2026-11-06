@@ -20,7 +20,9 @@ import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.rpc.Envelope;
+import org.bson.Document;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -127,6 +129,60 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
             assertThat(done.getCounts().messagesSeen()).isEqualTo(5);
             assertThat(messages.count()).isEqualTo(5);
         }
+    }
+
+    @Test
+    void aFetchStoresOneEventPerMessageWithTheRaw() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            seedTwoChats(device);
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            List<Document> events = webhookEvents();
+            assertThat(events).hasSize(5);
+            // the id is the message's own time, so the events sort in conversation order across chats
+            assertThat(events).extracting(d -> d.get("raw", Document.class).getString("body"))
+                    .containsExactly("a1", "b1", "a2", "b2", "a3");
+            assertThat(events).allSatisfy(d -> {
+                Document value = d.get("event", Document.class).getList("entry", Document.class).getFirst()
+                        .getList("changes", Document.class).getFirst().get("value", Document.class);
+                List<Document> items = value.containsKey("messages") ? value.getList("messages", Document.class)
+                        : value.getList("message_echoes", Document.class);
+                assertThat(items).hasSize(1);
+                assertThat(items.getFirst().get("wa_web", Document.class).getBoolean("imported")).isTrue();
+                assertThat(d.getString("eventKey")).isEqualTo("history:" + items.getFirst().getString("id"));
+                assertThat(value.containsKey("statuses")).isFalse();
+                assertThat(d.get("seq")).isNull();
+                assertThat(d.getInteger("ordinal")).isZero();
+                assertThat(d.get("capturedAt")).isNotNull();
+            });
+            assertThat(events).filteredOn(d -> d.get("event", Document.class).getList("entry", Document.class)
+                    .getFirst().getList("changes", Document.class).getFirst().get("value", Document.class)
+                    .containsKey("message_echoes")).hasSize(2);
+        }
+    }
+
+    @Test
+    void aSecondFetchStoresNoNewEvent() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            seedTwoChats(device);
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+            List<Object> first = webhookEvents().stream().map(d -> d.get("_id")).toList();
+
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+
+            assertThat(webhookEvents()).extracting(d -> d.get("_id")).containsExactlyElementsOf(first);
+            assertThat(first).hasSize(5);
+        }
+    }
+
+    /** The stored webhook events of {@code n1}, in {@code _id} order. */
+    List<Document> webhookEvents() {
+        return mongo.find(new Query(Criteria.where("event.entry.changes.value.metadata.phone_number_id")
+                .is(n1.getId())).with(Sort.by("_id")), Document.class, "channelWebhookEvents");
     }
 
     @Test

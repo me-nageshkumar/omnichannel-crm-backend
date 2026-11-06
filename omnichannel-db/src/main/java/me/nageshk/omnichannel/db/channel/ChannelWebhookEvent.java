@@ -7,21 +7,29 @@ import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
  * One converted webhook event, kept for the retention period. The {@code creationTime_ttl} index is created by the
- * store (its expiry comes from a property), not by an annotation.
+ * store (its expiry comes from a property), not by an annotation. The id is made from the event's own time (the
+ * message's or status's timestamp), so {@code _id} order is conversation order; {@code creationTime} is when it was
+ * stored.
  */
 @Document("channelWebhookEvents")
-@CompoundIndex(name = "number_time",
-        def = "{'event.entry.changes.value.metadata.phone_number_id': 1, 'creationTime': -1}")
+@CompoundIndex(name = "number_order", def = "{'event.entry.changes.value.metadata.phone_number_id': 1, '_id': -1}")
 @Getter
 @Setter
 public class ChannelWebhookEvent {
 
     @Id
     private String id;
+    /**
+     * What the event is about, so a replayed or refetched event is stored once: {@code message:<id>},
+     * {@code history:<id>}, {@code status:<id>:<status>} or {@code vote:<id>:<timestamp>}; null on a shell.
+     */
+    @Indexed(unique = true, sparse = true, name = "eventKey_unique")
+    private String eventKey;
     /** The webhook JSON (snake_case keys); says its own origin, workspace and number. */
     private Map<String, Object> event;
     /**

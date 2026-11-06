@@ -101,5 +101,8 @@ Spec `specs/2026-11-05-cloud-webhook-shape-design.md` (§7), plus what the revie
 - The migration (`MessageTypeMigration`) renames only the table in spec §4.7; older `rich_response` and `product`
   rows keep their names.
 - The console accepts the old and the new type names for one release; console plan Task C2 drops the old ones.
+- `_id` of a webhook event is the event's time, not the insertion time; `creationTime` is. The time is in seconds, so
+  events of one second sort by the order they were generated in, and two changes of one voter's poll vote within
+  one second are stored once (`vote:<id>:<timestamp>`), though both are processed.
 - A poll vote's time is kept to the second (the webhook `timestamp`), so a live vote and an imported vote of the same
   voter within one second may be ordered wrongly; main kept milliseconds.

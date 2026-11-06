@@ -42,8 +42,8 @@ public final class WaWebWebhookConverter {
 
     private static final Logger log = LoggerFactory.getLogger(WaWebWebhookConverter.class);
 
-    static final String CHANGE_FIELD = "messages";
-    static final String ECHO_FIELD = "smb_message_echoes";
+    public static final String CHANGE_FIELD = "messages";
+    public static final String ECHO_FIELD = "smb_message_echoes";
     /**
      * WhatsApp's own notices, such as "this chat is with a business": no text (the phone draws the words) and not part
      * of the conversation. By type only, as a dropped notice is gone for good and a flag on an unknown type must not.
@@ -161,7 +161,7 @@ public final class WaWebWebhookConverter {
                 "WhatsApp Web reported the message as failed", null, null)) : null;
         long seconds = (at == null ? Instant.now() : at).getEpochSecond();
         WaWeb waWeb = new WaWeb(chatId, ack, null, null, null, null, null, null, null, null,
-                at == null ? null : at.toEpochMilli(), null);
+                at == null ? null : at.toEpochMilli(), null, null);
         return new Status(messageId, status, String.valueOf(seconds), recipientDigits, lidUser, null, null, errors, null,
                 waWeb);
     }
@@ -432,7 +432,7 @@ public final class WaWebWebhookConverter {
                 referral == null ? null : adRaw(ctx), referral == null ? null : adText(ctx.path("sourceApp")),
                 referral == null ? null : adText(ctx.path("conversionSource")), vcards,
                 capturedAt == null ? null : capturedAt.toEpochMilli(),
-                carriesNoText(type, ext) ? rawText(raw, rawType) : null);
+                carriesNoText(type, ext) ? rawText(raw, rawType) : null, null);
     }
 
     /** True for a Meta shape with no place for what a person wrote. */

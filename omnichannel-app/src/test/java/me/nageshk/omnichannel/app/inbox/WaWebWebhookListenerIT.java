@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import me.nageshk.omnichannel.app.support.TestUsers;
+import me.nageshk.omnichannel.db.channel.ChannelWebhookEvent;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.contact.ContactSource;
@@ -34,6 +35,7 @@ import me.nageshk.omnichannel.service.contact.ContactService;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService;
+import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -130,7 +132,8 @@ class WaWebWebhookListenerIT {
 
     private void clean() {
         testUsers.deleteAll();
-        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class))
+        for (Class<?> c : List.of(WaWebChat.class, WaWebMessage.class, WaWebChatAction.class,
+                ChannelWebhookEvent.class))
             mongo.remove(new Query(), c);
         recorder.events.clear();
     }
@@ -192,6 +195,20 @@ class WaWebWebhookListenerIT {
         var list = p.putArray("options");
         for (int o : options) list.add(o);
         publish("vote_update", p);
+    }
+
+    @Test
+    void aReplayedBridgeEventIsStoredOnceAndStillProcessed() {
+        ObjectNode p = message("919911111111@c.us", false, T);
+        create(p);
+        create(p);
+
+        List<Document> stored = mongo.findAll(Document.class, "channelWebhookEvents");
+        assertThat(stored).singleElement().satisfies(d -> {
+            assertThat(d.getString("eventKey")).isEqualTo("message:false_919911111111@c.us_ABC" + T);
+            assertThat(d.getObjectId("_id").getTimestamp()).isEqualTo((int) T);
+        });
+        assertThat(onlyMessage().getBody()).isEqualTo("hi");
     }
 
     @Test

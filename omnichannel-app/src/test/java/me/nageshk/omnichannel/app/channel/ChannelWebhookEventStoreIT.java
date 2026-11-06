@@ -12,6 +12,8 @@ import java.util.Map;
 import me.nageshk.omnichannel.common.channel.ChannelContext;
 import me.nageshk.omnichannel.common.channel.ChannelKind;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Change;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Status;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Value;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WebhookEvent;
 import me.nageshk.omnichannel.common.config.OmnichannelProperties;
@@ -20,6 +22,7 @@ import me.nageshk.omnichannel.db.channel.ChannelWebhookEventRepository;
 import me.nageshk.omnichannel.service.channel.ChannelWebhookEventStore;
 import me.nageshk.omnichannel.service.inbox.InboxCleanup;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,6 +58,11 @@ class ChannelWebhookEventStoreIT {
 
     private static WebhookEvent event(ChannelContext ctx) {
         return WebhookEvent.of(ctx, List.of(new Change("messages", Value.of(ctx))));
+    }
+
+    private static WebhookEvent message(ChannelContext ctx, String id, String timestamp) {
+        return WebhookEvent.of(ctx, List.of(new Change("messages", Value.of(ctx).withMessages(
+                List.of(Message.text(id, "919811100001", null, timestamp, "hi", null))))));
     }
 
     private JsonNode json(String s) {
@@ -136,7 +144,7 @@ class ChannelWebhookEventStoreIT {
     @Test
     void aWriteFailureIsLoggedNotThrown() {
         MongoTemplate broken = mock(MongoTemplate.class);
-        when(broken.save(any(ChannelWebhookEvent.class))).thenThrow(new DataAccessResourceFailureException("down"));
+        when(broken.insert(any(ChannelWebhookEvent.class))).thenThrow(new DataAccessResourceFailureException("down"));
         ChannelWebhookEventStore s = new ChannelWebhookEventStore(broken, mapper, props);
 
         ChannelContext c = ctx("p1");
@@ -188,9 +196,74 @@ class ChannelWebhookEventStoreIT {
     }
 
     @Test
-    void theNumberIndexExists() {
-        assertThat(mongo.indexOps(ChannelWebhookEvent.class).getIndexInfo()).anyMatch(i ->
-                i.getIndexFields().stream().map(f -> f.getKey()).toList()
-                        .equals(List.of("event.entry.changes.value.metadata.phone_number_id", "creationTime")));
+    void theNumberOrderIndexExists() {
+        var indexes = mongo.indexOps(ChannelWebhookEvent.class).getIndexInfo();
+        assertThat(indexes).anyMatch(i -> i.getName().equals("number_order")
+                && i.getIndexFields().stream().map(f -> f.getKey()).toList()
+                        .equals(List.of("event.entry.changes.value.metadata.phone_number_id", "_id")));
+        assertThat(indexes).noneMatch(i -> i.getIndexFields().stream().map(f -> f.getKey()).toList()
+                .equals(List.of("event.entry.changes.value.metadata.phone_number_id", "creationTime")));
+        assertThat(indexes).anyMatch(i -> i.getName().equals("eventKey_unique") && i.isUnique() && i.isSparse());
+    }
+
+    @Test
+    void aRepeatedEventIsStoredOnce() {
+        ChannelContext c = ctx("p1");
+        ChannelWebhookEvent first = store.save(c, message(c, "m1", "1700000000"), json("{\"id\":\"m1\"}"), 1L,
+                null, 0);
+        ChannelWebhookEvent again = store.save(c, message(c, "m1", "1700000000"), json("{\"id\":\"m1\"}"), 2L,
+                null, 0);
+
+        assertThat(repo.count()).isEqualTo(1);
+        assertThat(first.getEventKey()).isEqualTo("message:m1");
+        assertThat(again).isNotNull();
+        assertThat(again.getId()).isEqualTo(first.getId());
+        assertThat(again.getSeq()).isEqualTo(1L);
+    }
+
+    @Test
+    void anImportedEventIsKeyedApartFromTheLiveOne() {
+        ChannelContext c = ctx("p1");
+        store.save(c, message(c, "m1", "1700000000"), null, 1L, null, 0, false);
+        store.save(c, message(c, "m1", "1700000000"), null, null, null, 0, true);
+        store.save(c, message(c, "m1", "1700000000"), null, null, null, 0, true);
+
+        assertThat(mongo.findAll(Document.class, "channelWebhookEvents"))
+                .extracting(d -> d.getString("eventKey")).containsExactlyInAnyOrder("message:m1", "history:m1");
+    }
+
+    @Test
+    void theIdCarriesTheEventsTime() {
+        ChannelContext c = ctx("p1");
+        Instant before = Instant.now().minusSeconds(1);
+        ChannelWebhookEvent saved = store.save(c, message(c, "m1", "1700000000"), json("{}"), 1L,
+                Instant.parse("2026-11-05T10:00:00Z"), 0);
+        Status read = new Status("m2", "read", "1700000500", "919811100001", null, null, null, null, null, null);
+        ChannelWebhookEvent status = store.save(c,
+                WebhookEvent.of(c, List.of(new Change("messages", Value.of(c).withStatuses(List.of(read))))),
+                json("{}"), 2L, null, 0);
+
+        assertThat(new ObjectId(saved.getId()).getTimestamp()).isEqualTo(1_700_000_000);
+        assertThat(new ObjectId(status.getId()).getTimestamp()).isEqualTo(1_700_000_500);
+        Document d = mongo.findById(new ObjectId(saved.getId()), Document.class, "channelWebhookEvents");
+        assertThat(d).isNotNull();
+        assertThat(d.get("_id")).isInstanceOf(ObjectId.class);
+        // the insertion time stays in creationTime, which the expiry runs on
+        assertThat(repo.findById(saved.getId()).orElseThrow().getCreationTime()).isAfter(before);
+        assertThat(status.getEventKey()).isEqualTo("status:m2:read");
+    }
+
+    @Test
+    void aShellHasNoKey() {
+        ChannelContext c = ctx("p1");
+        Instant at = Instant.parse("2026-11-05T10:00:00Z");
+        ChannelWebhookEvent a = store.save(c, null, json("{\"body\":\"hi\"}"), 1L, at, 0);
+        ChannelWebhookEvent b = store.save(c, null, json("{\"body\":\"hi\"}"), 1L, at, 0);
+
+        assertThat(repo.count()).isEqualTo(2);
+        assertThat(new ObjectId(a.getId()).getTimestamp()).isEqualTo((int) at.getEpochSecond());
+        assertThat(mongo.findAll(Document.class, "channelWebhookEvents"))
+                .allSatisfy(d -> assertThat(d).doesNotContainKey("eventKey"));
+        assertThat(b.getEventKey()).isNull();
     }
 }

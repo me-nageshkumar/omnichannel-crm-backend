@@ -27,4 +27,10 @@ public record Message(
                 new Text(body), null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, waWeb);
     }
+
+    public Message withWaWeb(WaWeb waWeb) {
+        return new Message(from, fromUserId, id, timestamp, type, context, referral, errors, text, image, video, audio,
+                document, sticker, location, contacts, button, interactive, order, system, pollCreation, pollVote,
+                callLog, revoked, bizContentPlaceholder, newsletterFollowerInvite, album, waWeb);
+    }
 }

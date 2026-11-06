@@ -413,6 +413,42 @@ Requested by the user on 2026-11-06: Meta never sends more than one object in `c
 - [ ] **Step 4: Run** — the above, then `./mvnw -q -pl omnichannel-app -am test -Dtest='WhatsAppWebhookProcessorIT,WaWebWebhookListenerIT,ChannelWebhookEventStoreIT,InboxSendIT,HistoryImportRunnerIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: PASS.
 - [ ] **Step 5: Commit** — `feat: one change per webhook event; an echo and its status are two events in sequence`
 
+### Task 12: History events in the store, an idempotency key, and `_id` in conversation order
+
+Requested by the user on 2026-11-06. Three changes to `channelWebhookEvents`, all in one task because they share the store and its tests.
+
+**A. Idempotency key.** Every stored event with a converted `event` gets `eventKey`, derived from the event's content:
+- an inbound message or an echo from a live bridge event: `message:<message id>`
+- a message or echo written by the history import: `history:<message id>`
+- a status: `status:<message id>:<status>` (one per state)
+- a poll vote (a message of type `poll_vote`): `vote:<vote message id>:<timestamp>` (the vote message id is already `vote:<poll>:<voter>`)
+- a raw-only shell (conversion failed, `event` is the minimal shell): no key
+A unique **sparse** index `eventKey_unique` on `eventKey`. The store inserts (never upserts); a `DuplicateKeyException` means the event exists: log at DEBUG, return the existing document (or null), never throw. Keys are computed by a small helper `WebhookEventKeys.of(WebhookEvent event, boolean imported)` in `me.nageshk.omnichannel.service.channel`, from the single change's value (`messages[0]`, `message_echoes[0]`, `statuses[0]`).
+
+**B. `_id` from the event's own time.** The store sets the document's id to `new ObjectId(Date.from(eventTime)).toHexString()` where `eventTime` is the message's or status's `timestamp` (seconds, as a string, from the same single change), else `capturedAt`, else now. So sorting by `_id` gives conversation order (a fetched two-day-old message lands in its place), while `creationTime` keeps the insertion time and the TTL. Replace the compound index `number_time` with `number_order`: `{'event.entry.changes.value.metadata.phone_number_id': 1, '_id': -1}`.
+
+**C. History events.** `FetchedMessageImporter` stores one event per fetched message (the converted `Message`/`MessageEcho` wrapped as a one-change `WebhookEvent` through `WebhookEvent.of`/`Value.of`), with a new `WaWeb.imported` (Boolean, wire `imported`) set to `true`, **the raw payload kept** (the user's choice), `seq = null`, `capturedAt` = the fetch time, `ordinal 0`, before calling the typed import. A repeat fetch of the same message inserts nothing (A). Live events have `imported` absent (null).
+
+**Files:**
+- Modify: `omnichannel-common/.../webhook/WaWeb.java` (+ `imported`), its tests/goldens if a factory signature changes (keep `wa_web.imported` absent on live goldens: null is omitted)
+- Modify: `omnichannel-db/.../db/channel/ChannelWebhookEvent.java` (+ `eventKey`; index `number_order`; `@Indexed(unique = true, sparse = true, name = "eventKey_unique") eventKey`)
+- Create: `omnichannel-service/.../service/channel/WebhookEventKeys.java`
+- Modify: `omnichannel-service/.../service/channel/ChannelWebhookEventStore.java` (`save(ctx, event, raw, seq, capturedAt, ordinal, imported)` or an overload; key, id, insert + duplicate handling)
+- Modify: `omnichannel-service/.../service/inbox/history/FetchedMessageImporter.java` (store before import; needs the `ChannelContext` it already builds and the store)
+- Tests: `WebhookEventKeysTest` (the four key forms + no key for a shell), `ChannelWebhookEventStoreIT` (`aRepeatedEventIsStoredOnce`: two saves of the same event → one document; `theIdCarriesTheEventsTime`: `new ObjectId(id).getTimestamp()` equals the message timestamp seconds; `aShellHasNoKey`; `theNumberOrderIndexExists`), `HistoryImportRunnerIT` (`aFetchStoresOneEventPerMessageWithTheRaw`: after an import, one document per fetched message, `wa_web.imported true`, `raw` present; `aSecondFetchStoresNoNewEvent`), `WaWebWebhookListenerIT` or the processor IT (a live replay of the same bridge event stores one document — optional if the store IT covers it)
+- Docs: spec §5.3 (history events, raw kept), §5.4 (`eventKey`, the `_id` rule with its two caveats: seconds resolution and same-second ties by generation order; a status sorts at its own time), README paragraph; `known-limits.md`: "`_id` of a webhook event is the event's time, not the insertion time; `creationTime` is"
+- Plan: append this text as "### Task 12 …" after Task 11
+
+**Interfaces:**
+- Consumes: `WebhookEvent.of`, `Value.of`, `ChannelContext`, `InboxDevices.digitsOf`, the store.
+- Produces: `WaWeb.imported`, `ChannelWebhookEvent.eventKey`, `WebhookEventKeys.of`, the store's new signature.
+
+- [ ] **Step 1: Write the failing tests** (above).
+- [ ] **Step 2: Run** — `./mvnw -q -pl omnichannel-service -am test -Dtest='WebhookEventKeysTest' -Dsurefire.failIfNoSpecifiedTests=false`; `./mvnw -q -pl omnichannel-app -am test -Dtest='ChannelWebhookEventStoreIT,HistoryImportRunnerIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** — the above, then `./mvnw -q -pl omnichannel-service -am test` and `./mvnw -q -pl omnichannel-app -am test -Dtest='WhatsAppWebhookProcessorIT,WaWebWebhookListenerIT,InboxSendIT,HistoryImportRunnerPagingIT,HistoryImportNamesIT,HistoryImportRunnerEventsIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: PASS.
+- [ ] **Step 5: Commit** — `feat: history events in the webhook store, an idempotency key, and _id in conversation order`
+
 ## Verification before the merge
 
 - `./mvnw -q verify` once in the worktree (all modules; expect every surefire report at 0 failures, 0 errors).

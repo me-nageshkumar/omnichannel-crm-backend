@@ -181,7 +181,7 @@ final class WaWebExtensionTypes {
         String ts = String.valueOf(when.getEpochSecond());
         PollVote vote = new PollVote(pollId, options);
         WaWeb waWeb = new WaWeb(chatId, null, null, null, null, null, null, null, null, null,
-                capturedAt == null ? null : capturedAt.toEpochMilli(), null);
+                capturedAt == null ? null : capturedAt.toEpochMilli(), null, null);
         if (p.path("fromMe").asBoolean(false)) {
             String to = chatId.endsWith("@c.us") ? WaIds.user(chatId) : null;
             MessageEcho e = new MessageEcho(ctx.displayPhoneNumber(), to, id, ts, "poll_vote", null, null, null, null,

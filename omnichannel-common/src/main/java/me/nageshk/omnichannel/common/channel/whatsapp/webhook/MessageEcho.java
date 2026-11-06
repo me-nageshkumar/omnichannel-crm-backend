@@ -16,4 +16,11 @@ public record MessageEcho(
         Location location, List<ContactCard> contacts, Button button, Interactive interactive,
         Order order, System system, PollCreation pollCreation, PollVote pollVote, CallLog callLog,
         Revoked revoked, BizContentPlaceholder bizContentPlaceholder,
-        NewsletterFollowerInvite newsletterFollowerInvite, Album album, WaWeb waWeb) {}
+        NewsletterFollowerInvite newsletterFollowerInvite, Album album, WaWeb waWeb) {
+
+    public MessageEcho withWaWeb(WaWeb waWeb) {
+        return new MessageEcho(from, to, id, timestamp, type, context, text, image, video, audio, document, sticker,
+                location, contacts, button, interactive, order, system, pollCreation, pollVote, callLog, revoked,
+                bizContentPlaceholder, newsletterFollowerInvite, album, waWeb);
+    }
+}
