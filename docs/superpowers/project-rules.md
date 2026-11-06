@@ -18,7 +18,8 @@ where things are, and traps already hit. Read sections 1 and 2 before any git, d
   roles `NO_CRM_WALK`, `AGENT_SEGMENTS_WALK`, pipeline "Walk check", segment "Festive buyers", deal "Acceptance test
   deal", campaign "Walk send check". Do not offer to remove it.
 - A history fetch syncs with WhatsApp Web **keeping the database's state**: stored messages keep sender, source and
-  text; stored chats keep status, agent, team and unread count. Only status moves up and missing details fill in.
+  text; stored chats keep status, agent, team and unread count. Only status moves up and missing details fill in;
+  delivered/read/played times fill in from WhatsApp's receipts (2026-11-06).
 - "Skip the questions" is the standing choice for specs: flag your own calls in the spec. The features in
   `known-limits.md` that need decisions are the exception.
 - Channel-neutral names for new things (`channelAccountId`, `ChannelKind`). Mongo collections camelCase. Files in

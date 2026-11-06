@@ -45,7 +45,7 @@ class FetchedChatOpenerTest {
 
     private static OmnichannelProperties props() {
         var history = new OmnichannelProperties.History(true, Duration.ofSeconds(5), 100, 20, Duration.ZERO,
-                Duration.ZERO, 5000, 3, 25, Duration.ofSeconds(60), 3, Duration.ofDays(7));
+                Duration.ZERO, 5000, 3, 25, Duration.ofSeconds(60), 3, Duration.ofDays(7), true, 100);
         return new OmnichannelProperties(null, null, null, null, null, history, null, null, null);
     }
 

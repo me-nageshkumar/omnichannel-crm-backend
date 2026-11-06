@@ -25,9 +25,9 @@
     mod
   ));
 
-  // ../whatsapp-web.js/src/util/Injected/Utils.js
+  // ../../../whatsapp-web.js/src/util/Injected/Utils.js
   var require_Utils = __commonJS({
-    "../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
+    "../../../whatsapp-web.js/src/util/Injected/Utils.js"(exports) {
       "use strict";
       exports.LoadUtils = () => {
         window.WWebJS = {};
@@ -1275,9 +1275,9 @@
     }
   });
 
-  // ../whatsapp-web.js/src/util/Constants.js
+  // ../../../whatsapp-web.js/src/util/Constants.js
   var require_Constants = __commonJS({
-    "../whatsapp-web.js/src/util/Constants.js"(exports) {
+    "../../../whatsapp-web.js/src/util/Constants.js"(exports) {
       "use strict";
       exports.WhatsWebURL = "https://web.whatsapp.com/";
       exports.DefaultOptions = {
@@ -1778,6 +1778,45 @@
         filesize: resolved.filesize
       };
     });
+    methods.set("messageInfo", async ({ ids } = {}) => {
+      if (typeof window.WWebJS === "undefined") {
+        throw codedError(
+          ErrorCodes.WHATSAPP_NOT_READY,
+          "WWebJS helpers are not loaded yet"
+        );
+      }
+      if (!Array.isArray(ids) || ids.length === 0) return { receipts: [] };
+      if (ids.length > 100) {
+        throw codedError(ErrorCodes.PAGE_ERROR, "at most 100 ids");
+      }
+      const { Msg } = window.require("WAWebCollections");
+      const earliest = (list) => {
+        const times = (Array.isArray(list) ? list : []).map((entry) => entry?.t).filter((t) => typeof t === "number" && Number.isFinite(t));
+        return times.length ? Math.min(...times) : null;
+      };
+      const receipts = [];
+      for (const id of ids) {
+        const empty = { id, delivered: null, read: null, played: null };
+        try {
+          const msg = Msg.get(id) ?? (await Msg.getMessagesById([id]))?.messages?.[0];
+          if (!msg || !msg.id?.fromMe) {
+            receipts.push(empty);
+            continue;
+          }
+          const info = await window.require("WAWebApiMessageInfoStore").queryMsgInfo(msg.id);
+          receipts.push({
+            id,
+            delivered: earliest(info?.delivery),
+            read: earliest(info?.read),
+            played: earliest(info?.played)
+          });
+        } catch (err) {
+          console.warn("[wabridge] messageInfo failed:", id, err);
+          receipts.push(empty);
+        }
+      }
+      return { receipts };
+    });
     methods.set("listChats", async () => {
       if (typeof window.WWebJS === "undefined") {
         throw codedError(
@@ -1986,7 +2025,7 @@
   var POLL_MS = 500;
   var REINJECT_CHECK_MS = 2e3;
   var TAG = "[wabridge]";
-  var BUILD = true ? "9697d65d4df9" : "dev";
+  var BUILD = true ? "e488db67aab2" : "dev";
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function waitFor(predicate) {
     for (; ; ) {

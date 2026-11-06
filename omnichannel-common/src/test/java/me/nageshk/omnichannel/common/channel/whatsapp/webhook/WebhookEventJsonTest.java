@@ -121,7 +121,7 @@ class WebhookEventJsonTest {
                                         "hello",
                                         new WaWeb(
                                                 "919912345678@c.us", 0, "chat", null, null, null, null, null,
-                                                null, null, null, null, null)))))));
+                                                null, null, null, null, null, null)))))));
         JsonNode json = mapper.valueToTree(e);
         JsonNode value = json.at("/entry/0/changes/0/value");
         assertThat(value.path("messaging_product").asString()).isEqualTo("whatsapp");
@@ -140,5 +140,22 @@ class WebhookEventJsonTest {
         ChannelContext cloud = new ChannelContext(ChannelKind.WHATSAPP_CLOUD, "cust", "ws", "pn-1", "919928088743");
         assertThat(WebhookEvent.of(cloud, List.of(new Change("messages", null))).object())
                 .isEqualTo("whatsapp_business_account");
+    }
+
+    @Test
+    void anEstimatedReceiptSaysSoAndALiveStatusDoesNot() {
+        ChannelContext ctx = new ChannelContext(ChannelKind.WHATSAPP_WEB, "cust", "ws", "pn-1", "919928088743");
+        Status estimated = new Status("true_919912345678@c.us_ABC", "read", "1700000000", "919912345678", null, null,
+                null, null, null, new WaWeb("919912345678@c.us", 3, null, null, null, null, null, null, null, null,
+                        1_700_000_000_000L, null, true, true));
+        WebhookEvent e = WebhookEvent.of(ctx,
+                List.of(new Change("messages", Value.of(ctx).withStatuses(List.of(estimated)))));
+        JsonNode json = mapper.valueToTree(e);
+        assertThat(json.at("/entry/0/changes/0/value/statuses/0/wa_web/estimated").asBoolean()).isTrue();
+        assertThat(mapper.treeToValue(json, WebhookEvent.class)).isEqualTo(e);
+        Status live = new Status("id", "read", "1700000000", null, null, null, null, null, null,
+                new WaWeb("919912345678@c.us", 3, null, null, null, null, null, null, null, null, null, null, null,
+                        null));
+        assertThat(mapper.valueToTree(live).path("wa_web").has("estimated")).isFalse();
     }
 }

@@ -449,6 +449,51 @@ A unique **sparse** index `eventKey_unique` on `eventKey`. The store inserts (ne
 - [ ] **Step 4: Run** — the above, then `./mvnw -q -pl omnichannel-service -am test` and `./mvnw -q -pl omnichannel-app -am test -Dtest='WhatsAppWebhookProcessorIT,WaWebWebhookListenerIT,InboxSendIT,HistoryImportRunnerPagingIT,HistoryImportNamesIT,HistoryImportRunnerEventsIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: PASS.
 - [ ] **Step 5: Commit** — `feat: history events in the webhook store, an idempotency key, and _id in conversation order`
 
+### Task 13a (extension): page method `messageInfo({ids})`
+
+Requested by the user on 2026-11-06 as part of the Cloud webhook shape branch: a fetched outgoing message carries only its `ack`; its delivered/read/played **times** live in WhatsApp Web's message-info store. This method reads them for a batch of ids so the backend can stamp `statusTimes` on imported rows and store one `status:` webhook event per receipt.
+
+**Files (extension repo, worktree `.worktrees/cloud-webhook-shape`, branch `cloud-webhook-shape` from main 50ffdb2):**
+- Modify: `src/page/methods.js` — add `methods.set('messageInfo', async ({ ids } = {}) => …)`
+- Test: `tests/methods.test.js` (same fake-`window` style as the `fetchChatHistory`/`downloadMedia` tests)
+- Build: `build.mjs` honours `OMNICHANNEL_BACKEND_DIR`; run `OMNICHANNEL_BACKEND_DIR=/Users/nagesh/Projects/WhatsAppWebJS/SCM/omnichannel-crm-backend/.worktrees/cloud-webhook-shape npm run build` so `page.js` and `manifest.json` land in the backend **branch worktree**'s `omnichannel-service/src/main/resources/wabridge/scripts/` (do not commit there; the backend task commits them).
+
+**Behaviour:**
+- `ids`: an array of serialized message keys (`true_…@c.us_3EB0…`), at most 100 per call; more → throw `{ code: 'PAGE_ERROR', message: 'at most 100 ids' }`; missing/empty → `{ receipts: [] }`.
+- For each id: `Msg.get(id) ?? (await Msg.getMessagesById([id]))?.messages?.[0]`; a missing message, or one with `id.fromMe` false → `{ id, delivered: null, read: null, played: null }`. Else `const info = await window.require('WAWebApiMessageInfoStore').queryMsgInfo(msg.id)` (the call whatsapp-web.js's `Message.getInfo()` makes, `src/structures/Message.js:763-790` in the sibling `whatsapp-web.js` checkout; read its post-processing to confirm the shape: `info.delivery`, `info.read`, `info.played` are arrays of `{ id, t }` with `t` in seconds). Return per id `{ id, delivered, read, played }` where each is the **earliest** `t` (seconds, number) among that list's entries, or null when the list is empty or missing. A throwing `queryMsgInfo` → the null triple for that id (and `console.warn('[wabridge] messageInfo failed:', id, err)`), never a failed call.
+- `WHATSAPP_NOT_READY` when `window.WWebJS` is absent, like the other methods.
+- Return `{ receipts: [...] }` in the order of `ids`.
+- Use `messageKey`/`widKey` from `./model.js` where a key is read (`$1` builds).
+
+**Tests (RED first):** `messageInfo` returns the earliest time per kind; a non-fromMe message gives nulls; a missing message gives nulls; a throwing `queryMsgInfo` gives nulls for that id and the rest still return; more than 100 ids throws `PAGE_ERROR`; empty ids → empty receipts; `WHATSAPP_NOT_READY` without `WWebJS`. Keep `node --test` green (196+ tests) and `npm run lint` clean (Prettier on touched files).
+
+**Commit** on the extension branch: `feat(page): messageInfo reads a batch of receipts` with the trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Report the page script hash (`manifest.json`) in the report.
+
+### Task 13b (backend): receipts of fetched messages as `status:` events, in sequence
+
+Requested by the user on 2026-11-06. After a history page is stored, the outgoing messages whose status the fetch set or raised to delivered/read/played get their receipt times from the page method `messageInfo({ids})` (Task 13a), and each receipt becomes its own `status:` webhook event, stored and processed in sequence (delivered, then read, then played), exactly as live statuses are. The row's `statusTimes` is stamped from those events. When WhatsApp has no receipt for a state the ack implies, the event is still created with the **fetch time** as its timestamp and `wa_web.estimated: true`.
+
+**Files:**
+- Modify: `omnichannel-common/.../webhook/WaWeb.java` (+ `estimated` Boolean, wire `estimated`; null on everything else)
+- Modify: `omnichannel-service/.../service/inbox/history/HistoryDeviceClient.java` (+ `CompletableFuture<List<Receipt>> messageInfo(DeviceSession device, List<String> ids)` → `record Receipt(String id, Instant delivered, Instant read, Instant played)` from the page's `{receipts: [{id, delivered, read, played}]}` seconds-or-null)
+- Modify: `omnichannel-service/.../service/inbox/InboxIngestService.java` — `ImportResult` gains `boolean receiptsWanted`: true when the imported message is outgoing and either a new row was created with status ≥ DELIVERED, or an existing row's status moved up to ≥ DELIVERED; `storeStatus` stamps `statusTimes` with the status event's own `timestamp` when `wa_web.imported` is true (live statuses keep `clock.instant()`), still "first time wins" and status only moves up
+- Modify: `omnichannel-service/.../service/inbox/history/FetchedMessageImporter.java` (+ `void importReceipts(ImportContext ctx, DeviceSession device, List<WaWebMessage> wanted, Instant fetchedAt)`: calls `client.messageInfo` in batches of `omnichannel.history.receipts-batch` (default 100); for each message builds the status events in order for every state from DELIVERED up to the row's current status: `Status{id, status, timestamp = receipt seconds or fetchedAt seconds, recipient_id/recipient_user_id from the chat, wa_web{chat_id, ack = the state's ack number, imported: true, estimated: true when the fetch time was used, captured_at}}`, wraps each as a one-change `messages` event, stores each (`store.save(..., ordinal = position, imported = true)`, raw = the receipt JSON for that message on ordinal 0, null after) and then `processor.process(ctx, events)` for the message's events; a failed `messageInfo` call (timeout, device gone) logs WARN and skips receipts for that batch — rows keep their ticks, the next fetch retries)
+- Modify: `omnichannel-service/.../service/inbox/history/HistoryImportRunner.java` — after a page's rows are stored (where `ImportResult`s are consumed), collect the `receiptsWanted` rows and call `importer.importReceipts(...)` once per page, behind `omnichannel.history.receipts` (default true); the page delay applies after it
+- Modify: `omnichannel-common/.../config/OmnichannelProperties.java` `History` record: `@DefaultValue("true") boolean receipts`, `@DefaultValue("100") int receiptsBatch`; `application.yml` defaults; hand-built `new OmnichannelProperties(` in tests updated
+- Commit the rebuilt `omnichannel-service/src/main/resources/wabridge/scripts/page.js` + `manifest.json` that Task 13a copied into this worktree (check `git status` shows them modified; the manifest's hash is the new page script version)
+- Tests: `HistoryDeviceClientTest` or IT for `messageInfo` parsing (nulls, seconds); `HistoryDevice` (the fake device under `omnichannel-app/src/test/.../history/`) handles `messageInfo` with a configurable receipts map; `HistoryImportRunnerIT`: `aMissedReadMessageGetsItsReceiptTimes` (a fetched outgoing message with ack 3 and receipts delivered T1, read T2 → row READ with `deliveredAt T1`, `readAt T2`; two `status:` events stored in order with timestamps T1, T2, `wa_web.imported true`, no `estimated`), `aReceiptWhatsAppLacksIsEstimatedFromTheFetchTime` (ack 3, receipts only delivered → read event has the fetch time and `estimated: true`; `readAt` = fetch time), `inboundAndSentOnlyMessagesAskForNoReceipts` (no `messageInfo` call), `aSecondFetchStoresNoNewStatusEvents`, `receiptsOffMakesNoCall` (`omnichannel.history.receipts=false`), `aFailedMessageInfoCallLeavesTheTicks`; `ChannelWebhookEventStoreIT` or unit: `estimated` round-trips
+- Docs: spec §5.3 (receipts: when, how, sequence, estimated), §5.4 (`estimated`), the known-limits line about history leaving `statusTimes` empty is replaced by: "a fetched message's times come from WhatsApp's receipts; when WhatsApp has none for a state the row's ack implies, the fetch time is used and the event says `estimated`"; `project-rules.md` §1 line "A history fetch syncs … Only status moves up and missing details fill in" gains "; delivered/read/played times fill in from WhatsApp's receipts (2026-11-06)"; README (`omnichannel.history.receipts`, `receipts-batch`); the plan gains Task 13a/13b text
+
+**Interfaces:**
+- Consumes: Task 13a's page method; `ChannelWebhookEventStore.save(ctx, event, raw, seq, capturedAt, ordinal, imported)`; `WhatsAppWebhookProcessor.process(ctx, List<WebhookEvent>)`; `WebhookEventKeys` (`status:<id>:<status>`, so a later live ack of the same state is a duplicate and stored once).
+- Produces: `Receipt`, `ImportResult.receiptsWanted`, `WaWeb.estimated`, the two properties.
+
+- [ ] **Step 1: Write the failing tests** (above; RED).
+- [ ] **Step 2: Run** — `./mvnw -q -pl omnichannel-app -am test -Dtest='HistoryImportRunnerIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** — the above, then `./mvnw -q -pl omnichannel-service -am test` and `./mvnw -q -pl omnichannel-app -am test -Dtest='HistoryImportRunnerIT,HistoryImportRunnerPagingIT,HistoryImportNamesIT,HistoryImportRunnerEventsIT,ChannelWebhookEventStoreIT,WaWebWebhookListenerIT,WhatsAppWebhookProcessorIT' -Dsurefire.failIfNoSpecifiedTests=false` — Expected: PASS.
+- [ ] **Step 5: Commit** — `feat: receipts of fetched messages as status events in sequence` (+ the page script files)
+
 ## Verification before the merge
 
 - `./mvnw -q verify` once in the worktree (all modules; expect every surefire report at 0 failures, 0 errors).

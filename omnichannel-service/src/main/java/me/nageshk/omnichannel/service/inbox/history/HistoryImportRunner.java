@@ -31,6 +31,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChat;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImportRepository;
+import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.inbox.InboxDevices;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
@@ -335,8 +336,10 @@ public class HistoryImportRunner {
                 boolean moved = !page.messages().isEmpty() && !repeats(page, cursor);
                 paced |= page.asked();
                 if (moved) {
+                    List<WaWebMessage> receiptsWanted = new ArrayList<>();
                     for (JsonNode m : page.messages()) {
                         ImportResult r = importer.importMessage(ctx, m);
+                        if (r.receiptsWanted()) receiptsWanted.add(r.message());
                         seen++;
                         if (r.outcome() == ImportOutcome.INSERTED) inserted++;
                         else if (r.outcome() == ImportOutcome.UPDATED) updated++;
@@ -345,6 +348,11 @@ public class HistoryImportRunner {
                         }
                         if (r.chat() != null) chat = r.chat();
                         if (r.chatCreated()) createdChatId = r.chat().getId();
+                    }
+                    // once the page's rows are stored, before the wait: the times of our delivered and read messages
+                    if (settings.receipts() && !receiptsWanted.isEmpty()) {
+                        importer.importReceipts(ctx, device, receiptsWanted, clock.instant());
+                        unannounced = true;
                     }
                     cursor = new WaWebHistoryImportChat.Cursor(page.oldestT(), page.oldestIds());
                 }

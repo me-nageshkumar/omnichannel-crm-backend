@@ -61,6 +61,9 @@ omnichannel:
     max-timeouts-per-chat: 3
     # a chat a fetch creates opens and is routed when the contact wrote within this window and it waits on us
     waiting-window: 7d
+    # after a page, our delivered/read/played messages get their times from WhatsApp's receipts (ids per page call)
+    receipts: true
+    receipts-batch: 100
   automation:
     auto-tick: true
     tick: 2s

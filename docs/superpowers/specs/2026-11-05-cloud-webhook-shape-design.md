@@ -183,7 +183,8 @@ not have:
 | `vcards` | `contacts` messages | the vCard texts, for the console's card rendering |
 | `captured_at` | message, echo, status | the extension's capture time (ms), when it had one |
 | `body` | `unsupported`, `album`, an `order` without a title | what the person wrote (the caption, else a body that is no thumbnail) when Meta's shape has no place for it; the store reads it as the row's body |
-| `imported` | message, echo | true on a message the history import fetched and stored (§5.3); absent on a live one |
+| `imported` | message, echo, status | true on a message the history import fetched and stored, and on the status events of its receipts (§5.3); absent on a live one |
+| `estimated` | status | true on an imported receipt WhatsApp had no time for, whose `timestamp` is the fetch time (§5.3); absent everywhere else |
 
 Types Meta does not have keep WhatsApp Web's name as `type` and get a type-named object, following Meta's own
 convention (the object is named after the type): `poll_creation`, `poll_vote`, `call_log`, `revoked`,
@@ -275,7 +276,7 @@ A `message_ack` on an inbound message (`fromMe: false`) produces nothing **(my c
 nothing reads the status of an inbound row (the console draws ticks for `OUT` only, campaigns and automations read
 outbound rows). Inbound rows are stored `PENDING` with `ack` 0 from now on. `timestamp` is the ack's capture time,
 since the ack event carries no time of its own; the processor keeps stamping `statusTimes` with its own clock, as
-today.
+today. The receipts of a fetched message (§5.3) carry WhatsApp's time and are stamped with it.
 
 ### 4.6 Poll votes **(my call)**
 
@@ -365,11 +366,28 @@ extension ──ws event──▶ BridgeWebSocketHandler ──WhatsAppEvent (ra
   no model came back stays.
 - `HistoryImportRunner` converts each fetched model with `converter.message(m)` or `converter.echo(m)` by `fromMe`
   and calls the typed `importMessage(ImportContext, Message | MessageEcho)`; the import's own rules (closed chats, no
-  unread, no status times) stay. Before the import, `FetchedMessageImporter` stores each converted model in
+  unread) stay. Before the import, `FetchedMessageImporter` stores each converted model in
   `channelWebhookEvents` as a one-change event (`messages` with its contact, or `smb_message_echoes`) marked
   `wa_web.imported: true`, with the raw model kept (the user's choice, 2026-11-06), `seq` absent, `capturedAt` the
-  fetch time and `ordinal` 0. It stores no status event: a fetched echo's ack is in `wa_web.ack`. A refetch of the
-  same message stores nothing (its `eventKey`, §5.4). Live events have no `wa_web.imported`.
+  fetch time and `ordinal` 0. A fetched echo's ack is in `wa_web.ack` and sets the row's status without times. A
+  refetch of the same message stores nothing (its `eventKey`, §5.4). Live events have no `wa_web.imported`.
+- **Receipts of fetched messages** (added 2026-11-06, the user's request). After a page's rows are stored, and before
+  the page delay, the runner takes the rows `importMessage` marked `receiptsWanted`: our own message whose row is new
+  at delivered or later, was moved up to delivered or later by the fetch, or still lacks the time of its status (an
+  earlier ask failed) **(my call: the last case makes "the next fetch retries" true)**. `importReceipts` asks the
+  page's `messageInfo({ids})` for them, `omnichannel.history.receipts-batch` ids per call (default 100, the page's
+  cap), and for each message builds one status per state from `delivered` up to the row's status (`delivered`,
+  `read`, then `played`; never `sent`): `timestamp` is WhatsApp's receipt time, `recipient_id` / `recipient_user_id`
+  from the chat as for a live status, `wa_web {chat_id, ack: 2|3|4, captured_at: <fetch time ms>, imported: true}`.
+  When WhatsApp has no receipt for a state the row's ack implies, the event is still made, with the **fetch time** as
+  its `timestamp` and `wa_web.estimated: true`. Each status is its own one-change `messages` event, stored with
+  `ordinal` its position (0, 1, 2), the page's receipt object `{id, delivered, read, played}` as the raw of ordinal 0;
+  then the message's events go through `WhatsAppWebhookProcessor.process` in order, exactly as live statuses do. The
+  store stamps `statusTimes` with an imported status's own `timestamp` (a live status keeps the clock), the first
+  time staying and the status only moving up; a receipt for a state the row already passed fills in that state's
+  time. An imported status publishes no inbox event, as the import does not: the runner announces the page. A failed
+  `messageInfo` call (timeout, device gone) logs WARN and skips that batch; rows keep their ticks.
+  `omnichannel.history.receipts=false` makes no call.
 
 After this, `MessagePayloads` is deleted and `LoggingEventListener.wid/messageId` are the only raw readers left
 outside the converter (they log, they do not store) — or they call the converter's id helpers. **(my call)**
@@ -398,7 +416,10 @@ seq, capturedAt, ordinal, creationTime
   `creationTime` keeps the insertion time and drives the expiry.
 
 - `ordinal` is the 0-based position of the event among those one bridge event gave: 0 for the first (or only), 1 for
-  the status event that follows an echo. The documents of one `seq` keep their order however they are sorted. A real
+  the status event that follows an echo; for the receipts of a fetched message (§5.3), its position among them
+  (`delivered` 0, `read` 1, `played` 2), the raw (the page's receipt) on 0. A receipt's key is
+  `status:<id>:<status>` like a live status's, so a live ack of the same state later is stored once; its
+  `wa_web.estimated` says the time is the fetch time. The documents of one `seq` keep their order however they are sorted. A real
   Cloud webhook is always 0. A conversion failure stores one document (ordinal 0, the shell event, the raw).
 - The raw is stored on the first document only (`ordinal` 0); later documents of the same bridge event carry
   `raw: null`, `rawDropped: false` **(my call: the raw is one payload; storing it twice doubles the biggest part of

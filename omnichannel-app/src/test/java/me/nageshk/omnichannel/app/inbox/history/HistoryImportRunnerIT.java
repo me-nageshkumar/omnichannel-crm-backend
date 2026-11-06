@@ -139,7 +139,9 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
 
             runner.tick().get(10, SECONDS);
 
-            List<Document> events = webhookEvents();
+            // a2 and b2, ours and delivered, also get their receipts as status events (the receipt tests below)
+            List<Document> events = webhookEvents().stream()
+                    .filter(d -> d.getString("eventKey").startsWith("history:")).toList();
             assertThat(events).hasSize(5);
             // the id is the message's own time, so the events sort in conversation order across chats
             assertThat(events).extracting(d -> d.get("raw", Document.class).getString("body"))
@@ -175,8 +177,205 @@ class HistoryImportRunnerIT extends HistoryImportTestBase {
             runner.tick().get(10, SECONDS);
 
             assertThat(webhookEvents()).extracting(d -> d.get("_id")).containsExactlyElementsOf(first);
-            assertThat(first).hasSize(5);
+            // five messages, and the receipts of a2 (delivered, read) and b2 (delivered)
+            assertThat(first).hasSize(8);
         }
+    }
+
+    // ---- receipts of fetched messages ----
+
+    static final long SENT = 1_700_000_000L;
+
+    @Test
+    void aMissedReadMessageGetsItsReceiptTimes() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 3, "seen");
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, SENT - 10, 0, "hi"), out));
+            device.receipt(out, SENT + 100, SENT + 200, null);
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            WaWebMessage row = messages.findByPhoneNumberIdAndWaMessageId(n1.getId(), HistoryDevice.id(out))
+                    .orElseThrow();
+            assertThat(row.getStatus()).isEqualTo(MessageStatus.READ);
+            assertThat(row.getStatusTimes().getDeliveredAt()).isEqualTo(Instant.ofEpochSecond(SENT + 100));
+            assertThat(row.getStatusTimes().getReadAt()).isEqualTo(Instant.ofEpochSecond(SENT + 200));
+            assertThat(row.getStatusTimes().getSentAt()).isNull();
+            List<Document> statuses = statusEvents();
+            String id = HistoryDevice.id(out);
+            assertThat(statuses).extracting(d -> d.getString("eventKey"))
+                    .containsExactly("status:" + id + ":delivered", "status:" + id + ":read");
+            assertThat(statuses).extracting(d -> status(d).getString("timestamp"))
+                    .containsExactly(String.valueOf(SENT + 100), String.valueOf(SENT + 200));
+            assertThat(statuses).extracting(d -> status(d).get("wa_web", Document.class).getInteger("ack"))
+                    .containsExactly(2, 3);
+            assertThat(statuses).extracting(d -> d.getInteger("ordinal")).containsExactly(0, 1);
+            assertThat(statuses).allSatisfy(d -> {
+                Document st = status(d);
+                assertThat(st.getString("recipient_id")).isEqualTo("919811100001");
+                Document waWeb = st.get("wa_web", Document.class);
+                assertThat(waWeb.getString("chat_id")).isEqualTo(A);
+                assertThat(waWeb.getBoolean("imported")).isTrue();
+                assertThat(waWeb.containsKey("estimated")).isFalse();
+                assertThat(((Number) waWeb.get("captured_at")).longValue()).isEqualTo(START.toEpochMilli());
+            });
+            // the page's receipt is the raw of the first event only
+            Document raw = statuses.get(0).get("raw", Document.class);
+            assertThat(raw.getString("id")).isEqualTo(id);
+            assertThat(((Number) raw.get("delivered")).longValue()).isEqualTo(SENT + 100);
+            assertThat(statuses.get(1).get("raw")).isNull();
+            assertThat(device.requests("messageInfo")).hasSize(1);
+            assertThat(device.requests("messageInfo").getFirst().params().path("ids").valueStream()
+                    .map(JsonNode::asString).toList()).containsExactly(id);
+        }
+    }
+
+    @Test
+    void aPlayedVoiceNoteGetsThreeReceiptsInOrder() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 4, "voice");
+            device.chats.put(A, List.of(out));
+            device.receipt(out, SENT + 100, SENT + 200, SENT + 300);
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            WaWebMessage row = messages.findAll().getFirst();
+            assertThat(row.getStatus()).isEqualTo(MessageStatus.PLAYED);
+            assertThat(row.getStatusTimes().getPlayedAt()).isEqualTo(Instant.ofEpochSecond(SENT + 300));
+            assertThat(statusEvents()).extracting(d -> status(d).getString("status"))
+                    .containsExactly("delivered", "read", "played");
+        }
+    }
+
+    @Test
+    void aReceiptWhatsAppLacksIsEstimatedFromTheFetchTime() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 3, "seen");
+            device.chats.put(A, List.of(out));
+            device.receipt(out, SENT + 100, null, null);
+            importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            WaWebMessage row = messages.findAll().getFirst();
+            assertThat(row.getStatus()).isEqualTo(MessageStatus.READ);
+            assertThat(row.getStatusTimes().getDeliveredAt()).isEqualTo(Instant.ofEpochSecond(SENT + 100));
+            assertThat(row.getStatusTimes().getReadAt()).isEqualTo(START);
+            List<Document> statuses = statusEvents();
+            assertThat(statuses).extracting(d -> status(d).getString("status")).containsExactly("delivered", "read");
+            assertThat(status(statuses.get(0)).get("wa_web", Document.class).containsKey("estimated")).isFalse();
+            Document read = status(statuses.get(1));
+            assertThat(read.getString("timestamp")).isEqualTo(String.valueOf(START.getEpochSecond()));
+            assertThat(read.get("wa_web", Document.class).getBoolean("estimated")).isTrue();
+        }
+    }
+
+    @Test
+    void aRowTheFetchMovesUpGetsItsReceipts() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 1, "sent");
+            device.chats.put(A, List.of(out));
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+            assertThat(device.requests("messageInfo")).isEmpty();
+
+            // read on the phone since: the next fetch moves the row up
+            out.put("ack", 3);
+            device.receipt(out, SENT + 100, SENT + 200, null);
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+
+            WaWebMessage row = messages.findAll().getFirst();
+            assertThat(row.getStatus()).isEqualTo(MessageStatus.READ);
+            assertThat(row.getStatusTimes().getReadAt()).isEqualTo(Instant.ofEpochSecond(SENT + 200));
+            assertThat(statusEvents()).extracting(d -> status(d).getString("status"))
+                    .containsExactly("delivered", "read");
+        }
+    }
+
+    @Test
+    void inboundAndSentOnlyMessagesAskForNoReceipts() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            device.chats.put(A, List.of(HistoryDevice.msg(A, false, SENT, 0, "in"),
+                    HistoryDevice.msg(A, false, SENT + 1, 3, "in, read by us"),
+                    HistoryDevice.msg(A, true, SENT + 2, 1, "ours, only sent")));
+            WaWebHistoryImport imp = importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+            assertThat(messages.count()).isEqualTo(3);
+            assertThat(device.requests("messageInfo")).isEmpty();
+            assertThat(statusEvents()).isEmpty();
+        }
+    }
+
+    @Test
+    void aSecondFetchStoresNoNewStatusEvents() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 3, "seen");
+            device.chats.put(A, List.of(out));
+            device.receipt(out, SENT + 100, null, null);
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+            List<Object> first = statusEvents().stream().map(d -> d.get("_id")).toList();
+            WaWebMessage.StatusTimes times = messages.findAll().getFirst().getStatusTimes();
+
+            clock.set(START.plusSeconds(3600));
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+
+            assertThat(first).hasSize(2);
+            assertThat(statusEvents()).extracting(d -> d.get("_id")).containsExactlyElementsOf(first);
+            assertThat(device.requests("messageInfo")).hasSize(1);
+            WaWebMessage.StatusTimes after = messages.findAll().getFirst().getStatusTimes();
+            assertThat(after.getDeliveredAt()).isEqualTo(times.getDeliveredAt());
+            assertThat(after.getReadAt()).isEqualTo(START);
+        }
+    }
+
+    @Test
+    void aFailedMessageInfoCallLeavesTheTicks() throws Exception {
+        try (HistoryDevice device = new HistoryDevice(port, testDevices, n1)) {
+            ObjectNode out = HistoryDevice.msg(A, true, SENT, 3, "seen");
+            device.chats.put(A, List.of(out));
+            device.receipt(out, SENT + 100, SENT + 200, null);
+            device.override = req -> "messageInfo".equals(req.method())
+                    ? Envelope.errorResponse(req.id(), "PAGE_ERROR", "boom") : device.answer(req);
+            WaWebHistoryImport imp = importAll(null, null);
+
+            runner.tick().get(10, SECONDS);
+
+            assertThat(reload(imp).getStatus()).isEqualTo(HistoryImportStatus.COMPLETED);
+            assertThat(itemsOf(imp)).allSatisfy(i -> assertThat(i.getStatus()).isEqualTo(HistoryChatStatus.DONE));
+            WaWebMessage row = messages.findAll().getFirst();
+            assertThat(row.getStatus()).isEqualTo(MessageStatus.READ);
+            assertThat(row.getStatusTimes()).isNull();
+            assertThat(statusEvents()).isEmpty();
+
+            // the next fetch asks again: the row still lacks the time of its status
+            device.override = null;
+            importAll(null, null);
+            runner.tick().get(10, SECONDS);
+
+            assertThat(messages.findAll().getFirst().getStatusTimes().getReadAt())
+                    .isEqualTo(Instant.ofEpochSecond(SENT + 200));
+            assertThat(statusEvents()).hasSize(2);
+        }
+    }
+
+    /** The stored status events of {@code n1}, in {@code _id} order. */
+    List<Document> statusEvents() {
+        return webhookEvents().stream().filter(d -> d.getString("eventKey").startsWith("status:")).toList();
+    }
+
+    /** The single status of a stored status event. */
+    static Document status(Document event) {
+        return event.get("event", Document.class).getList("entry", Document.class).getFirst()
+                .getList("changes", Document.class).getFirst().get("value", Document.class)
+                .getList("statuses", Document.class).getFirst();
     }
 
     /** The stored webhook events of {@code n1}, in {@code _id} order. */

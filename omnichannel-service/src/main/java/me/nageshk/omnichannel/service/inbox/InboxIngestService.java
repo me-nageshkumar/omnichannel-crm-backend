@@ -75,11 +75,14 @@ public class InboxIngestService {
 
     /**
      * {@code chat} and {@code message} are the stored rows; both null when {@code SKIPPED}. {@code chatCreated} is
-     * true when this message created the chat.
+     * true when this message created the chat. {@code receiptsWanted} is true for our own message the fetch found
+     * delivered or later whose times WhatsApp's receipts should fill in: a new row, a row the fetch moved up, or a row
+     * that still lacks the time of its status (an earlier ask for its receipts failed).
      */
-    public record ImportResult(ImportOutcome outcome, WaWebChat chat, WaWebMessage message, boolean chatCreated) {
+    public record ImportResult(ImportOutcome outcome, WaWebChat chat, WaWebMessage message, boolean chatCreated,
+            boolean receiptsWanted) {
         public ImportResult(ImportOutcome outcome, WaWebChat chat, WaWebMessage message) {
-            this(outcome, chat, message, false);
+            this(outcome, chat, message, false, false);
         }
     }
 
@@ -154,10 +157,15 @@ public class InboxIngestService {
         return ingest(ctx, in, "smb_message_echoes");
     }
 
-    /** The delivery state of our message; a status for a message we never stored is dropped. */
+    /**
+     * The delivery state of our message; a status for a message we never stored is dropped. A receipt of a fetched
+     * message ({@code wa_web.imported}) is stamped with its own time and publishes nothing, as the import does not:
+     * the import announces the page.
+     */
     public Optional<Ingested> ingestStatus(ChannelContext ctx, Status status) {
         if (status == null || status.id() == null || status.id().isEmpty()) return Optional.empty();
         try {
+            if (isImported(status)) return retrying(() -> storeStatus(ctx, status)).map(Stored::result);
             return publish(retrying(() -> storeStatus(ctx, status)));
         } catch (DataAccessException e) {
             throw new IngestionFailedException("statuses", status.id(), e);
@@ -254,8 +262,9 @@ public class InboxIngestService {
                 .orElse(null);
         if (message != null) {
             boolean acked = applyAck(message, ack, null);
+            boolean receipts = receiptsWanted(message) && (acked || lacksStatusTime(message));
             if (!fillIn(message, in.content()) && !acked) {
-                return new ImportResult(ImportOutcome.UNCHANGED, chat, message);
+                return new ImportResult(ImportOutcome.UNCHANGED, chat, message, false, receipts);
             }
             message = messages.save(message);
             if (isLast(chat, message)) {
@@ -263,7 +272,7 @@ public class InboxIngestService {
                         preview(message), message.getStatus()));
                 chat = chats.save(chat);
             }
-            return new ImportResult(ImportOutcome.UPDATED, chat, message);
+            return new ImportResult(ImportOutcome.UPDATED, chat, message, false, receipts);
         }
 
         message = newMessage(ctx.customerId(), ctx.workspaceId(), ctx.phoneNumberId(), chat, in);
@@ -277,7 +286,28 @@ public class InboxIngestService {
         else chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         chat = chats.save(chat);
         message = messages.insert(message);
-        return new ImportResult(ImportOutcome.INSERTED, chat, message, created);
+        return new ImportResult(ImportOutcome.INSERTED, chat, message, created, receiptsWanted(message));
+    }
+
+    /** Our own message at delivered or later: what WhatsApp has receipts for. FAILED is not. */
+    private static boolean receiptsWanted(WaWebMessage message) {
+        return message.getDirection() == MessageDirection.OUT && message.getStatus() != null
+                && message.getStatus().isAtLeast(MessageStatus.DELIVERED);
+    }
+
+    private static boolean lacksStatusTime(WaWebMessage message) {
+        WaWebMessage.StatusTimes t = message.getStatusTimes();
+        if (t == null) return true;
+        return switch (message.getStatus()) {
+            case DELIVERED -> t.getDeliveredAt() == null;
+            case READ -> t.getReadAt() == null;
+            case PLAYED -> t.getPlayedAt() == null;
+            default -> false;
+        };
+    }
+
+    private static boolean isImported(Status status) {
+        return status.waWeb() != null && Boolean.TRUE.equals(status.waWeb().imported());
     }
 
     /**
@@ -440,7 +470,11 @@ public class InboxIngestService {
             log.debug("dropping status for unknown message {} of {}", status.id(), ctx.channelAccountId());
             return Optional.empty();
         }
-        boolean changed = applyAck(message, MessageFields.ackOf(status), clock.instant());
+        // a fetched message's receipt carries WhatsApp's time; a live status has none of its own
+        boolean changed = isImported(status)
+                ? applyReceipt(message, MessageFields.ackOf(status),
+                        MessageFields.timestampOf(status.timestamp(), clock.instant()))
+                : applyAck(message, MessageFields.ackOf(status), clock.instant());
         if (changed) {
             message = messages.save(message);
             if (isLast(chat, message)) {
@@ -513,15 +547,42 @@ public class InboxIngestService {
         if (next != MessageStatus.FAILED && !next.isAtLeast(current)) return false;
         message.setStatus(next);
         message.setAck(ack);
-        if (now == null) return true;
+        if (now != null) stamp(message, next, now);
+        return true;
+    }
+
+    /**
+     * A receipt of a fetched message: {@link #applyAck} with the receipt's time, and also the time of a state the row
+     * is already at or past (the fetch set its status without times). The first time stays; returns whether anything
+     * changed.
+     */
+    static boolean applyReceipt(WaWebMessage message, int ack, Instant at) {
+        if (applyAck(message, ack, at)) return true;
+        MessageStatus state = MessageStatus.ofAck(ack);
+        if (state == MessageStatus.PENDING || state == MessageStatus.FAILED) return false;
+        if (!message.getStatus().isAtLeast(state)) return false;
+        return stamp(message, state, at);
+    }
+
+    /** Sets the time {@code state} was reached unless one is set; returns whether it set it. */
+    private static boolean stamp(WaWebMessage message, MessageStatus state, Instant at) {
         if (message.getStatusTimes() == null) message.setStatusTimes(new WaWebMessage.StatusTimes());
         WaWebMessage.StatusTimes times = message.getStatusTimes();
-        switch (next) {
-            case SENT -> times.setSentAt(first(times.getSentAt(), now));
-            case DELIVERED -> times.setDeliveredAt(first(times.getDeliveredAt(), now));
-            case READ -> times.setReadAt(first(times.getReadAt(), now));
-            case PLAYED -> times.setPlayedAt(first(times.getPlayedAt(), now));
-            case FAILED -> times.setFailedAt(first(times.getFailedAt(), now));
+        Instant before = switch (state) {
+            case SENT -> times.getSentAt();
+            case DELIVERED -> times.getDeliveredAt();
+            case READ -> times.getReadAt();
+            case PLAYED -> times.getPlayedAt();
+            case FAILED -> times.getFailedAt();
+            case PENDING -> at;
+        };
+        if (before != null) return false;
+        switch (state) {
+            case SENT -> times.setSentAt(at);
+            case DELIVERED -> times.setDeliveredAt(at);
+            case READ -> times.setReadAt(at);
+            case PLAYED -> times.setPlayedAt(at);
+            case FAILED -> times.setFailedAt(at);
             case PENDING -> { }
         }
         return true;
@@ -624,9 +685,5 @@ public class InboxIngestService {
 
     private static Instant later(Instant current, Instant candidate) {
         return current == null || candidate.isAfter(current) ? candidate : current;
-    }
-
-    private static Instant first(Instant existing, Instant now) {
-        return existing != null ? existing : now;
     }
 }

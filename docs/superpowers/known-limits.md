@@ -106,3 +106,6 @@ Spec `specs/2026-11-05-cloud-webhook-shape-design.md` (§7), plus what the revie
   one second are stored once (`vote:<id>:<timestamp>`), though both are processed.
 - A poll vote's time is kept to the second (the webhook `timestamp`), so a live vote and an imported vote of the same
   voter within one second may be ordered wrongly; main kept milliseconds.
+- A fetched message's times come from WhatsApp's receipts; when WhatsApp has none for a state the row's ack implies,
+  the fetch time is used and the event says `estimated` (so an estimated `delivered` can be later than a real
+  `read`).

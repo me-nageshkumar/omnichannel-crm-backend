@@ -138,7 +138,7 @@ public final class WaWebWebhookConverter {
     }
 
     /** The chat's digits for a {@code @c.us} chat; null for a {@code @lid} chat, whose phone is not invented. */
-    private static String recipientDigits(String chatId) {
+    public static String recipientDigits(String chatId) {
         return chatId.endsWith("@c.us") ? WaIds.user(chatId) : null;
     }
 
@@ -161,7 +161,7 @@ public final class WaWebWebhookConverter {
                 "WhatsApp Web reported the message as failed", null, null)) : null;
         long seconds = (at == null ? Instant.now() : at).getEpochSecond();
         WaWeb waWeb = new WaWeb(chatId, ack, null, null, null, null, null, null, null, null,
-                at == null ? null : at.toEpochMilli(), null, null);
+                at == null ? null : at.toEpochMilli(), null, null, null);
         return new Status(messageId, status, String.valueOf(seconds), recipientDigits, lidUser, null, null, errors, null,
                 waWeb);
     }
@@ -432,7 +432,7 @@ public final class WaWebWebhookConverter {
                 referral == null ? null : adRaw(ctx), referral == null ? null : adText(ctx.path("sourceApp")),
                 referral == null ? null : adText(ctx.path("conversionSource")), vcards,
                 capturedAt == null ? null : capturedAt.toEpochMilli(),
-                carriesNoText(type, ext) ? rawText(raw, rawType) : null, null);
+                carriesNoText(type, ext) ? rawText(raw, rawType) : null, null, null);
     }
 
     /** True for a Meta shape with no place for what a person wrote. */
