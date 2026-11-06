@@ -150,7 +150,10 @@ public class InboxSendService {
             if (text.length() > MAX_TEXT) {
                 throw new ValidationException("text", "must be at most " + MAX_TEXT + " characters");
             }
-            return new Outgoing(text, mapper.createObjectNode(), null, text, null, null, null, null);
+            // whatsapp-web.js's Client.sendMessage turns on link previews unless asked not to; the page script takes
+            // our options as its internal options as they are, so a text with a link needs the flag from here.
+            ObjectNode options = mapper.createObjectNode().put("linkPreview", true);
+            return new Outgoing(text, options, null, text, null, null, null, null);
         }
         String templateId = req.templateId().strip();
         if (templates.require(workspaceId, templateId).getStatus() == TemplateStatus.ARCHIVED) {
