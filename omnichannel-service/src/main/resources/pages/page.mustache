@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{ogTitle}}</title>
+<meta property="og:title" content="{{ogTitle}}">
+<meta property="og:description" content="{{ogDescription}}">
+<meta property="og:image" content="{{ogImage}}">
+<meta property="og:url" content="{{ogUrl}}">
+<meta property="og:type" content="website">
+<style>{{{css}}}</style>
+</head>
+<body data-beacon="{{beacon}}">
+<header class="bar"><span class="avatar"></span><span class="who">+{{senderDigits}}</span></header>
+<main class="canvas">
+  <article class="bubble">
+    {{#headerText}}<div class="hdr">{{headerText}}</div>{{/headerText}}
+    {{#headerImage}}<img class="media" src="{{mediaUrl}}" alt="">{{/headerImage}}
+    {{#headerVideo}}<video class="media" src="{{mediaUrl}}" controls playsinline></video>{{/headerVideo}}
+    {{#headerDocument}}<a class="doc" href="{{mediaUrl}}" target="_blank" rel="noreferrer">Document</a>{{/headerDocument}}
+    <div class="body">{{{bodyHtml}}}</div>
+    {{#footer}}<div class="footer">{{footer}}</div>{{/footer}}
+  </article>
+  {{#isButton}}
+  <div class="actions">
+    {{#buttons}}<a class="btn" data-k="reply" href="{{href}}" data-id="{{id}}">{{title}}</a>{{/buttons}}
+  </div>
+  {{/isButton}}
+  {{#isList}}
+  <div class="actions"><button class="btn" id="list-open" type="button">&#9776; {{listButton}}</button></div>
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-head"><span>{{listButton}}</span><button class="close" id="list-close" type="button" aria-label="Close">&times;</button></div>
+    {{#sections}}
+    <div class="section">{{title}}</div>
+    {{#rows}}<a class="row" data-k="reply" href="{{href}}" data-id="{{id}}"><span class="row-title">{{title}}</span>{{#description}}<span class="row-desc">{{description}}</span>{{/description}}</a>{{/rows}}
+    {{/sections}}
+  </div>
+  {{/isList}}
+  {{#isCta}}
+  <div class="actions"><a class="btn" data-k="cta" href="{{ctaHref}}" target="_blank" rel="noreferrer">&#8599; {{ctaText}}</a></div>
+  {{/isCta}}
+  {{#isLocation}}
+  <div class="actions"><button class="btn" data-k="location" type="button" data-fallback="{{locationHref}}">&#9737; Send location</button></div>
+  {{/isLocation}}
+</main>
+<script>{{{js}}}</script>
+</body>
+</html>
