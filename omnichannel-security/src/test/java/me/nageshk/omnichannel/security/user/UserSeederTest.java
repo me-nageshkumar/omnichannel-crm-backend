@@ -46,7 +46,7 @@ class UserSeederTest {
                 new OmnichannelProperties.Jwt("s", Duration.ofHours(1)), sa,
                 new OmnichannelProperties.TwoFactor("Omnichannel CRM"),
                 new OmnichannelProperties.Ws("*"),
-                new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)), null, null, null, null, null);
+                new OmnichannelProperties.Rpc(Duration.ofSeconds(30), Duration.ofSeconds(5)), null, null, null, null, null, null);
     }
 
     private static OmnichannelProperties.SuperAdmin superAdmin(String hash) {

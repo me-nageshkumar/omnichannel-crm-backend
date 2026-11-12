@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record OmnichannelProperties(
         Jwt jwt, SuperAdmin superAdmin, TwoFactor twoFactor, Ws ws, Rpc rpc, History history,
         Automation automation, @DefaultValue Contacts contacts,
-        @DefaultValue Webhooks webhooks, @DefaultValue Pages pages) {
+        @DefaultValue Webhooks webhooks, @DefaultValue Pages pages, @DefaultValue Chatbot chatbot) {
 
     public record Jwt(String secret, @DefaultValue("12h") Duration ttl) {}
 
@@ -68,6 +68,22 @@ public record OmnichannelProperties(
      * {@code resolveRetry}, at most one device call per {@code resolvePace} per device, and at most
      * {@code resolveBatch} contacts queued by one "Resolve hidden numbers" request.
      */
+    /** Chatbot runs (spec §5): the pool, leases, caps and the HTTP node's limits. */
+    public record Chatbot(
+            @DefaultValue("true") boolean autoTick,
+            @DefaultValue("2s") Duration tick,
+            @DefaultValue("2m") Duration lease,
+            @DefaultValue("4") int poolSize,
+            @DefaultValue("200") int maxSteps,
+            @DefaultValue("5") int maxJumps,
+            @DefaultValue("10s") Duration httpTimeout,
+            @DefaultValue("1048576") int httpMaxBody,
+            @DefaultValue("60s") Duration sendTimeout,
+            @DefaultValue("3") int sendAttempts,
+            @DefaultValue("30s") Duration sendRetryDelay,
+            @DefaultValue("50") int versionsKept,
+            @DefaultValue("false") boolean allowPrivateHttp) {}
+
     public record Contacts(
             @DefaultValue("1h") Duration resolveRetry,
             @DefaultValue("300ms") Duration resolvePace,

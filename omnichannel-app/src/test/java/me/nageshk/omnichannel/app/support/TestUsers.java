@@ -129,7 +129,8 @@ public class TestUsers {
         mongo.remove(new Query(), "connectCodes");
         for (String c : List.of("contacts", "contactLabels", "contactAttributes", "contactNotes", "contactFilters",
                 "messageTemplates", "templateMedia.files", "templateMedia.chunks", "cloudMedia.files",
-                "cloudMedia.chunks", "messagePages", "messagePagePreviews.files", "messagePagePreviews.chunks"))
+                "cloudMedia.chunks", "messagePages", "messagePagePreviews.files", "messagePagePreviews.chunks",
+                "chatbots", "chatbotVersions", "chatbotRuns", "chatbotForms"))
             mongo.remove(new Query(), c);
         roleSeeder.seed();
         roleCache.evictAll();
