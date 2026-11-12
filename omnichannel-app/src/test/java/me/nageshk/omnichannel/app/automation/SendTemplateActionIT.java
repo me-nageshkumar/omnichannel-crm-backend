@@ -47,12 +47,12 @@ class SendTemplateActionIT extends AutomationTestBase {
 
     private AutomationAction action(String templateId, Map<String, String> values) {
         return new AutomationAction(AutomationActionType.SEND_TEMPLATE, templateId, values, null, null, null, null,
-                null, null, null);
+                null, null, null, null, null);
     }
 
     private ActionContext ctx(WaWebChat chat, Contact contact) {
         EventData.ChatData c = chat == null ? null
-                : new EventData.ChatData(chat.getId(), false, chat.getStatus(), null, null);
+                : new EventData.ChatData(chat.getId(), false, chat.getStatus(), null, null, false);
         EventData.ContactData k = contact == null ? null : new EventData.ContactData(contact.getId(),
                 contact.getName(), contact.getPhone(), false, false);
         return new ActionContext(brand.getId(), acme.getId(), AutomationEventKind.MESSAGE_RECEIVED, "m-1",

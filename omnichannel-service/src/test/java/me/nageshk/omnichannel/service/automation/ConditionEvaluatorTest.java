@@ -138,7 +138,7 @@ class ConditionEvaluatorTest {
 
     @Test
     void valuesReadEventData() {
-        EventData d = new EventData(new EventData.ChatData("c1", true, null, null, null),
+        EventData d = new EventData(new EventData.ChatData("c1", true, null, null, null, false),
                 new EventData.MessageData("m1", "hi", "TEXT", null), new EventData.NumberData("n1", "+91", "Main"), null,
                 null, null, null, null);
         Map<String, Object> v = AutomationFields.values(d, true);

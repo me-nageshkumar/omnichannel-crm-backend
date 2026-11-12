@@ -14,11 +14,14 @@ public class RulePublishValidator {
     private final TemplateTargets templates;
     private final AssignTargets assign;
     private final AutomationCrm crm;
+    private final me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots;
 
-    public RulePublishValidator(TemplateTargets templates, AssignTargets assign, AutomationCrm crm) {
+    public RulePublishValidator(TemplateTargets templates, AssignTargets assign, AutomationCrm crm,
+            me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots) {
         this.templates = templates;
         this.assign = assign;
         this.crm = crm;
+        this.chatbots = chatbots;
     }
 
     /** Field key to one sentence; empty when the rule can be published. */
@@ -46,6 +49,17 @@ public class RulePublishValidator {
                 case ADD_TO_CRM -> {
                     if (options == null) options = crm.options(ws);
                     CrmTargets.check(options, a.pipelineId(), a.stageId()).forEach((k, v) -> out.put(at + "." + k, v));
+                }
+                case START_CHATBOT -> {
+                    if (blank(a.chatbotId())) {
+                        out.put(at + ".chatbotId", "Pick a chatbot");
+                    } else {
+                        var bot = chatbots.findById(a.chatbotId()).filter(c -> ws.equals(c.getWorkspaceId())).orElse(null);
+                        if (bot == null) out.put(at + ".chatbotId", "The chatbot no longer exists");
+                        else if (bot.getStatus() != me.nageshk.omnichannel.db.chatbot.ChatbotStatus.PUBLISHED) {
+                            out.put(at + ".chatbotId", "The chatbot is a draft; publish it first");
+                        }
+                    }
                 }
             }
         }

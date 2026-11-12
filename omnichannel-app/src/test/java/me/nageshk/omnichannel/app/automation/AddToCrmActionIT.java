@@ -36,11 +36,11 @@ class AddToCrmActionIT extends AutomationTestBase {
 
     private AutomationAction add(String pipelineId, String stageId, String title) {
         return new AutomationAction(AutomationActionType.ADD_TO_CRM, null, null, null, null, null, null, pipelineId,
-                stageId, title);
+                stageId, title, null, null);
     }
 
     private ActionContext ctx(WaWebChat chat, AutomationEventKind kind) {
-        EventData.ChatData c = new EventData.ChatData(chat.getId(), false, chat.getStatus(), null, null);
+        EventData.ChatData c = new EventData.ChatData(chat.getId(), false, chat.getStatus(), null, null, false);
         me.nageshk.omnichannel.db.contact.Contact person = mongo.findById(chat.getContactId(),
                 me.nageshk.omnichannel.db.contact.Contact.class);
         EventData.ContactData who = new EventData.ContactData(person.getId(), person.getName(), person.getPhone(),
@@ -260,7 +260,7 @@ class AddToCrmActionIT extends AutomationTestBase {
         WaWebChat chat = asha();
         rule("Lane moved", AutomationEventKind.DEAL_LANE_CHANGED, RuleStatus.PUBLISHED, 1, null,
                 new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null, null, null, null, null, null, null,
-                        null));
+                        null, null, null));
         mongo.remove(new Query(), me.nageshk.omnichannel.db.automation.AutomationEvent.class);
 
         handler.run(ctx(chat), add(null, null, null));

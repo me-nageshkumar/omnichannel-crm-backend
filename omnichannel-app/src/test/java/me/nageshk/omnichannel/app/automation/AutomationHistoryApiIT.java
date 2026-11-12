@@ -62,12 +62,12 @@ class AutomationHistoryApiIT extends AutomationTestBase {
 
     private static AutomationAction send(String templateId) {
         return new AutomationAction(AutomationActionType.SEND_TEMPLATE, templateId, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null, null);
     }
 
     private static AutomationAction addToCrm() {
         return new AutomationAction(AutomationActionType.ADD_TO_CRM, null, null, null, null, null, null, null, null,
-                null);
+                null, null, null);
     }
 
     /**
@@ -225,7 +225,7 @@ class AutomationHistoryApiIT extends AutomationTestBase {
         AutomationRule r = rule("Welcome", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, null, null,
                 send(w), new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
                         me.nageshk.omnichannel.db.automation.AssignMode.TEAM_QUEUE, null, support.getId(), null,
-                        null, null, null));
+                        null, null, null, null, null));
         try (AutomationDevice d = device()) {
             incoming(n1, ASHA, "chat", "Hello", "Asha");
             worker.tick();
@@ -303,7 +303,7 @@ class AutomationHistoryApiIT extends AutomationTestBase {
         AutomationRule broken = rule("Broken", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, null, null,
                 send(t), new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
                         me.nageshk.omnichannel.db.automation.AssignMode.AGENT, "no-such-user", null,
-                        me.nageshk.omnichannel.db.automation.WhenAway.KEEP_WITH_AGENT, null, null, null));
+                        me.nageshk.omnichannel.db.automation.WhenAway.KEEP_WITH_AGENT, null, null, null, null, null));
         incoming(n1, ASHA, "chat", "Hello", "Asha");
         worker.tick();
 

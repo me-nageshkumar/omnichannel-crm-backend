@@ -64,7 +64,7 @@ class RunVariablesTest {
     }
 
     static EventData event() {
-        return new EventData(new EventData.ChatData("ch1", true, ChatStatus.OPEN, null, null),
+        return new EventData(new EventData.ChatData("ch1", true, ChatStatus.OPEN, null, null, false),
                 new EventData.MessageData("m1", "price?", "text", null),
                 new EventData.NumberData("n1", "919800000001", "Main line"),
                 new EventData.ContactData("k1", "Veenu", "919799750743", false, false), null, null, null, null);

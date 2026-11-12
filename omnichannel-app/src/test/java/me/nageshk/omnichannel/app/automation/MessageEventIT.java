@@ -237,7 +237,7 @@ class MessageEventIT extends AutomationTestBase {
         call(HttpMethod.GET, "/api/workspaces/" + brand.getId() + "/crm/pipelines", manager, null);
         var add = new me.nageshk.omnichannel.db.automation.AutomationAction(
                 me.nageshk.omnichannel.db.automation.AutomationActionType.ADD_TO_CRM, null, null, null, null, null,
-                null, null, null, null);
+                null, null, null, null, null, null);
         var adRule = rule("From ad", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, 5,
                 all(leaf("message.ad", "is", true)), add);
 

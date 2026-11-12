@@ -15,6 +15,7 @@ public final class AutomationFields {
         Map<String, Object> v = new LinkedHashMap<>();
         if (d.chat() != null) {
             v.put("chat.new", d.chat().isNew());
+            v.put("chat.chatbotRunning", d.chat().chatbotRunning());
         }
         if (d.message() != null) {
             put(v, "message.text", d.message().text());

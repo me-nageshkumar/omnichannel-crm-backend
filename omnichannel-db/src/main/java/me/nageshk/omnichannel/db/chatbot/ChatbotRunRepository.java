@@ -14,6 +14,8 @@ public interface ChatbotRunRepository extends MongoRepository<ChatbotRun, String
 
     Optional<ChatbotRun> findFirstByWaitingKindAndWaitingKeyAndStatus(TaskKind kind, String key, ChatbotRunStatus status);
 
+    Optional<ChatbotRun> findFirstByStartedByEventIdAndStartedByRuleIdAndTestFalse(String eventId, String ruleId);
+
     Page<ChatbotRun> findAllByWorkspaceIdAndChatbotIdOrderByCreatedAtDesc(String workspaceId, String chatbotId,
             Pageable pageable);
 }

@@ -68,17 +68,17 @@ class AutomationWorkerIT extends AutomationTestBase {
 
     private static AutomationAction send(String templateId) {
         return new AutomationAction(AutomationActionType.SEND_TEMPLATE, templateId, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null, null);
     }
 
     private static AutomationAction assign(AssignMode mode, String userId, String teamId) {
         return new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null, mode, userId, teamId,
-                WhenAway.KEEP_WITH_AGENT, null, null, null);
+                WhenAway.KEEP_WITH_AGENT, null, null, null, null, null);
     }
 
     private static AutomationAction addToCrm() {
         return new AutomationAction(AutomationActionType.ADD_TO_CRM, null, null, null, null, null, null, null, null,
-                null);
+                null, null, null);
     }
 
     /** CRM on, with the brand's default pipeline made (the first CRM request of a brand makes it). */

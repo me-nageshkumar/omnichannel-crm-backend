@@ -249,7 +249,7 @@ class AutomationRulesApiIT extends AutomationTestBase {
         AutomationRule r = rule("Stored", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, null,
                 all(leaf("nonsense", "is", "x")),
                 new AutomationAction(AutomationActionType.SEND_TEMPLATE, template("W", "Hi"), null, null, null, null,
-                        null, null, null, null));
+                        null, null, null, null, null, null));
         ResponseEntity<JsonNode> res = publishRule(r.getId());
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody().get("fields").get("conditions.rules[0].field").asString())
@@ -391,12 +391,12 @@ class AutomationRulesApiIT extends AutomationTestBase {
         String welcome = template("Welcome", "Hi");
         AutomationRule b = rule("B", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, 5, null,
                 new AutomationAction(AutomationActionType.SEND_TEMPLATE, welcome, null, null, null, null, null, null,
-                        null, null),
+                        null, null, null, null),
                 new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
                         me.nageshk.omnichannel.db.automation.AssignMode.TEAM_ROUND_ROBIN, null, support.getId(), null,
-                        null, null, null),
+                        null, null, null, null, null),
                 new AutomationAction(AutomationActionType.ADD_TO_CRM, null, null, null, null, null, null, null, null,
-                        null));
+                        null, null, null));
         AutomationRule a = rule("A", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, null, null);
         AutomationRule c = rule("C", AutomationEventKind.DEAL_LANE_CHANGED, RuleStatus.PUBLISHED, 10, null);
         run(b.getId(), "e1", false, RunStatus.FAILED, NOW.minus(Duration.ofDays(2)));
@@ -434,12 +434,12 @@ class AutomationRulesApiIT extends AutomationTestBase {
         AutomationRule r = rule("S", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, null, null,
                 new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
                         me.nageshk.omnichannel.db.automation.AssignMode.AGENT, agent.getId(), null, null, null, null,
-                        null),
+                        null, null, null),
                 new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
                         me.nageshk.omnichannel.db.automation.AssignMode.TEAM_QUEUE, null, support.getId(), null, null,
-                        null, null),
+                        null, null, null, null),
                 new AutomationAction(AutomationActionType.SEND_TEMPLATE, "gone", null, null, null, null, null, null,
-                        null, null));
+                        null, null, null, null));
         String summary = api(HttpMethod.GET, "/rules", manager, null).getBody().get(0).get("actionsSummary")
                 .asString();
         assertThat(summary).isEqualTo("Assign to " + agent.getName() + " · Queue in support · Send “gone”");

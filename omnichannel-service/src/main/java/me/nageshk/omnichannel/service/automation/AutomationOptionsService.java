@@ -28,9 +28,13 @@ public class AutomationOptionsService {
     private final AccessService access;
     private final AutomationCrm crm;
 
+    private final me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots;
+
     public AutomationOptionsService(WorkspaceRepository workspaces, PhoneNumberRepository numbers,
             TeamRepository teams, MessageTemplateRepository templates, UserAdminService userAdmin,
-            AccessService access, AutomationCrm crm) {
+            AccessService access, AutomationCrm crm,
+            me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots) {
+        this.chatbots = chatbots;
         this.workspaces = workspaces;
         this.numbers = numbers;
         this.teams = teams;
@@ -61,7 +65,9 @@ public class AutomationOptionsService {
                         t.getPlaceholders().stream().map(p -> new OptionsView.PlaceholderOption(p.getName(),
                                 p.getKind(), p.getLabel(), p.isRequired(), p.getFallback())).toList()))
                 .toList();
-        return new OptionsView(numberOptions, agents, teamRefs, templateOptions, crm.options(workspaceId));
+        var chatbotOptions = chatbots.findAllByWorkspaceIdOrderByNameAsc(workspaceId).stream()
+                .map(c -> new OptionsView.ChatbotOption(c.getId(), c.getName(), c.getStatus())).toList();
+        return new OptionsView(numberOptions, agents, teamRefs, templateOptions, crm.options(workspaceId), chatbotOptions);
     }
 
     private boolean seesAll(User u, String workspaceId) {
