@@ -10,6 +10,20 @@ import me.nageshk.omnichannel.service.chatbot.ChatbotViews.ChatbotView;
 import me.nageshk.omnichannel.service.chatbot.ChatbotViews.SaveRequest;
 import me.nageshk.omnichannel.service.chatbot.ChatbotViews.SaveResult;
 import me.nageshk.omnichannel.service.chatbot.ChatbotViews.VersionView;
+import me.nageshk.omnichannel.service.chatbot.ChatbotViews.RunPage;
+import me.nageshk.omnichannel.service.chatbot.ChatbotViews.RunView;
+import me.nageshk.omnichannel.service.chatbot.ChatbotViews.TestRequest;
+import me.nageshk.omnichannel.service.chatbot.ChatbotPreviewRenderer;
+import me.nageshk.omnichannel.service.chatbot.ChatbotRunQueryService;
+import me.nageshk.omnichannel.service.cloud.CloudMediaService;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMediaUploadResponse;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessages;
+import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
+import java.time.Instant;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
+import tools.jackson.databind.JsonNode;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -33,10 +47,67 @@ class ChatbotController {
 
     private final ChatbotService chatbots;
     private final ChatbotOptionsService options;
+    private final ChatbotRunQueryService runs;
+    private final ChatbotPreviewRenderer preview;
+    private final CloudMediaService media;
+    private final CloudMessages cloud;
 
-    ChatbotController(ChatbotService chatbots, ChatbotOptionsService options) {
+    ChatbotController(ChatbotService chatbots, ChatbotOptionsService options, ChatbotRunQueryService runs,
+            ChatbotPreviewRenderer preview, CloudMediaService media, CloudMessages cloud) {
         this.chatbots = chatbots;
         this.options = options;
+        this.runs = runs;
+        this.preview = preview;
+        this.media = media;
+        this.cloud = cloud;
+    }
+
+    // ---- test, runs, editor helpers (spec §7, §8.1, §8.3) ----
+
+    @PostMapping("/{id}/test")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:manage')")
+    ResponseEntity<RunView> test(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id, @RequestBody TestRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(runs.test(me, workspaceId, id, req));
+    }
+
+    @GetMapping("/{id}/runs")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:view')")
+    RunPage runs(@PathVariable String workspaceId, @PathVariable String id,
+            @RequestParam(required = false) ChatbotRunStatus status,
+            @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size) {
+        return runs.runs(workspaceId, id, status, from, to, page, size);
+    }
+
+    @GetMapping("/{id}/runs/{runId}")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:view')")
+    RunView run(@PathVariable String workspaceId, @PathVariable String id, @PathVariable String runId) {
+        return runs.run(workspaceId, id, runId);
+    }
+
+    @PostMapping("/{id}/runs/{runId}/stop")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:manage')")
+    ResponseEntity<Void> stop(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id, @PathVariable String runId) {
+        runs.stop(me, workspaceId, id, runId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/media")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:manage')")
+    CloudMediaUploadResponse upload(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id, @RequestPart(value = "file", required = false) MultipartFile file,
+            @RequestParam(value = "type", required = false) String type) {
+        chatbots.require(workspaceId, id);
+        return new CloudMediaUploadResponse(media.upload(me, workspaceId, type, file).id());
+    }
+
+    @PostMapping(value = "/{id}/preview", produces = "text/html;charset=UTF-8")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:manage')")
+    String preview(@PathVariable String workspaceId, @PathVariable String id, @RequestBody JsonNode body) {
+        chatbots.require(workspaceId, id);
+        return preview.html(workspaceId, cloud.parse(body));
     }
 
     @GetMapping("/options")

@@ -36,4 +36,24 @@ public final class ChatbotViews {
 
     public record ChatbotRef(String id, String name, ChatbotStatus status) {
     }
+
+    public record RunView(String id, String chatbotId, String chatbotName, int versionNumber, ChatRef chat,
+            ContactRef contact, NumberRef number, me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus status,
+            String currentNodeId, String currentNodeName, me.nageshk.omnichannel.db.chatbot.Waiting waiting, boolean test,
+            me.nageshk.omnichannel.db.chatbot.StartedBy startedBy, List<me.nageshk.omnichannel.db.chatbot.ChatbotStep> steps,
+            Map<String, Object> variables, String endReason, AutomationRef stoppedBy, Instant createdAt, Instant finishedAt) {
+        public record ChatRef(String id, String remoteId) {
+        }
+        public record ContactRef(String id, String name, String phone) {
+        }
+        public record NumberRef(String id, String label) {
+        }
+    }
+
+    public record RunPage(List<RunView> items, long total) {
+    }
+
+    /** What a test start sends (spec §7). */
+    public record TestRequest(String contactId, String phoneNumberId, Boolean stopRunning) {
+    }
 }
