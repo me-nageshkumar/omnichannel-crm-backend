@@ -18,11 +18,14 @@ import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
 import me.nageshk.omnichannel.service.chatbot.flow.NodeType;
 import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.SendMessageSettings;
-import me.nageshk.omnichannel.service.campaign.CampaignMessageListener;
 import me.nageshk.omnichannel.service.chatbot.run.ChatbotSender;
 import me.nageshk.omnichannel.service.cloud.CloudMediaService;
 import me.nageshk.omnichannel.service.cloud.CloudMessageValidator;
+import me.nageshk.omnichannel.db.channel.ChannelWebhookEvent;
 import me.nageshk.omnichannel.db.chatbot.Waiting;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import org.springframework.stereotype.Component;
 
@@ -36,13 +39,15 @@ public class SendMessageExecutor extends BaseExecutor {
     private final CloudMessages cloud;
     private final CloudMessageValidator validator;
     private final CloudMediaService media;
+    private final MongoTemplate mongo;
 
     public SendMessageExecutor(FlowParser parser, CloudMessages cloud, CloudMessageValidator validator,
-            CloudMediaService media) {
+            CloudMediaService media, MongoTemplate mongo) {
         super(parser);
         this.cloud = cloud;
         this.validator = validator;
         this.media = media;
+        this.mongo = mongo;
     }
 
     @Override
@@ -205,15 +210,28 @@ public class SendMessageExecutor extends BaseExecutor {
         return StepResult.next(Outputs.OTHER, result, "No matching reply");
     }
 
-    /** The button or row the reply picked: by title (the bridge) — Task 8 adds the interactive reply ids. */
+    /** The button or row the reply picked: the stored webhook event's reply id when it has one, else the title. */
     Interactive.Reply match(CloudMessage m, WaWebMessage reply) {
-        if (reply == null || reply.getBody() == null || m.interactive() == null) return null;
-        String bare = CampaignMessageListener.bare(reply.getBody());
-        if (bare == null || bare.isEmpty()) return null;
-        for (Interactive.Reply r : CloudMessageValidator.replies(m.interactive())) {
-            if (r.title() != null && bare.equals(CampaignMessageListener.bare(r.title()))) return r;
+        if (reply == null || m.interactive() == null) return null;
+        Map<String, Object> event = reply.getWaMessageId() == null ? null : webhookMessage(reply.getWaMessageId());
+        return ReplyMatcher.match(m.interactive(), reply, event).orElse(null);
+    }
+
+    /** The Cloud-shaped {@code messages[0]} of the stored webhook event for a message id, or null. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> webhookMessage(String waMessageId) {
+        ChannelWebhookEvent e = mongo.findOne(new Query(Criteria.where("eventKey").is("message:" + waMessageId)),
+                ChannelWebhookEvent.class);
+        if (e == null || e.getEvent() == null) return null;
+        try {
+            Object entry = ((List<Object>) e.getEvent().get("entry")).get(0);
+            Object change = ((List<Object>) ((Map<String, Object>) entry).get("changes")).get(0);
+            Object value = ((Map<String, Object>) change).get("value");
+            Object messages = ((Map<String, Object>) value).get("messages");
+            return (Map<String, Object>) ((List<Object>) messages).get(0);
+        } catch (RuntimeException notTheShape) {
+            return null;
         }
-        return null;
     }
 
     static CloudMessage textMessage(String body) {

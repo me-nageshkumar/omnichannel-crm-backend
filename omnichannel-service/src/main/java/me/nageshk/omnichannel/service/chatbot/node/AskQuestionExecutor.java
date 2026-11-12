@@ -8,6 +8,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import me.nageshk.omnichannel.db.chatbot.Waiting;
 import me.nageshk.omnichannel.db.contact.ContactAttributeRepository;
+import me.nageshk.omnichannel.db.contact.ContactLabelRepository;
+import me.nageshk.omnichannel.service.chatbot.run.RunVariables;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.chatbot.run.ChatbotSender;
 import me.nageshk.omnichannel.service.contact.ContactService;
@@ -16,6 +18,7 @@ import me.nageshk.omnichannel.service.chatbot.flow.FlowNode;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
 import me.nageshk.omnichannel.service.chatbot.flow.NodeType;
 import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
+import me.nageshk.omnichannel.service.chatbot.flow.settings.AnswerType;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.AskQuestionSettings;
 import org.springframework.stereotype.Component;
 
@@ -27,12 +30,17 @@ public class AskQuestionExecutor extends BaseExecutor {
     static final int MAX_RETRIES = 5;
 
     private final ContactAttributeRepository attributes;
+    private final ContactLabelRepository labels;
     private final ContactService contacts;
+    private final RunVariables variables;
 
-    public AskQuestionExecutor(FlowParser parser, ContactAttributeRepository attributes, ContactService contacts) {
+    public AskQuestionExecutor(FlowParser parser, ContactAttributeRepository attributes, ContactLabelRepository labels,
+            ContactService contacts, RunVariables variables) {
         super(parser);
         this.attributes = attributes;
+        this.labels = labels;
         this.contacts = contacts;
+        this.variables = variables;
     }
 
     @Override
@@ -92,6 +100,8 @@ public class AskQuestionExecutor extends BaseExecutor {
                 Map<String, String> values = new LinkedHashMap<>();
                 values.put(s.attributeId(), String.valueOf(parsed.get()));
                 ctx.contact(contacts.update(ctx.workspaceId(), ctx.contact().getId(), null, values));
+                variables.refreshContact(ctx.vars(), ctx.contact(), attributes.findByWorkspaceIdOrderByNameKey(ctx.workspaceId()),
+                        labels.findByWorkspaceIdOrderByNameKey(ctx.workspaceId()));
             }
             return StepResult.next(Outputs.NEXT, result, "Answered “" + parsed.get() + "”");
         }
@@ -113,11 +123,8 @@ public class AskQuestionExecutor extends BaseExecutor {
         return StepResult.next(Outputs.NO_ANSWER, result, "No valid answer");
     }
 
-    /** The typed answer, or empty when the message is not a valid answer (Task 8 adds every type). */
+    /** The typed answer, or empty when the message is not a valid answer. */
     java.util.Optional<Object> parse(AskQuestionSettings s, WaWebMessage m) {
-        if (m == null) return java.util.Optional.empty();
-        String body = m.getBody() == null ? "" : m.getBody().strip();
-        if (body.isEmpty()) return java.util.Optional.empty();
-        return java.util.Optional.of(body);
+        return Answers.parse(s.answerType() == null ? AnswerType.TEXT : s.answerType(), m);
     }
 }
