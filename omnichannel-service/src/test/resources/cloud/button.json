@@ -1,0 +1,18 @@
+{
+  "messaging_product": "whatsapp-web",
+  "recipient_type": "individual",
+  "to": "919900000001",
+  "type": "interactive",
+  "interactive": {
+    "type": "button",
+    "header": { "type": "image", "image": { "id": "2762702990552401" } },
+    "body": { "text": "Hi Pablo! Your workshop is at 9am tomorrow. Tap a button to reschedule." },
+    "footer": { "text": "Lucky Shrub: Your gateway to succulents!" },
+    "action": {
+      "buttons": [
+        { "type": "reply", "reply": { "id": "change-button", "title": "Change" } },
+        { "type": "reply", "reply": { "id": "cancel-button", "title": "Cancel" } }
+      ]
+    }
+  }
+}
