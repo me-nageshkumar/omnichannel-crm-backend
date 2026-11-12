@@ -20,20 +20,20 @@ import tools.jackson.databind.node.ObjectNode;
  * (a sent-message model whose body is the request's {@code content}) and {@code getNumberId} with a registered phone.
  * Every request is recorded before it is answered.
  */
-class AutomationDevice implements AutoCloseable {
+public class AutomationDevice implements AutoCloseable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final AtomicInteger SERIAL = new AtomicInteger();
 
     /** The whole response to a {@code sendMessage} request; null never answers it (the call times out). */
-    volatile Function<Envelope, Envelope> sendAnswer = req -> Envelope.response(req.id(), model(req, 1));
+    public volatile Function<Envelope, Envelope> sendAnswer = req -> Envelope.response(req.id(), model(req, 1));
 
     private final FakeDevice device;
     private final List<Envelope> requests = new CopyOnWriteArrayList<>();
     private final Thread answering;
     private volatile boolean closed;
 
-    AutomationDevice(int port, TestDevices testDevices, PhoneNumber n) throws Exception {
+    public AutomationDevice(int port, TestDevices testDevices, PhoneNumber n) throws Exception {
         device = FakeDevice.connectAndAuth(port, testDevices.redeem(n).deviceKey());
         device.send(Envelope.event("ready",
                 MAPPER.createObjectNode().put("pushname", "N").put("wid", n.getNumber() + "@c.us")));
@@ -44,7 +44,7 @@ class AutomationDevice implements AutoCloseable {
     }
 
     /** A sent-message model for the request, the way whatsapp-web.js reports it, with the given ack. */
-    static ObjectNode model(Envelope req, int ack) {
+    public static ObjectNode model(Envelope req, int ack) {
         String remote = req.params().get("chatId").asString();
         ObjectNode m = MAPPER.createObjectNode();
         m.set("id", MAPPER.createObjectNode().put("_serialized", "true_" + remote + "_" + SERIAL.incrementAndGet())
@@ -54,11 +54,11 @@ class AutomationDevice implements AutoCloseable {
         return m;
     }
 
-    List<Envelope> requests() {
+    public List<Envelope> requests() {
         return List.copyOf(requests);
     }
 
-    List<Envelope> requests(String method) {
+    public List<Envelope> requests(String method) {
         return requests.stream().filter(e -> method.equals(e.method())).toList();
     }
 
