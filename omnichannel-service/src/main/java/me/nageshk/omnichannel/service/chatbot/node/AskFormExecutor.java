@@ -11,6 +11,19 @@ import me.nageshk.omnichannel.service.chatbot.flow.NodeType;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.AskFormSettings;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.FormField;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.FormFieldType;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import me.nageshk.omnichannel.db.chatbot.ChatbotForm;
+import me.nageshk.omnichannel.db.chatbot.Waiting;
+import me.nageshk.omnichannel.db.inbox.WaWebChat;
+import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
+import me.nageshk.omnichannel.service.chatbot.form.FormPageService;
+import me.nageshk.omnichannel.service.chatbot.run.ChatbotSender;
+import me.nageshk.omnichannel.service.chatbot.run.RunChat;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 /** Ask with a form (spec §4.2, §8.4): a hosted form page whose link goes out over WhatsApp; waits for the submission. */
@@ -19,8 +32,49 @@ public class AskFormExecutor extends BaseExecutor {
 
     static final int MAX_FIELDS = 20;
 
-    public AskFormExecutor(FlowParser parser) {
+    private final FormPageService forms;
+    private final RunChat runChat;
+
+    public AskFormExecutor(FlowParser parser, @Lazy FormPageService forms, RunChat runChat) {
         super(parser);
+        this.forms = forms;
+        this.runChat = runChat;
+    }
+
+    @Override
+    public StepResult run(RunContext ctx, FlowNode node) {
+        AskFormSettings s = settings(node, AskFormSettings.class);
+        WaWebChat chat = runChat.resolve(ctx);
+        AskFormSettings rendered = new AskFormSettings(ctx.render(s.title()), ctx.render(s.intro()), renderFields(ctx, s),
+                ctx.render(s.submitText()), ctx.render(s.thanksText()), s.linkMessage());
+        // the form lives at least a day, and as long as the run may wait (spec §5.6: the token expires with the run)
+        Duration life = Duration.ofMinutes(Math.max(ctx.settings().endAfterMinutes(), 24 * 60));
+        Instant expiresAt = ctx.now().plus(life);
+        ChatbotForm form = forms.create(ctx.run(), node, rendered, expiresAt);
+        Map<String, Object> formVars = new LinkedHashMap<>();
+        formVars.put("url", forms.url(form));
+        Object previous = ctx.vars().put("form", formVars);
+        String link = ctx.render(s.linkMessage());
+        if (previous == null) ctx.vars().remove("form"); else ctx.vars().put("form", previous);
+        ctx.sender(ChatbotSender.class).send(ctx, SendMessageExecutor.textMessage(link));
+        return StepResult.wait(Waiting.form(form.getToken(), ctx.now(), expiresAt, rendered.title()),
+                "Sent the form “" + rendered.title() + "” to " + chat.getRemoteId());
+    }
+
+    private static List<FormField> renderFields(RunContext ctx, AskFormSettings s) {
+        List<FormField> out = new ArrayList<>();
+        if (s.fields() == null) return out;
+        for (FormField f : s.fields()) {
+            out.add(new FormField(f.key(), ctx.render(f.label()), f.type(), f.required(), f.options()));
+        }
+        return out;
+    }
+
+    @Override
+    public StepResult onAnswer(RunContext ctx, FlowNode node, TaskAnswer answer) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("form", new LinkedHashMap<>(answer.payload()));
+        return StepResult.next(Outputs.NEXT, result, "Form submitted");
     }
 
     @Override
