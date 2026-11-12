@@ -21,6 +21,12 @@ logging:
     me.nageshk.omnichannel: INFO
 
 omnichannel:
+  # Cloud interactive messages sent over the bridge are a link to a page here: the public HTTPS origin WhatsApp
+  # fetches the preview from. For a local check run a tunnel and point this at it.
+  pages:
+    base-url: ${OMNICHANNEL_PAGES_BASE_URL:http://localhost:8080}
+    ttl-days: 90
+    reply-window: 48h
   webhooks:
     retention: 30d
     keep-raw: true

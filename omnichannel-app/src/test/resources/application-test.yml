@@ -10,6 +10,8 @@ server:
 omnichannel:
   super-admin:
     password: ""
+  pages:
+    base-url: http://pages.test
   # tests drive CampaignRunner.tick() themselves
   campaign:
     auto-tick: false
