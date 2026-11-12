@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import me.nageshk.omnichannel.db.page.MessagePageRepository;
+import me.nageshk.omnichannel.service.page.MessagePageService;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +29,8 @@ public class InboxViews {
     private final UserRepository users;
     private final TeamRepository teams;
     private final WaWebChatRepository waChats;
+    private final MessagePageRepository messagePages;
+    private final MessagePageService messagePageService;
 
     public ChatView chat(WaWebChat chat) {
         return chats(List.of(chat)).get(0);
@@ -60,7 +64,9 @@ public class InboxViews {
                 loc == null ? null : new MessageView.Location(loc.latitude(), loc.longitude(), loc.description()),
                 m.getTimestamp(), m.getStatus(), m.getStatusTimes(),
                 sentBy(m), m.getTemplateId(), m.getPollOptions(), m.getPollVotes(), m.getCall(),
-                m.getBusinessTag(), AdClickView.of(m.getAdClick()));
+                m.getBusinessTag(), AdClickView.of(m.getAdClick()), m.getMessagePageId(),
+                m.getMessagePageId() == null ? null
+                        : messagePages.findById(m.getMessagePageId()).map(messagePageService::view).orElse(null));
     }
 
     public ActionView action(WaWebChatAction a) {

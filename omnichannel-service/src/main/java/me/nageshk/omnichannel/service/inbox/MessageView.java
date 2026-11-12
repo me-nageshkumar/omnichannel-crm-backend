@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import me.nageshk.omnichannel.service.page.MessagePageView;
 import java.time.Instant;
 import java.util.List;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
@@ -27,7 +28,11 @@ public record MessageView(
         List<WaWebMessage.PollVote> pollVotes,
         WaWebMessage.Call call,
         String businessTag,
-        AdClickView adClick) {
+        AdClickView adClick,
+        /** The message page this message links to, else null. */
+        String messagePageId,
+        /** What the customer did on that page, else null. */
+        MessagePageView messagePage) {
 
     /** {@code available} is true once the bytes are cached, so the console can show a thumbnail at once. */
     public record MediaView(String mimetype, String filename, Long size, boolean available) {

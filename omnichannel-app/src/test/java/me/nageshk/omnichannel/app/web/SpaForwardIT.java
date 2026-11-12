@@ -69,6 +69,11 @@ class SpaForwardIT {
     }
 
     @Test
+    void pagePathIsNotForwarded() throws Exception {
+        mvc.perform(get("/t/abc")).andExpect(forwardedUrl(null));
+    }
+
+    @Test
     void postToSpaPathIsNotPermitted() throws Exception {
         mvc.perform(post("/profile")).andExpect(status().isUnauthorized());
     }
