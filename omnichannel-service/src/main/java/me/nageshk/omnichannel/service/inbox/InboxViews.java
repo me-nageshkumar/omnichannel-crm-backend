@@ -34,6 +34,7 @@ public class InboxViews {
     private final WaWebChatRepository waChats;
     private final MessagePageRepository messagePages;
     private final MessagePageService messagePageService;
+    private final me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository runs;
 
     public ChatView chat(WaWebChat chat) {
         return chats(List.of(chat)).get(0);
@@ -87,7 +88,7 @@ public class InboxViews {
                 a.getReason(), a.getReasonDetail(), ref(a.getFromTeamId(), a.getFromTeamName()));
     }
 
-    private static ChatView toView(WaWebChat c, Contact contact, List<ChatView.OtherChat> otherChats,
+    private ChatView toView(WaWebChat c, Contact contact, List<ChatView.OtherChat> otherChats,
             ChatView.Ref user, ChatView.Ref team,
             ChatView.Ref lastAgent) {
         String phone = contact == null ? null : contact.getPhone();
@@ -98,7 +99,18 @@ public class InboxViews {
                 c.getStatus(), user, team, c.getUnreadCount(), c.getLastMessageAt(),
                 last == null ? null
                         : new ChatView.LastMessage(last.direction(), last.type(), last.text(), last.status()),
-                c.getCreationTime(), lastAgent, AdClickView.of(c.getAdClick()), otherChats);
+                c.getCreationTime(), lastAgent, AdClickView.of(c.getAdClick()), otherChats, chatbot(c));
+    }
+
+    private ChatView.ActiveChatbotView chatbot(WaWebChat c) {
+        WaWebChat.ActiveChatbot p = c.getChatbot();
+        if (p == null) return null;
+        String waitingFor = runs.findById(p.runId()).map(r -> r.getWaiting() == null ? null : switch (r.getWaiting().kind()) {
+            case WHATSAPP_REPLY -> "WhatsApp reply";
+            case FORM -> "form";
+            case TIMER -> "timer";
+        }).orElse(null);
+        return new ChatView.ActiveChatbotView(p.runId(), p.chatbotId(), p.chatbotName(), p.nodeName(), waitingFor);
     }
 
     /** One query per distinct number: the chats of the listed contacts, keyed by number and contact. */

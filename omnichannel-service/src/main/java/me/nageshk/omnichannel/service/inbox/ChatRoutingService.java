@@ -141,6 +141,25 @@ public class ChatRoutingService {
         return saved;
     }
 
+    /** Like {@link #assignByAutomation} for a chatbot node: the trail says "Chatbot: <name>". */
+    public WaWebChat assignByChatbot(WaWebChat chat, User user, Team team, String chatbotName) {
+        WaWebChat saved = routed(chat, user, team, RoutedReason.AUTOMATION, null, "Chatbot: " + chatbotName, chatbotName);
+        publisher.publishEvent(new InboxEvents.ChatChanged(saved));
+        return saved;
+    }
+
+    /** Like {@link #roundRobinByAutomation} for a chatbot node. */
+    public WaWebChat roundRobinByChatbot(WaWebChat chat, Team team, String chatbotName) {
+        Team current = teams.findById(team.getId()).orElse(team);
+        User next = nextMember(current, reachable(chat), chat.getWorkspaceId(), null);
+        WaWebChat saved = assignByChatbot(chat, next, team, chatbotName);
+        if (next != null) {
+            mongo.updateFirst(new Query(Criteria.where("_id").is(team.getId())),
+                    new Update().set("roundRobinCursor", next.getId()), Team.class);
+        }
+        return saved;
+    }
+
     /**
      * Gives the chat to the next eligible member of {@code team} after its cursor, whatever the team's routing mode,
      * and moves the cursor once saved; with nobody eligible, to the team's queue.

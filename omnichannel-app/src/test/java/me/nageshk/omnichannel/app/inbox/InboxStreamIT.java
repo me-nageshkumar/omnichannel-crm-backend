@@ -44,7 +44,7 @@ class InboxStreamIT extends InboxApiTestBase {
 
     private ChatView view(WaWebChat chat) {
         return new ChatView(chat.getId(), chat.getPhoneNumberId(), chat.getRemoteId(), null, ChatStatus.OPEN, null, null,
-                0, null, null, null, null, null, java.util.List.of());
+                0, null, null, null, null, null, java.util.List.of(), null);
     }
 
     @Test
