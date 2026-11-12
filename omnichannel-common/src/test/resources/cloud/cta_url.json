@@ -1,0 +1,13 @@
+{
+  "messaging_product": "whatsapp-web",
+  "recipient_type": "individual",
+  "to": "919900000001",
+  "type": "interactive",
+  "interactive": {
+    "type": "cta_url",
+    "header": { "type": "text", "text": "Available Dates" },
+    "body": { "text": "Tap the button below to see available dates." },
+    "footer": { "text": "Dates subject to change." },
+    "action": { "name": "cta_url", "parameters": { "display_text": "See Dates", "url": "https://www.luckyshrub.com?clickID=kqDGWd24Q5TRwoEQTICY7W1JKoXvaZOXWAS7h1P76s0R7Paec4" } }
+  }
+}

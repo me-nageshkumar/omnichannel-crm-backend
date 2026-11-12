@@ -45,6 +45,9 @@ F=/Users/nagesh/Projects/WhatsAppWebJS/SCM/omnichannel-crm-frontend
 npx vitest run <path> --maxWorkers=4
 npx tsc --noEmit && npm run lint && npm run build
 
+# Message pages: WhatsApp fetches the link preview from the public origin in OMNICHANNEL_PAGES_BASE_URL (default
+# http://localhost:8080). For a real-device check run a tunnel first, e.g. `cloudflared tunnel --url http://localhost:8089`,
+# and start the jar with OMNICHANNEL_PAGES_BASE_URL=https://<tunnel-host>.
 # Deploy on 8089: stop the old process and wait for it to exit (up to 30 s), since the build replaces its jar
 kill $(lsof -nP -iTCP:8089 -sTCP:LISTEN -t)
 (cd "$F" && npm run -s build)

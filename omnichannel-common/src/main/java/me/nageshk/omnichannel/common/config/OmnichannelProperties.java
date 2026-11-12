@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record OmnichannelProperties(
         Jwt jwt, SuperAdmin superAdmin, TwoFactor twoFactor, Ws ws, Rpc rpc, History history,
         Automation automation, @DefaultValue Contacts contacts,
-        @DefaultValue Webhooks webhooks) {
+        @DefaultValue Webhooks webhooks, @DefaultValue Pages pages) {
 
     public record Jwt(String secret, @DefaultValue("12h") Duration ttl) {}
 
@@ -78,4 +78,13 @@ public record OmnichannelProperties(
             @DefaultValue("30d") Duration retention,
             @DefaultValue("true") boolean keepRaw,
             @DefaultValue("65536") int rawMaxBytes) {}
+
+    /**
+     * Message pages (Cloud interactive messages sent over the bridge as a link): the public origin the links and the
+     * preview image are served from, how long a page is served, and how long a typed reply may follow its page.
+     */
+    public record Pages(
+            @DefaultValue("http://localhost:8080") String baseUrl,
+            @DefaultValue("90") int ttlDays,
+            @DefaultValue("48h") Duration replyWindow) {}
 }

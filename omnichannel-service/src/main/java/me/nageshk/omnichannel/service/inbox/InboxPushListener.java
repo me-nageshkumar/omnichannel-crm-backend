@@ -6,6 +6,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.service.inbox.InboxEvents.ActionRecorded;
 import me.nageshk.omnichannel.service.inbox.InboxEvents.ChatChanged;
 import me.nageshk.omnichannel.service.inbox.InboxEvents.HistoryStored;
+import me.nageshk.omnichannel.service.inbox.InboxEvents.MessagePageChanged;
 import me.nageshk.omnichannel.service.inbox.InboxEvents.MessageUpserted;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -34,6 +35,20 @@ public class InboxPushListener {
             broker.pushMessage(chat.getWorkspaceId(), chat, views.message(event.message()));
         } catch (RuntimeException e) {
             log.warn("Could not push message {} to the inbox stream", event.message().getId(), e);
+        }
+    }
+
+    /** The page's counts live on the message view, so a changed page is pushed as the message again. */
+    @EventListener
+    public void on(MessagePageChanged event) {
+        try {
+            WaWebChat chat = event.chat();
+            if (broker.subscribers(chat.getWorkspaceId()) == 0) {
+                return;
+            }
+            broker.pushMessage(chat.getWorkspaceId(), chat, views.message(event.message()));
+        } catch (RuntimeException e) {
+            log.warn("Could not push message page change {} to the inbox stream", event.message().getId(), e);
         }
     }
 

@@ -46,6 +46,10 @@ public final class InboxEvents {
     public record ChatChanged(WaWebChat chat) {
     }
 
+    /** The customer opened or acted on the message page of {@code message}, or a reply was matched to it. */
+    public record MessagePageChanged(WaWebChat chat, WaWebMessage message) {
+    }
+
     /** A page of a history import stored messages in the chat; an open thread should fetch them. */
     public record HistoryStored(WaWebChat chat) {
     }

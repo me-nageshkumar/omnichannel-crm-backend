@@ -124,7 +124,8 @@ public class CampaignMessageListener {
         return stopWords != null && stopWords.stream().anyMatch(w -> w != null && text.equals(bare(w)));
     }
 
-    static String bare(String text) {
+    /** Lower-cased, without the punctuation, symbols and spaces around it: how a stop word or a reply title is matched. */
+    public static String bare(String text) {
         return EDGES.matcher(text.toLowerCase(Locale.ROOT)).replaceAll("");
     }
 

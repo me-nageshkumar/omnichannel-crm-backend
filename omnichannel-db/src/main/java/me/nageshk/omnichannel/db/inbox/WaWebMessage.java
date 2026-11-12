@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.db.inbox;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
@@ -58,6 +59,10 @@ public class WaWebMessage {
     private String campaignId;
     /** The ad this message came from, else null; set when the message was stored. */
     private AdClick adClick;
+    /** The message page a Cloud interactive message was sent as (the body is its link), else null. */
+    private String messagePageId;
+    /** The Cloud API request this message was sent as (snake_case keys), for sends that had one; else null. */
+    private Map<String, Object> request;
     @CreatedDate
     private Instant creationTime;
 

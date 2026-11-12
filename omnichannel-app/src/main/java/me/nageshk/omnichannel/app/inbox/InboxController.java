@@ -38,6 +38,10 @@ import me.nageshk.omnichannel.service.inbox.InboxViews;
 import me.nageshk.omnichannel.service.inbox.MessageView;
 import me.nageshk.omnichannel.service.inbox.NewChatRequest;
 import me.nageshk.omnichannel.service.inbox.NewChatService;
+import me.nageshk.omnichannel.service.cloud.CloudSendService;
+import tools.jackson.databind.JsonNode;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessages;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudSendResponse;
 import me.nageshk.omnichannel.service.inbox.NumberLookup;
 import me.nageshk.omnichannel.service.inbox.NumberLookupService;
 import me.nageshk.omnichannel.service.inbox.RoutingSetting;
@@ -109,6 +113,8 @@ public class InboxController {
     private final WaWebMessageRepository messageRepository;
     private final ChatMediaService chatMedia;
     private final NewChatService newChats;
+    private final CloudSendService cloudSend;
+    private final CloudMessages cloud;
     private final NumberLookupService numberLookups;
     private final AccessService accessService;
 
@@ -116,7 +122,8 @@ public class InboxController {
             AccessTokenAuthenticator authenticator, InboxViews views, InboxSettingService settings, ChatAssignmentService assignment,
             PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService,
             InboxSendService sender, WaWebMessageRepository messageRepository, ChatMediaService chatMedia,
-            NewChatService newChats, NumberLookupService numberLookups, AccessService accessService) {
+            NewChatService newChats, NumberLookupService numberLookups, AccessService accessService,
+            CloudSendService cloudSend, CloudMessages cloud) {
         this.accessService = accessService;
         this.query = query;
         this.scopeService = scopeService;
@@ -131,6 +138,8 @@ public class InboxController {
         this.sender = sender;
         this.messageRepository = messageRepository;
         this.chatMedia = chatMedia;
+        this.cloudSend = cloudSend;
+        this.cloud = cloud;
         this.newChats = newChats;
         this.numberLookups = numberLookups;
     }
@@ -304,6 +313,14 @@ public class InboxController {
             @PathVariable String workspaceId, @PathVariable String chatId,
             @RequestBody(required = false) SendRequest req) {
         return sender.send(me, workspaceId, query.requireVisible(me, workspaceId, chatId), req);
+    }
+
+    /** Sends a Cloud API message to the chat; {@code to} is filled from the chat. See {@link CloudSendService}. */
+    @PostMapping("/chats/{chatId}/cloud-messages")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    public CompletableFuture<CloudSendResponse> sendCloud(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @PathVariable String chatId, @RequestBody JsonNode body) {
+        return cloudSend.sendToChat(me, workspaceId, query.requireVisible(me, workspaceId, chatId), cloud.parse(body));
     }
 
     /**

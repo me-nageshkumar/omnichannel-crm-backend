@@ -40,6 +40,8 @@ public class SecurityConfig {
     public static final String VERIFY_OTP_PATH = "/api/auth/verify-otp";
     public static final String INITIAL_PASSWORD_PATH = "/api/auth/initial-password";
     public static final String DEVICE_CONNECT_PATH = "/api/devices/connect";
+    /** The beacon a public message page posts; the page itself is a GET, open like the console's files. */
+    public static final String PAGE_EVENT_PATH = "/t/*/e";
 
     /**
      * {@code POST} to the login and verify-otp paths is handled by an {@link AuthenticationFilter}:
@@ -75,6 +77,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, LOGIN_PATH, VERIFY_OTP_PATH, INITIAL_PASSWORD_PATH, DEVICE_CONNECT_PATH)
                         .permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, PAGE_EVENT_PATH).permitAll()
                         .requestMatchers("/api/**").authenticated()
                         // the console's static files and its client-side routes
                         .requestMatchers(HttpMethod.GET, "/**").permitAll()
