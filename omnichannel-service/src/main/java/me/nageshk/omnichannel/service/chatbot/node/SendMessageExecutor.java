@@ -18,8 +18,12 @@ import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
 import me.nageshk.omnichannel.service.chatbot.flow.NodeType;
 import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.SendMessageSettings;
+import me.nageshk.omnichannel.service.campaign.CampaignMessageListener;
+import me.nageshk.omnichannel.service.chatbot.run.ChatbotSender;
 import me.nageshk.omnichannel.service.cloud.CloudMediaService;
 import me.nageshk.omnichannel.service.cloud.CloudMessageValidator;
+import me.nageshk.omnichannel.db.chatbot.Waiting;
+import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import org.springframework.stereotype.Component;
 
 /**
@@ -116,5 +120,104 @@ public class SendMessageExecutor extends BaseExecutor {
             p.warning("message", "no button is connected, so the chatbot would not wait for the reply");
         }
         return p.list;
+    }
+
+    // ---- running ----
+
+    /** The message with every string rendered against the run's variables. */
+    CloudMessage rendered(RunContext ctx, FlowNode node) {
+        SendMessageSettings s = settings(node, SendMessageSettings.class);
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : s.message().entrySet()) m.put(e.getKey(), renderDeep(ctx, e.getValue()));
+        m.put("messaging_product", MessagingProduct.WHATSAPP_WEB);
+        m.put("recipient_type", "individual");
+        m.putIfAbsent("to", "0");
+        return cloud.fromMap(m);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object renderDeep(RunContext ctx, Object o) {
+        if (o instanceof String str) return ctx.render(str);
+        if (o instanceof Map<?, ?> m) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : m.entrySet()) out.put(String.valueOf(e.getKey()), renderDeep(ctx, e.getValue()));
+            return out;
+        }
+        if (o instanceof List<?> l) {
+            List<Object> out = new ArrayList<>(l.size());
+            for (Object x : l) out.add(renderDeep(ctx, x));
+            return out;
+        }
+        return o;
+    }
+
+    private static String summaryOf(CloudMessage m) {
+        if (m.text() != null) return m.text().body();
+        if (m.interactive() != null && m.interactive().body() != null) return m.interactive().body().text();
+        if (m.media() != null && m.media().caption() != null) return m.media().caption();
+        return m.type();
+    }
+
+    @Override
+    public StepResult run(RunContext ctx, FlowNode node) {
+        CloudMessage m = rendered(ctx, node);
+        ctx.sender(ChatbotSender.class).send(ctx, m);
+        String summary = summaryOf(m);
+        if (waits(node, ctx.flow())) {
+            return StepResult.wait(Waiting.whatsApp(ctx.chat().getId(), ctx.now(), summary), "Sent “" + summary + "”, waiting for a reply");
+        }
+        return StepResult.next(Outputs.NEXT, null, "Sent “" + summary + "”");
+    }
+
+    @Override
+    public StepResult onAnswer(RunContext ctx, FlowNode node, TaskAnswer answer) {
+        CloudMessage m = rendered(ctx, node);
+        WaWebMessage reply = answer.message();
+        String text = reply == null ? null : reply.getBody();
+        Interactive.Reply matched = match(m, reply);
+        if (matched != null) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("id", matched.id());
+            r.put("title", matched.title());
+            r.put("text", text);
+            result.put("reply", r);
+            return StepResult.next(Outputs.reply(matched.id()), result, "Reply “" + matched.title() + "”");
+        }
+        ChatbotSender sender = ctx.sender(ChatbotSender.class);
+        int retries = ctx.settings().invalidReplyRetries();
+        if (ctx.run().getInvalidReplies() < retries) {
+            ctx.run().setInvalidReplies(ctx.run().getInvalidReplies() + 1);
+            sender.send(ctx, textMessage(ctx.settings().retryMessage()));
+            sender.send(ctx, m);
+            return StepResult.wait(Waiting.whatsApp(ctx.chat().getId(), ctx.now(), summaryOf(m)),
+                    "Reply did not match, asked again (" + ctx.run().getInvalidReplies() + "/" + retries + ")");
+        }
+        if (ctx.settings().giveUpMessage() != null && !ctx.settings().giveUpMessage().isBlank()) {
+            sender.send(ctx, textMessage(ctx.settings().giveUpMessage()));
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("id", null);
+        r.put("title", null);
+        r.put("text", text);
+        result.put("reply", r);
+        return StepResult.next(Outputs.OTHER, result, "No matching reply");
+    }
+
+    /** The button or row the reply picked: by title (the bridge) — Task 8 adds the interactive reply ids. */
+    Interactive.Reply match(CloudMessage m, WaWebMessage reply) {
+        if (reply == null || reply.getBody() == null || m.interactive() == null) return null;
+        String bare = CampaignMessageListener.bare(reply.getBody());
+        if (bare == null || bare.isEmpty()) return null;
+        for (Interactive.Reply r : CloudMessageValidator.replies(m.interactive())) {
+            if (r.title() != null && bare.equals(CampaignMessageListener.bare(r.title()))) return r;
+        }
+        return null;
+    }
+
+    static CloudMessage textMessage(String body) {
+        return new CloudMessage(MessagingProduct.WHATSAPP_WEB, "individual", "0", CloudMessage.TEXT,
+                new me.nageshk.omnichannel.common.channel.whatsapp.message.Text(false, body), null, null);
     }
 }

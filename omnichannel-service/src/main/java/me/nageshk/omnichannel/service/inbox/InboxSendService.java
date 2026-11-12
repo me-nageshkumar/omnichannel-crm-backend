@@ -144,7 +144,9 @@ public class InboxSendService {
     public CompletableFuture<MessageView> send(SendActor actor, String workspaceId, WaWebChat chat,
             SendRequest req, String typedPhone) {
         // a rule's message may go to a closed chat, and leaves it closed
-        if (!(actor instanceof AutomationActor) && chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
+        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() != ChatStatus.OPEN) {
+            throw new ChatClosedException();
+        }
         DeviceSession device = devices.requireReady(workspaceId, chat);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
         return dispatch(actor, chat, device, out, typedPhone);
@@ -168,7 +170,9 @@ public class InboxSendService {
      */
     public CompletableFuture<MessageView> sendCloud(SendActor actor, String workspaceId, WaWebChat chat,
             CloudMessage message, String typedPhone, boolean toIsPhone) {
-        if (!(actor instanceof AutomationActor) && chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
+        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() != ChatStatus.OPEN) {
+            throw new ChatClosedException();
+        }
         DeviceSession device = devices.requireReady(workspaceId, chat);
         CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
         Outgoing out = cloudOutgoing(chat, m);
@@ -269,6 +273,8 @@ public class InboxSendService {
                     new RenderRequest(chat.getContactId(), req.values()));
             case CampaignActor c -> renderer.renderForCampaign(workspaceId, templateId, req.values());
             case AutomationActor a -> renderer.renderForAutomation(workspaceId, templateId, chat.getContactId(),
+                    req.values());
+            case ChatbotActor c -> renderer.renderForAutomation(workspaceId, templateId, chat.getContactId(),
                     req.values());
         };
         if (rendered.type() == TemplateType.CONTACT_CARD) {

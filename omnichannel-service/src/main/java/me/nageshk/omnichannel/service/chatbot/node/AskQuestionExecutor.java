@@ -4,7 +4,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import me.nageshk.omnichannel.db.chatbot.TaskKind;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import me.nageshk.omnichannel.db.chatbot.Waiting;
 import me.nageshk.omnichannel.db.contact.ContactAttributeRepository;
+import me.nageshk.omnichannel.db.inbox.WaWebMessage;
+import me.nageshk.omnichannel.service.chatbot.run.ChatbotSender;
+import me.nageshk.omnichannel.service.contact.ContactService;
 import me.nageshk.omnichannel.service.chatbot.flow.Flow;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowNode;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
@@ -21,10 +27,12 @@ public class AskQuestionExecutor extends BaseExecutor {
     static final int MAX_RETRIES = 5;
 
     private final ContactAttributeRepository attributes;
+    private final ContactService contacts;
 
-    public AskQuestionExecutor(FlowParser parser, ContactAttributeRepository attributes) {
+    public AskQuestionExecutor(FlowParser parser, ContactAttributeRepository attributes, ContactService contacts) {
         super(parser);
         this.attributes = attributes;
+        this.contacts = contacts;
     }
 
     @Override
@@ -58,5 +66,58 @@ public class AskQuestionExecutor extends BaseExecutor {
             p.error("attributeId", "the attribute no longer exists");
         }
         return p.list;
+    }
+
+    // ---- running ----
+
+    @Override
+    public StepResult run(RunContext ctx, FlowNode node) {
+        AskQuestionSettings s = settings(node, AskQuestionSettings.class);
+        String text = ctx.render(s.text());
+        ctx.sender(ChatbotSender.class).send(ctx, SendMessageExecutor.textMessage(text));
+        return StepResult.wait(Waiting.whatsApp(ctx.chat().getId(), ctx.now(), text), "Asked “" + text + "”");
+    }
+
+    @Override
+    public StepResult onAnswer(RunContext ctx, FlowNode node, TaskAnswer answer) {
+        AskQuestionSettings s = settings(node, AskQuestionSettings.class);
+        java.util.Optional<Object> parsed = parse(s, answer.message());
+        if (parsed.isPresent()) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("answer", parsed.get());
+            if (s.saveAs() != null && !s.saveAs().isBlank() && !s.saveAs().equals(node.name())) {
+                ctx.vars().put(s.saveAs(), new LinkedHashMap<>(result));
+            }
+            if (s.attributeId() != null && !s.attributeId().isBlank() && ctx.contact() != null) {
+                Map<String, String> values = new LinkedHashMap<>();
+                values.put(s.attributeId(), String.valueOf(parsed.get()));
+                ctx.contact(contacts.update(ctx.workspaceId(), ctx.contact().getId(), null, values));
+            }
+            return StepResult.next(Outputs.NEXT, result, "Answered “" + parsed.get() + "”");
+        }
+        ChatbotSender sender = ctx.sender(ChatbotSender.class);
+        int retries = s.retries() == null ? 2 : s.retries();
+        if (ctx.run().getInvalidReplies() < retries) {
+            ctx.run().setInvalidReplies(ctx.run().getInvalidReplies() + 1);
+            String retry = s.retryMessage() == null || s.retryMessage().isBlank() ? ctx.settings().retryMessage() : s.retryMessage();
+            sender.send(ctx, SendMessageExecutor.textMessage(ctx.render(retry)));
+            return StepResult.wait(Waiting.whatsApp(ctx.chat().getId(), ctx.now(), ctx.render(s.text())),
+                    "Answer not valid, asked again (" + ctx.run().getInvalidReplies() + "/" + retries + ")");
+        }
+        if (s.giveUpMessage() != null && !s.giveUpMessage().isBlank()) {
+            sender.send(ctx, SendMessageExecutor.textMessage(ctx.render(s.giveUpMessage())));
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("answer", null);
+        result.put("gaveUp", true);
+        return StepResult.next(Outputs.NO_ANSWER, result, "No valid answer");
+    }
+
+    /** The typed answer, or empty when the message is not a valid answer (Task 8 adds every type). */
+    java.util.Optional<Object> parse(AskQuestionSettings s, WaWebMessage m) {
+        if (m == null) return java.util.Optional.empty();
+        String body = m.getBody() == null ? "" : m.getBody().strip();
+        if (body.isEmpty()) return java.util.Optional.empty();
+        return java.util.Optional.of(body);
     }
 }

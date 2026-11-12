@@ -62,6 +62,16 @@ public abstract class ChatbotTestBase extends AutomationTestBase {
         return Map.of("message", Map.of("type", "text", "text", Map.of("preview_url", false, "body", body)));
     }
 
+    /** Polls up to five seconds for the condition; the runner works on its own pool. */
+    protected static void await(java.util.function.BooleanSupplier condition) throws InterruptedException {
+        long end = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < end) {
+            if (condition.getAsBoolean()) return;
+            Thread.sleep(50);
+        }
+        assertThat(condition.getAsBoolean()).as("condition within 5 s").isTrue();
+    }
+
     /** {@code path} is relative to the brand's {@code /api/workspaces/{id}/chatbots}. */
     protected ResponseEntity<JsonNode> bots(HttpMethod m, String path, me.nageshk.omnichannel.db.user.User who, Object body) {
         return rest.exchange(url("/api/workspaces/" + brand.getId() + "/chatbots" + path), m, auth(who, body),

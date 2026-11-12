@@ -2,8 +2,14 @@ package me.nageshk.omnichannel.service.chatbot.node;
 
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactAttributeRepository;
 import me.nageshk.omnichannel.db.contact.ContactLabelRepository;
+import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
+import me.nageshk.omnichannel.service.chatbot.run.NodeFailed;
+import me.nageshk.omnichannel.service.chatbot.run.RunVariables;
+import me.nageshk.omnichannel.service.contact.ContactService;
 import me.nageshk.omnichannel.service.chatbot.flow.Flow;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowNode;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
@@ -17,11 +23,42 @@ public class UpdateContactExecutor extends BaseExecutor {
 
     private final ContactAttributeRepository attributes;
     private final ContactLabelRepository labels;
+    private final ContactService contacts;
+    private final RunVariables variables;
 
-    public UpdateContactExecutor(FlowParser parser, ContactAttributeRepository attributes, ContactLabelRepository labels) {
+    public UpdateContactExecutor(FlowParser parser, ContactAttributeRepository attributes, ContactLabelRepository labels,
+            ContactService contacts, RunVariables variables) {
         super(parser);
         this.attributes = attributes;
         this.labels = labels;
+        this.contacts = contacts;
+        this.variables = variables;
+    }
+
+    @Override
+    public StepResult run(RunContext ctx, FlowNode node) {
+        UpdateContactSettings s = settings(node, UpdateContactSettings.class);
+        Contact c = ctx.contact();
+        if (c == null) throw new NodeFailed("the contact no longer exists");
+        String ws = ctx.workspaceId();
+        Map<String, String> values = new LinkedHashMap<>();
+        if (s.setAttributes() != null) s.setAttributes().forEach((id, v) -> values.put(id, ctx.render(v)));
+        if (s.clearAttributes() != null) for (String id : s.clearAttributes()) values.put(id, "");
+        int changes = 0;
+        if (!values.isEmpty()) {
+            c = contacts.update(ws, c.getId(), null, values);
+            changes += values.size();
+        }
+        if (s.addLabels() != null) for (String id : s.addLabels()) { c = contacts.addLabel(ws, c.getId(), id); changes++; }
+        if (s.removeLabels() != null) for (String id : s.removeLabels()) { c = contacts.removeLabel(ws, c.getId(), id); changes++; }
+        if (s.nameIfBlank() != null && !s.nameIfBlank().isBlank() && (c.getName() == null || c.getName().isBlank())) {
+            contacts.nameIfBlank(ws, c.getId(), ctx.render(s.nameIfBlank()));
+            c = contacts.require(ws, c.getId());
+            changes++;
+        }
+        ctx.contact(c);
+        variables.refreshContact(ctx.vars(), c, attributes.findByWorkspaceIdOrderByNameKey(ws), labels.findByWorkspaceIdOrderByNameKey(ws));
+        return StepResult.next(Outputs.NEXT, null, "Updated the contact (" + changes + " change" + (changes == 1 ? "" : "s") + ")");
     }
 
     @Override
