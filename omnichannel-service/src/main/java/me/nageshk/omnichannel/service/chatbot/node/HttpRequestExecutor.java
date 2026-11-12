@@ -20,8 +20,32 @@ public class HttpRequestExecutor extends BaseExecutor {
     static final Set<String> METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE");
     private static final ObjectMapper JSON = JsonMapper.builder().build();
 
-    public HttpRequestExecutor(FlowParser parser) {
+    private final ChatbotHttpClient http;
+
+    public HttpRequestExecutor(FlowParser parser, ChatbotHttpClient http) {
         super(parser);
+        this.http = http;
+    }
+
+    @Override
+    public StepResult run(RunContext ctx, FlowNode node) {
+        HttpRequestSettings s = settings(node, HttpRequestSettings.class);
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("response", response);
+        try {
+            ChatbotHttpClient.Response r = http.call(s, ctx);
+            response.put("status", r.status());
+            response.put("headers", r.headers());
+            response.put("body", r.body());
+            boolean ok = r.status() >= 200 && r.status() < 300;
+            return StepResult.next(ok ? Outputs.SUCCESS : Outputs.FAILURE, result,
+                    (s.method() == null ? "GET" : s.method().toUpperCase()) + " " + s.url() + " → " + r.status());
+        } catch (ChatbotHttpClient.Failed e) {
+            response.put("status", null);
+            response.put("error", e.getMessage());
+            return StepResult.next(Outputs.FAILURE, result, "Request failed: " + e.getMessage());
+        }
     }
 
     @Override
