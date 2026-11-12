@@ -48,6 +48,21 @@ a decision or more investigation.
 - A dated fetch leaves out chats last active over a day before its range; whether `chat.t` always covers a chat's
   newest message is unconfirmed. Pending real-number checks: spec `2026-10-31-chat-history-import-design.md`.
 
+## Cloud messages and message pages: known limits
+
+Spec `specs/2026-11-12-cloud-messages-design.md`. Interactive Cloud messages go over the bridge as a link to a page.
+
+- A send the device refuses after the page was created leaves an orphan `messagePages` row (no `messageId`); it is
+  never linked to anyone and expires with the rest.
+- A typed reply is matched to a button or row by title within 48 h, best effort: a customer who edits the prefilled
+  wa.me text is not matched.
+- `{link}` media headers are rejected; upload the file to `/channel-accounts/{id}/media` and use its id.
+- Document uploads are capped at 16 MB (the app's multipart cap), not Meta's 100 MB.
+- Campaigns and automations send saved templates, so interactive messages reach them with the template project;
+  Meta templates and the carousel (template-only in the Cloud API) are that project too.
+- The real-device link preview needs a public HTTPS origin in `OMNICHANNEL_PAGES_BASE_URL`; nothing is deployed, so
+  that check is owed by the user, behind a tunnel.
+
 ## Automations: known limits
 
 - An event is lost if the app stops between saving a message or a move and writing its event.

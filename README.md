@@ -609,6 +609,27 @@ Error codes: `NO_DEVICE` / `WHATSAPP_NOT_READY` / `TWO_FACTOR_STATE` (409), `CHA
 `PAGE_ERROR` / `VALIDATION` (400), `INVALID_OTP` (401), `TOO_MANY_ATTEMPTS` (429),
 `DEVICE_DISCONNECTED` / `SEND_FAILED` (502), `TIMEOUT` (504).
 
+## Cloud messages
+
+Outbound messages can be sent as WhatsApp Cloud API `/messages` objects, byte for byte Meta's shape, with
+`messaging_product` set to `whatsapp-web` for a WhatsApp Web number (spec `docs/superpowers/specs/2026-11-12-cloud-messages-design.md`).
+`text` goes out as typed text. `interactive` (`button`, `list`, `cta_url`, `location_request_message`) goes out as a
+link to a **message page** the backend serves: the preview image is drawn before the send, the page renders the
+message with inline CSS and JS, and the customer's taps, link opens, shared locations and WhatsApp replies are tracked
+on the message (`MessageView.messagePage`) and on the CRM contact's timeline.
+
+- `POST /api/workspaces/{ws}/channel-accounts/{phoneNumberId}/messages` (`inbox:send`): Meta's request body;
+  answers `{messaging_product, contacts:[{input, wa_id}], messages:[{id}]}`. `POST .../messages/preview` returns the
+  page as HTML with inert actions.
+- `POST /api/workspaces/{ws}/inbox/chats/{chatId}/cloud-messages` (`inbox:send`): the same body without `to`.
+- `POST /api/workspaces/{ws}/channel-accounts/{phoneNumberId}/media` (multipart `file`, `messaging_product`, `type`
+  = image|video|document) answers `{id}`; `GET .../media/{id}` and `GET .../media/{id}/file`.
+- Public, no login: `GET /t/{token}` (the page; 404 unknown, 410 expired), `GET /t/{token}/og.png`,
+  `GET /t/{token}/m` (header media), `POST /t/{token}/e` (the page's beacon), `GET /t/{token}/a` (call-to-action
+  redirect).
+- Config `omnichannel.pages`: `base-url` (env `OMNICHANNEL_PAGES_BASE_URL`, must be the public HTTPS origin for link
+  previews), `ttl-days` (90), `reply-window` (48h).
+
 ## Page script delivery
 
 The extension fetches `page.js` from this server on every connect when the hash in the `hello`

@@ -281,6 +281,23 @@ public class MessagePageService {
         }
     }
 
+    // ---- sweeping ----
+
+    /** Deletes the preview images of pages expired by {@code now}; the pages themselves stay. Returns how many. */
+    public int sweepExpiredPreviews(Instant now) {
+        int swept = 0;
+        for (MessagePage p : pages.findByPreviewReadyTrueAndExpiresAtBefore(now)) {
+            if (p.getPreviewFileId() != null && ObjectId.isValid(p.getPreviewFileId())) {
+                previews.delete(new Query(Criteria.where("_id").is(new ObjectId(p.getPreviewFileId()))));
+            }
+            p.setPreviewReady(false);
+            p.setPreviewFileId(null);
+            pages.save(p);
+            swept++;
+        }
+        return swept;
+    }
+
     // ---- matching the customer's WhatsApp reply ----
 
     /**

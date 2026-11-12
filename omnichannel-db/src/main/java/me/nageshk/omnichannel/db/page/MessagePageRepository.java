@@ -10,4 +10,6 @@ public interface MessagePageRepository extends MongoRepository<MessagePage, Stri
     Optional<MessagePage> findByToken(String token);
 
     List<MessagePage> findByChatIdAndCreatedAtAfterOrderByCreatedAtDesc(String chatId, Instant after);
+
+    List<MessagePage> findByPreviewReadyTrueAndExpiresAtBefore(Instant now);
 }
