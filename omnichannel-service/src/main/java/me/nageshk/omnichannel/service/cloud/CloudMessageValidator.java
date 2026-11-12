@@ -13,6 +13,8 @@ import java.util.Set;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessage;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.LocationObject;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.MediaObject;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.MessagingProduct;
 import me.nageshk.omnichannel.service.contact.Phones;
 import org.springframework.stereotype.Component;
@@ -54,16 +56,30 @@ public class CloudMessageValidator {
         if (toIsPhone ? !Phones.isValid(to) : isBlank(to)) {
             errors.put("to", toIsPhone ? Phones.MESSAGE : REQUIRED);
         }
-        if (CloudMessage.TEXT.equals(m.type())) {
-            if (m.text() == null) errors.put("text", REQUIRED);
-            else length(errors, "text.body", m.text().body(), Limits.BODY_TEXT, true);
-            if (m.interactive() != null) errors.put("interactive", ABSENT);
-        } else if (CloudMessage.INTERACTIVE.equals(m.type())) {
-            if (m.interactive() == null) errors.put("interactive", REQUIRED);
-            else interactive(workspaceId, m.interactive(), media, errors);
-            if (m.text() != null) errors.put("text", ABSENT);
+        String type = m.type() == null ? "" : m.type();
+        if (!CloudMessage.TYPES.contains(type)) {
+            errors.put("type", "must be text, interactive, image, video, audio, document or location");
         } else {
-            errors.put("type", "must be text or interactive");
+            // exactly the object matching the type is present
+            if (!CloudMessage.TEXT.equals(type)) absent(errors, "text", m.text());
+            if (!CloudMessage.INTERACTIVE.equals(type)) absent(errors, "interactive", m.interactive());
+            if (!CloudMessage.IMAGE.equals(type)) absent(errors, "image", m.image());
+            if (!CloudMessage.VIDEO.equals(type)) absent(errors, "video", m.video());
+            if (!CloudMessage.AUDIO.equals(type)) absent(errors, "audio", m.audio());
+            if (!CloudMessage.DOCUMENT.equals(type)) absent(errors, "document", m.document());
+            if (!CloudMessage.LOCATION.equals(type)) absent(errors, "location", m.location());
+            switch (type) {
+                case CloudMessage.TEXT -> {
+                    if (m.text() == null) errors.put("text", REQUIRED);
+                    else length(errors, "text.body", m.text().body(), Limits.BODY_TEXT, true);
+                }
+                case CloudMessage.INTERACTIVE -> {
+                    if (m.interactive() == null) errors.put("interactive", REQUIRED);
+                    else interactive(workspaceId, m.interactive(), media, errors);
+                }
+                case CloudMessage.LOCATION -> location(m.location(), errors);
+                default -> mediaMessage(workspaceId, type, m.media(), media, errors);
+            }
         }
         if (!errors.isEmpty()) throw new ValidationException(errors);
         return m.withTo(to);
@@ -132,6 +148,41 @@ public class CloudMessageValidator {
                 absent(errors, "interactive.action.parameters", a.parameters());
             }
         }
+    }
+
+    /** An {@code image}, {@code video}, {@code audio} or {@code document} message: an uploaded id of the right kind. */
+    private void mediaMessage(String ws, String type, MediaObject o, MediaLookup media, Map<String, String> errors) {
+        if (o == null) {
+            errors.put(type, REQUIRED);
+            return;
+        }
+        if (!isBlank(o.link())) errors.put(type + ".link", "is not supported; upload the file and use its id");
+        if (isBlank(o.id())) {
+            if (isBlank(o.link())) errors.put(type + ".id", REQUIRED);
+        } else {
+            Optional<String> mime = media.mimeOf(ws, o.id());
+            if (mime.isEmpty()) errors.put(type + ".id", "unknown media");
+            else if (!CloudMediaTypes.forHeader(type).contains(mime.get())) {
+                errors.put(type + ".id", "must be " + CloudMediaTypes.describe(type));
+            }
+        }
+        if (CloudMessage.AUDIO.equals(type)) absent(errors, type + ".caption", o.caption());
+        else if (o.caption() != null) length(errors, type + ".caption", o.caption(), Limits.BODY_INTERACTIVE, false);
+        if (!CloudMessage.DOCUMENT.equals(type)) absent(errors, type + ".filename", o.filename());
+        else if (o.filename() != null) length(errors, type + ".filename", o.filename(), 240, false);
+    }
+
+    private void location(LocationObject l, Map<String, String> errors) {
+        if (l == null) {
+            errors.put("location", REQUIRED);
+            return;
+        }
+        if (l.latitude() == null) errors.put("location.latitude", REQUIRED);
+        else if (l.latitude() < -90 || l.latitude() > 90) errors.put("location.latitude", "must be between -90 and 90");
+        if (l.longitude() == null) errors.put("location.longitude", REQUIRED);
+        else if (l.longitude() < -180 || l.longitude() > 180) errors.put("location.longitude", "must be between -180 and 180");
+        if (l.name() != null) length(errors, "location.name", l.name(), 100, false);
+        if (l.address() != null) length(errors, "location.address", l.address(), 300, false);
     }
 
     private void header(String ws, Interactive.Header h, boolean list, MediaLookup media, Map<String, String> errors) {

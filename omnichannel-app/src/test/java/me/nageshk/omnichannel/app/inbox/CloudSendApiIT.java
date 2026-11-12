@@ -254,4 +254,45 @@ class CloudSendApiIT extends InboxApiTestBase {
         ResponseEntity<String> page = rest.getForEntity("http://localhost:" + port + "/t/" + orphans.get(0).getToken(), String.class);
         assertThat(page.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
+
+    // ---- media and location types (chatbot spec §4.2) ----
+
+    private String uploadPng() {
+        return media.upload(access.load(manager), brand.getId(), "image",
+                new MockMultipartFile("file", "a.png", "application/octet-stream", CloudMediaIT.png(100))).id();
+    }
+
+    @Test
+    void imageIsSentNatively() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        String id = uploadPng();
+        String json = "{\"messaging_product\":\"whatsapp-web\",\"recipient_type\":\"individual\",\"to\":\"919812345678\","
+                + "\"type\":\"image\",\"image\":{\"id\":\"" + id + "\",\"caption\":\"Our catalogue\"}}";
+        Exchange ex = sendOk(managerToken, numberUrl(), json, chat.getRemoteId());
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode options = ex.request().params().get("options");
+        assertThat(options.get("media").get("mimetype").asString()).isEqualTo("image/png");
+        assertThat(options.get("media").get("data").asString()).isNotBlank();
+        assertThat(options.get("caption").asString()).isEqualTo("Our catalogue");
+        WaWebMessage stored = only(chat);
+        assertThat(stored.getRequest()).containsEntry("type", "image");
+        assertThat(stored.getMedia().mimetype()).isEqualTo("image/png");
+        assertThat(stored.getMessagePageId()).isNull();
+        assertThat(pages.count()).isZero();
+    }
+
+    @Test
+    void locationIsSentNatively() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        String json = "{\"messaging_product\":\"whatsapp-web\",\"recipient_type\":\"individual\",\"to\":\"919812345678\","
+                + "\"type\":\"location\",\"location\":{\"latitude\":12.9716,\"longitude\":77.5946,\"name\":\"Our store\",\"address\":\"MG Road\"}}";
+        Exchange ex = sendOk(managerToken, numberUrl(), json, chat.getRemoteId());
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode location = ex.request().params().get("options").get("location");
+        assertThat(location.get("latitude").asDouble()).isEqualTo(12.9716);
+        assertThat(location.get("description").asString()).isEqualTo("Our store, MG Road");
+        WaWebMessage stored = only(chat);
+        assertThat(stored.getLocation().latitude()).isEqualTo(12.9716);
+        assertThat(stored.getRequest()).containsEntry("type", "location");
+    }
 }
