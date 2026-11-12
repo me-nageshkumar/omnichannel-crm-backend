@@ -630,6 +630,26 @@ on the message (`MessageView.messagePage`) and on the CRM contact's timeline.
 - Config `omnichannel.pages`: `base-url` (env `OMNICHANNEL_PAGES_BASE_URL`, must be the public HTTPS origin for link
   previews), `ttl-days` (90), `reply-window` (48h).
 
+## Chatbots
+
+A chatbot is a flow of nodes run per contact (spec `docs/superpowers/specs/2026-11-13-advanced-chatbot-design.md`).
+Automations start it (the `START_CHATBOT` action; the message event carries `chat.chatbotRunning`). Every wait is a
+typed task: a WhatsApp reply on a chat, a submitted form, or a timer.
+
+- `GET|POST /api/workspaces/{ws}/chatbots`, `GET|PUT|DELETE /chatbots/{id}` (`PUT` returns `{chatbot, problems}`;
+  a published chatbot answers 409 `CHATBOT_PUBLISHED`), `POST /chatbots/{id}/publish|unpublish` (publish answers 400
+  with `nodes.<id>.<field>` / `flow.<field>` while ERROR problems remain), `GET /chatbots/options`.
+- Versions: `GET /chatbots/{id}/versions`, `GET /chatbots/{id}/versions/{n}`, `POST /chatbots/{id}/versions/{n}/restore`.
+- Test and runs: `POST /chatbots/{id}/test {contactId, phoneNumberId?, stopRunning?}` (409 `CHATBOT_RUNNING` with
+  `chatbotName` when another chatbot's run is active), `GET /chatbots/{id}/runs?status=&from=&to=&page=&size=`,
+  `GET /chatbots/{id}/runs/{runId}`, `POST /chatbots/{id}/runs/{runId}/stop`.
+- Editor helpers: `POST /chatbots/{id}/media` (multipart `file`, `type` image|video|audio|document) and
+  `POST /chatbots/{id}/preview` (a Cloud message object, answers inert HTML).
+- Inbox: `ChatView.chatbot` names the active run; `POST /inbox/chats/{chatId}/chatbot/stop` (`inbox:send`) stops it.
+- Public: `GET|POST /f/{token}` serves and submits a form page (own HTML, no login).
+- Authorities `chatbot:view`, `chatbot:manage`; collections `chatbots`, `chatbotVersions`, `chatbotRuns`, `chatbotForms`;
+  config `omnichannel.chatbot.*` (`application.yml`).
+
 ## Page script delivery
 
 The extension fetches `page.js` from this server on every connect when the hash in the `hello`
