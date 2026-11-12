@@ -13,8 +13,12 @@ public record Waiting(TaskKind kind, String key, Instant since, Instant expiresA
         return new Waiting(TaskKind.FORM, token, since, expiresAt, prompt);
     }
 
-    /** A timer's key is its resume time as ISO-8601 text, so the (kind, key) index stays a plain string pair. */
+    /** A timer's key is its resume time as 13 zero-padded epoch millis, so string order is time order. */
     public static Waiting timer(Instant resumeAt, Instant since) {
-        return new Waiting(TaskKind.TIMER, resumeAt.toString(), since, null, null);
+        return new Waiting(TaskKind.TIMER, timerKey(resumeAt), since, null, null);
+    }
+
+    public static String timerKey(Instant at) {
+        return String.format("%013d", at.toEpochMilli());
     }
 }

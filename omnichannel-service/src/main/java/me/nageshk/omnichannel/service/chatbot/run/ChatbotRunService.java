@@ -136,6 +136,14 @@ public class ChatbotRunService {
         return true;
     }
 
+    /** Like {@link #answer} but proceeds on the calling thread; for the ticker, which is already on the pool. */
+    public boolean answerNow(TaskAnswer answer) {
+        Optional<ChatbotRun> claimed = claims.claimForAnswer(answer.kind(), answer.key());
+        if (claimed.isEmpty()) return false;
+        runner.proceed(claimed.get(), answer);
+        return true;
+    }
+
     public ChatbotRun stop(ChatbotRun run, String reason, String byUserId) {
         run.setStoppedBy(byUserId);
         return runner.finish(run, ChatbotRunStatus.STOPPED, reason);

@@ -108,6 +108,7 @@ public class ChatbotRunner {
         ctx.sender(sender);
         if (run.getVariables() == null) run.setVariables(new LinkedHashMap<>());
         if (run.getSteps() == null) run.setSteps(new ArrayList<>());
+        boolean answered = answer != null && answer.kind() != me.nageshk.omnichannel.db.chatbot.TaskKind.TIMER;
 
         while (true) {
             FlowNode node;
@@ -147,6 +148,10 @@ public class ChatbotRunner {
                     run.setWaiting(result.waiting());
                     run.setStatus(ChatbotRunStatus.WAITING);
                     run.setLeaseUntil(null);
+                    if (answered || run.getEndAt() == null || result.waiting().kind() == me.nageshk.omnichannel.db.chatbot.TaskKind.TIMER
+                            || run.getRemindAt() == null && !run.isReminderSent()) {
+                        ChatbotTimers.onWait(run, settings, clock.instant());
+                    }
                     ChatbotRun saved = save(run);
                     pointer.set(saved.getChatId(), saved);
                     publisher.publishEvent(new InboxEvents.ChatbotRunChanged(saved));

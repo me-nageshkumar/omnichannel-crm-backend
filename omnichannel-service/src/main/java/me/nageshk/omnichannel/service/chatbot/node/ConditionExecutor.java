@@ -3,8 +3,12 @@ package me.nageshk.omnichannel.service.chatbot.node;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import me.nageshk.omnichannel.db.automation.ConditionNode;
+import me.nageshk.omnichannel.service.automation.ConditionEvaluator;
 import me.nageshk.omnichannel.service.automation.Operator;
+import me.nageshk.omnichannel.service.chatbot.run.RunVariables;
 import me.nageshk.omnichannel.service.chatbot.flow.Flow;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowNode;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
@@ -33,6 +37,41 @@ public class ConditionExecutor extends BaseExecutor {
         if (s.cases() != null) for (ConditionSettings.Case c : s.cases()) if (c != null && c.id() != null) out.add(Outputs.caseOf(c.id()));
         out.add(Outputs.OTHERWISE);
         return out;
+    }
+
+    @Override
+    public StepResult run(RunContext ctx, FlowNode node) {
+        ConditionSettings s = settings(node, ConditionSettings.class);
+        Map<String, Object> flat = RunVariables.flatten(ctx.vars());
+        if (s.cases() != null) {
+            for (ConditionSettings.Case c : s.cases()) {
+                if (c == null || c.conditions() == null) continue;
+                if (ConditionEvaluator.matches(normalise(c.conditions(), ctx), flat)) {
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    result.put("matched", c.label() == null ? c.id() : c.label());
+                    return StepResult.next(Outputs.caseOf(c.id()), result, "Case “" + result.get("matched") + "”");
+                }
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matched", null);
+        return StepResult.next(Outputs.OTHERWISE, result, "No case matched");
+    }
+
+    /** Fields are written as {@code {{path}}}: strip the braces; values may hold variables: render them. */
+    private static ConditionNode normalise(ConditionNode n, RunContext ctx) {
+        if (n.isGroup()) {
+            return new ConditionNode(n.combinator(), n.not(), n.rules().stream().map(r -> normalise(r, ctx)).toList(),
+                    null, null, null);
+        }
+        String field = n.field() == null ? "" : n.field().strip();
+        if (field.startsWith("{{") && field.endsWith("}}")) field = field.substring(2, field.length() - 2).strip();
+        Object value = n.value();
+        if (value instanceof String str && str.contains("{{")) value = ctx.render(str);
+        if (value instanceof List<?> l) {
+            value = l.stream().map(v -> v instanceof String str && str.contains("{{") ? ctx.render(str) : v).toList();
+        }
+        return new ConditionNode(null, n.not(), null, field, n.operator(), value);
     }
 
     @Override

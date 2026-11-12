@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.db.chatbot.TaskKind;
+import me.nageshk.omnichannel.db.chatbot.Waiting;
+import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
 import me.nageshk.omnichannel.service.chatbot.flow.Flow;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowNode;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
@@ -30,6 +32,18 @@ public class WaitExecutor extends BaseExecutor {
     @Override
     public Set<TaskKind> waitsFor(FlowNode node, Flow flow) {
         return Set.of(TaskKind.TIMER);
+    }
+
+    @Override
+    public StepResult run(RunContext ctx, FlowNode node) {
+        WaitSettings s = settings(node, WaitSettings.class);
+        java.time.Instant resumeAt = ctx.now().plus(s.duration());
+        return StepResult.wait(Waiting.timer(resumeAt, ctx.now()), "Waiting " + s.amount() + " " + s.unit().name().toLowerCase());
+    }
+
+    @Override
+    public StepResult onAnswer(RunContext ctx, FlowNode node, TaskAnswer answer) {
+        return StepResult.next(Outputs.NEXT, null, "Waited");
     }
 
     @Override

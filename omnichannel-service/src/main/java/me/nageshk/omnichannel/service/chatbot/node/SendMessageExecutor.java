@@ -234,7 +234,7 @@ public class SendMessageExecutor extends BaseExecutor {
         }
     }
 
-    static CloudMessage textMessage(String body) {
+    public static CloudMessage textMessage(String body) {
         return new CloudMessage(MessagingProduct.WHATSAPP_WEB, "individual", "0", CloudMessage.TEXT,
                 new me.nageshk.omnichannel.common.channel.whatsapp.message.Text(false, body), null, null);
     }

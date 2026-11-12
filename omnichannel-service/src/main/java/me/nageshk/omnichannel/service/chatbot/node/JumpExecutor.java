@@ -31,6 +31,13 @@ public class JumpExecutor extends BaseExecutor {
     }
 
     @Override
+    public StepResult run(RunContext ctx, FlowNode node) {
+        JumpSettings s = settings(node, JumpSettings.class);
+        String name = chatbots.findById(s.chatbotId()).map(c -> c.getName()).orElse(s.chatbotId());
+        return StepResult.jump(s.chatbotId(), "Jumped to “" + name + "”");
+    }
+
+    @Override
     public List<Problem> validate(FlowNode node, Flow flow, ValidationContext ctx) {
         JumpSettings s = settings(node, JumpSettings.class);
         Problems p = new Problems(node);
