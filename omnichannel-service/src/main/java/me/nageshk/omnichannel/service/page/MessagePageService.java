@@ -66,12 +66,13 @@ public class MessagePageService {
     private final OmnichannelProperties.Pages props;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
+    private final MessagePageObserver observer;
 
     public MessagePageService(MessagePageRepository pages,
             @Qualifier("messagePagePreviewsGridFs") GridFsTemplate previews, CloudMediaService media,
             MessagePageRenderer renderer, PreviewCardRenderer cards, CloudMessages cloud, InboxDevices devices,
             WaWebMessageRepository messages, WaWebChatRepository chats, OmnichannelProperties props,
-            ApplicationEventPublisher publisher, Clock clock) {
+            ApplicationEventPublisher publisher, Clock clock, MessagePageObserver observer) {
         this.pages = pages;
         this.previews = previews;
         this.media = media;
@@ -84,6 +85,7 @@ public class MessagePageService {
         this.props = props.pages();
         this.publisher = publisher;
         this.clock = clock;
+        this.observer = observer;
     }
 
     // ---- creating ----
@@ -250,7 +252,21 @@ public class MessagePageService {
         p.setLastActionAt(action.at());
         MessagePage saved = pages.save(p);
         publisher.publishEvent(new MessagePageEvents.Activity(saved, action, first));
+        if (first) observe(saved, action);
         changed(saved);
+    }
+
+    /** One CRM activity per page open and per distinct action; a failure there never fails the beacon. */
+    private void observe(MessagePage p, Action a) {
+        try {
+            MessagePageObserver.PageActivity e = new MessagePageObserver.PageActivity(p.getWorkspaceId(),
+                    p.getContactId(), p.getPhoneNumberId(), p.getMessageId(), a.kind().name(), a.id(), a.title(),
+                    a.latitude(), a.longitude(), a.at());
+            if (a.kind() == ActionKind.OPEN) observer.opened(e);
+            else observer.acted(e);
+        } catch (RuntimeException e) {
+            log.warn("message page observer failed for page {}", p.getId(), e);
+        }
     }
 
     /** Pushes the message (whose view carries the page's counts) to anyone watching the chat. */
