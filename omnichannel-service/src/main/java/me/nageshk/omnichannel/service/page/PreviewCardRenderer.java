@@ -59,6 +59,54 @@ public class PreviewCardRenderer {
         return base.getFamily();
     }
 
+    /** The bundled font, for tests. */
+    public Font baseFont() {
+        return base;
+    }
+
+    /** A stretch of text and the font that can show it. */
+    public record Run(String text, Font font) {}
+
+    /**
+     * Splits text into runs the given font can display and runs it cannot (emoji, Indic and other scripts the
+     * bundled font lacks), which go to the JVM's logical sans-serif, a composite of the system's fonts. Java2D does
+     * no glyph fallback for a font loaded from a file, so without this those characters draw as boxes.
+     */
+    static List<Run> runs(String text, Font font) {
+        List<Run> out = new ArrayList<>();
+        if (text == null || text.isEmpty()) return out;
+        Font fallback = new Font(Font.SANS_SERIF, font.getStyle(), font.getSize());
+        StringBuilder current = new StringBuilder();
+        boolean currentOk = true;
+        int i = 0;
+        while (i < text.length()) {
+            int cp = text.codePointAt(i);
+            int len = Character.charCount(cp);
+            boolean ok = font.canDisplay(cp);
+            if (current.length() > 0 && ok != currentOk) {
+                out.add(new Run(current.toString(), currentOk ? font : fallback));
+                current.setLength(0);
+            }
+            current.appendCodePoint(cp);
+            currentOk = ok;
+            i += len;
+        }
+        if (current.length() > 0) out.add(new Run(current.toString(), currentOk ? font : fallback));
+        return out;
+    }
+
+    /** The text with a font attribute per run, ready for a measurer or a layout. */
+    private static AttributedString attributed(String text, Font font) {
+        AttributedString as = new AttributedString(text);
+        if (text.isEmpty()) return as;
+        int at = 0;
+        for (Run r : runs(text, font)) {
+            as.addAttribute(TextAttribute.FONT, r.font(), at, at + r.text().length());
+            at += r.text().length();
+        }
+        return as;
+    }
+
     /**
      * @param headerImage the header's image bytes when the header is an image; anything that does not decode is ignored
      * @throws IllegalStateException when the card cannot be drawn
@@ -154,9 +202,7 @@ public class PreviewCardRenderer {
         if (text == null || text.isBlank()) return new Drawn(y, 0);
         g.setFont(font);
         FontRenderContext frc = g.getFontRenderContext();
-        AttributedString as = new AttributedString(text);
-        as.addAttribute(TextAttribute.FONT, font);
-        LineBreakMeasurer measurer = new LineBreakMeasurer(as.getIterator(), frc);
+        LineBreakMeasurer measurer = new LineBreakMeasurer(attributed(text, font).getIterator(), frc);
         int end = text.length();
         int lines = 0;
         while (measurer.getPosition() < end && lines < maxLines) {
@@ -167,10 +213,10 @@ public class PreviewCardRenderer {
             y += (int) layout.getAscent();
             if (cut) {
                 String shown = text.substring(start, measurer.getPosition()).stripTrailing();
-                while (shown.length() > 1 && font.getStringBounds(shown + "\u2026", frc).getWidth() > width) {
+                while (shown.length() > 1 && new TextLayout(attributed(shown + "\u2026", font).getIterator(), frc).getAdvance() > width) {
                     shown = shown.substring(0, shown.length() - 1);
                 }
-                g.drawString(shown + "\u2026", x, y);
+                new TextLayout(attributed(shown + "\u2026", font).getIterator(), frc).draw(g, x, y);
             } else {
                 layout.draw(g, x, y);
             }
@@ -189,15 +235,17 @@ public class PreviewCardRenderer {
         int gap = 16;
         for (String label : labels) {
             String shown = label;
-            while (shown.length() > 1 && font.getStringBounds(shown, frc).getWidth() + 40 > width) {
+            TextLayout layout = new TextLayout(attributed(shown, font).getIterator(), frc);
+            while (shown.length() > 1 && layout.getAdvance() + 40 > width) {
                 shown = shown.substring(0, shown.length() - 1);
+                layout = new TextLayout(attributed(shown, font).getIterator(), frc);
             }
-            int w = (int) font.getStringBounds(shown, frc).getWidth() + 40;
+            int w = (int) layout.getAdvance() + 40;
             if (cx + w > x + width) break;
             g.setColor(BLUE);
             g.setStroke(new BasicStroke(3f));
             g.drawRoundRect(cx, y, w, h, h, h);
-            g.drawString(shown, cx + 20, y + h / 2 + 9);
+            layout.draw(g, cx + 20, y + h / 2 + 9);
             cx += w + gap;
         }
     }

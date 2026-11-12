@@ -4,6 +4,7 @@ import java.util.Map;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.DatabindException;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -59,12 +60,17 @@ public class CloudMessages {
         return parse(mapper.valueToTree(map));
     }
 
-    /** @throws ValidationException on a key Meta does not document, as {@code message: "unknown field <name>"} */
+    /**
+     * @throws ValidationException on a key Meta does not document ({@code message: "unknown field <name>"}) or a
+     *     value of the wrong shape
+     */
     public CloudMessage parse(JsonNode node) {
         try {
             return reader.readValue(node);
         } catch (UnrecognizedPropertyException e) {
             throw new ValidationException("message", "unknown field " + e.getPropertyName());
+        } catch (DatabindException e) {
+            throw new ValidationException("message", "is not a Cloud API message: " + e.getOriginalMessage());
         }
     }
 }

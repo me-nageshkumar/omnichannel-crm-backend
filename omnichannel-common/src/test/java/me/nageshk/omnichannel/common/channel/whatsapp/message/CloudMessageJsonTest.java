@@ -46,6 +46,16 @@ class CloudMessageJsonTest {
     }
 
     @Test
+    void typeMismatchIsRejectedAsValidation() {
+        Map<String, Object> text = Map.of("messaging_product", "whatsapp-web", "type", "text", "text", "hi");
+        assertThatThrownBy(() -> cloud.fromMap(text)).isInstanceOf(ValidationException.class)
+                .satisfies(e -> assertThat(((ValidationException) e).fields()).containsKey("message"));
+        Map<String, Object> buttons = Map.of("messaging_product", "whatsapp-web", "type", "interactive",
+                "interactive", Map.of("type", "button", "body", Map.of("text", "x"), "action", Map.of("buttons", Map.of())));
+        assertThatThrownBy(() -> cloud.fromMap(buttons)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
     void nullsAreOmitted() {
         CloudMessage m = new CloudMessage("whatsapp-web", null, "1", "text", new Text(null, "hi"), null, null);
         assertThat(cloud.toMap(m)).containsOnlyKeys("messaging_product", "to", "type", "text");

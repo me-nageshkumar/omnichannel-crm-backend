@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.service.inbox;
 
 import me.nageshk.omnichannel.db.page.MessagePageRepository;
 import me.nageshk.omnichannel.service.page.MessagePageService;
+import me.nageshk.omnichannel.service.page.MessagePageView;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,8 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class InboxViews {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(InboxViews.class);
 
     private final ContactRepository contacts;
     private final UserRepository users;
@@ -64,9 +67,18 @@ public class InboxViews {
                 loc == null ? null : new MessageView.Location(loc.latitude(), loc.longitude(), loc.description()),
                 m.getTimestamp(), m.getStatus(), m.getStatusTimes(),
                 sentBy(m), m.getTemplateId(), m.getPollOptions(), m.getPollVotes(), m.getCall(),
-                m.getBusinessTag(), AdClickView.of(m.getAdClick()), m.getMessagePageId(),
-                m.getMessagePageId() == null ? null
-                        : messagePages.findById(m.getMessagePageId()).map(messagePageService::view).orElse(null));
+                m.getBusinessTag(), AdClickView.of(m.getAdClick()), m.getMessagePageId(), messagePage(m));
+    }
+
+    /** The page's view, or null when there is none or it cannot be read: a bad page never hides the message. */
+    private MessagePageView messagePage(WaWebMessage m) {
+        if (m.getMessagePageId() == null) return null;
+        try {
+            return messagePages.findById(m.getMessagePageId()).map(messagePageService::view).orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("could not read message page {} of message {}: {}", m.getMessagePageId(), m.getId(), e.toString());
+            return null;
+        }
     }
 
     public ActionView action(WaWebChatAction a) {

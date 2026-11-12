@@ -73,7 +73,7 @@ public class MessagePageRenderer {
         ctx.put("headerImage", "image".equals(headerKind));
         ctx.put("headerVideo", "video".equals(headerKind));
         ctx.put("headerDocument", "document".equals(headerKind));
-        ctx.put("mediaUrl", base + "/m");
+        ctx.put("mediaUrl", m.headerDataUrl() != null ? m.headerDataUrl() : base + "/m");
 
         String type = i.type() == null ? "" : i.type();
         ctx.put("isButton", Interactive.BUTTON.equals(type));

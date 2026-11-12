@@ -37,7 +37,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.gridfs.GridFsResource;
 import org.springframework.data.mongodb.gridfs.GridFsTemplate;
@@ -67,12 +69,13 @@ public class MessagePageService {
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
     private final MessagePageObserver observer;
+    private final MongoTemplate mongo;
 
     public MessagePageService(MessagePageRepository pages,
             @Qualifier("messagePagePreviewsGridFs") GridFsTemplate previews, CloudMediaService media,
             MessagePageRenderer renderer, PreviewCardRenderer cards, CloudMessages cloud, InboxDevices devices,
             WaWebMessageRepository messages, WaWebChatRepository chats, OmnichannelProperties props,
-            ApplicationEventPublisher publisher, Clock clock, MessagePageObserver observer) {
+            ApplicationEventPublisher publisher, Clock clock, MessagePageObserver observer, MongoTemplate mongo) {
         this.pages = pages;
         this.previews = previews;
         this.media = media;
@@ -86,6 +89,7 @@ public class MessagePageService {
         this.publisher = publisher;
         this.clock = clock;
         this.observer = observer;
+        this.mongo = mongo;
     }
 
     // ---- creating ----
@@ -161,9 +165,24 @@ public class MessagePageService {
                 p.getSenderDigits(), false)).html();
     }
 
-    /** The composer's preview: same renderer, no beacon, inert actions. */
-    public String previewHtml(CloudMessage m, String senderDigits) {
-        return renderer.render(new PageModel(m, "preview", props.baseUrl(), senderDigits, true)).html();
+    /**
+     * The composer's preview: same renderer, no beacon, inert actions, and an image header inlined as a data URL,
+     * since the sandboxed iframe cannot send the bearer the media endpoint needs.
+     */
+    public String previewHtml(String workspaceId, CloudMessage m, String senderDigits) {
+        String dataUrl = null;
+        Interactive.Header h = m.interactive() == null ? null : m.interactive().header();
+        if (h != null && "image".equals(h.type()) && h.image() != null && h.image().id() != null) {
+            try {
+                CloudMediaService.MediaFile f = media.open(workspaceId, h.image().id());
+                try (var in = f.resource().getInputStream()) {
+                    dataUrl = "data:" + f.mimeType() + ";base64," + Base64.getEncoder().encodeToString(in.readAllBytes());
+                }
+            } catch (Exception e) {
+                log.warn("could not inline the header image for a preview: {}", e.toString());
+            }
+        }
+        return renderer.render(new PageModel(m, "preview", props.baseUrl(), senderDigits, true, dataUrl)).html();
     }
 
     public String notFoundHtml() {
@@ -197,13 +216,21 @@ public class MessagePageService {
 
     // ---- tracking ----
 
+    /**
+     * Every write below is one atomic update on the page document, so beacons arriving together (the page posts
+     * {@code open} on load and {@code reply} on a tap) never overwrite each other. Opens are counted, not stored as
+     * actions, so they never eat into the action cap.
+     */
     public void open(MessagePage p, String userAgent) {
         if (expired(p)) return;
-        boolean first = p.getOpenedAt() == null;
         Instant now = clock.instant();
-        if (first) p.setOpenedAt(now);
-        p.setOpenCount(p.getOpenCount() + 1);
-        record(p, new Action(ActionKind.OPEN, null, null, null, null, now, uaHash(userAgent), null), first);
+        MessagePage before = mongo.findAndModify(byId(p).addCriteria(Criteria.where("openedAt").is(null)),
+                new Update().set("openedAt", now).inc("openCount", 1).set("lastActionAt", now), MessagePage.class);
+        boolean first = before != null;
+        if (!first) {
+            mongo.findAndModify(byId(p), new Update().inc("openCount", 1).set("lastActionAt", now), MessagePage.class);
+        }
+        announce(p.getId(), new Action(ActionKind.OPEN, null, null, null, null, now, uaHash(userAgent), null), first);
     }
 
     /** A tap on a reply button or list row; ignored unless {@code id} is one of the message's replies. */
@@ -214,8 +241,7 @@ public class MessagePageService {
                 .orElse(null);
         if (reply == null) return;
         ActionKind kind = Interactive.LIST.equals(i.type()) ? ActionKind.LIST_REPLY : ActionKind.BUTTON_REPLY;
-        boolean first = p.getActions().stream().noneMatch(a -> a.kind() == kind && id.equals(a.id()));
-        record(p, new Action(kind, id, reply.title(), null, null, clock.instant(), uaHash(userAgent), null), first);
+        record(p, new Action(kind, id, reply.title(), null, null, clock.instant(), uaHash(userAgent), null));
     }
 
     /** A shared location; only a location-request page takes one, and only with coordinates on Earth. */
@@ -224,8 +250,7 @@ public class MessagePageService {
         if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
         Interactive i = cloud.fromMap(p.getMessage()).interactive();
         if (i == null || !Interactive.LOCATION_REQUEST.equals(i.type())) return;
-        boolean first = p.getActions().stream().noneMatch(a -> a.kind() == ActionKind.LOCATION);
-        record(p, new Action(ActionKind.LOCATION, null, null, lat, lng, clock.instant(), uaHash(userAgent), null), first);
+        record(p, new Action(ActionKind.LOCATION, null, null, lat, lng, clock.instant(), uaHash(userAgent), null));
     }
 
     /** Records the click and answers the link's url; empty when the page is not a call-to-action link. */
@@ -236,24 +261,35 @@ public class MessagePageService {
         }
         String url = i.action().parameters().url();
         if (expired(p)) return Optional.of(url);
-        boolean first = p.getActions().stream().noneMatch(a -> a.kind() == ActionKind.CTA_URL);
         record(p, new Action(ActionKind.CTA_URL, null, i.action().parameters().displayText(), null, null,
-                clock.instant(), uaHash(userAgent), null), first);
+                clock.instant(), uaHash(userAgent), null));
         return Optional.of(url);
     }
 
-    /** Appends the action (within the cap), saves, and tells the listeners and the inbox stream. */
-    void record(MessagePage p, Action action, boolean first) {
-        if (p.getActions().size() >= MAX_ACTIONS) {
-            if (action.kind() != ActionKind.OPEN) return;
-        } else {
-            p.getActions().add(action);
-        }
-        p.setLastActionAt(action.at());
-        MessagePage saved = pages.save(p);
+    /** Appends the action atomically while the page is under the cap, then tells the listeners and the stream. */
+    void record(MessagePage p, Action action) {
+        Query underCap = byId(p).addCriteria(Criteria.where("actions." + (MAX_ACTIONS - 1)).exists(false));
+        MessagePage before = mongo.findAndModify(underCap,
+                new Update().push("actions", action).set("lastActionAt", action.at()), MessagePage.class);
+        if (before == null) return;
+        boolean first = before.getActions().stream().noneMatch(a -> sameThing(a, action.kind(), action.id()));
+        announce(p.getId(), action, first);
+    }
+
+    private void announce(String pageId, Action action, boolean first) {
+        MessagePage saved = pages.findById(pageId).orElse(null);
+        if (saved == null) return;
         publisher.publishEvent(new MessagePageEvents.Activity(saved, action, first));
         if (first) observe(saved, action);
         changed(saved);
+    }
+
+    private static boolean sameThing(Action a, ActionKind kind, String id) {
+        return a.kind() == kind && (id == null ? a.id() == null : id.equals(a.id()));
+    }
+
+    private static Query byId(MessagePage p) {
+        return new Query(Criteria.where("_id").is(new ObjectId(p.getId())));
     }
 
     /** One CRM activity per page open and per distinct action; a failure there never fails the beacon. */
@@ -338,21 +374,23 @@ public class MessagePageService {
 
     private void complete(MessagePage p, ActionKind kind, String id, String title, Double lat, Double lng,
             WaWebMessage inbound) {
-        List<Action> actions = p.getActions();
-        for (int n = 0; n < actions.size(); n++) {
-            Action a = actions.get(n);
-            boolean same = a.kind() == kind && (id == null ? a.id() == null : id.equals(a.id()));
-            if (same && a.repliedMessageId() == null) {
-                actions.set(n, a.withReplied(inbound.getId()));
-                p.setLastActionAt(inbound.getTimestamp());
-                MessagePage saved = pages.save(p);
-                publisher.publishEvent(new MessagePageEvents.Activity(saved, actions.get(n), false));
-                changed(saved);
-                return;
-            }
+        Criteria pending = Criteria.where("kind").is(kind.name()).and("id").is(id).and("repliedMessageId").is(null);
+        Query withPending = byId(p).addCriteria(Criteria.where("actions").elemMatch(pending));
+        // only the matched element is set here: anything else in this update would count as "modified" even when no
+        // pending action matched, and the fallback below would never run
+        Update set = new Update().set("actions.$.repliedMessageId", inbound.getId());
+        if (mongo.updateFirst(withPending, set, MessagePage.class).getModifiedCount() > 0) {
+            mongo.updateFirst(byId(p), new Update().set("lastActionAt", inbound.getTimestamp()), MessagePage.class);
+            MessagePage saved = pages.findById(p.getId()).orElse(null);
+            if (saved == null) return;
+            Action done = saved.getActions().stream()
+                    .filter(a -> sameThing(a, kind, id) && inbound.getId().equals(a.repliedMessageId())).findFirst()
+                    .orElse(null);
+            if (done != null) publisher.publishEvent(new MessagePageEvents.Activity(saved, done, false));
+            changed(saved);
+            return;
         }
-        boolean first = actions.stream().noneMatch(a -> a.kind() == kind && (id == null ? a.id() == null : id.equals(a.id())));
-        record(p, new Action(kind, id, title, lat, lng, inbound.getTimestamp(), null, inbound.getId()), first);
+        record(p, new Action(kind, id, title, lat, lng, inbound.getTimestamp(), null, inbound.getId()));
     }
 
     // ---- views ----

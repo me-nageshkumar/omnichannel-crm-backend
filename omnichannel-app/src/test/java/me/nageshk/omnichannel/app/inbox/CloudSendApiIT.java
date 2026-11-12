@@ -234,7 +234,9 @@ class CloudSendApiIT extends InboxApiTestBase {
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(r.getHeaders().getContentType().isCompatibleWith(MediaType.TEXT_HTML)).isTrue();
         assertThat(r.getBody()).contains("Hi Pablo! Tap a button.").contains("data-k=\"reply\" href=\"#\"")
-                .doesNotContain("/t/preview/e").contains("+" + number.getNumber());
+                .doesNotContain("/t/preview/e").contains("+" + number.getNumber())
+                // the iframe is sandboxed and cannot send a bearer, so the header image travels inline
+                .contains("src=\"data:image/png;base64,").doesNotContain("/t/preview/m");
         assertThat(pages.count()).isZero();
     }
 

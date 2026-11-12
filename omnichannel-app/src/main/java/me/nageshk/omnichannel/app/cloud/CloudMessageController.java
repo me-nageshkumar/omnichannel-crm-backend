@@ -58,6 +58,6 @@ public class CloudMessageController {
         numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("phone number not found"));
         CloudMessage m = send.validateForPreview(workspaceId, cloud.parse(body));
-        return pages.previewHtml(m, devices.digitsOf(phoneNumberId));
+        return pages.previewHtml(workspaceId, m, devices.digitsOf(phoneNumberId));
     }
 }

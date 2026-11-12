@@ -164,8 +164,8 @@ class MessagePageIT extends InboxApiTestBase {
         MessagePage after = reload(p);
         assertThat(after.getOpenedAt()).isEqualTo(first);
         assertThat(after.getOpenCount()).isEqualTo(2);
-        assertThat(after.getActions()).hasSize(2);
-        assertThat(after.getActions().get(0).uaHash()).hasSize(12);
+        // opens are counted, not stored as actions, so they never eat into the action cap
+        assertThat(after.getActions()).isEmpty();
         assertThat(view(after).messagePage().openCount()).isEqualTo(2);
         assertThat(view(after).messagePage().url()).isEqualTo("http://pages.test/t/" + p.getToken());
     }
@@ -191,6 +191,51 @@ class MessagePageIT extends InboxApiTestBase {
         beacon(p.getToken(), "{\"k\":\"reply\",\"id\":\"zzz\"}").andExpect(status().isNoContent());
         beacon(p.getToken(), "{\"k\":\"dance\"}").andExpect(status().isNoContent());
         assertThat(reload(p).getActions()).isEmpty();
+    }
+
+    @Test
+    void opensNeverStarveTapRecording() throws Exception {
+        MessagePage p = seeded(BUTTON);
+        for (int i = 0; i < 60; i++) beacon(p.getToken(), "{\"k\":\"open\"}").andExpect(status().isNoContent());
+        beacon(p.getToken(), "{\"k\":\"reply\",\"id\":\"change-button\"}").andExpect(status().isNoContent());
+        MessagePage after = reload(p);
+        assertThat(after.getOpenCount()).isEqualTo(60);
+        assertThat(after.getActions()).hasSize(1);
+        assertThat(after.getActions().get(0).uaHash()).hasSize(12);
+    }
+
+    @Test
+    void concurrentBeaconsAllLand() throws Exception {
+        MessagePage p = seeded(BUTTON);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        try {
+            List<java.util.concurrent.Future<?>> jobs = new java.util.ArrayList<>();
+            for (int i = 0; i < 40; i++) {
+                final String body = i % 2 == 0 ? "{\"k\":\"reply\",\"id\":\"change-button\"}" : "{\"k\":\"open\"}";
+                jobs.add(pool.submit(() -> {
+                    beacon(p.getToken(), body).andExpect(status().isNoContent());
+                    return null;
+                }));
+            }
+            for (java.util.concurrent.Future<?> j : jobs) j.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        MessagePage after = reload(p);
+        assertThat(after.getOpenCount()).isEqualTo(20);
+        assertThat(after.getActions()).hasSize(20);
+        assertThat(view(after).messagePage().buttons().get(0).count()).isEqualTo(20);
+    }
+
+    @Test
+    void unreadableStoredMessageDoesNotBreakTheThread() throws Exception {
+        MessagePage p = seeded(BUTTON);
+        mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(
+                org.springframework.data.mongodb.core.query.Criteria.where("_id").is(new org.bson.types.ObjectId(p.getId()))),
+                new org.springframework.data.mongodb.core.query.Update().set("message.surprise", 1), "messagePages");
+        MessageView v = view(reload(p));
+        assertThat(v.messagePageId()).isEqualTo(p.getId());
+        assertThat(v.messagePage()).isNull();
     }
 
     @Test

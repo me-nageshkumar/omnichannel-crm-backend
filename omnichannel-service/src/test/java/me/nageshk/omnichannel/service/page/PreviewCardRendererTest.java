@@ -94,4 +94,24 @@ class PreviewCardRendererTest {
     void drawsTextWithTheBundledFont() {
         assertThat(r.fontName()).startsWith("DejaVu");
     }
+
+    @Test
+    void scriptsTheBundledFontLacksFallBackToTheSystemFont() {
+        java.awt.Font base = r.baseFont().deriveFont(java.awt.Font.PLAIN, 28f);
+        List<PreviewCardRenderer.Run> runs = PreviewCardRenderer.runs("Hi \u0928\u092e\u0938\u094d\u0924\u0947 \uD83D\uDC4D ok", base);
+        assertThat(runs).extracting(PreviewCardRenderer.Run::text).containsExactly("Hi ", "\u0928\u092e\u0938\u094d\u0924\u0947", " ", "\uD83D\uDC4D", " ok");
+        assertThat(runs.get(0).font().getFamily()).startsWith("DejaVu");
+        assertThat(runs.get(1).font().getFamily()).doesNotStartWith("DejaVu");
+        assertThat(runs.get(3).font().getFamily()).doesNotStartWith("DejaVu");
+        assertThat(runs.get(4).font().getFamily()).startsWith("DejaVu");
+        assertThat(PreviewCardRenderer.runs("plain", base)).hasSize(1);
+    }
+
+    @Test
+    void drawsIndicAndEmojiBodiesWithoutFailing() throws Exception {
+        CloudMessage m = new CloudMessage("whatsapp-web", null, "1", "interactive", null,
+                new Interactive("button", null, new Body("\u0928\u092e\u0938\u094d\u0924\u0947 \uD83D\uDC4D"), null,
+                        new Action(List.of(new ActionButton("reply", new Reply("a", "\u0939\u093e\u0901"))), null, null, null, null)), null);
+        assertThat(decode(r.draw(m, Optional.empty())).getWidth()).isEqualTo(1200);
+    }
 }
