@@ -1,0 +1,22 @@
+{
+  "messaging_product": "whatsapp-web",
+  "recipient_type": "individual",
+  "to": "919900000001",
+  "type": "interactive",
+  "interactive": {
+    "type": "list",
+    "header": { "type": "text", "text": "Delivery Speed" },
+    "body": { "text": "Which delivery option would you like?" },
+    "footer": { "text": "Sample Store" },
+    "action": {
+      "button": "View Options",
+      "sections": [
+        { "title": "Fastest", "rows": [
+          { "id": "overnight", "title": "Overnight Delivery", "description": "Arrives next morning" },
+          { "id": "two_day", "title": "Two-Day Delivery", "description": "Arrives in 2 days" } ] },
+        { "title": "Economy", "rows": [
+          { "id": "standard", "title": "Standard Delivery", "description": "Arrives in 3 to 5 days" } ] }
+      ]
+    }
+  }
+}
