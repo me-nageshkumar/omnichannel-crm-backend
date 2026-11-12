@@ -27,6 +27,7 @@ import me.nageshk.omnichannel.db.page.MessagePage.Action;
 import me.nageshk.omnichannel.db.page.MessagePage.ActionKind;
 import me.nageshk.omnichannel.db.page.MessagePageRepository;
 import me.nageshk.omnichannel.service.cloud.CloudMediaService;
+import me.nageshk.omnichannel.service.campaign.CampaignMessageListener;
 import me.nageshk.omnichannel.service.cloud.CloudMessageValidator;
 import me.nageshk.omnichannel.service.inbox.InboxDevices;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
@@ -262,6 +263,63 @@ public class MessagePageService {
         } catch (RuntimeException e) {
             log.warn("could not announce the change of message page {}", p.getId(), e);
         }
+    }
+
+    // ---- matching the customer's WhatsApp reply ----
+
+    /**
+     * Matches an inbound message to the newest page of its chat within the reply window: a text equal (bare) to a
+     * button or row title, or a location after a location request. A tapped action without a reply is completed;
+     * otherwise the action is created, since the customer may have read the titles off the preview card and typed
+     * one. Returns the page when something matched.
+     */
+    public Optional<MessagePage> matchReply(WaWebChat chat, WaWebMessage inbound) {
+        if (chat == null || chat.getId() == null || inbound == null || inbound.getTimestamp() == null) {
+            return Optional.empty();
+        }
+        Instant since = clock.instant().minus(props.replyWindow());
+        List<MessagePage> candidates = pages.findByChatIdAndCreatedAtAfterOrderByCreatedAtDesc(chat.getId(), since);
+        boolean isLocation = "location".equals(inbound.getType()) && inbound.getLocation() != null;
+        String bareBody = isLocation || inbound.getBody() == null ? null : CampaignMessageListener.bare(inbound.getBody());
+        if (!isLocation && (bareBody == null || bareBody.isEmpty())) return Optional.empty();
+        for (MessagePage p : candidates) {
+            if (p.getCreatedAt() != null && p.getCreatedAt().isAfter(inbound.getTimestamp())) continue;
+            Interactive i = cloud.fromMap(p.getMessage()).interactive();
+            if (i == null) continue;
+            if (isLocation) {
+                if (!Interactive.LOCATION_REQUEST.equals(i.type())) continue;
+                WaWebMessage.Location loc = inbound.getLocation();
+                complete(p, ActionKind.LOCATION, null, null, loc.latitude(), loc.longitude(), inbound);
+                return Optional.of(p);
+            }
+            ActionKind kind = Interactive.LIST.equals(i.type()) ? ActionKind.LIST_REPLY : ActionKind.BUTTON_REPLY;
+            for (Interactive.Reply r : CloudMessageValidator.replies(i)) {
+                if (r.title() != null && bareBody.equals(CampaignMessageListener.bare(r.title()))) {
+                    complete(p, kind, r.id(), r.title(), null, null, inbound);
+                    return Optional.of(p);
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private void complete(MessagePage p, ActionKind kind, String id, String title, Double lat, Double lng,
+            WaWebMessage inbound) {
+        List<Action> actions = p.getActions();
+        for (int n = 0; n < actions.size(); n++) {
+            Action a = actions.get(n);
+            boolean same = a.kind() == kind && (id == null ? a.id() == null : id.equals(a.id()));
+            if (same && a.repliedMessageId() == null) {
+                actions.set(n, a.withReplied(inbound.getId()));
+                p.setLastActionAt(inbound.getTimestamp());
+                MessagePage saved = pages.save(p);
+                publisher.publishEvent(new MessagePageEvents.Activity(saved, actions.get(n), false));
+                changed(saved);
+                return;
+            }
+        }
+        boolean first = actions.stream().noneMatch(a -> a.kind() == kind && (id == null ? a.id() == null : id.equals(a.id())));
+        record(p, new Action(kind, id, title, lat, lng, inbound.getTimestamp(), null, inbound.getId()), first);
     }
 
     // ---- views ----
