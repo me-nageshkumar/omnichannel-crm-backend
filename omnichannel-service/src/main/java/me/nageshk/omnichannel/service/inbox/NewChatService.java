@@ -16,6 +16,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.phone.PhoneNumber;
 import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessage;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.contact.Phones;
 import org.springframework.stereotype.Service;
@@ -129,11 +130,54 @@ public class NewChatService {
     /** Writes to a chat that exists: refused if taken, reopened if closed, claimed if nobody has it. */
     private CompletableFuture<MessageView> sendToExisting(AuthenticatedUser me, String workspaceId, WaWebChat chat,
             SendRequest message) {
+        return sender.send(me, workspaceId, claimed(me, workspaceId, chat), message);
+    }
+
+    /** The chat reopened if closed and claimed by the caller if unassigned, as a start is an explicit claim. */
+    private WaWebChat claimed(AuthenticatedUser me, String workspaceId, WaWebChat chat) {
         boolean assigned = chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null;
         if (assigned && !scopes.scopeOf(me, workspaceId).covers(chat)) throw new ChatTakenException();
         if (chat.getStatus() == ChatStatus.CLOSED) chat = assignment.reopen(me, chat);
         if (chat.getAssignedUserId() == null) chat = assignment.assign(me, chat, me.userId(), null);
-        return sender.send(me, workspaceId, chat, message);
+        return chat;
+    }
+
+    /**
+     * Sends a Cloud API message to the phone in its {@code to}, the way {@link #start} sends a first message: same
+     * checks, same chat resolution and lookup, same claim. The message itself is validated by the sender.
+     */
+    public CompletableFuture<MessageView> startCloud(AuthenticatedUser me, String workspaceId, String phoneNumberId,
+            CloudMessage message) {
+        String phone = Phones.normalise(message.to());
+        if (!Phones.isValid(phone)) throw new ValidationException("to", Phones.MESSAGE);
+        PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
+                .orElseThrow(() -> new NotFoundException("phone number not found"));
+        if (scopes.visibleNumbers(me, workspaceId).stream().noneMatch(v -> v.number().getId().equals(phoneNumberId))) {
+            throw new NotFoundException("phone number not found");
+        }
+        devices.requireReady(workspaceId, phoneNumberId);
+        CloudMessage toPhone = message.withTo(phone);
+
+        WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, phone + "@c.us");
+        if (chat != null) return sender.sendCloud(me, workspaceId, claimed(me, workspaceId, chat), toPhone, null, true);
+
+        NumberLookup lookup = await(lookups.lookup(workspaceId, phoneNumberId, phone, false));
+        if (!lookup.registered()) throw new NotOnWhatsAppException();
+        String remoteId = lookup.remoteId();
+        chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
+        if (chat != null) return sender.sendCloud(me, workspaceId, claimed(me, workspaceId, chat), toPhone, null, true);
+
+        WaWebChat fresh = new WaWebChat();
+        fresh.setCustomerId(number.getCustomerId());
+        fresh.setWorkspaceId(workspaceId);
+        fresh.setPhoneNumberId(phoneNumberId);
+        fresh.setRemoteId(remoteId);
+        fresh.setContactId(contactRepository.findByWorkspaceIdAndPhone(workspaceId, phone).map(Contact::getId)
+                .orElse(null));
+        fresh.setStatus(ChatStatus.OPEN);
+        fresh.setAssignedUserId(me.userId());
+        fresh.setAssignedAt(clock.instant());
+        return sender.sendCloud(me, workspaceId, fresh, toPhone, phone, true);
     }
 
     /** Joins the future; a failure surfaces as the exception it carries, so the API handler maps it. */

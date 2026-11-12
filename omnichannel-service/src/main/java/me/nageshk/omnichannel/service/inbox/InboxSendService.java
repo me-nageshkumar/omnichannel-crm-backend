@@ -34,6 +34,14 @@ import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookConverter;
 import me.nageshk.omnichannel.service.contact.ContactService;
 import me.nageshk.omnichannel.service.rpc.RpcDispatcher;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessage;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessages;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.MessagingProduct;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.Text;
+import me.nageshk.omnichannel.db.page.MessagePage;
+import me.nageshk.omnichannel.service.cloud.CloudMediaService;
+import me.nageshk.omnichannel.service.cloud.CloudMessageValidator;
+import me.nageshk.omnichannel.service.page.MessagePageService;
 import me.nageshk.omnichannel.service.template.RenderRequest;
 import me.nageshk.omnichannel.service.template.RenderedTemplate;
 import me.nageshk.omnichannel.service.template.TemplateMediaService;
@@ -66,11 +74,16 @@ public class InboxSendService {
     /** What goes to the device and what is stored for it; {@code body} may be null. */
     private record Outgoing(String content, ObjectNode options, String type, String body,
             WaWebMessage.Media media, byte[] mediaBytes, WaWebMessage.Location location, String templateId,
-            List<String> pollOptions) {
+            List<String> pollOptions, String messagePageId, Map<String, Object> request) {
 
         Outgoing(String content, ObjectNode options, String type, String body, WaWebMessage.Media media,
                 byte[] mediaBytes, WaWebMessage.Location location, String templateId) {
             this(content, options, type, body, media, mediaBytes, location, templateId, null);
+        }
+
+        Outgoing(String content, ObjectNode options, String type, String body, WaWebMessage.Media media,
+                byte[] mediaBytes, WaWebMessage.Location location, String templateId, List<String> pollOptions) {
+            this(content, options, type, body, media, mediaBytes, location, templateId, pollOptions, null, null);
         }
     }
 
@@ -94,6 +107,10 @@ public class InboxSendService {
     private final InboxViews views;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
+    private final MessagePageService pages;
+    private final CloudMessageValidator validator;
+    private final CloudMediaService cloudMedia;
+    private final CloudMessages cloud;
 
     /** Sends to a chat the console did not address by a typed phone. */
     public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
@@ -128,7 +145,36 @@ public class InboxSendService {
         if (!(actor instanceof AutomationActor) && chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
         DeviceSession device = devices.requireReady(workspaceId, chat);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
+        return dispatch(actor, chat, device, out, typedPhone);
+    }
 
+    /** Sends a Cloud API message as the console user {@code me}; see {@link #sendCloud(SendActor, String, WaWebChat, CloudMessage, String, boolean)}. */
+    public CompletableFuture<MessageView> sendCloud(AuthenticatedUser me, String workspaceId, WaWebChat chat,
+            CloudMessage message, String typedPhone, boolean toIsPhone) {
+        UserActor actor = new UserActor(me, users.findById(me.userId()).map(User::getName).orElse(me.getUsername()));
+        return sendCloud(actor, workspaceId, chat, message, typedPhone, toIsPhone);
+    }
+
+    /**
+     * Sends a Cloud API message (spec §5.7). A {@code text} goes out as typed text does. An {@code interactive}
+     * message goes out as a link to its message page: the page row and its preview image exist before the device is
+     * asked, so WhatsApp's preview fetch finds them. The same checks and order as {@link #send} apply.
+     *
+     * @param toIsPhone whether {@code to} must be a phone (the Cloud-shaped API) or any id (a chat-keyed send)
+     * @throws ValidationException for anything Meta's limits or ours refuse, keyed by JSON path
+     * @throws IllegalStateException when the preview image cannot be drawn: nothing is sent
+     */
+    public CompletableFuture<MessageView> sendCloud(SendActor actor, String workspaceId, WaWebChat chat,
+            CloudMessage message, String typedPhone, boolean toIsPhone) {
+        if (!(actor instanceof AutomationActor) && chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
+        DeviceSession device = devices.requireReady(workspaceId, chat);
+        CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
+        Outgoing out = cloudOutgoing(chat, m);
+        return dispatch(actor, chat, device, out, typedPhone);
+    }
+
+    private CompletableFuture<MessageView> dispatch(SendActor actor, WaWebChat chat, DeviceSession device,
+            Outgoing out, String typedPhone) {
         ObjectNode params = mapper.createObjectNode();
         params.put("chatId", chat.getRemoteId());
         params.put("content", out.content());
@@ -136,6 +182,28 @@ public class InboxSendService {
         params.put("sendSeen", true);
         return dispatcher.call(device, "sendMessage", params)
                 .thenApply(result -> afterSend(actor, chat, out, result, typedPhone));
+    }
+
+    /** What goes to the device for a validated Cloud message. */
+    private Outgoing cloudOutgoing(WaWebChat chat, CloudMessage m) {
+        ObjectNode options = mapper.createObjectNode().put("linkPreview", true);
+        Map<String, Object> request = cloud.toMap(m);
+        if (CloudMessage.TEXT.equals(m.type())) {
+            String body = m.text().body();
+            return new Outgoing(body, options, null, body, null, null, null, null, null, null, request);
+        }
+        MessagePage page = pages.drawPreview(pages.create(chat, m));
+        String link = pages.link(page);
+        // the type is the echo's ("chat"), as for typed text; the stored body is the link WhatsApp shows
+        return new Outgoing(link, options, null, link, null, null, null, null, null, page.getId(), request);
+    }
+
+    /** The Cloud request a typed text is recorded as; {@code to} is the chat's digits when it has any. */
+    private Map<String, Object> textRequest(WaWebChat chat, String text) {
+        String remote = chat.getRemoteId() == null ? "" : chat.getRemoteId();
+        String to = remote.endsWith("@c.us") ? remote.substring(0, remote.indexOf('@')) : null;
+        return cloud.toMap(new CloudMessage(MessagingProduct.WHATSAPP_WEB, "individual", to, CloudMessage.TEXT,
+                new Text(true, text), null, null));
     }
 
     // ---- request to outgoing message ----
@@ -153,7 +221,8 @@ public class InboxSendService {
             // whatsapp-web.js's Client.sendMessage turns on link previews unless asked not to; the page script takes
             // our options as its internal options as they are, so a text with a link needs the flag from here.
             ObjectNode options = mapper.createObjectNode().put("linkPreview", true);
-            return new Outgoing(text, options, null, text, null, null, null, null);
+            return new Outgoing(text, options, null, text, null, null, null, null, null, null,
+                    textRequest(chat, text));
         }
         String templateId = req.templateId().strip();
         if (templates.require(workspaceId, templateId).getStatus() == TemplateStatus.ARCHIVED) {
@@ -294,6 +363,14 @@ public class InboxSendService {
                         e.toString());
             }
         }
+        if (out.messagePageId() != null) {
+            try {
+                pages.attachMessage(out.messagePageId(), recorded.message().getId());
+            } catch (RuntimeException e) {
+                log.warn("could not attach message {} to page {}: {}", recorded.message().getId(),
+                        out.messagePageId(), e.toString());
+            }
+        }
         if (out.templateId() != null) {
             try {
                 templates.markUsed(out.templateId(), now);
@@ -417,6 +494,8 @@ public class InboxSendService {
         message.setSentByName(actor.displayName());
         message.setCampaignId(actor.campaignId());
         message.setTemplateId(out.templateId());
+        if (out.messagePageId() != null) message.setMessagePageId(out.messagePageId());
+        if (out.request() != null) message.setRequest(out.request());
         InboxIngestService.applyAck(message, ack, now);
         message = messages.save(message);
         message = cacheMedia(message, out);

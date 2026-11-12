@@ -212,6 +212,28 @@ class InboxSendIT extends InboxApiTestBase {
     }
 
     @Test
+    void typedTextStoresTheCloudRequest() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        sendOk(managerToken, chat, Map.of("text", "hello"), "true_" + chat.getRemoteId() + "_1", "hello", "chat");
+        WaWebMessage stored = only(chat);
+        assertThat(stored.getRequest()).isEqualTo(Map.of("messaging_product", "whatsapp-web",
+                "recipient_type", "individual", "to", "919812345678", "type", "text",
+                "text", Map.of("preview_url", true, "body", "hello")));
+        assertThat(stored.getMessagePageId()).isNull();
+    }
+
+    @Test
+    void templateSendsKeepNoRequest() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        String id = textTemplate("Hi", "Hi {{contact.name}}", nameSetting());
+        sendOk(managerToken, chat, Map.of("templateId", id, "values", Map.of()), "true_" + chat.getRemoteId() + "_1",
+                "Hi Aarav", "chat");
+        WaWebMessage stored = only(chat);
+        assertThat(stored.getRequest()).isNull();
+        assertThat(stored.getMessagePageId()).isNull();
+    }
+
+    @Test
     void laterMessageCreateKeepsConsoleSource() throws Exception {
         WaWebChat chat = chatWithAarav();
         String serialized = "true_" + chat.getRemoteId() + "_2";
