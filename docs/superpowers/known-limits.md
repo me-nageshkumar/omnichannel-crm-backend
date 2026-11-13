@@ -86,6 +86,10 @@ Spec `specs/2026-11-13-advanced-chatbot-design.md`. A run belongs to a contact; 
 - A chatbot moved to draft leaves live runs finishing on their version; new starts fail "is not published".
 - The editor's live view polls the run every 2 seconds; the inbox chip rides on the chat stream.
 - A form's token lives max(24 h, the chatbot's inactivity end) and closes with its run.
+- Console: the run panel draws a run over the chatbot's current flow, so steps of a node removed since show
+  "(removed)"; variable suggestions after `{{` show the first eight matches; the Send message node's per-kind drafts
+  live only while the drawer is open (switching kind and back keeps them, closing the drawer does not).
+- Console: run settings are saved with the flow (the Save button), not on their own.
 
 ## Automations: known limits
 
