@@ -10,7 +10,9 @@ where things are, and traps already hit. Read sections 1 and 2 before any git, d
   rewritten (the fast-forwarded history import of 2026-10-31 stays as it is).
 - Work in `.worktrees/<branch>` in each repo, never on `main`. One Maven build at a time per worktree.
 - Do not wipe or re-seed the demo database without asking; take a `mongodump` first.
-- **Never send a real message without the user naming the recipient.** Sending hours are Mon to Sat, 10:00 to 18:00 IST.
+- **Never send a real message without the user naming the recipient.** Sending hours are Mon to Sat, 10:00 to 18:00 IST,
+  for messages the app sends **first**. A chatbot or rule answering a message the user has just sent from the test
+  number may be exercised at any hour (the user's choice, 2026-11-13); the user still names the recipient.
 - The demo password is not recorded on purpose: ask the user. Do not repeat credential values.
 - Do not change a shared role's permissions; use a separate test role and user, through the app's screens.
 - Deleting records: ask, unless they are throwaways made in the same task.
@@ -80,7 +82,7 @@ WhatsApp messages: take care sharing it or a backup.
   `service.channel.whatsapp`, with `WhatsAppWebhookProcessor` and `WaWebWebhookListener`; the store is
   `ChannelWebhookEventStore` (collection `channelWebhookEvents`). Spec `specs/2026-11-05-cloud-webhook-shape-design.md`,
   plan `plans/2026-11-05-cloud-webhook-shape-backend.md`, field evidence `whatsapp-web-storage-analysis.md`.
-- **Advanced chatbot:** spec `specs/2026-11-13-advanced-chatbot-design.md`, plans `plans/2026-11-13-advanced-chatbot-backend.md`
+- **Advanced chatbot:** spec `specs/2026-11-13-advanced-chatbot-design.md` (rule-test addendum `2026-11-13-chatbot-in-rule-test-design.md`), plans `plans/2026-11-13-advanced-chatbot-backend.md`
   and `-console.md`. Code in `service.chatbot` (`flow` parser and settings, `node` executors, `run` runner, ticker and
   answer sources, `form` pages), documents in `db.chatbot`, API in `app.chatbot`; the automation action is
   `service.automation.StartChatbotHandler`. Tests in `app.chatbot` extend `AutomationTestBase` through `ChatbotTestBase`.

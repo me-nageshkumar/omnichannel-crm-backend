@@ -341,6 +341,8 @@ territory: the run fails, never re-sent.
   Test. "Stop" ends it.
 - Project rule: **never send a real message without the user naming the recipient.** The acceptance check needs the
   user to name the test contact.
+- Addendum (2026-11-13): the rule test is the first-class way to test a chatbot on its event; see
+  `2026-11-13-chatbot-in-rule-test-design.md`.
 
 ## 8. Screens
 
