@@ -25,6 +25,7 @@ public final class ConditionCatalog {
 
     private static final Map<String, FieldSpec> MESSAGE = Map.of(
             "chat.new", spec("chat.new", FieldType.BOOLEAN, Set.of(IS)),
+            "chat.chatbotRunning", spec("chat.chatbotRunning", FieldType.BOOLEAN, Set.of(IS)),
             "message.text", spec("message.text", FieldType.TEXT, TEXT_OPS),
             "message.type", spec("message.type", FieldType.CHOICE, Set.of(IS_ONE_OF)),
             "number", spec("number", FieldType.CHOICE, CHOICE_OPS),

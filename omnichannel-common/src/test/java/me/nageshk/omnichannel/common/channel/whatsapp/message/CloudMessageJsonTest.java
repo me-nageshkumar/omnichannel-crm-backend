@@ -19,7 +19,7 @@ class CloudMessageJsonTest {
     private final CloudMessages cloud = new CloudMessages(mapper);
 
     @ParameterizedTest
-    @ValueSource(strings = {"text", "button", "list", "cta_url", "location_request"})
+    @ValueSource(strings = {"text", "button", "list", "cta_url", "location_request", "image", "document", "location"})
     void roundTripsMetaExamplesByteEqual(String name) throws Exception {
         JsonNode original = mapper.readTree(getClass().getResourceAsStream("/cloud/" + name + ".json"));
         CloudMessage parsed = cloud.parse(original);

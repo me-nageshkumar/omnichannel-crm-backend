@@ -79,6 +79,21 @@ omnichannel:
     test-idle: 30m
     send-timeout: 60s
     retry-delay: 2m
+  # chatbot runs: a small pool walks flows off the request threads; a ticker answers timers and ends idle runs
+  chatbot:
+    auto-tick: true
+    tick: 2s
+    lease: 2m
+    pool-size: 4
+    max-steps: 200
+    max-jumps: 5
+    http-timeout: 10s
+    http-max-body: 1048576
+    send-timeout: 60s
+    send-attempts: 3
+    send-retry-delay: 30s
+    versions-kept: 50
+    allow-private-http: false
   contacts:
     # a stored inbound message looks up its contact's other WhatsApp id (tests switch it off)
     resolve-on-message: true

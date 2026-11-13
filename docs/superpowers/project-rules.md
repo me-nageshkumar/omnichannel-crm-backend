@@ -80,6 +80,10 @@ WhatsApp messages: take care sharing it or a backup.
   `service.channel.whatsapp`, with `WhatsAppWebhookProcessor` and `WaWebWebhookListener`; the store is
   `ChannelWebhookEventStore` (collection `channelWebhookEvents`). Spec `specs/2026-11-05-cloud-webhook-shape-design.md`,
   plan `plans/2026-11-05-cloud-webhook-shape-backend.md`, field evidence `whatsapp-web-storage-analysis.md`.
+- **Advanced chatbot:** spec `specs/2026-11-13-advanced-chatbot-design.md`, plans `plans/2026-11-13-advanced-chatbot-backend.md`
+  and `-console.md`. Code in `service.chatbot` (`flow` parser and settings, `node` executors, `run` runner, ticker and
+  answer sources, `form` pages), documents in `db.chatbot`, API in `app.chatbot`; the automation action is
+  `service.automation.StartChatbotHandler`. Tests in `app.chatbot` extend `AutomationTestBase` through `ChatbotTestBase`.
 - **Running on AWS cheaply** (nothing deployed yet): `aws-deployment.md` next to this file.
 - **Backup** from before the 2026-11-01 inbox reset:
   `/Users/nagesh/Projects/WhatsAppWebJS/SCM/backups/mongo/omnichannel_crm-20261101-1147-before-chat-reset`.

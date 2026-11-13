@@ -61,12 +61,12 @@ class AssignChatActionIT extends AutomationTestBase {
 
     private AutomationAction assign(AssignMode mode, User user, String teamId, WhenAway whenAway) {
         return new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null, mode,
-                user == null ? null : user.getId(), teamId, whenAway, null, null, null);
+                user == null ? null : user.getId(), teamId, whenAway, null, null, null, null, null);
     }
 
     private ActionContext ctx(WaWebChat chat) {
         EventData.ChatData c = chat == null ? null
-                : new EventData.ChatData(chat.getId(), false, chat.getStatus(), null, null);
+                : new EventData.ChatData(chat.getId(), false, chat.getStatus(), null, null, false);
         return new ActionContext(brand.getId(), acme.getId(), AutomationEventKind.MESSAGE_RECEIVED, "m-1",
                 new EventData(c, null, null, null, null, null, null, null), "r1", "Welcome rule", false);
     }

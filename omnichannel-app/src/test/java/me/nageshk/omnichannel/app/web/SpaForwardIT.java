@@ -56,6 +56,11 @@ class SpaForwardIT {
     }
 
     @Test
+    void formPagesAreNotTheSpa() throws Exception {
+        mvc.perform(get("/f/abc")).andExpect(status().isNotFound()).andExpect(forwardedUrl(null));
+    }
+
+    @Test
     void unknownApiPathIsNotTheSpa() throws Exception {
         mvc.perform(get("/api/nope")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/nope").header("Authorization", "Bearer " + testUsers.tokenFor("dev")))

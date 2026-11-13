@@ -12,7 +12,9 @@ public record EventData(ChatData chat, MessageData message, NumberData number, C
     public record Ref(String id, String name) {
     }
 
-    public record ChatData(String id, boolean isNew, ChatStatus status, Ref assignedUser, Ref assignedTeam) {
+    /** {@code chatbotRunning}: a chatbot run was active on the chat when the event was written (chatbot spec §3.4). */
+    public record ChatData(String id, boolean isNew, ChatStatus status, Ref assignedUser, Ref assignedTeam,
+            boolean chatbotRunning) {
     }
 
     /** {@code type} is the message kind. */

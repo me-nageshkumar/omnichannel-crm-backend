@@ -59,8 +59,8 @@ public class CloudMediaService {
 
     /** Stores an upload meant for a header of {@code headerType} ({@code image}, {@code video} or {@code document}). */
     public Stored upload(AuthenticatedUser me, String workspaceId, String headerType, MultipartFile file) {
-        if (!HEADER_TYPES.contains(headerType == null ? "" : headerType)) {
-            throw new ValidationException("type", "must be image, video or document");
+        if (!HEADER_TYPES.contains(headerType == null ? "" : headerType) && !"audio".equals(headerType)) {
+            throw new ValidationException("type", "must be image, video, audio or document");
         }
         if (file == null || file.isEmpty()) throw new ValidationException("file", "is required");
         long max = CloudMediaTypes.maxBytes(headerType);
@@ -107,8 +107,10 @@ public class CloudMediaService {
     /** Deletes files uploaded before the cutoff that no message page's header refers to; returns how many. */
     public int sweepOrphans(Instant cutoff) {
         int deleted = 0;
+        java.util.Set<String> inFlows = chatbotMediaIds();
         for (GridFSFile f : gridFs.find(new Query(Criteria.where("metadata.uploadedAt").lt(Date.from(cutoff))))) {
             String id = f.getObjectId().toHexString();
+            if (inFlows.contains(id)) continue;
             Query referenced = new Query(new Criteria().orOperator(
                     Criteria.where("message.interactive.header.image.id").is(id),
                     Criteria.where("message.interactive.header.video.id").is(id),
@@ -118,6 +120,28 @@ public class CloudMediaService {
             deleted++;
         }
         return deleted;
+    }
+
+    /** Every media id a chatbot's current flow or kept version names (chatbot spec §8.3). */
+    private java.util.Set<String> chatbotMediaIds() {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (String collection : java.util.List.of("chatbots", "chatbotVersions")) {
+            Query q = new Query();
+            q.fields().include("flow");
+            for (Document d : mongo.find(q, Document.class, collection)) collectMediaIds(d.get("flow"), null, ids);
+        }
+        return ids;
+    }
+
+    private static final java.util.Set<String> MEDIA_KEYS = java.util.Set.of("image", "video", "audio", "document");
+
+    private static void collectMediaIds(Object node, String parentKey, java.util.Set<String> out) {
+        if (node instanceof java.util.Map<?, ?> m) {
+            if (parentKey != null && MEDIA_KEYS.contains(parentKey) && m.get("id") instanceof String id) out.add(id);
+            for (java.util.Map.Entry<?, ?> e : m.entrySet()) collectMediaIds(e.getValue(), String.valueOf(e.getKey()), out);
+        } else if (node instanceof java.util.List<?> l) {
+            for (Object o : l) collectMediaIds(o, parentKey, out);
+        }
     }
 
     private Optional<GridFSFile> find(String workspaceId, String mediaId) {

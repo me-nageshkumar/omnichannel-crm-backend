@@ -70,12 +70,12 @@ import tools.jackson.databind.node.ObjectNode;
 @AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "omnichannel.rpc.timeout=2s")
 @Import(AutomationTestBase.Fixtures.class)
-abstract class AutomationTestBase {
+public abstract class AutomationTestBase {
 
-    static final Instant NOW = Instant.parse("2026-11-03T05:30:00Z");
+    protected static final Instant NOW = Instant.parse("2026-11-03T05:30:00Z");
 
     @TestConfiguration
-    static class Fixtures {
+    public static class Fixtures {
         @Bean
         @Primary
         MutableClock testClock() {
@@ -83,35 +83,35 @@ abstract class AutomationTestBase {
         }
     }
 
-    private static final AtomicInteger COUNTER = new AtomicInteger();
+    protected static final AtomicInteger COUNTER = new AtomicInteger();
 
-    @LocalServerPort int port;
-    @Autowired TestRestTemplate rest;
-    @Autowired MutableClock clock;
-    @Autowired TestUsers testUsers;
-    @Autowired TestDevices testDevices;
-    @Autowired MongoTemplate mongo;
-    @Autowired ObjectMapper mapper;
-    @Autowired ApplicationEventPublisher publisher;
-    @Autowired WaWebChatRepository chats;
-    @Autowired TeamRepository teams;
-    @Autowired PhoneNumberRepository phoneNumbers;
+    @LocalServerPort protected int port;
+    @Autowired protected TestRestTemplate rest;
+    @Autowired protected MutableClock clock;
+    @Autowired protected TestUsers testUsers;
+    @Autowired protected TestDevices testDevices;
+    @Autowired protected MongoTemplate mongo;
+    @Autowired protected ObjectMapper mapper;
+    @Autowired protected ApplicationEventPublisher publisher;
+    @Autowired protected WaWebChatRepository chats;
+    @Autowired protected TeamRepository teams;
+    @Autowired protected PhoneNumberRepository phoneNumbers;
 
-    Customer acme;
-    Workspace brand;
-    Workspace other;
-    Team support;
-    PhoneNumber n1;
-    PhoneNumber n2;
-    User manager;
-    User admin;
-    User agent;
-    User agent2;
-    User outsider;
-    User staff;
+    protected Customer acme;
+    protected Workspace brand;
+    protected Workspace other;
+    protected Team support;
+    protected PhoneNumber n1;
+    protected PhoneNumber n2;
+    protected User manager;
+    protected User admin;
+    protected User agent;
+    protected User agent2;
+    protected User outsider;
+    protected User staff;
 
     /** The collections each test starts without. */
-    List<Class<?>> collections() {
+    protected List<Class<?>> collections() {
         return List.of(AutomationEvent.class, AutomationEventRecord.class, AutomationRule.class,
                 AutomationRun.class, AutomationTest.class, Contact.class, WaWebChat.class, WaWebMessage.class,
                 WaWebChatAction.class, MessageTemplate.class, InboxSetting.class, EnablementChange.class);
@@ -154,16 +154,16 @@ abstract class AutomationTestBase {
         clock.set(NOW);
     }
 
-    User brandUser(Workspace w, String username, String roleName) {
+    protected User brandUser(Workspace w, String username, String roleName) {
         return testUsers.createInCustomer(acme.getId(), username, null,
                 List.of(new WorkspaceRole(w.getId(), testUsers.roleId(roleName))));
     }
 
-    String url(String path) {
+    protected String url(String path) {
         return "http://localhost:" + port + path;
     }
 
-    HttpEntity<Object> auth(User who, Object body) {
+    protected HttpEntity<Object> auth(User who, Object body) {
         HttpHeaders h = new HttpHeaders();
         h.setBearerAuth(testUsers.accessToken(who));
         h.setContentType(MediaType.APPLICATION_JSON);
@@ -171,18 +171,18 @@ abstract class AutomationTestBase {
     }
 
     /** {@code path} is relative to the brand's {@code /api/workspaces/{id}/automations}. */
-    ResponseEntity<JsonNode> api(HttpMethod m, String path, User who, Object body) {
+    protected ResponseEntity<JsonNode> api(HttpMethod m, String path, User who, Object body) {
         return rest.exchange(url("/api/workspaces/" + brand.getId() + "/automations" + path), m, auth(who, body),
                 JsonNode.class);
     }
 
     /** A request to any path of the server, as {@code who}. */
-    ResponseEntity<JsonNode> call(HttpMethod m, String path, User who, Object body) {
+    protected ResponseEntity<JsonNode> call(HttpMethod m, String path, User who, Object body) {
         return rest.exchange(url(path), m, auth(who, body), JsonNode.class);
     }
 
     /** The payload of a {@code message_create} event for a message of the chat with {@code remote}. */
-    ObjectNode payload(String remote, boolean fromMe, String type, String body, String notifyName) {
+    protected ObjectNode payload(String remote, boolean fromMe, String type, String body, String notifyName) {
         ObjectNode p = mapper.createObjectNode();
         ObjectNode id = p.putObject("id");
         id.put("fromMe", fromMe);
@@ -197,7 +197,7 @@ abstract class AutomationTestBase {
     }
 
     /** Publishes the payload as a {@code message_create} event of the number; returns the stored chat or null. */
-    WaWebChat publish(PhoneNumber n, ObjectNode payload) {
+    protected WaWebChat publish(PhoneNumber n, ObjectNode payload) {
         publisher.publishEvent(new WhatsAppEvent(this, n.getId(), brand.getId(), acme.getId(), "message_create",
                 payload, null, null));
         String remote = payload.get("id").get("remote").asString();
@@ -205,12 +205,12 @@ abstract class AutomationTestBase {
     }
 
     /** An incoming message of the type from the remote chat; returns the stored chat. */
-    WaWebChat incoming(PhoneNumber n, String remote, String type, String body, String notifyName) {
+    protected WaWebChat incoming(PhoneNumber n, String remote, String type, String body, String notifyName) {
         return publish(n, payload(remote, false, type, body, notifyName));
     }
 
     /** A rule of the brand, saved directly. */
-    AutomationRule rule(String name, AutomationEventKind event, RuleStatus status, Integer priority,
+    protected AutomationRule rule(String name, AutomationEventKind event, RuleStatus status, Integer priority,
             ConditionNode conditions, AutomationAction... actions) {
         AutomationRule r = new AutomationRule();
         r.setCustomerId(acme.getId());
@@ -226,7 +226,7 @@ abstract class AutomationTestBase {
     }
 
     /** A TEXT template of the brand with the given body; returns its id. */
-    String template(String name, String body) {
+    protected String template(String name, String body) {
         List<Map<String, Object>> settings = new ArrayList<>();
         Matcher m = Pattern.compile("\\{\\{\\s*([^}]+?)\\s*}}").matcher(body);
         Set<String> seen = new HashSet<>();
@@ -243,28 +243,28 @@ abstract class AutomationTestBase {
     }
 
     /** Switches the brand's CRM on, as the platform user. */
-    void enableCrm() {
+    protected void enableCrm() {
         call(HttpMethod.PUT, "/api/customers/" + acme.getId() + "/workspaces/" + brand.getId() + "/crm", staff,
                 Map.of("enabled", true));
     }
 
-    static ConditionNode leaf(String field, String op, Object value) {
+    protected static ConditionNode leaf(String field, String op, Object value) {
         return new ConditionNode(null, null, null, field, op, value);
     }
 
-    static ConditionNode all(ConditionNode... rules) {
+    protected static ConditionNode all(ConditionNode... rules) {
         return new ConditionNode("and", null, List.of(rules), null, null, null);
     }
 
-    static ConditionNode any(ConditionNode... rules) {
+    protected static ConditionNode any(ConditionNode... rules) {
         return new ConditionNode("or", null, List.of(rules), null, null, null);
     }
 
-    List<AutomationEvent> queued() {
+    protected List<AutomationEvent> queued() {
         return mongo.findAll(AutomationEvent.class);
     }
 
-    AutomationTest waitingTest(AutomationEventKind kind, String targetContactId, String targetPhone) {
+    protected AutomationTest waitingTest(AutomationEventKind kind, String targetContactId, String targetPhone) {
         AutomationTest t = new AutomationTest();
         t.setCustomerId(acme.getId());
         t.setWorkspaceId(brand.getId());

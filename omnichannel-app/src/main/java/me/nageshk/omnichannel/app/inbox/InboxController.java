@@ -99,6 +99,7 @@ public class InboxController {
     public record Assignees(List<Person> users, List<TeamRef> teams) {
     }
 
+    private final me.nageshk.omnichannel.service.chatbot.run.ChatbotRunService chatbotRuns;
     private final InboxQueryService query;
     private final InboxScopeService scopeService;
     private final InboxStreamBroker broker;
@@ -123,7 +124,9 @@ public class InboxController {
             PhoneNumberService phoneNumbers, UserAdminService userAdmin, TeamService teamService,
             InboxSendService sender, WaWebMessageRepository messageRepository, ChatMediaService chatMedia,
             NewChatService newChats, NumberLookupService numberLookups, AccessService accessService,
-            CloudSendService cloudSend, CloudMessages cloud) {
+            CloudSendService cloudSend, CloudMessages cloud,
+            me.nageshk.omnichannel.service.chatbot.run.ChatbotRunService chatbotRuns) {
+        this.chatbotRuns = chatbotRuns;
         this.accessService = accessService;
         this.query = query;
         this.scopeService = scopeService;
@@ -366,6 +369,18 @@ public class InboxController {
         WaWebChat chat = query.requireVisible(me, workspaceId, chatId);
         return views.chat(req == null ? assignment.assign(me, chat, null, null)
                 : assignment.assign(me, chat, req.userId(), req.teamId()));
+    }
+
+    /** Stops the chatbot run on the chat (chatbot spec §5.4); 404 {@code NO_CHATBOT} when none is active. */
+    @PostMapping("/chats/{chatId}/chatbot/stop")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    public ResponseEntity<Void> stopChatbot(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String chatId) {
+        WaWebChat chat = query.requireVisible(me, workspaceId, chatId);
+        var run = chatbotRuns.activeForChat(chat.getId()).orElseThrow(() -> new me.nageshk.omnichannel.common.api.CodedException(
+                HttpStatus.NOT_FOUND, "NO_CHATBOT", null, "No chatbot is running on this chat"));
+        chatbotRuns.stop(run, "stopped by " + me.getUsername(), me.userId());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/chats/{chatId}/claim")

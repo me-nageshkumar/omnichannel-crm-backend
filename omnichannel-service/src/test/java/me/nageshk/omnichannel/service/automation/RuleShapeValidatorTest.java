@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 class RuleShapeValidatorTest {
 
     private static final AutomationAction SEND = new AutomationAction(AutomationActionType.SEND_TEMPLATE, "t", null,
-            null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null);
 
     private static ConditionNode leaf(String field, String op, Object value) {
         return new ConditionNode(null, null, null, field, op, value);
@@ -122,11 +122,11 @@ class RuleShapeValidatorTest {
 
     @Test
     void actionChecks() {
-        AutomationAction noType = new AutomationAction(null, null, null, null, null, null, null, null, null, null);
+        AutomationAction noType = new AutomationAction(null, null, null, null, null, null, null, null, null, null, null, null);
         AutomationAction assign = new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null, null, null,
-                null, null, null, null, null);
+                null, null, null, null, null, null, null);
         AutomationAction longTitle = new AutomationAction(AutomationActionType.ADD_TO_CRM, null, null, null, null,
-                null, null, "p", "s", "t".repeat(201));
+                null, null, "p", "s", "t".repeat(201), null, null);
         Map<String, String> r = RuleShapeValidator.check(rule(AutomationEventKind.MESSAGE_RECEIVED, null,
                 List.of(SEND, noType, assign, longTitle)));
         assertThat(r).containsEntry("actions[1].type", "is required")
@@ -138,7 +138,7 @@ class RuleShapeValidatorTest {
     @Test
     void assignWithModeIsFine() {
         AutomationAction assign = new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
-                AssignMode.values()[0], null, null, null, null, null, null);
+                AssignMode.values()[0], null, null, null, null, null, null, null, null);
         assertThat(RuleShapeValidator.check(rule(AutomationEventKind.MESSAGE_RECEIVED, null, List.of(assign))))
                 .isEmpty();
     }
@@ -146,7 +146,7 @@ class RuleShapeValidatorTest {
     @Test
     void addToCrmOnLaneChangeRefused() {
         AutomationAction add = new AutomationAction(AutomationActionType.ADD_TO_CRM, null, null, null, null, null,
-                null, null, null, null);
+                null, null, null, null, null, null);
         assertThat(RuleShapeValidator.check(rule(AutomationEventKind.DEAL_LANE_CHANGED, null, List.of(add))))
                 .containsEntry("actions[0].type", "Add to CRM works on incoming messages only");
     }

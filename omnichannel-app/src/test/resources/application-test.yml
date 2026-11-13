@@ -23,6 +23,10 @@ omnichannel:
   # tests drive the automation worker themselves
   automation:
     auto-tick: false
+  # tests drive the chatbot ticker themselves; local servers are allowed for the HTTP node tests
+  chatbot:
+    auto-tick: false
+    allow-private-http: true
   # a stored message does not look up its contact's other id on the device (ContactIdResolverIT switches it on),
   # so other tests' fake devices see only the requests they expect; the pace is short
   contacts:

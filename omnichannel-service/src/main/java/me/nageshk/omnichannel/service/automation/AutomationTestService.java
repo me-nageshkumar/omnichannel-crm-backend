@@ -307,7 +307,7 @@ public class AutomationTestService {
     private static EventData asNew(EventData d) {
         if (d == null || d.chat() == null) return d;
         EventData.ChatData c = d.chat();
-        return new EventData(new EventData.ChatData(c.id(), true, c.status(), c.assignedUser(), c.assignedTeam()),
+        return new EventData(new EventData.ChatData(c.id(), true, c.status(), c.assignedUser(), c.assignedTeam(), false),
                 d.message(), d.number(), d.contact(), d.deal(), d.pipeline(), d.fromLane(), d.toLane());
     }
 
@@ -500,6 +500,7 @@ public class AutomationTestService {
                         + "” to the test contact";
                 case ASSIGN_CHAT -> "Assign chat really reassigns the test contact's chat";
                 case ADD_TO_CRM -> "Add to CRM really creates a CRM contact and a deal for the test contact";
+                case START_CHATBOT -> "Start chatbot really starts the chatbot on the test contact's chat";
             };
             checks.add(new PreflightView.Check(PreflightView.Level.WARNING, i, message));
         }

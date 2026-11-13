@@ -21,7 +21,12 @@ public record ChatView(
         Instant creationTime,
         Ref lastAgent,
         AdClickView adClick,
-        List<OtherChat> otherChats) {
+        List<OtherChat> otherChats,
+        /** The chatbot run active on the chat, else null (chatbot spec §5.4). */
+        ActiveChatbotView chatbot) {
+    /** {@code waitingFor} is "WhatsApp reply", "form", "timer" or null while a node runs. */
+    public record ActiveChatbotView(String runId, String chatbotId, String name, String nodeName, String waitingFor) {
+    }
 
     /** {@code numberHidden} is true when the contact has no phone number (WhatsApp privacy ids). */
     public record Contact(String id, String name, String phone, boolean numberHidden) {

@@ -35,6 +35,8 @@ import me.nageshk.omnichannel.service.channel.whatsapp.WaWebWebhookConverter;
 import me.nageshk.omnichannel.service.contact.ContactService;
 import me.nageshk.omnichannel.service.rpc.RpcDispatcher;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessage;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.LocationObject;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.MediaObject;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessages;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.MessagingProduct;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.Text;
@@ -142,7 +144,9 @@ public class InboxSendService {
     public CompletableFuture<MessageView> send(SendActor actor, String workspaceId, WaWebChat chat,
             SendRequest req, String typedPhone) {
         // a rule's message may go to a closed chat, and leaves it closed
-        if (!(actor instanceof AutomationActor) && chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
+        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() != ChatStatus.OPEN) {
+            throw new ChatClosedException();
+        }
         DeviceSession device = devices.requireReady(workspaceId, chat);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
         return dispatch(actor, chat, device, out, typedPhone);
@@ -166,7 +170,9 @@ public class InboxSendService {
      */
     public CompletableFuture<MessageView> sendCloud(SendActor actor, String workspaceId, WaWebChat chat,
             CloudMessage message, String typedPhone, boolean toIsPhone) {
-        if (!(actor instanceof AutomationActor) && chat.getStatus() != ChatStatus.OPEN) throw new ChatClosedException();
+        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() != ChatStatus.OPEN) {
+            throw new ChatClosedException();
+        }
         DeviceSession device = devices.requireReady(workspaceId, chat);
         CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
         Outgoing out = cloudOutgoing(chat, m);
@@ -191,6 +197,40 @@ public class InboxSendService {
         if (CloudMessage.TEXT.equals(m.type())) {
             String body = m.text().body();
             return new Outgoing(body, options, null, body, null, null, null, null, null, null, request);
+        }
+        if (CloudMessage.LOCATION.equals(m.type())) {
+            LocationObject l = m.location();
+            String description = joined(l.name(), l.address());
+            ObjectNode location = mapper.createObjectNode().putObject("location");
+            location.put("latitude", l.latitude());
+            location.put("longitude", l.longitude());
+            if (description != null) location.put("description", description);
+            ObjectNode opts = mapper.createObjectNode();
+            opts.set("location", location);
+            return new Outgoing("", opts, null, null, null, null,
+                    new WaWebMessage.Location(l.latitude(), l.longitude(), description), null, null, null, request);
+        }
+        if (CloudMessage.MEDIA_TYPES.contains(m.type())) {
+            MediaObject o = m.media();
+            CloudMediaService.MediaFile file = cloudMedia.open(chat.getWorkspaceId(), o.id());
+            byte[] bytes;
+            try (InputStream in = file.resource().getInputStream()) {
+                bytes = in.readAllBytes();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            String filename = o.filename() != null ? o.filename() : file.resource().getFilename();
+            String caption = o.caption() == null ? "" : o.caption();
+            ObjectNode opts = mapper.createObjectNode();
+            ObjectNode media = opts.putObject("media");
+            media.put("mimetype", file.mimeType());
+            media.put("data", Base64.getEncoder().encodeToString(bytes));
+            media.put("filename", filename);
+            if (!caption.isEmpty()) opts.put("caption", caption);
+            if (CloudMessage.DOCUMENT.equals(m.type())) opts.put("sendMediaAsDocument", true);
+            WaWebMessage.Media stored = new WaWebMessage.Media(file.mimeType(), filename, file.size(), null, null);
+            return new Outgoing(caption, opts, null, caption.isEmpty() ? null : caption, stored, bytes, null, null,
+                    null, null, request);
         }
         MessagePage page = pages.drawPreview(pages.create(chat, m));
         String link = pages.link(page);
@@ -233,6 +273,8 @@ public class InboxSendService {
                     new RenderRequest(chat.getContactId(), req.values()));
             case CampaignActor c -> renderer.renderForCampaign(workspaceId, templateId, req.values());
             case AutomationActor a -> renderer.renderForAutomation(workspaceId, templateId, chat.getContactId(),
+                    req.values());
+            case ChatbotActor c -> renderer.renderForAutomation(workspaceId, templateId, chat.getContactId(),
                     req.values());
         };
         if (rendered.type() == TemplateType.CONTACT_CARD) {

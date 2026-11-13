@@ -63,6 +63,34 @@ Spec `specs/2026-11-12-cloud-messages-design.md`. Interactive Cloud messages go 
 - The real-device link preview needs a public HTTPS origin in `OMNICHANNEL_PAGES_BASE_URL`; nothing is deployed, so
   that check is owed by the user, behind a tunnel.
 
+## Advanced chatbot: known limits
+
+Spec `specs/2026-11-13-advanced-chatbot-design.md`. A run belongs to a contact; every wait is a task `(kind, key)`.
+
+- A run started without a chat (a deal event whose contact never wrote) fails at its first messaging node unless the
+  contact has a chat somewhere in the brand; the run then adopts that chat.
+- A form link goes out over WhatsApp only: the form is the first non-WhatsApp task kind, email is a later project.
+- A phone-typed agent reply does not hand the chat over: the device echoes the chatbot's own messages as WhatsApp Web
+  messages before the send result comes back, so only console replies count. Agents on the phone stop the bot from the
+  inbox.
+- Replies are matched to a button or row by title (the project's `bare()`), best effort; over a Cloud channel the
+  reply id would be used.
+- Page taps on an interactive message page do not drive the flow; the WhatsApp reply does.
+- A run interrupted mid-node (the app stopped) is failed by the ticker once its lease runs out, never resumed: the
+  node may have sent.
+- One ticker thread serves every brand; the run pool is four threads.
+- HTTP request nodes follow no redirects (a 3xx is a failure), refuse private, loopback, link-local and carrier-NAT
+  addresses, and read at most 1 MB.
+- Versions are pruned to the newest 50 (never one an active run points to); runs and forms have no retention.
+- The Start chatbot step says "still running" after 60 s and the rule goes on; the chatbot finishes on its own pool.
+- A chatbot moved to draft leaves live runs finishing on their version; new starts fail "is not published".
+- The editor's live view polls the run every 2 seconds; the inbox chip rides on the chat stream.
+- A form's token lives max(24 h, the chatbot's inactivity end) and closes with its run.
+- Console: the run panel draws a run over the chatbot's current flow, so steps of a node removed since show
+  "(removed)"; variable suggestions after `{{` show the first eight matches; the Send message node's per-kind drafts
+  live only while the drawer is open (switching kind and back keeps them, closing the drawer does not).
+- Console: run settings are saved with the flow (the Save button), not on their own.
+
 ## Automations: known limits
 
 - An event is lost if the app stops between saving a message or a move and writing its event.

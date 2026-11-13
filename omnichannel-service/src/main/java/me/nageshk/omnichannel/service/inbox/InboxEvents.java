@@ -50,6 +50,10 @@ public final class InboxEvents {
     public record MessagePageChanged(WaWebChat chat, WaWebMessage message) {
     }
 
+    /** A chatbot run changed state (started waiting, ended); the inbox chip and the editor's live view read it. */
+    public record ChatbotRunChanged(me.nageshk.omnichannel.db.chatbot.ChatbotRun run) {
+    }
+
     /** A page of a history import stored messages in the chat; an open thread should fetch them. */
     public record HistoryStored(WaWebChat chat) {
     }

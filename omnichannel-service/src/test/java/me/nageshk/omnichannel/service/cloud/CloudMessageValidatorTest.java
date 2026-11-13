@@ -9,6 +9,8 @@ import java.util.Optional;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessage;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.LocationObject;
+import me.nageshk.omnichannel.common.channel.whatsapp.message.MediaObject;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive.Action;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive.ActionButton;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive.Body;
@@ -125,8 +127,8 @@ class CloudMessageValidatorTest {
 
     @Test
     void rejectsUnknownType() {
-        CloudMessage m = new CloudMessage("whatsapp-web", null, "919900000001", "image", null, null, null);
-        assertThat(fieldsOf(m)).containsEntry("type", "must be text or interactive");
+        CloudMessage m = new CloudMessage("whatsapp-web", null, "919900000001", "sticker", null, null, null);
+        assertThat(fieldsOf(m)).containsEntry("type", "must be text, interactive, image, video, audio, document or location");
     }
 
     @Test
@@ -345,5 +347,63 @@ class CloudMessageValidatorTest {
         assertThat(CloudMediaTypes.maxBytes("image")).isEqualTo(5L * 1024 * 1024);
         assertThat(CloudMediaTypes.maxBytes("video")).isEqualTo(16L * 1024 * 1024);
         assertThat(CloudMediaTypes.maxBytes("document")).isEqualTo(16L * 1024 * 1024);
+    }
+
+    // ---- media and location types (chatbot spec §4.2) ----
+
+    static CloudMessage media(String type, MediaObject m) {
+        return new CloudMessage("whatsapp-web", "individual", "919900000001", type, null, null,
+                "image".equals(type) ? m : null, "video".equals(type) ? m : null, "audio".equals(type) ? m : null,
+                "document".equals(type) ? m : null, null, null);
+    }
+
+    static CloudMessage location(LocationObject l) {
+        return new CloudMessage("whatsapp-web", "individual", "919900000001", "location", null, null, null, null,
+                null, null, l, null);
+    }
+
+    @Test
+    void imageNeedsAnUploadedId() {
+        assertThat(fieldsOf(media("image", new MediaObject(null, "https://x/a.png", null, null))))
+                .containsKey("image.link");
+        assertThat(fieldsOf(media("image", new MediaObject(null, null, null, null)))).containsKey("image.id");
+    }
+
+    @Test
+    void imageMimeMustFitType() {
+        CloudMessageValidator.MediaLookup pdf = (ws, id) -> Optional.of("application/pdf");
+        assertThatThrownBy(() -> validator.validate("ws", media("image", new MediaObject("doc1", null, null, null)), pdf, true))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(e -> assertThat(((ValidationException) e).fields()).containsKey("image.id"));
+        assertThat(validator.validate("ws", media("image", new MediaObject("img1", null, "Hi", null)), PNG, true).type())
+                .isEqualTo("image");
+    }
+
+    @Test
+    void audioRefusesCaption() {
+        CloudMessageValidator.MediaLookup mp3 = (ws, id) -> Optional.of("audio/mpeg");
+        assertThatThrownBy(() -> validator.validate("ws", media("audio", new MediaObject("a1", null, "no", null)), mp3, true))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(e -> assertThat(((ValidationException) e).fields()).containsKey("audio.caption"));
+    }
+
+    @Test
+    void locationNeedsBothCoordinates() {
+        assertThat(fieldsOf(location(new LocationObject(12.9, null, null, null)))).containsKey("location.longitude");
+    }
+
+    @Test
+    void locationRangeChecked() {
+        assertThat(fieldsOf(location(new LocationObject(91.0, 77.5, null, null)))).containsKey("location.latitude");
+        assertThat(validator.validate("ws", location(new LocationObject(12.9716, 77.5946, "Store", null)), NO_MEDIA, true)
+                .location().name()).isEqualTo("Store");
+    }
+
+    @Test
+    void typeMustMatchObject() {
+        CloudMessage m = new CloudMessage("whatsapp-web", "individual", "919900000001", "image", new Text(true, "x"),
+                null, new MediaObject("img1", null, null, null), null, null, null, null, null);
+        assertThatThrownBy(() -> validator.validate("ws", m, PNG, true)).isInstanceOf(ValidationException.class)
+                .satisfies(e -> assertThat(((ValidationException) e).fields()).containsKey("text"));
     }
 }

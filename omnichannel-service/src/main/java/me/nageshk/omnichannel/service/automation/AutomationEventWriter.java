@@ -76,7 +76,7 @@ public class AutomationEventWriter {
         PhoneNumber number = numbers.findById(chat.getPhoneNumberId()).orElse(null);
         EventData data = new EventData(
                 new EventData.ChatData(chat.getId(), isNew, chat.getStatus(), userRef(chat.getAssignedUserId()),
-                        teamRef(chat.getAssignedTeamId())),
+                        teamRef(chat.getAssignedTeamId()), chat.getChatbot() != null),
                 new EventData.MessageData(message.getId(), message.getBody(),
                         MessageKinds.kindOf(message.getType()).orElse(null),
                         message.getAdClick() == null ? null : new EventData.AdData(message.getAdClick().sourceId(),
@@ -121,7 +121,7 @@ public class AutomationEventWriter {
         EventData data = new EventData(
                 chat == null ? null
                         : new EventData.ChatData(chat.getId(), false, chat.getStatus(),
-                                userRef(chat.getAssignedUserId()), teamRef(chat.getAssignedTeamId())),
+                                userRef(chat.getAssignedUserId()), teamRef(chat.getAssignedTeamId()), false),
                 null,
                 new EventData.NumberData(m.phoneNumberId(), number == null ? null : number.getNumber(),
                         number == null ? null : number.getLabel()),

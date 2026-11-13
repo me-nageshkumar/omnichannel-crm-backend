@@ -54,6 +54,9 @@ public class WaWebChat {
     /** The user who last sent in, or was assigned, this chat; never cleared, so a returning customer can stick. */
     private String lastAgentUserId;
     private Instant lastAgentAt;
+
+    /** The chatbot run active on this chat, else null; a convenience for the inbox, never how the engine finds a run. */
+    private ActiveChatbot chatbot;
     /** The history import item that created this chat, if one did; sparse-indexed, absent on every other chat. */
     @Indexed(sparse = true)
     private String createdByHistoryChatId;
@@ -66,5 +69,9 @@ public class WaWebChat {
 
     /** Preview of the newest message; {@code text} is the whole body or a type label. */
     public record LastMessage(MessageDirection direction, String type, String text, MessageStatus status) {
+    }
+
+    /** Spec §5.1: the active run's pointer; {@code nodeName} is where it waits. */
+    public record ActiveChatbot(String runId, String chatbotId, String chatbotName, String nodeName) {
     }
 }

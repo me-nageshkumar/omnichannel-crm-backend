@@ -135,7 +135,7 @@ public class RuleRunner {
         int start = 0;
         while (start < list.size() && isFinal(stepAt(steps, start))) start++;
         if (start < list.size() && stepAt(steps, start) == null
-                && list.get(start).type() == AutomationActionType.SEND_TEMPLATE) {
+                && maySend(list.get(start).type())) {
             record(run, new RunStep(start, list.get(start).type(), summaryAt(summaries, start),
                     StepOutcome.INTERRUPTED, INTERRUPTED_SEND, clock.instant()));
             start++;
@@ -150,7 +150,7 @@ public class RuleRunner {
                 e.getData(), rule.getId(), rule.getName(), false);
         for (int i = from; i < list.size(); i++) {
             AutomationAction a = list.get(i);
-            if (a.type() == AutomationActionType.SEND_TEMPLATE && stepAt(run.getSteps(), i) != null) {
+            if (maySend(a.type()) && stepAt(run.getSteps(), i) != null) {
                 // a send retried: clear its RETRYING step first, so a crash during this send reads as in flight
                 clear(run, i);
             }
@@ -210,5 +210,10 @@ public class RuleRunner {
 
     private static boolean isFinal(RunStep s) {
         return s != null && s.outcome() != StepOutcome.RETRYING;
+    }
+
+    /** Actions that may have sent a message before a crash: never re-run on resume (spec §5.1 of automations). */
+    private static boolean maySend(AutomationActionType type) {
+        return type == AutomationActionType.SEND_TEMPLATE || type == AutomationActionType.START_CHATBOT;
     }
 }

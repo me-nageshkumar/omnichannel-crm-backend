@@ -6,7 +6,7 @@ import me.nageshk.omnichannel.db.inbox.MessageSource;
  * Who a message goes out as through {@link InboxSendService}: a console user, a campaign or an automation rule, which have no user. It
  * names the message's source, sender and campaign, and the author of any action the send records.
  */
-public sealed interface SendActor permits UserActor, CampaignActor, AutomationActor {
+public sealed interface SendActor permits UserActor, CampaignActor, AutomationActor, ChatbotActor {
 
     /** The sending user, or null for a campaign. */
     String userId();

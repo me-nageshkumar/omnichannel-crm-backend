@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class SpaForwardController {
 
-    private static final String FIRST = "{first:(?!api$|ws$|t$)[^.]*}";
+    private static final String FIRST = "{first:(?!api$|ws$|t$|f$)[^.]*}";
 
     @GetMapping({
         "/" + FIRST,

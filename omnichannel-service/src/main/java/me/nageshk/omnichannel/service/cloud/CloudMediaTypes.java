@@ -7,6 +7,7 @@ public final class CloudMediaTypes {
 
     public static final Set<String> IMAGE = Set.of("image/jpeg", "image/png");
     public static final Set<String> VIDEO = Set.of("video/mp4", "video/3gpp");
+    public static final Set<String> AUDIO = Set.of("audio/aac", "audio/mp4", "audio/mpeg", "audio/amr", "audio/ogg");
     public static final Set<String> DOCUMENT = Set.of("application/pdf", "application/msword",
             "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -18,12 +19,16 @@ public final class CloudMediaTypes {
 
     private CloudMediaTypes() {}
 
-    /** The MIME types a header of this type takes; empty for {@code text} or anything unknown. */
+    /**
+     * The MIME types a header, or a media message, of this type takes; empty for {@code text} or anything unknown.
+     * Audio exists for {@code audio} messages only (a header is never audio).
+     */
     public static Set<String> forHeader(String headerType) {
         if (headerType == null) return Set.of();
         return switch (headerType) {
             case "image" -> IMAGE;
             case "video" -> VIDEO;
+            case "audio" -> AUDIO;
             case "document" -> DOCUMENT;
             default -> Set.of();
         };
@@ -39,6 +44,7 @@ public final class CloudMediaTypes {
         return switch (headerType == null ? "" : headerType) {
             case "image" -> "a JPEG or PNG";
             case "video" -> "an MP4 or 3GPP video";
+            case "audio" -> "an AAC, MP4, MP3, AMR or OGG audio file";
             case "document" -> "a PDF, Office, text, CSV or ZIP document";
             default -> "a supported file";
         };

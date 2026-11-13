@@ -40,9 +40,12 @@ public class AutomationViews {
     private final AutomationCrm crm;
     private final Clock clock;
 
+    private final me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots;
+
     public AutomationViews(AutomationTestRepository tests, AutomationRunRepository runs,
             MessageTemplateRepository templates, TeamRepository teams, UserRepository users, AutomationCrm crm,
-            Clock clock) {
+            Clock clock, me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots) {
+        this.chatbots = chatbots;
         this.tests = tests;
         this.runs = runs;
         this.templates = templates;
@@ -125,6 +128,7 @@ public class AutomationViews {
             case SEND_TEMPLATE -> "Send template";
             case ASSIGN_CHAT -> "Assign chat";
             case ADD_TO_CRM -> "Add to CRM";
+            case START_CHATBOT -> "Start chatbot";
         };
     }
 
@@ -138,6 +142,7 @@ public class AutomationViews {
                 case TEAM_ROUND_ROBIN -> "Round robin in " + l.team(a.teamId());
             };
             case ADD_TO_CRM -> "Add to CRM (" + l.pipeline(a.pipelineId(), a.stageId()) + ")";
+            case START_CHATBOT -> "Start “" + l.chatbot(a.chatbotId()) + "”";
         };
     }
 
@@ -156,6 +161,11 @@ public class AutomationViews {
         String template(String id) {
             return name(templateNames, id, i -> templates.findByIdAndWorkspaceId(i, workspaceId)
                     .map(MessageTemplate::getName));
+        }
+
+        String chatbot(String id) {
+            if (id == null) return "?";
+            return chatbots.findById(id).map(c -> c.getName()).orElse(id);
         }
 
         String agent(String id) {

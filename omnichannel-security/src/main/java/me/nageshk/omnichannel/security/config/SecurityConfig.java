@@ -42,6 +42,8 @@ public class SecurityConfig {
     public static final String DEVICE_CONNECT_PATH = "/api/devices/connect";
     /** The beacon a public message page posts; the page itself is a GET, open like the console's files. */
     public static final String PAGE_EVENT_PATH = "/t/*/e";
+    /** A chatbot form page is submitted by its token, without a login (chatbot spec §8.4). */
+    public static final String FORM_SUBMIT_PATH = "/f/*";
 
     /**
      * {@code POST} to the login and verify-otp paths is handled by an {@link AuthenticationFilter}:
@@ -78,6 +80,7 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         .requestMatchers(HttpMethod.POST, PAGE_EVENT_PATH).permitAll()
+                        .requestMatchers(HttpMethod.POST, FORM_SUBMIT_PATH).permitAll()
                         .requestMatchers("/api/**").authenticated()
                         // the console's static files and its client-side routes
                         .requestMatchers(HttpMethod.GET, "/**").permitAll()

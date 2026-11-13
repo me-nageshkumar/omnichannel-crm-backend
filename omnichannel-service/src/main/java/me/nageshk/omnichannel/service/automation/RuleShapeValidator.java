@@ -151,6 +151,9 @@ public final class RuleShapeValidator {
             if (a.type() == AutomationActionType.ASSIGN_CHAT && a.mode() == null) {
                 errors.put(at + ".mode", "is required");
             }
+            if (a.type() == AutomationActionType.START_CHATBOT && (a.chatbotId() == null || a.chatbotId().isBlank())) {
+                errors.put(at + ".chatbotId", "is required");
+            }
             if (a.dealTitle() != null && a.dealTitle().length() > 200) {
                 errors.put(at + ".dealTitle", "must be at most 200 characters");
             }
