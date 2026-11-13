@@ -2,11 +2,23 @@ package me.nageshk.omnichannel.service.automation;
 
 import me.nageshk.omnichannel.db.automation.StepOutcome;
 
-/** How an action went, with the reason shown in the run's history. */
-public record ActionResult(StepOutcome outcome, String reason) {
+/**
+ * How an action went, with the reason shown in the run's history; a Start chatbot step also keeps the chatbot and
+ * the run it started, so the console can open it.
+ */
+public record ActionResult(StepOutcome outcome, String reason, String chatbotId, String chatbotRunId) {
+
+    public ActionResult(StepOutcome outcome, String reason) {
+        this(outcome, reason, null, null);
+    }
 
     public static ActionResult done(String reason) {
         return new ActionResult(StepOutcome.DONE, reason);
+    }
+
+    /** A Start chatbot step whose run exists (started now, or found from an earlier attempt). */
+    public static ActionResult started(String reason, String chatbotId, String chatbotRunId) {
+        return new ActionResult(StepOutcome.DONE, reason, chatbotId, chatbotRunId);
     }
 
     public static ActionResult skipped(String reason) {

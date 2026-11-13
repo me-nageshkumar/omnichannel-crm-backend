@@ -401,10 +401,12 @@ public class AutomationTestService {
         RunStep step;
         if (run) {
             ActionContext ctx = new ActionContext(claimed.getWorkspaceId(), claimed.getCustomerId(),
-                    claimed.getEvent(), claimed.getEventId(), claimed.getData(), rule.getId(), rule.getName(), true);
+                    claimed.getEvent(), claimed.getEventId(), claimed.getData(), rule.getId(), rule.getName(), true,
+                    claimed.getStartedByUserId());
             ActionResult r = actions.run(ctx, a);
             if (r.outcome() == StepOutcome.RETRYING) r = ActionResult.failed(r.reason() + WOULD_RETRY);
-            step = new RunStep(index, a.type(), summary, r.outcome(), r.reason(), clock.instant());
+            step = new RunStep(index, a.type(), summary, r.outcome(), r.reason(), clock.instant(), r.chatbotId(),
+                    r.chatbotRunId());
         } else {
             step = new RunStep(index, a.type(), summary, StepOutcome.SKIPPED, SKIPPED, now);
         }
@@ -577,7 +579,8 @@ public class AutomationTestService {
             // a recorded step keeps the label it was run under; the steps still to come show the rule as it is
             String summary = s == null ? summaries.get(i) : AutomationViews.stepSummary(s);
             steps.add(new StepView(i, a == null ? null : a.type(), summary, s == null ? null : s.outcome(),
-                    s == null ? null : s.reason(), s == null ? null : s.at()));
+                    s == null ? null : s.reason(), s == null ? null : s.at(), s == null ? null : s.chatbotId(),
+                    s == null ? null : s.chatbotRunId()));
         }
         List<TestView.NumberRef> where = t.getEvent() != AutomationEventKind.MESSAGE_RECEIVED ? List.of()
                 : numbers.findByWorkspaceIdOrderByNumber(t.getWorkspaceId()).stream()

@@ -164,7 +164,7 @@ public class RuleRunner {
                 r = ActionResult.failed(r.reason());
             }
             record(run, new RunStep(i, a.type(), summaryAt(summaries, i), r.outcome(), r.reason(),
-                    clock.instant()));
+                    clock.instant(), r.chatbotId(), r.chatbotRunId()));
         }
         return new RuleOutcome(Optional.of(end(run)), false);
     }

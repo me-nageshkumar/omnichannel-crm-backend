@@ -72,11 +72,20 @@ public class StartChatbotHandler implements ActionHandler {
         if (contact.getDoNotContact() != null || (contact.getPhone() != null && skips.isDoNotContact(ctx.workspaceId(), contact.getPhone()))) {
             return ActionResult.skipped("Contact is marked do-not-contact");
         }
+        IfRunning ifRunning = action.ifRunning() == null ? IfRunning.SKIP : action.ifRunning();
+        if (ctx.test()) {
+            // a rule test runs the chatbot as a test run, draft or published (chatbot-in-rule-test spec §4.1); the step
+            // is written as soon as the run exists, since the tester watches it on the canvas
+            StartedBy testBy = new StartedBy(ctx.ruleId(), ctx.ruleName(), null, ctx.userId());
+            ChatbotRunService.StartResult t = runService.start(ctx.workspaceId(), chatbot.getId(), contact, chat, testBy,
+                    ctx.data(), ifRunning, true);
+            if (!t.started()) return ActionResult.skipped(t.reason());
+            return ActionResult.started("Started “" + chatbot.getName() + "”", chatbot.getId(), t.run().getId());
+        }
         if (chatbot.getStatus() != ChatbotStatus.PUBLISHED) {
             return ActionResult.failed("Chatbot “" + chatbot.getName() + "” is not published");
         }
-        IfRunning ifRunning = action.ifRunning() == null ? IfRunning.SKIP : action.ifRunning();
-        StartedBy by = new StartedBy(ctx.ruleId(), ctx.ruleName(), ctx.test() ? null : ctx.eventId(), null);
+        StartedBy by = new StartedBy(ctx.ruleId(), ctx.ruleName(), ctx.eventId(), null);
         ChatbotRunService.StartResult r = runService.start(ctx.workspaceId(), chatbot.getId(), contact, chat, by,
                 ctx.data(), ifRunning, false);
         if (!r.started()) return ActionResult.skipped(r.reason());
@@ -84,7 +93,7 @@ public class StartChatbotHandler implements ActionHandler {
         try {
             settled = r.settled().get(props.automation().sendTimeout().toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            return ActionResult.done("Started “" + chatbot.getName() + "”: still running");
+            return ActionResult.started("Started “" + chatbot.getName() + "”: still running", chatbot.getId(), r.run().getId());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ActionResult.interrupted("The app was stopping; the chatbot may have started");
@@ -97,14 +106,16 @@ public class StartChatbotHandler implements ActionHandler {
     private static ActionResult report(Chatbot chatbot, ChatbotRun run) {
         String prefix = "Started “" + chatbot.getName() + "”: ";
         ChatbotRunStatus status = run.getStatus();
-        if (status == null) return ActionResult.done(prefix + "still running");
+        String id = chatbot.getId();
+        if (status == null) return ActionResult.started(prefix + "still running", id, run.getId());
         return switch (status) {
-            case RUNNING -> ActionResult.done(prefix + "still running");
-            case WAITING -> ActionResult.done(prefix + "waiting at " + run.getCurrentNodeName());
-            case COMPLETED -> ActionResult.done(prefix + "completed");
-            case JUMPED -> ActionResult.done(prefix + "jumped to another chatbot");
-            case FAILED -> ActionResult.failed(run.getEndReason() == null ? "The chatbot failed" : run.getEndReason());
-            default -> ActionResult.done(prefix + status.name().toLowerCase().replace('_', ' '));
+            case RUNNING -> ActionResult.started(prefix + "still running", id, run.getId());
+            case WAITING -> ActionResult.started(prefix + "waiting at " + run.getCurrentNodeName(), id, run.getId());
+            case COMPLETED -> ActionResult.started(prefix + "completed", id, run.getId());
+            case JUMPED -> ActionResult.started(prefix + "jumped to another chatbot", id, run.getId());
+            case FAILED -> new ActionResult(me.nageshk.omnichannel.db.automation.StepOutcome.FAILED,
+                    run.getEndReason() == null ? "The chatbot failed" : run.getEndReason(), id, run.getId());
+            default -> ActionResult.started(prefix + status.name().toLowerCase().replace('_', ' '), id, run.getId());
         };
     }
 }
