@@ -38,9 +38,12 @@ public class StartChatbotHandler implements ActionHandler {
     private final ContactRepository contacts;
     private final RecipientSkips skips;
     private final OmnichannelProperties props;
+    private final me.nageshk.omnichannel.service.chatbot.ChatbotService chatbotService;
 
     public StartChatbotHandler(ChatbotRepository chatbots, ChatbotRunRepository runs, ChatbotRunService runService,
-            WaWebChatRepository chats, ContactRepository contacts, RecipientSkips skips, OmnichannelProperties props) {
+            WaWebChatRepository chats, ContactRepository contacts, RecipientSkips skips, OmnichannelProperties props,
+            me.nageshk.omnichannel.service.chatbot.ChatbotService chatbotService) {
+        this.chatbotService = chatbotService;
         this.chatbots = chatbots;
         this.runs = runs;
         this.runService = runService;
@@ -73,15 +76,7 @@ public class StartChatbotHandler implements ActionHandler {
             return ActionResult.skipped("Contact is marked do-not-contact");
         }
         IfRunning ifRunning = action.ifRunning() == null ? IfRunning.SKIP : action.ifRunning();
-        if (ctx.test()) {
-            // a rule test runs the chatbot as a test run, draft or published (chatbot-in-rule-test spec §4.1); the step
-            // is written as soon as the run exists, since the tester watches it on the canvas
-            StartedBy testBy = new StartedBy(ctx.ruleId(), ctx.ruleName(), null, ctx.userId());
-            ChatbotRunService.StartResult t = runService.start(ctx.workspaceId(), chatbot.getId(), contact, chat, testBy,
-                    ctx.data(), ifRunning, true);
-            if (!t.started()) return ActionResult.skipped(t.reason());
-            return ActionResult.started("Started “" + chatbot.getName() + "”", chatbot.getId(), t.run().getId());
-        }
+        if (ctx.test()) return startForTest(ctx, chatbot, contact, chat, ifRunning);
         if (chatbot.getStatus() != ChatbotStatus.PUBLISHED) {
             return ActionResult.failed("Chatbot “" + chatbot.getName() + "” is not published");
         }
@@ -101,6 +96,38 @@ public class StartChatbotHandler implements ActionHandler {
             return ActionResult.failed("The chatbot could not start: " + (e.getCause() == null ? e : e.getCause()).getMessage());
         }
         return report(chatbot, settled);
+    }
+
+    /**
+     * A rule test runs the chatbot as a test run, draft or published (chatbot-in-rule-test spec §4.1), and the step is
+     * written as soon as the run exists, since the tester watches it on the canvas. As the editor's Test does, it refuses
+     * a flow with errors, replaces the tester's own earlier test run of this chatbot, and ends a live run only on
+     * Replace, saying so and by whom.
+     */
+    private ActionResult startForTest(ActionContext ctx, Chatbot chatbot, Contact contact, WaWebChat chat, IfRunning ifRunning) {
+        boolean broken = chatbotService.problems(chatbot).stream()
+                .anyMatch(p -> p.severity() == me.nageshk.omnichannel.service.chatbot.node.Severity.ERROR);
+        if (broken) return ActionResult.failed("Chatbot “" + chatbot.getName() + "” has problems; fix them in the editor first");
+        String stopped = null;
+        Optional<ChatbotRun> active = runService.activeForContact(ctx.workspaceId(), contact.getId());
+        if (active.isPresent()) {
+            ChatbotRun other = active.get();
+            boolean ownTest = other.isTest() && chatbot.getId().equals(other.getChatbotId());
+            if (ownTest) {
+                runService.stop(other, "replaced by a new test", ctx.userId());
+            } else if (ifRunning == IfRunning.REPLACE) {
+                runService.stop(other, "stopped for a rule test of " + chatbot.getName(), ctx.userId());
+                stopped = other.getChatbotName();
+            } else {
+                return ActionResult.skipped("Chatbot “" + other.getChatbotName() + "” is running");
+            }
+        }
+        StartedBy testBy = new StartedBy(ctx.ruleId(), ctx.ruleName(), null, ctx.userId());
+        ChatbotRunService.StartResult t = runService.start(ctx.workspaceId(), chatbot.getId(), contact, chat, testBy,
+                ctx.data(), IfRunning.SKIP, true);
+        if (!t.started()) return ActionResult.skipped(t.reason());
+        String reason = "Started “" + chatbot.getName() + "”" + (stopped == null ? "" : " (stopped “" + stopped + "”)");
+        return ActionResult.started(reason, chatbot.getId(), t.run().getId());
     }
 
     private static ActionResult report(Chatbot chatbot, ChatbotRun run) {

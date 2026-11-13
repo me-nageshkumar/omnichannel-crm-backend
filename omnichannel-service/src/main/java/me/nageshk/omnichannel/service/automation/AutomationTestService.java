@@ -12,6 +12,9 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import me.nageshk.omnichannel.common.api.NotFoundException;
+import me.nageshk.omnichannel.db.chatbot.Chatbot;
+import me.nageshk.omnichannel.db.chatbot.ChatbotRepository;
+import me.nageshk.omnichannel.db.chatbot.ChatbotStatus;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.config.OmnichannelProperties;
 import me.nageshk.omnichannel.db.automation.AutomationAction;
@@ -64,6 +67,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class AutomationTestService {
 
+    private final ChatbotRepository chatbotRepo;
+
     private static final Logger log = LoggerFactory.getLogger(AutomationTestService.class);
 
     static final String NO_TARGET = "Choose a contact or type a number";
@@ -100,7 +105,9 @@ public class AutomationTestService {
             AutomationRunRepository runs, ContactRepository contacts, PhoneNumberRepository numbers,
             MessageTemplateRepository templates, UserRepository users, RulePublishValidator publishValidator,
             ActionRunner actions, AutomationCrm crm, AutomationViews views, InboxDevices devices,
-            OmnichannelProperties props, Clock clock) {
+            OmnichannelProperties props, Clock clock,
+            ChatbotRepository chatbotRepo) {
+        this.chatbotRepo = chatbotRepo;
         this.mongo = mongo;
         this.tests = tests;
         this.rules = rules;
@@ -488,8 +495,11 @@ public class AutomationTestService {
     public PreflightView preflight(String workspaceId, String ruleId) {
         AutomationRule rule = requireRule(workspaceId, ruleId);
         List<PreflightView.Check> checks = new ArrayList<>();
-        publishValidator.problems(rule).forEach((key, message) -> checks
-                .add(new PreflightView.Check(PreflightView.Level.BLOCKER, actionIndex(key), message)));
+        publishValidator.problems(rule).forEach((key, message) -> {
+            // a draft chatbot blocks publishing, not testing: the test runs it as a test run
+            if (RulePublishValidator.DRAFT_CHATBOT.equals(message)) return;
+            checks.add(new PreflightView.Check(PreflightView.Level.BLOCKER, actionIndex(key), message));
+        });
         boolean ready = numbers.findByWorkspaceIdOrderByNumber(workspaceId).stream()
                 .anyMatch(n -> devices.isReady(workspaceId, n.getId()));
         if (!ready) checks.add(new PreflightView.Check(PreflightView.Level.BLOCKER, null, NO_DEVICE));
@@ -502,7 +512,7 @@ public class AutomationTestService {
                         + "” to the test contact";
                 case ASSIGN_CHAT -> "Assign chat really reassigns the test contact's chat";
                 case ADD_TO_CRM -> "Add to CRM really creates a CRM contact and a deal for the test contact";
-                case START_CHATBOT -> "Start chatbot really starts the chatbot on the test contact's chat";
+                case START_CHATBOT -> startChatbotWarning(workspaceId, a.chatbotId());
             };
             checks.add(new PreflightView.Check(PreflightView.Level.WARNING, i, message));
         }
@@ -513,6 +523,15 @@ public class AutomationTestService {
     private static Integer actionIndex(String key) {
         Matcher m = ACTION_KEY.matcher(key);
         return m.find() ? Integer.valueOf(m.group(1)) : null;
+    }
+
+    private String startChatbotWarning(String workspaceId, String chatbotId) {
+        Chatbot bot = chatbotId == null ? null
+                : chatbotRepo.findById(chatbotId).filter(c -> workspaceId.equals(c.getWorkspaceId())).orElse(null);
+        if (bot != null && bot.getStatus() != ChatbotStatus.PUBLISHED) {
+            return "Start chatbot really starts the draft “" + bot.getName() + "” on the test contact's chat, as a test run";
+        }
+        return "Start chatbot really starts the chatbot on the test contact's chat";
     }
 
     private String templateName(String workspaceId, String templateId) {

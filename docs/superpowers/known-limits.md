@@ -87,7 +87,9 @@ Spec `specs/2026-11-13-advanced-chatbot-design.md`. A run belongs to a contact; 
 - The rule test is the way to test a chatbot on its event (spec `2026-11-13-chatbot-in-rule-test-design.md`): Run on
   the Start chatbot step opens the chatbot's live view. The rule test keeps idling out 30 min after its last step, so a
   long chatbot test may find the rule test ended on return (the chatbot run is unaffected). Published rules are not
-  paused for the test contact: a published Start chatbot rule on the same message finds the test run active.
+  paused for the test contact and run first: a published Start chatbot rule on the same message starts its live run
+  before the test captures the event, so the test's Run is skipped (or, with Replace, stops that live run, recorded as
+  stopped by the tester "for a rule test").
 - The editor's live view polls the run every 2 seconds; the inbox chip rides on the chat stream.
 - A form's token lives max(24 h, the chatbot's inactivity end) and closes with its run.
 - Console: the run panel draws a run over the chatbot's current flow, so steps of a node removed since show
