@@ -35,6 +35,7 @@ public class InboxViews {
     private final MessagePageRepository messagePages;
     private final MessagePageService messagePageService;
     private final me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository runs;
+    private final me.nageshk.omnichannel.service.chatbot.run.ChatPointer pointer;
 
     public ChatView chat(WaWebChat chat) {
         return chats(List.of(chat)).get(0);
@@ -105,11 +106,17 @@ public class InboxViews {
     private ChatView.ActiveChatbotView chatbot(WaWebChat c) {
         WaWebChat.ActiveChatbot p = c.getChatbot();
         if (p == null) return null;
-        String waitingFor = runs.findById(p.runId()).map(r -> r.getWaiting() == null ? null : switch (r.getWaiting().kind()) {
+        // the pointer is a hint; the run is the truth. One left behind at a finished run is hidden and cleared.
+        me.nageshk.omnichannel.db.chatbot.ChatbotRun run = runs.findById(p.runId()).orElse(null);
+        if (run == null || !run.getStatus().active()) {
+            pointer.clear(c.getId(), p.runId());
+            return null;
+        }
+        String waitingFor = run.getWaiting() == null ? null : switch (run.getWaiting().kind()) {
             case WHATSAPP_REPLY -> "WhatsApp reply";
             case FORM -> "form";
             case TIMER -> "timer";
-        }).orElse(null);
+        };
         return new ChatView.ActiveChatbotView(p.runId(), p.chatbotId(), p.chatbotName(), p.nodeName(), waitingFor);
     }
 

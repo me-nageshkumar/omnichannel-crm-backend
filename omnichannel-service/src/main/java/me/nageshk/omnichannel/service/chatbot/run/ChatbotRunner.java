@@ -34,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
@@ -89,10 +90,23 @@ public class ChatbotRunner {
     public ChatbotRun proceed(ChatbotRun run, TaskAnswer answer) {
         try {
             return walk(run, answer);
+        } catch (OptimisticLockingFailureException e) {
+            return lost(run);
         } catch (RuntimeException e) {
             log.warn("chatbot run {} failed unexpectedly", run.getId(), e);
-            return finish(run, ChatbotRunStatus.FAILED, "unexpected error: " + e.getMessage());
+            try {
+                return finish(run, ChatbotRunStatus.FAILED, "unexpected error: " + e.getMessage());
+            } catch (OptimisticLockingFailureException taken) {
+                return lost(run);
+            }
         }
+    }
+
+    /** The run was ended from outside (Stop, hand-over, replace) while this thread held it: keep what is stored. */
+    private ChatbotRun lost(ChatbotRun run) {
+        ChatbotRun stored = runs.findById(run.getId()).orElse(run);
+        log.info("chatbot run {} was taken from its runner: it is now {}", run.getId(), stored.getStatus());
+        return stored;
     }
 
     private ChatbotRun walk(ChatbotRun run, TaskAnswer answer) {
@@ -237,9 +251,14 @@ public class ChatbotRunner {
         run.setLeaseUntil(null);
         run.setFinishedAt(clock.instant());
         ChatbotRun saved = save(run);
+        ended(saved);
+        return saved;
+    }
+
+    /** After a run reached a final status: clears the chat pointer and announces the change. */
+    public void ended(ChatbotRun saved) {
         pointer.clear(saved.getChatId(), saved.getId());
         publisher.publishEvent(new InboxEvents.ChatbotRunChanged(saved));
-        return saved;
     }
 
     private ChatbotRun save(ChatbotRun run) {

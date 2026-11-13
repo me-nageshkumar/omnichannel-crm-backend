@@ -16,7 +16,11 @@ import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
+import me.nageshk.omnichannel.db.chatbot.IfRunning;
+import me.nageshk.omnichannel.db.chatbot.StartedBy;
+import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.service.automation.AutomationWorker;
+import me.nageshk.omnichannel.service.chatbot.run.ChatbotRunService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
@@ -31,6 +35,8 @@ class ChatbotTestRunIT extends ChatbotTestBase {
 
     @Autowired ChatbotRunRepository runRepo;
     @Autowired AutomationWorker worker;
+    @Autowired ChatbotRunService runs;
+    @Autowired ContactRepository contacts;
 
     private Map<String, Object> askFlow() {
         return flow(List.of(
@@ -117,6 +123,28 @@ class ChatbotTestRunIT extends ChatbotTestBase {
             ResponseEntity<JsonNode> again = startTest(bot.get("id").asString(), chat.getContactId(), n1.getId(), null);
             assertThat(again.getStatusCode()).isEqualTo(HttpStatus.CREATED);
             assertThat(runRepo.findById(a).orElseThrow().getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+        }
+    }
+
+    /** Review fix: a live customer run of the same chatbot is never ended by a test without saying so. */
+    @Test
+    void testDoesNotSilentlyReplaceALiveRun() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        JsonNode bot = createChatbot("Bot", askFlow());
+        String id = bot.get("id").asString();
+        assertThat(bots(HttpMethod.POST, "/" + id + "/publish", manager, null).getStatusCode().is2xxSuccessful()).isTrue();
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRunService.StartResult live = runs.start(brand.getId(), id, contacts.findById(chat.getContactId()).orElseThrow(), chat,
+                    new StartedBy("rule-1", "Welcome", "ev-1", null), null, IfRunning.SKIP, false);
+            assertThat(live.started()).isTrue();
+            await(() -> runRepo.findById(live.run().getId()).orElseThrow().getStatus() == ChatbotRunStatus.WAITING);
+            ResponseEntity<JsonNode> refused = startTest(id, chat.getContactId(), n1.getId(), null);
+            assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(refused.getBody().get("code").asString()).isEqualTo("CHATBOT_RUNNING");
+            assertThat(runRepo.findById(live.run().getId()).orElseThrow().getStatus()).isEqualTo(ChatbotRunStatus.WAITING);
+            ResponseEntity<JsonNode> forced = startTest(id, chat.getContactId(), n1.getId(), true);
+            assertThat(forced.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            assertThat(runRepo.findById(live.run().getId()).orElseThrow().getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
         }
     }
 

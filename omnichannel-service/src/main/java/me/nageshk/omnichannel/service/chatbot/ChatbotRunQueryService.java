@@ -86,7 +86,8 @@ public class ChatbotRunQueryService {
         Optional<ChatbotRun> active = runs.activeForContact(workspaceId, contact.getId());
         if (active.isPresent()) {
             ChatbotRun other = active.get();
-            boolean sameChatbot = chatbotId.equals(other.getChatbotId());
+            // a second test of the same chatbot replaces the first; a live customer run is never ended without saying so
+            boolean sameChatbot = chatbotId.equals(other.getChatbotId()) && other.isTest();
             if (!sameChatbot && !Boolean.TRUE.equals(r.stopRunning())) {
                 throw new CodedException(HttpStatus.CONFLICT, RUNNING, null,
                         "Chatbot “" + other.getChatbotName() + "” is running on this chat", Map.of("chatbotName", other.getChatbotName()));

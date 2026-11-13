@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import me.nageshk.omnichannel.app.automation.AutomationDevice;
+import me.nageshk.omnichannel.db.automation.EventData;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
@@ -175,6 +176,23 @@ class ChatbotNodesIT extends ChatbotTestBase {
             await(() -> runRepo.findById(second.getId()).orElseThrow().getStatus() == ChatbotRunStatus.COMPLETED);
             assertThat(second.getJumps()).isEqualTo(1);
             assertThat(second.getChatId()).isEqualTo(chat.getId());
+        }
+    }
+
+    /** Review fix: spec §4.2 "variables carry over" includes the event that started the first run. */
+    @Test
+    void jumpCarriesEventVariables() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String target = publish(createChatbot("Second", flow(List.of(node("s", "send_message", "Say", textMessage("You wrote {{event.message.text}}"))), List.of())));
+        String first = publish(createChatbot("First", flow(List.of(node("j", "jump", "Go", Map.of("chatbotId", target))), List.of())));
+        EventData event = new EventData(null, new EventData.MessageData("m1", "hello there", "chat", null), null, null, null, null, null, null);
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            Contact c = contacts.findById(chat.getContactId()).orElseThrow();
+            ChatbotRunService.StartResult r = runs.start(brand.getId(), first, c, chat, StartedBy.test(manager.getId()), event, IfRunning.SKIP, true);
+            assertThat(r.started()).isTrue();
+            r.settled().get(5, TimeUnit.SECONDS);
+            await(() -> d.requests("sendMessage").size() == 1);
+            assertThat(d.requests("sendMessage").get(0).params().get("content").asString()).isEqualTo("You wrote hello there");
         }
     }
 

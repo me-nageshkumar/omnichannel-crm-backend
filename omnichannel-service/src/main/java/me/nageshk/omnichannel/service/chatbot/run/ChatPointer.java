@@ -11,7 +11,10 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 
-/** The chat's pointer to its active run (spec §5.1): set, moved along, cleared; each change pushes the chat row. */
+/**
+ * The chat's pointer to its active run (spec §5.1): set, moved along, cleared; each change pushes the chat row. Every
+ * change bumps the chat's version, so a full save of a copy loaded before it fails instead of wiping the pointer.
+ */
 @Component
 public class ChatPointer {
 
@@ -29,7 +32,7 @@ public class ChatPointer {
         if (chatId == null) return;
         WaWebChat.ActiveChatbot p = new WaWebChat.ActiveChatbot(run.getId(), run.getChatbotId(), run.getChatbotName(),
                 run.getCurrentNodeName());
-        mongo.updateFirst(new Query(Criteria.where("_id").is(chatId)), new Update().set("chatbot", p), WaWebChat.class);
+        mongo.updateFirst(new Query(Criteria.where("_id").is(chatId)), new Update().set("chatbot", p).inc("version", 1), WaWebChat.class);
         changed(chatId);
     }
 
@@ -37,7 +40,7 @@ public class ChatPointer {
     public void clear(String chatId, String runId) {
         if (chatId == null) return;
         mongo.updateFirst(new Query(Criteria.where("_id").is(chatId).and("chatbot.runId").is(runId)),
-                new Update().unset("chatbot"), WaWebChat.class);
+                new Update().unset("chatbot").inc("version", 1), WaWebChat.class);
         changed(chatId);
     }
 

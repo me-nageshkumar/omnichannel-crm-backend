@@ -45,6 +45,19 @@ public class RunClaims {
         return Optional.ofNullable(mongo.findAndModify(q, u, FindAndModifyOptions.options().returnNew(true), ChatbotRun.class));
     }
 
+    /**
+     * RUNNING or WAITING → a final status, atomically and with the version bumped so a runner still holding the run
+     * cannot save over it; empty when the run was already final.
+     */
+    public Optional<ChatbotRun> finish(String runId, ChatbotRunStatus status, String reason, String byUserId) {
+        Query q = new Query(Criteria.where("_id").is(runId)
+                .and("status").in(ChatbotRunStatus.RUNNING.name(), ChatbotRunStatus.WAITING.name()));
+        Update u = new Update().set("status", status.name()).set("endReason", reason).set("finishedAt", clock.instant())
+                .unset("waiting").unset("retryAt").unset("leaseUntil").inc("version", 1);
+        if (byUserId != null) u.set("stoppedBy", byUserId);
+        return Optional.ofNullable(mongo.findAndModify(q, u, FindAndModifyOptions.options().returnNew(true), ChatbotRun.class));
+    }
+
     /** Runs due for a retry. */
     public List<ChatbotRun> retriesDue() {
         return mongo.find(new Query(Criteria.where("status").is(ChatbotRunStatus.RUNNING.name())

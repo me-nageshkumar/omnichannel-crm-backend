@@ -6,6 +6,7 @@ import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -63,4 +64,7 @@ public class ChatbotRun {
     private Instant retryAt;
     private Instant createdAt;
     private Instant finishedAt;
+    /** Every save is conditional on it: a runner that lost the run to a Stop cannot write it back. */
+    @Version
+    private Long version;
 }

@@ -103,6 +103,10 @@ public class ChatbotRunService {
                 labels.findByWorkspaceIdOrderByNameKey(chatbot.getWorkspaceId()), chatOrNull, number, event, by, now);
         if (carriedVariables != null) {
             for (var e : carriedVariables.entrySet()) vars.putIfAbsent(e.getKey(), e.getValue());
+            // the event that started the first run travels with a jump (spec §4.2); initial() put an empty branch
+            if (event == null && carriedVariables.get("event") instanceof java.util.Map<?, ?> carriedEvent && !carriedEvent.isEmpty()) {
+                vars.put("event", carriedEvent);
+            }
         }
         run.setVariables(vars);
         ChatbotRun inserted;
@@ -144,14 +148,24 @@ public class ChatbotRunService {
         return true;
     }
 
+    /** Stops the run if it is still active; a run already final is returned as it is. */
     public ChatbotRun stop(ChatbotRun run, String reason, String byUserId) {
-        run.setStoppedBy(byUserId);
-        return runner.finish(run, ChatbotRunStatus.STOPPED, reason);
+        return end(run, ChatbotRunStatus.STOPPED, reason, byUserId);
     }
 
     public ChatbotRun handOver(ChatbotRun run, String byUserId) {
-        run.setStoppedBy(byUserId);
-        return runner.finish(run, ChatbotRunStatus.HANDED_OVER, "an agent replied");
+        return end(run, ChatbotRunStatus.HANDED_OVER, "an agent replied", byUserId);
+    }
+
+    /**
+     * An external end is a claim, not a save of the caller's copy: the runner may be mid-node with its own copy, and
+     * the claim's version bump makes that copy unsaveable (spec anti-goal: a bot and an agent talking over each other).
+     */
+    private ChatbotRun end(ChatbotRun run, ChatbotRunStatus status, String reason, String byUserId) {
+        Optional<ChatbotRun> ended = claims.finish(run.getId(), status, reason, byUserId);
+        if (ended.isEmpty()) return runs.findById(run.getId()).orElse(run);
+        runner.ended(ended.get());
+        return ended.get();
     }
 
     public Optional<ChatbotRun> activeForChat(String chatId) {

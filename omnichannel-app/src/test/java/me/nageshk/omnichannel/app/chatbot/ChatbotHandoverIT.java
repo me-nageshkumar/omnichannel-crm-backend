@@ -19,7 +19,13 @@ import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageSource;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
+import me.nageshk.omnichannel.db.chatbot.TaskKind;
+import me.nageshk.omnichannel.service.chatbot.node.TaskAnswer;
+import me.nageshk.omnichannel.service.chatbot.run.ChatPointer;
 import me.nageshk.omnichannel.service.chatbot.run.ChatbotRunService;
+import me.nageshk.omnichannel.service.chatbot.run.ChatbotRunner;
+import me.nageshk.omnichannel.service.chatbot.run.RunClaims;
+import org.springframework.dao.OptimisticLockingFailureException;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +42,28 @@ class ChatbotHandoverIT extends ChatbotTestBase {
     @Autowired ChatbotRunService runs;
     @Autowired ChatbotRunRepository runRepo;
     @Autowired ContactRepository contacts;
+    @Autowired RunClaims claims;
+    @Autowired ChatbotRunner runner;
+    @Autowired ChatPointer pointer;
+
+    private Map<String, Object> twoAsksFlow() {
+        return flow(List.of(
+                node("q1", "ask_question", "AskName", Map.of("text", "Name?", "answerType", "TEXT")),
+                node("q2", "ask_question", "AskCity", Map.of("text", "City?", "answerType", "TEXT"))), List.of(edge("q1", "next", "q2")));
+    }
+
+    private WaWebMessage reply(WaWebChat chat, String body) {
+        WaWebMessage m = new WaWebMessage();
+        m.setId("in-" + body);
+        m.setChatId(chat.getId());
+        m.setWorkspaceId(brand.getId());
+        m.setDirection(MessageDirection.IN);
+        m.setSource(MessageSource.CONTACT);
+        m.setType("chat");
+        m.setBody(body);
+        m.setTimestamp(Instant.now());
+        return m;
+    }
 
     private Map<String, Object> askFlow() {
         return flow(List.of(
@@ -165,6 +193,70 @@ class ChatbotHandoverIT extends ChatbotTestBase {
             // the outsider is an agent of the brand without access to n1's team: the chat is not visible to them
             ResponseEntity<JsonNode> stop = call(HttpMethod.POST, inboxChat(chat) + "/chatbot/stop", outsider, null);
             assertThat(stop.getStatusCode()).isIn(HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND);
+        }
+    }
+    /** Review fix: a Stop that holds a copy from before the run moved on still stops it (no optimistic-lock failure). */
+    @Test
+    void stopWithStaleCopyStillStops() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Lead qualifier", twoAsksFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun stale = start(id, chat);
+            assertThat(runs.answer(TaskAnswer.whatsApp(chat.getId(), reply(chat, "Rahul")))).isTrue();
+            await(() -> "AskCity".equals(run(stale.getId()).getCurrentNodeName()) && run(stale.getId()).getStatus() == ChatbotRunStatus.WAITING);
+            ChatbotRun stopped = runs.stop(stale, "stopped by the test", agent.getId());
+            assertThat(stopped.getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+            assertThat(run(stale.getId()).getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+            assertThat(run(stale.getId()).getStoppedBy()).isEqualTo(agent.getId());
+            assertThat(chats.findById(chat.getId()).orElseThrow().getChatbot()).isNull();
+        }
+    }
+
+    /** Review fix: a run stopped while its runner holds a claimed copy stays stopped; the runner neither saves nor throws. */
+    @Test
+    void runnerDoesNotResurrectAStoppedRun() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Lead qualifier", twoAsksFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun waiting = start(id, chat);
+            ChatbotRun claimed = claims.claimForAnswer(TaskKind.WHATSAPP_REPLY, chat.getId()).orElseThrow();
+            runs.stop(run(waiting.getId()), "stopped by the test", agent.getId());
+            assertThat(run(waiting.getId()).getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+            ChatbotRun after = runner.proceed(claimed, TaskAnswer.whatsApp(chat.getId(), reply(chat, "Rahul")));
+            assertThat(after.getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+            assertThat(run(waiting.getId()).getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+            assertThat(run(waiting.getId()).getCurrentNodeName()).isEqualTo("AskName");
+            assertThat(chats.findById(chat.getId()).orElseThrow().getChatbot()).isNull();
+        }
+    }
+
+    /** Review fix: setting the pointer bumps the chat's version, so a stale full save of the chat cannot wipe it. */
+    @Test
+    void pointerSurvivesStaleChatSave() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Lead qualifier", askFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            WaWebChat before = chats.findById(chat.getId()).orElseThrow();
+            pointer.set(chat.getId(), run);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> chats.save(before)).isInstanceOf(OptimisticLockingFailureException.class);
+            assertThat(chats.findById(chat.getId()).orElseThrow().getChatbot().runId()).isEqualTo(run.getId());
+        }
+    }
+
+    /** Review fix: a pointer left behind at a finished run is not shown and is cleared on read. */
+    @Test
+    void staleChatPointerIsHidden() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Lead qualifier", askFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            runs.stop(run(run.getId()), "stopped by the test", agent.getId());
+            pointer.set(chat.getId(), run(run.getId()));
+            assertThat(chats.findById(chat.getId()).orElseThrow().getChatbot()).isNotNull();
+            JsonNode view = call(HttpMethod.GET, inboxChat(chat), agent, null).getBody();
+            assertThat(view.get("chatbot").isNull()).isTrue();
+            assertThat(chats.findById(chat.getId()).orElseThrow().getChatbot()).isNull();
         }
     }
 }
