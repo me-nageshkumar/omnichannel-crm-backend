@@ -49,7 +49,9 @@ public class ChatbotSettingsMigration {
                 Document old = c.get("settings", Document.class);
                 Document layer = layer(old);
                 if (!layer.equals(old)) {
-                    chatbots.updateOne(new Document("_id", c.get("_id")), new Document("$set", new Document("settings", layer)));
+                    // bump the version too, so an editor opened before the change gets a 409 instead of saving the old shape back
+                    chatbots.updateOne(new Document("_id", c.get("_id")), new Document("$set", new Document("settings", layer))
+                            .append("$inc", new Document("version", 1L)));
                     changed++;
                 }
             }

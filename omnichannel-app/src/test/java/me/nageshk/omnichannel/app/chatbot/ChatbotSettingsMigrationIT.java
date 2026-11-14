@@ -114,4 +114,20 @@ class ChatbotSettingsMigrationIT extends ChatbotTestBase {
 
         assertThat(mongo.getCollection(ChatbotSettingsMigration.MARKERS).countDocuments()).isEqualTo(1);
     }
+
+    // review fix: an editor tab opened before the deploy still holds the old full settings and the old version
+    @Test
+    void migrationBumpsTheVersionSoAStaleEditorGets409() {
+        String id = insertOld(oldDefaults());
+        migration.migrate();
+
+        Map<String, Object> save = new LinkedHashMap<>();
+        save.put("flow", Map.of("nodes", List.of(), "edges", List.of()));
+        save.put("settings", oldDefaults());
+        save.put("version", 0L);
+
+        assertThat(bots(HttpMethod.PUT, "/" + id, manager, save).getStatusCode())
+                .isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+        assertThat(stored(id)).isEmpty();
+    }
 }
