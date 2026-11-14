@@ -389,7 +389,8 @@ class AutomationRulesApiIT extends AutomationTestBase {
     @Test
     void listInRunOrderWithStats() {
         String welcome = template("Welcome", "Hi");
-        AutomationRule b = rule("B", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, 5, null,
+        AutomationRule b = rule("B", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.PUBLISHED, 5,
+                all(leaf("message.text", "is", "Hi")),
                 new AutomationAction(AutomationActionType.SEND_TEMPLATE, welcome, null, null, null, null, null, null,
                         null, null, null, null),
                 new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
@@ -427,6 +428,15 @@ class AutomationRulesApiIT extends AutomationTestBase {
         assertThat(list.get(0).get("priority").asInt()).isEqualTo(10);
         assertThat(list.get(2).get("priority").isNull()).isTrue();
         assertThat(list.get(2).get("actionsSummary").asString()).isEmpty();
+        // the list carries what the rule does, for the hover summary (rule-hover-summary spec)
+        assertThat(row.get("conditions").get("combinator").asString()).isEqualTo("and");
+        assertThat(row.get("conditions").get("rules").get(0).get("field").asString()).isEqualTo("message.text");
+        assertThat(row.get("conditions").get("rules").get(0).get("value").asString()).isEqualTo("Hi");
+        assertThat(row.get("actions")).hasSize(3);
+        assertThat(row.get("actions").get(0).get("type").asString()).isEqualTo("SEND_TEMPLATE");
+        assertThat(row.get("actions").get(0).get("templateId").asString()).isEqualTo(welcome);
+        assertThat(list.get(2).get("conditions").isNull()).isTrue();
+        assertThat(list.get(2).get("actions")).isEmpty();
     }
 
     @Test
