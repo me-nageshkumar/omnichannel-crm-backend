@@ -27,18 +27,19 @@ does for saved contact filters.
   - `When <event label>` (e.g. "When a message comes in").
   - Conditions: none → "Every event runs it" (wording of the editor's empty state per event); one top-level group →
     "If all of these:" / "If any of these:", one bullet per child; a nested group becomes a bullet
-    "all of these: a, b" when its children are all conditions, else nested bullets; a group with `not` reads
+    "all of these: a; b" when its children are all conditions ("; " since "is one of" lists values with ", "), else nested bullets; a group with `not` reads
     "none of these" for "any" and "not all of these" for "all" **(my call)**; each condition via `conditionText`.
   - "Then:" and numbered actions via `actionSummary`, plus Start chatbot's "(if one is running: skip|replace)".
-- **Where:** a PatternFly `Popover` with `triggerAction="hover"` on the rule's name link in `RulesTab.tsx`; keyboard
-  focus opens it too; header is the rule name, body the lines above **(my call: the name, not the whole row, so the
+- **Where:** a PatternFly `Tooltip` (described-by the rule's name link, so screen readers read it with the link; a
+  hover `Popover` claimed `aria-modal` and was never read; changed in the review fix pass) on the rule's name in
+  `RulesTab.tsx`; keyboard focus opens it too; the rule name in bold, then the lines above **(my call: the name, not the whole row, so the
   row's buttons stay usable and the popover has one clear anchor)**. While the options are loading, the popover shows
   the conditions with raw values rather than waiting.
 - **Example** ("Hi starts Lead qualifier" as now configured):
   ```
   When a message comes in
   If any of these:
-    • all of these: Number is Main line, Message text is “Hi”
+    • all of these: Number is Main line; Message text is “Hi”
     • Number is Sales line
   Then:
     1. Start “Lead qualifier” (if one is running: skip)
