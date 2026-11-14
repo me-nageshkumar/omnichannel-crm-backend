@@ -92,12 +92,25 @@ public class FormPageService implements TaskAnswerSource {
         return token == null || token.isBlank() ? Optional.empty() : forms.findByToken(token);
     }
 
-    /** True when the form can still be filled in: not submitted, not expired, and its run still waits on it. */
+    /**
+     * True when the form can be shown: not submitted, not expired, and its run is active and either waits on it or is
+     * still at the node sending the link (WhatsApp fetches the link card during that send, before the wait is
+     * recorded; found on the phone 2026-11-14).
+     */
     public boolean open(ChatbotForm f) {
         if (f.getSubmittedAt() != null) return false;
         if (f.getExpiresAt() != null && !clock.instant().isBefore(f.getExpiresAt())) return false;
-        return runs.findById(f.getRunId()).filter(r -> r.getStatus() == ChatbotRunStatus.WAITING && r.getWaiting() != null
-                && r.getWaiting().kind() == TaskKind.FORM && f.getToken().equals(r.getWaiting().key())).isPresent();
+        return runs.findById(f.getRunId()).filter(r -> r.getStatus() != null && r.getStatus().active()
+                && (r.getWaiting() == null || waitsOn(r, f))).isPresent();
+    }
+
+    /** True when a submission can be taken now: the run is recorded as waiting on this form. */
+    public boolean waitingOn(ChatbotForm f) {
+        return runs.findById(f.getRunId()).filter(r -> r.getStatus() == ChatbotRunStatus.WAITING && waitsOn(r, f)).isPresent();
+    }
+
+    private static boolean waitsOn(ChatbotRun r, ChatbotForm f) {
+        return r.getWaiting() != null && r.getWaiting().kind() == TaskKind.FORM && f.getToken().equals(r.getWaiting().key());
     }
 
     public AskFormSettings settings(ChatbotForm f) {
@@ -142,6 +155,8 @@ public class FormPageService implements TaskAnswerSource {
     public SubmitResult submit(ChatbotForm f, Map<String, String> values) {
         if (!open(f)) return new SubmitResult(SubmitState.CLOSED, Map.of(), renderer.closed());
         AskFormSettings s = settings(f);
+        // the link is still being sent: the wait is not recorded yet, so the form comes back to be sent again
+        if (!waitingOn(f)) return new SubmitResult(SubmitState.INVALID, Map.of(), renderer.form(s, "/f/" + f.getToken(), values, Map.of()));
         Map<String, String> errors = FormAnswers.validate(s, values);
         if (!errors.isEmpty()) {
             return new SubmitResult(SubmitState.INVALID, errors, renderer.form(s, "/f/" + f.getToken(), values, errors));
