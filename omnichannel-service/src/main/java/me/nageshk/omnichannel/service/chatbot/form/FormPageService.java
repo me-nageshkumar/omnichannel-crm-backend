@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import me.nageshk.omnichannel.common.config.OmnichannelProperties;
@@ -45,13 +46,16 @@ public class FormPageService implements TaskAnswerSource {
     private final ChatbotRunRepository runs;
     private final ChatbotRunService runService;
     private final FormPageRenderer renderer;
+    private final me.nageshk.omnichannel.service.page.PreviewCardRenderer cards;
     private final MongoTemplate mongo;
     private final ObjectMapper mapper;
     private final OmnichannelProperties props;
     private final Clock clock;
 
     public FormPageService(ChatbotFormRepository forms, ChatbotRunRepository runs, @Lazy ChatbotRunService runService,
-            FormPageRenderer renderer, MongoTemplate mongo, ObjectMapper mapper, OmnichannelProperties props, Clock clock) {
+            FormPageRenderer renderer, me.nageshk.omnichannel.service.page.PreviewCardRenderer cards, MongoTemplate mongo,
+            ObjectMapper mapper, OmnichannelProperties props, Clock clock) {
+        this.cards = cards;
         this.forms = forms;
         this.runs = runs;
         this.runService = runService;
@@ -101,7 +105,29 @@ public class FormPageService implements TaskAnswerSource {
     }
 
     public String html(ChatbotForm f) {
-        return renderer.form(settings(f), "/f/" + f.getToken(), Map.of(), Map.of());
+        return renderer.form(settings(f), "/f/" + f.getToken(), Map.of(), Map.of(), url(f));
+    }
+
+    /**
+     * The link card's image: the message pages' card drawn from the form's title, intro and button (the card renderer
+     * takes an interactive message, so the form is described as one).
+     */
+    public byte[] previewImage(ChatbotForm f) {
+        AskFormSettings s = settings(f);
+        String intro = s.intro() == null || s.intro().isBlank() ? FormPageRenderer.OPEN_THE_FORM : s.intro();
+        String button = s.submitText() == null || s.submitText().isBlank() ? "Submit" : s.submitText();
+        var interactive = new me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive("button",
+                new me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive.Header("text", s.title(), null, null, null),
+                new me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive.Body(intro), null,
+                new me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive.Action(List.of(
+                        new me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive.ActionButton("reply",
+                                new me.nageshk.omnichannel.common.channel.whatsapp.message.Interactive.Reply("submit", button))),
+                        null, null, null, null));
+        var message = new me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessage(
+                me.nageshk.omnichannel.common.channel.whatsapp.message.MessagingProduct.WHATSAPP_WEB, "individual", "0",
+                me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessage.INTERACTIVE, null, interactive,
+                null, null, null, null, null, null);
+        return cards.draw(message, Optional.empty());
     }
 
     public String closedHtml() {

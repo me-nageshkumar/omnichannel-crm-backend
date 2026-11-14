@@ -106,6 +106,32 @@ class ChatbotFormIT extends ChatbotTestBase {
         }
     }
 
+    /** The link's WhatsApp card: Open Graph tags on the page and a drawn image, like the message pages. */
+    @Test
+    void formPageCarriesALinkCard() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", formFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            start(id, chat);
+            assertThat(d.requests("sendMessage").get(0).params().get("options").get("linkPreview").asBoolean()).isTrue();
+            String content = d.requests("sendMessage").get(0).params().get("content").asString();
+            String token = content.substring(content.lastIndexOf('/') + 1);
+            String page = getForm(token).getBody();
+            assertThat(page).contains("<meta property=\"og:title\" content=\"Your details\">")
+                    .contains("<meta property=\"og:description\" content=\"Two quick questions, Veenu\">")
+                    .contains("<meta property=\"og:image\" content=\"http://pages.test/f/" + token + "/og.png\">")
+                    .contains("<meta property=\"og:url\" content=\"http://pages.test/f/" + token + "\">");
+            ResponseEntity<byte[]> png = rest.exchange(url("/f/" + token + "/og.png"), HttpMethod.GET, null, byte[].class);
+            assertThat(png.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(png.getHeaders().getContentType().toString()).isEqualTo("image/png");
+            assertThat(png.getBody()).isNotNull();
+            assertThat(png.getBody()[1]).isEqualTo((byte) 'P');
+            assertThat(png.getBody()[2]).isEqualTo((byte) 'N');
+            assertThat(rest.exchange(url("/f/nope/og.png"), HttpMethod.GET, null, byte[].class).getStatusCode())
+                    .isEqualTo(HttpStatus.NOT_FOUND);
+        }
+    }
+
     @Test
     void submitAnswersAndContinues() throws Exception {
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
