@@ -79,7 +79,8 @@ public class AutomationViews {
                     .map(AutomationRun::getStartedAt).orElse(null);
             out.add(new RuleSummaryView(r.getId(), r.getName(), r.getEvent(), r.getStatus(), r.getPriority(),
                     summary(r, lookups), last, mine.size(),
-                    mine.stream().filter(x -> x.getStatus() == RunStatus.FAILED).count(), r.getCreationTime()));
+                    mine.stream().filter(x -> x.getStatus() == RunStatus.FAILED).count(), r.getCreationTime(),
+                    r.getConditions(), r.getActions() == null ? List.of() : r.getActions()));
         }
         return out;
     }
