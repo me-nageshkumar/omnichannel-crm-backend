@@ -37,7 +37,8 @@ public class AutomationDevice implements AutoCloseable {
         device = FakeDevice.connectAndAuth(port, testDevices.redeem(n).deviceKey());
         device.send(Envelope.event("ready",
                 MAPPER.createObjectNode().put("pushname", "N").put("wid", n.getNumber() + "@c.us")));
-        Thread.sleep(200);
+        // the server handles "ready" on its own thread: wait for it rather than for a fixed time
+        testDevices.awaitReady(n, Duration.ofSeconds(5));
         answering = new Thread(this::answerAll, "automation-device-" + n.getNumber());
         answering.setDaemon(true);
         answering.start();
