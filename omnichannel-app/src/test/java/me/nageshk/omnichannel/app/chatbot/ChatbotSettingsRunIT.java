@@ -130,8 +130,10 @@ class ChatbotSettingsRunIT extends ChatbotTestBase {
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
             ChatbotRun run = start(chatbotId, chat);
             assertThat(runs.answer(TaskAnswer.whatsApp(chat.getId(), inbound(chat, "maybe")))).isTrue();
-            await(() -> d.requests("sendMessage").size() >= 2);
-            assertThat(run(run.getId()).getInvalidReplies()).isEqualTo(1);
+            // the retry text, then the question again; the count is stored once the run waits again
+            await(() -> d.requests("sendMessage").size() >= 3);
+            await(() -> run(run.getId()).getInvalidReplies() == 1
+                    && run(run.getId()).getStatus() == ChatbotRunStatus.WAITING);
             return d.requests("sendMessage").get(1).params().get("content").asString();
         }
     }
