@@ -57,7 +57,7 @@ public class RulePublishValidator {
                         var bot = chatbots.findById(a.chatbotId()).filter(c -> ws.equals(c.getWorkspaceId())).orElse(null);
                         if (bot == null) out.put(at + ".chatbotId", "The chatbot no longer exists");
                         else if (bot.getStatus() != me.nageshk.omnichannel.db.chatbot.ChatbotStatus.PUBLISHED) {
-                            out.put(at + ".chatbotId", "The chatbot is a draft; publish it first");
+                            out.put(at + ".chatbotId", DRAFT_CHATBOT);
                         }
                     }
                 }
@@ -65,6 +65,9 @@ public class RulePublishValidator {
         }
         return out;
     }
+
+    /** Blocks publishing only: a rule test runs a draft chatbot as a test run (chatbot-in-rule-test spec §4.1). */
+    public static final String DRAFT_CHATBOT = "The chatbot is a draft; publish it first";
 
     private static boolean blank(String s) {
         return s == null || s.isBlank();

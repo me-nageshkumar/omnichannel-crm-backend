@@ -37,6 +37,26 @@ class FormPageRendererTest {
     }
 
     @Test
+    void carriesLinkPreviewTags() {
+        String html = renderer.form(settings(), "/f/tok", Map.of(), Map.of(), "http://pages.test/f/tok");
+        assertThat(html).contains("<meta property=\"og:title\" content=\"Your details\">")
+                .contains("<meta property=\"og:description\" content=\"Two quick &lt;things&gt;\">")
+                .contains("<meta property=\"og:image\" content=\"http://pages.test/f/tok/og.png\">")
+                .contains("<meta property=\"og:url\" content=\"http://pages.test/f/tok\">")
+                .contains("<meta property=\"og:type\" content=\"website\">");
+        // a re-rendered form (errors) or one without a public address carries no card tags
+        assertThat(renderer.form(settings(), "/f/tok", Map.of(), Map.of())).doesNotContain("og:title");
+    }
+
+    @Test
+    void descriptionFallsBackWithoutIntro() {
+        AskFormSettings s = settings();
+        AskFormSettings noIntro = new AskFormSettings(s.title(), null, s.fields(), s.submitText(), s.thanksText(), s.linkMessage());
+        assertThat(renderer.form(noIntro, "/f/tok", Map.of(), Map.of(), "http://pages.test/f/tok"))
+                .contains("<meta property=\"og:description\" content=\"Tap to open the form\">");
+    }
+
+    @Test
     void escapesTexts() {
         String html = renderer.form(settings(), "/f/tok", Map.of(), Map.of());
         assertThat(html).contains("Two quick &lt;things&gt;").doesNotContain("<things>");

@@ -38,13 +38,33 @@ public class FormPageRenderer {
         js = resource("pages/form.js");
     }
 
+    /** The default link-card description when the form has no intro. */
+    public static final String OPEN_THE_FORM = "Tap to open the form";
+
     /** The form with the given values filled in and errors shown; {@code action} is the POST path. */
     public String form(AskFormSettings s, String action, Map<String, String> values, Map<String, String> errors) {
+        return form(s, action, values, errors, null);
+    }
+
+    /**
+     * As above; with {@code pageUrl} (the form's public address) the page also carries the Open Graph tags WhatsApp
+     * reads for the link card, the image being {@code pageUrl + "/og.png"}.
+     */
+    public String form(AskFormSettings s, String action, Map<String, String> values, Map<String, String> errors,
+            String pageUrl) {
         Map<String, Object> ctx = new LinkedHashMap<>();
         ctx.put("css", css);
         ctx.put("js", js);
         ctx.put("title", s.title());
         ctx.put("intro", s.intro() == null || s.intro().isBlank() ? null : s.intro());
+        if (pageUrl != null) {
+            Map<String, Object> og = new LinkedHashMap<>();
+            og.put("ogTitle", s.title());
+            og.put("ogDescription", s.intro() == null || s.intro().isBlank() ? OPEN_THE_FORM : s.intro());
+            og.put("ogImage", pageUrl + "/og.png");
+            og.put("ogUrl", pageUrl);
+            ctx.put("og", og);
+        }
         ctx.put("action", action);
         ctx.put("submitText", s.submitText() == null || s.submitText().isBlank() ? "Submit" : s.submitText());
         List<Map<String, Object>> fields = new ArrayList<>();

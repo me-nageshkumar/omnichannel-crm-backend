@@ -15,7 +15,10 @@ import me.nageshk.omnichannel.db.automation.AutomationRun;
 import me.nageshk.omnichannel.db.automation.EventData;
 import me.nageshk.omnichannel.db.automation.RuleStatus;
 import me.nageshk.omnichannel.db.automation.StepOutcome;
+import me.nageshk.omnichannel.db.chatbot.Chatbot;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
+import me.nageshk.omnichannel.db.chatbot.ChatbotSettings;
+import me.nageshk.omnichannel.db.chatbot.ChatbotStatus;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
 import me.nageshk.omnichannel.db.chatbot.IfRunning;
@@ -94,6 +97,8 @@ class StartChatbotActionIT extends ChatbotTestBase {
             AutomationRun ruleRun = mongo.findAll(AutomationRun.class).get(0);
             assertThat(ruleRun.getSteps().get(0).outcome()).isEqualTo(StepOutcome.DONE);
             assertThat(ruleRun.getSteps().get(0).reason()).startsWith("Started “Lead qualifier”: waiting at AskName");
+            assertThat(ruleRun.getSteps().get(0).chatbotId()).isEqualTo(id);
+            assertThat(ruleRun.getSteps().get(0).chatbotRunId()).isEqualTo(run.getId());
             assertThat(d.requests("sendMessage")).hasSize(1);
         }
     }
@@ -252,5 +257,173 @@ class StartChatbotActionIT extends ChatbotTestBase {
         assertThat(o.get("chatbots")).hasSize(1);
         assertThat(o.get("chatbots").get(0).get("name").asString()).isEqualTo("Bot");
         assertThat(o.get("chatbots").get(0).get("status").asString()).isEqualTo("DRAFT");
+    }
+
+    // ---- the rule test (chatbot-in-rule-test spec §4.1) ----
+
+    private Map<String, Object> timerFlow() {
+        return flow(List.of(
+                node("w", "wait", "Hold", Map.of("amount", 1, "unit", "HOURS")),
+                node("m", "send_message", "Done", textMessage("Thanks"))), List.of(edge("w", "next", "m")));
+    }
+
+    /** Arms a rule test on the chat's contact, sends "Hi" and lets the worker capture it; returns the test id. */
+    private String capturedTest(AutomationRule draft, WaWebChat chat) {
+        ResponseEntity<JsonNode> t = api(HttpMethod.POST, "/rules/" + draft.getId() + "/tests", manager,
+                Map.of("contactId", chat.getContactId(), "treatAsNew", false));
+        assertThat(t.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String testId = t.getBody().get("id").asString();
+        incoming(n1, VEENU, "chat", "Hi", "Veenu");
+        worker.tick();
+        JsonNode captured = api(HttpMethod.GET, "/tests/" + testId, manager, null).getBody();
+        assertThat(captured.get("status").asString()).isEqualTo("CAPTURED");
+        assertThat(captured.get("nextAction").asInt()).isZero();
+        return testId;
+    }
+
+    private JsonNode runFirstAction(String testId) {
+        ResponseEntity<JsonNode> ran = api(HttpMethod.POST, "/tests/" + testId + "/actions/0/run", manager, null);
+        assertThat(ran.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return ran.getBody().get("actions").get(0);
+    }
+
+    @Test
+    void ruleTestStartsADraftAsATestRun() throws Exception {
+        String id = createChatbot("Lead qualifier", askFlow()).get("id").asString();
+        AutomationRule draft = rule("Hi rule", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, 1, null, startAction(id, null));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            String testId = capturedTest(draft, chat);
+            JsonNode step = runFirstAction(testId);
+            assertThat(step.get("outcome").asString()).isEqualTo("DONE");
+            assertThat(step.get("reason").asString()).isEqualTo("Started “Lead qualifier”");
+            assertThat(step.get("chatbotId").asString()).isEqualTo(id);
+            String runId = step.get("chatbotRunId").asString();
+            ChatbotRun run = runRepo.findById(runId).orElseThrow();
+            assertThat(run.isTest()).isTrue();
+            assertThat(run.getChatId()).isEqualTo(chat.getId());
+            assertThat(run.getStartedBy().userId()).isEqualTo(manager.getId());
+            assertThat(run.getStartedBy().ruleName()).isEqualTo("Hi rule");
+            assertThat(run.getStartedBy().eventId()).isNull();
+            assertThat(((Map<?, ?>) ((Map<?, ?>) run.getVariables().get("event")).get("message")).get("text")).isEqualTo("Hi");
+            await(() -> runRepo.findById(runId).orElseThrow().getStatus() == ChatbotRunStatus.WAITING);
+            assertThat(d.requests("sendMessage")).hasSize(1);
+            // the test view keeps the ids
+            JsonNode again = api(HttpMethod.GET, "/tests/" + testId, manager, null).getBody().get("actions").get(0);
+            assertThat(again.get("chatbotRunId").asString()).isEqualTo(runId);
+        }
+    }
+
+    @Test
+    void ruleTestRespectsIfRunningSkip() throws Exception {
+        String id = createChatbot("Lead qualifier", askFlow()).get("id").asString();
+        String other = publish(createChatbot("Other", timerFlow()));
+        AutomationRule draft = rule("Hi rule", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, 1, null, startAction(id, IfRunning.SKIP));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            handler.run(ctx(chat, contactOf(chat), "ev-live"), startAction(other, null));
+            await(() -> runs().size() == 1 && runs().get(0).getStatus() == ChatbotRunStatus.WAITING);
+            String testId = capturedTest(draft, chat);
+            JsonNode step = runFirstAction(testId);
+            assertThat(step.get("outcome").asString()).isEqualTo("SKIPPED");
+            assertThat(step.get("reason").asString()).contains("Other");
+            assertThat(step.get("chatbotRunId").isNull()).isTrue();
+            assertThat(runs()).hasSize(1);
+        }
+    }
+
+    @Test
+    void ruleTestReplaceStopsTheRunningChatbot() throws Exception {
+        String id = createChatbot("Lead qualifier", askFlow()).get("id").asString();
+        String other = publish(createChatbot("Other", timerFlow()));
+        AutomationRule draft = rule("Hi rule", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, 1, null, startAction(id, IfRunning.REPLACE));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            handler.run(ctx(chat, contactOf(chat), "ev-live"), startAction(other, null));
+            await(() -> runs().size() == 1 && runs().get(0).getStatus() == ChatbotRunStatus.WAITING);
+            String live = runs().get(0).getId();
+            String testId = capturedTest(draft, chat);
+            JsonNode step = runFirstAction(testId);
+            assertThat(step.get("outcome").asString()).isEqualTo("DONE");
+            // review fix: a live run ended by a test says so, and who did it
+            assertThat(step.get("reason").asString()).isEqualTo("Started “Lead qualifier” (stopped “Other”)");
+            ChatbotRun stopped = runRepo.findById(live).orElseThrow();
+            assertThat(stopped.getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+            assertThat(stopped.getStoppedBy()).isEqualTo(manager.getId());
+            assertThat(stopped.getEndReason()).contains("rule test");
+            assertThat(runRepo.findById(step.get("chatbotRunId").asString()).orElseThrow().isTest()).isTrue();
+        }
+    }
+
+    @Test
+    void otherBrandChatbotFailsInTest() {
+        Chatbot foreign = new Chatbot();
+        foreign.setCustomerId(acme.getId());
+        foreign.setWorkspaceId(other.getId());
+        foreign.setName("Foreign");
+        foreign.setStatus(ChatbotStatus.PUBLISHED);
+        foreign.setFlow(askFlow());
+        foreign.setSettings(ChatbotSettings.defaults());
+        foreign = mongo.save(foreign);
+        AutomationRule draft = rule("Hi rule", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, 1, null, startAction(foreign.getId(), null));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String testId = capturedTest(draft, chat);
+        JsonNode step = runFirstAction(testId);
+        assertThat(step.get("outcome").asString()).isEqualTo("FAILED");
+        assertThat(step.get("reason").asString()).contains("no longer exists");
+        assertThat(runs()).isEmpty();
+    }
+
+    // ---- review fixes ----
+
+    private ActionContext testCtx(WaWebChat chat, Contact contact) {
+        EventData.ChatData c = new EventData.ChatData(chat.getId(), false, chat.getStatus(), null, null, false);
+        EventData.ContactData k = new EventData.ContactData(contact.getId(), contact.getName(), contact.getPhone(), false, false);
+        return new ActionContext(brand.getId(), acme.getId(), AutomationEventKind.MESSAGE_RECEIVED, "ev-t",
+                new EventData(c, null, null, k, null, null, null, null), "r1", "Hi rule", true, manager.getId());
+    }
+
+    @Test
+    void preflightAllowsADraftChatbot() throws Exception {
+        String id = createChatbot("Lead qualifier", askFlow()).get("id").asString();
+        AutomationRule draft = rule("Hi rule", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, 1, null, startAction(id, null));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            JsonNode pre = api(HttpMethod.GET, "/rules/" + draft.getId() + "/tests/preflight", manager, null).getBody();
+            assertThat(pre.get("canRun").asBoolean()).isTrue();
+            List<String> warnings = new java.util.ArrayList<>();
+            for (JsonNode c : pre.get("checks")) {
+                assertThat(c.get("level").asString()).isEqualTo("WARNING");
+                warnings.add(c.get("message").asString());
+            }
+            assertThat(warnings).anyMatch(w -> w.contains("draft") && w.contains("Lead qualifier"));
+        }
+    }
+
+    @Test
+    void ruleTestAgainReplacesItsOwnTestRun() throws Exception {
+        String id = createChatbot("Lead qualifier", askFlow()).get("id").asString();
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ActionResult first = handler.run(testCtx(chat, contactOf(chat)), startAction(id, IfRunning.SKIP));
+            assertThat(first.outcome()).isEqualTo(StepOutcome.DONE);
+            await(() -> runRepo.findById(first.chatbotRunId()).orElseThrow().getStatus() == ChatbotRunStatus.WAITING);
+            ActionResult second = handler.run(testCtx(chat, contactOf(chat)), startAction(id, IfRunning.SKIP));
+            assertThat(second.outcome()).isEqualTo(StepOutcome.DONE);
+            assertThat(second.chatbotRunId()).isNotEqualTo(first.chatbotRunId());
+            ChatbotRun old = runRepo.findById(first.chatbotRunId()).orElseThrow();
+            assertThat(old.getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+            assertThat(old.getEndReason()).isEqualTo("replaced by a new test");
+        }
+    }
+
+    @Test
+    void ruleTestRefusesADraftWithErrors() {
+        String id = createChatbot("Broken", flow(List.of(node("a", "wait", "A", Map.of("amount", 1, "unit", "HOURS")),
+                node("b", "wait", "B", Map.of("amount", 1, "unit", "HOURS"))), List.of())).get("id").asString();
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        ActionResult r = handler.run(testCtx(chat, contactOf(chat)), startAction(id, null));
+        assertThat(r.outcome()).isEqualTo(StepOutcome.FAILED);
+        assertThat(r.reason()).contains("problems");
+        assertThat(runs()).isEmpty();
     }
 }

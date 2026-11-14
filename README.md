@@ -643,6 +643,11 @@ typed task: a WhatsApp reply on a chat, a submitted form, or a timer.
 - Test and runs: `POST /chatbots/{id}/test {contactId, phoneNumberId?, stopRunning?}` (409 `CHATBOT_RUNNING` with
   `chatbotName` when another chatbot's run is active), `GET /chatbots/{id}/runs?status=&from=&to=&page=&size=`,
   `GET /chatbots/{id}/runs/{runId}`, `POST /chatbots/{id}/runs/{runId}/stop`.
+- In a **rule test** (`POST /automations/tests/{testId}/actions/{i}/run`) a Start chatbot step starts a **test run**,
+  draft or published, by the tester, and answers at once; every Start chatbot step carries `chatbotId` and
+  `chatbotRunId` (test and run views), which the console opens as `/chatbots/{chatbotId}?run={chatbotRunId}`.
+- Form pages `GET|POST /f/{token}` carry Open Graph tags for the WhatsApp link card (title, intro or "Tap to open the
+  form", `og:image` = `/f/{token}/og.png`, a card drawn like the message pages').
 - Editor helpers: `POST /chatbots/{id}/media` (multipart `file`, `type` image|video|audio|document) and
   `POST /chatbots/{id}/preview` (a Cloud message object, answers inert HTML).
 - Inbox: `ChatView.chatbot` names the active run; `POST /inbox/chats/{chatId}/chatbot/stop` (`inbox:send`) stops it.

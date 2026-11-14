@@ -88,7 +88,7 @@ public class AutomationQueryService {
         for (RunStep s : r.getSteps() == null ? List.<RunStep>of() : r.getSteps()) {
             if (s == null) continue;
             steps.add(new StepView(s.index(), s.type(), AutomationViews.stepSummary(s), s.outcome(), s.reason(),
-                    s.at()));
+                    s.at(), s.chatbotId(), s.chatbotRunId()));
         }
         RunView.Contact contact = r.getContactId() == null ? null
                 : new RunView.Contact(r.getContactId(), r.getContactName(), r.getContactPhone());

@@ -41,6 +41,18 @@ public class FormPageController {
         return html(HttpStatus.OK, forms.html(form.get()));
     }
 
+    /** The link card's image; served for any known form, open or closed, so an old chat keeps its card. */
+    @GetMapping("/f/{token}/og.png")
+    public ResponseEntity<byte[]> preview(@PathVariable String token) {
+        Optional<ChatbotForm> form = forms.byToken(token);
+        if (form.isEmpty()) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_PNG_VALUE)
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(forms.previewImage(form.get()));
+    }
+
     @PostMapping(value = "/f/{token}", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public ResponseEntity<String> submit(@PathVariable String token, @RequestBody MultiValueMap<String, String> body) {
         Optional<ChatbotForm> form = forms.byToken(token);

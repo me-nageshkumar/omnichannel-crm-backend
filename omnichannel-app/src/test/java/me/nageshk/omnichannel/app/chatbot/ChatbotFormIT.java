@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import me.nageshk.omnichannel.app.automation.AutomationDevice;
 import me.nageshk.omnichannel.db.chatbot.ChatbotForm;
@@ -103,6 +104,73 @@ class ChatbotFormIT extends ChatbotTestBase {
             assertThat(page.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(page.getHeaders().getFirst("X-Robots-Tag")).isEqualTo("noindex");
             assertThat(page.getBody()).contains("Your details").contains("Two quick questions, Veenu").contains("name=\"city\"");
+        }
+    }
+
+    /**
+     * WhatsApp fetches the card while the link is still being sent, before the run is recorded as waiting: the page
+     * must already be open then (found on the phone, 2026-11-14).
+     */
+    @Test
+    void formPageIsOpenWhileTheLinkIsBeingSent() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", formFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            CountDownLatch release = new CountDownLatch(1);
+            d.sendAnswer = req -> {
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return me.nageshk.omnichannel.service.rpc.Envelope.response(req.id(), AutomationDevice.model(req, 1));
+            };
+            Contact c = contacts.findById(chat.getContactId()).orElseThrow();
+            ChatbotRunService.StartResult r = runs.start(brand.getId(), id, c, chat, StartedBy.test(manager.getId()),
+                    null, IfRunning.SKIP, true);
+            assertThat(r.started()).isTrue();
+            await(() -> forms.count() == 1 && !d.requests("sendMessage").isEmpty());
+            ChatbotForm form = forms.findAll().get(0);
+            assertThat(runRepo.findById(r.run().getId()).orElseThrow().getStatus()).isEqualTo(ChatbotRunStatus.RUNNING);
+            // the crawler's view during the send: the open form with its card tags
+            ResponseEntity<String> during = getForm(form.getToken());
+            assertThat(during.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(during.getBody()).contains("og:title").contains("name=\"city\"");
+            // a submit in that window is not lost as "closed": the form comes back to be sent again
+            ResponseEntity<String> early = submit(form.getToken(), Map.of("city", "Jaipur", "budget", "20000"));
+            assertThat(early.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(forms.findByToken(form.getToken()).orElseThrow().getSubmittedAt()).isNull();
+            release.countDown();
+            r.settled().get(5, TimeUnit.SECONDS);
+            await(() -> runRepo.findById(r.run().getId()).orElseThrow().getStatus() == ChatbotRunStatus.WAITING);
+            assertThat(getForm(form.getToken()).getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(submit(form.getToken(), Map.of("city", "Jaipur", "budget", "20000")).getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+    }
+
+    /** The link's WhatsApp card: Open Graph tags on the page and a drawn image, like the message pages. */
+    @Test
+    void formPageCarriesALinkCard() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", formFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            start(id, chat);
+            assertThat(d.requests("sendMessage").get(0).params().get("options").get("linkPreview").asBoolean()).isTrue();
+            String content = d.requests("sendMessage").get(0).params().get("content").asString();
+            String token = content.substring(content.lastIndexOf('/') + 1);
+            String page = getForm(token).getBody();
+            assertThat(page).contains("<meta property=\"og:title\" content=\"Your details\">")
+                    .contains("<meta property=\"og:description\" content=\"Two quick questions, Veenu\">")
+                    .contains("<meta property=\"og:image\" content=\"http://pages.test/f/" + token + "/og.png\">")
+                    .contains("<meta property=\"og:url\" content=\"http://pages.test/f/" + token + "\">");
+            ResponseEntity<byte[]> png = rest.exchange(url("/f/" + token + "/og.png"), HttpMethod.GET, null, byte[].class);
+            assertThat(png.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(png.getHeaders().getContentType().toString()).isEqualTo("image/png");
+            assertThat(png.getBody()).isNotNull();
+            assertThat(png.getBody()[1]).isEqualTo((byte) 'P');
+            assertThat(png.getBody()[2]).isEqualTo((byte) 'N');
+            assertThat(rest.exchange(url("/f/nope/og.png"), HttpMethod.GET, null, byte[].class).getStatusCode())
+                    .isEqualTo(HttpStatus.NOT_FOUND);
         }
     }
 
