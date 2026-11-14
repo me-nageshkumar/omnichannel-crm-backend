@@ -157,6 +157,7 @@ public class AutomationViews {
         private final Map<String, String> templateNames = new HashMap<>();
         private final Map<String, String> agentNames = new HashMap<>();
         private final Map<String, String> teamNames = new HashMap<>();
+        private final Map<String, String> chatbotNames = new HashMap<>();
         private AutomationCrm.CrmOptions options;
 
         Lookups(String workspaceId) {
@@ -169,8 +170,7 @@ public class AutomationViews {
         }
 
         String chatbot(String id) {
-            if (id == null) return "?";
-            return chatbots.findById(id).map(c -> c.getName()).orElse(id);
+            return name(chatbotNames, id, i -> chatbots.findById(i).map(c -> c.getName()));
         }
 
         String agent(String id) {

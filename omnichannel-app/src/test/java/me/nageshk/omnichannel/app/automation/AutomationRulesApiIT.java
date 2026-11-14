@@ -394,17 +394,25 @@ class AutomationRulesApiIT extends AutomationTestBase {
                 org.springframework.data.mongodb.core.query.Criteria.where("_id").is(old)),
                 new org.springframework.data.mongodb.core.query.Update().set("status", "ARCHIVED"),
                 me.nageshk.omnichannel.db.template.MessageTemplate.class);
+        agent2.setActive(false);
+        mongo.save(agent2);
         rule("D", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, null, null,
                 new AutomationAction(AutomationActionType.SEND_TEMPLATE, old, null, null, null, null, null, null,
                         null, null, null, null),
                 new AutomationAction(AutomationActionType.SEND_TEMPLATE, null, null, null, null, null, null, null,
+                        null, null, null, null),
+                new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null,
+                        me.nageshk.omnichannel.db.automation.AssignMode.AGENT, agent2.getId(), null, null, null,
                         null, null, null, null),
                 new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null, null, null, null, null, null,
                         null, null, null, null));
         JsonNode row = api(HttpMethod.GET, "/rules", manager, null).getBody().get(0);
         List<String> labels = new ArrayList<>();
         row.get("actionLabels").forEach(n -> labels.add(n.asString()));
-        assertThat(labels).containsExactly("Send “Old offer”", "Send “?”", "Assign chat");
+        assertThat(labels).containsExactly("Send “Old offer”", "Send “?”", "Assign to " + agent2.getName(), "Assign chat");
+        // the same names as the row's summary; an action too incomplete to sum up is left out there, named by type here
+        assertThat(row.get("actionsSummary").asString())
+                .isEqualTo("Send “Old offer” · Send “?” · Assign to " + agent2.getName());
     }
 
     @Test
