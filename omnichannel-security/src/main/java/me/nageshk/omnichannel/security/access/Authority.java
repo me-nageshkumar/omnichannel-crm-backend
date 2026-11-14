@@ -22,6 +22,8 @@ public enum Authority {
             "See every WhatsApp number on the platform", ACCOUNT_MANAGER),
     PHONE_NUMBER_MANAGE_ALL("phone-number:manage-all", RoleLevel.PLATFORM,
             "Disable/enable and delete any WhatsApp number", ACCOUNT_MANAGER),
+    CHATBOT_DEFAULTS_MANAGE("chatbot-defaults:manage", RoleLevel.PLATFORM,
+            "Set the chatbot settings every brand starts with"),
     WORKSPACE_CREATE("workspace:create", RoleLevel.COMPANY, "Create workspaces", CUSTOMER_ADMIN),
     COMPANY_USER_MANAGE("company-user:manage", RoleLevel.COMPANY,
             "Disable/enable any user of the company", CUSTOMER_ADMIN),
