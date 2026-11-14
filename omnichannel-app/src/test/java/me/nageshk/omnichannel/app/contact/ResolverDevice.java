@@ -50,7 +50,9 @@ class ResolverDevice implements AutoCloseable {
             device.send(Envelope.event("ready",
                     MAPPER.createObjectNode().put("pushname", "N").put("wid", n.getNumber() + "@c.us")));
         }
-        Thread.sleep(200);
+        // wait for the server rather than a fixed time: ready to send, or (a device kept not ready) registered
+        if (ready) testDevices.awaitReady(n);
+        else testDevices.awaitConnected(n);
         answering = new Thread(this::answerAll, "resolver-device-" + n.getNumber());
         answering.setDaemon(true);
         answering.start();

@@ -117,7 +117,7 @@ class NewChatIT extends InboxApiTestBase {
             Function<Envelope, Envelope> answer) throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() -> {
                 try {
                     return post(token, body);
@@ -164,7 +164,7 @@ class NewChatIT extends InboxApiTestBase {
     private ResponseEntity<JsonNode> postUntouched(String token, Object body) throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             ResponseEntity<JsonNode> res = post(token, body);
             assertThat(device.poll(Duration.ofMillis(300))).isEmpty();
             return res;
@@ -175,7 +175,7 @@ class NewChatIT extends InboxApiTestBase {
     private ResponseEntity<JsonNode> postAfterLookup(String token, Object body, JsonNode lookup) throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() -> {
                 try {
                     return post(token, body);

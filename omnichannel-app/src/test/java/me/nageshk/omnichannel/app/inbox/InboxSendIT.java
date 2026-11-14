@@ -102,7 +102,7 @@ class InboxSendIT extends InboxApiTestBase {
             throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() -> {
                 try {
                     return post(token, chat, body);
@@ -407,7 +407,7 @@ class InboxSendIT extends InboxApiTestBase {
         WaWebChat chat = chatWithAarav();
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             for (Object body : List.<Object>of(Map.of(), Map.of("text", "   "), Map.of("text", "x".repeat(4097)),
                     Map.of("text", "hi", "templateId", "t1"))) {
                 ResponseEntity<JsonNode> res = post(managerToken, chat, body);
@@ -486,7 +486,7 @@ class InboxSendIT extends InboxApiTestBase {
 
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
 
             ResponseEntity<JsonNode> res = post(managerToken, chat, Map.of("templateId", id, "values", Map.of()));
 
@@ -616,7 +616,7 @@ class InboxSendIT extends InboxApiTestBase {
 
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
 
             ResponseEntity<JsonNode> res = post(managerToken, chat, Map.of("templateId", id));
 
@@ -649,7 +649,7 @@ class InboxSendIT extends InboxApiTestBase {
 
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
 
             ResponseEntity<JsonNode> res = post(managerToken, chat, Map.of("templateId", id));
 
@@ -667,7 +667,7 @@ class InboxSendIT extends InboxApiTestBase {
         WaWebChat chat = chatWithAarav();
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             assertThat(post(managerToken, chat, Map.of("templateId", "nope")).getStatusCode())
                     .isEqualTo(HttpStatus.NOT_FOUND);
         }
@@ -687,7 +687,7 @@ class InboxSendIT extends InboxApiTestBase {
 
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<MessageView> sent = sender.send(access.load(agent), brand.getId(), fresh,
                     new SendRequest("hi Nia", null, null));
             Envelope req = device.next();
@@ -721,7 +721,7 @@ class InboxSendIT extends InboxApiTestBase {
 
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<MessageView> sent = sender.send(access.load(agent), brand.getId(), fresh,
                     new SendRequest("hi again", null, null));
             Envelope req = device.next();
