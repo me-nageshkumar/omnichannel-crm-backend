@@ -17,7 +17,7 @@ import me.nageshk.omnichannel.db.automation.RuleStatus;
 import me.nageshk.omnichannel.db.automation.StepOutcome;
 import me.nageshk.omnichannel.db.chatbot.Chatbot;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
-import me.nageshk.omnichannel.db.chatbot.ChatbotSettings;
+import me.nageshk.omnichannel.db.chatbot.ChatbotSettingsLayer;
 import me.nageshk.omnichannel.db.chatbot.ChatbotStatus;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
@@ -363,7 +363,7 @@ class StartChatbotActionIT extends ChatbotTestBase {
         foreign.setName("Foreign");
         foreign.setStatus(ChatbotStatus.PUBLISHED);
         foreign.setFlow(askFlow());
-        foreign.setSettings(ChatbotSettings.defaults());
+        foreign.setSettings(ChatbotSettingsLayer.empty());
         foreign = mongo.save(foreign);
         AutomationRule draft = rule("Hi rule", AutomationEventKind.MESSAGE_RECEIVED, RuleStatus.DRAFT, 1, null, startAction(foreign.getId(), null));
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");

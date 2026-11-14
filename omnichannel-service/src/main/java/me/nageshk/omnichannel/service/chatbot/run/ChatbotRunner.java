@@ -29,6 +29,7 @@ import me.nageshk.omnichannel.service.chatbot.node.NodeExecutors;
 import me.nageshk.omnichannel.service.chatbot.node.RunContext;
 import me.nageshk.omnichannel.service.chatbot.node.StepResult;
 import me.nageshk.omnichannel.service.chatbot.node.TaskAnswer;
+import me.nageshk.omnichannel.service.chatbot.settings.SettingsLayers;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -115,7 +116,7 @@ public class ChatbotRunner {
         Map<String, Object> flowMap = versions.findByChatbotIdAndVersionNumber(chatbot.getId(), run.getVersionNumber())
                 .map(v -> v.getFlow()).orElse(chatbot.getFlow());
         Flow flow = parser.parse(flowMap);
-        ChatbotSettings settings = chatbot.getSettings() == null ? ChatbotSettings.defaults() : chatbot.getSettings();
+        ChatbotSettings settings = SettingsLayers.resolve(SettingsLayers.over(chatbot.getSettings(), ChatbotSettings.codeDefaults().asLayer()));
         WaWebChat chat = run.getChatId() == null ? null : chats.findById(run.getChatId()).orElse(null);
         Contact contact = run.getContactId() == null ? null : contacts.findById(run.getContactId()).orElse(null);
         RunContext ctx = new RunContext(run, chatbot, flow, settings, chat, contact, clock.instant());

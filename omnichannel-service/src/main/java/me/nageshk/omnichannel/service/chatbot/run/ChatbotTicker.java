@@ -17,6 +17,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.service.chatbot.node.RunContext;
 import me.nageshk.omnichannel.service.chatbot.node.SendMessageExecutor;
 import me.nageshk.omnichannel.service.chatbot.node.TaskAnswer;
+import me.nageshk.omnichannel.service.chatbot.settings.SettingsLayers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -89,7 +90,7 @@ public class ChatbotTicker implements TaskAnswerSource {
                     new Update().set("reminderSent", true).unset("remindAt"), FindAndModifyOptions.options().returnNew(true), ChatbotRun.class);
             if (claimed == null) continue;
             RunContext ctx = contextFor(claimed);
-            if (ctx == null || ctx.settings().reminderMessage() == null) continue;
+            if (ctx == null || !ctx.settings().reminderOn()) continue;
             try {
                 sender.send(ctx, SendMessageExecutor.textMessage(ctx.render(ctx.settings().reminderMessage())));
             } catch (RuntimeException e) {
@@ -137,8 +138,8 @@ public class ChatbotTicker implements TaskAnswerSource {
 
     private RunContext contextFor(ChatbotRun run) {
         Chatbot chatbot = chatbots.findById(run.getChatbotId()).orElse(null);
-        ChatbotSettings settings = chatbot == null || chatbot.getSettings() == null ? ChatbotSettings.defaults() : chatbot.getSettings();
         if (chatbot == null) return null;
+        ChatbotSettings settings = SettingsLayers.resolve(SettingsLayers.over(chatbot.getSettings(), ChatbotSettings.codeDefaults().asLayer()));
         RunContext ctx = new RunContext(run, chatbot, null, settings,
                 run.getChatId() == null ? null : chats.findById(run.getChatId()).orElse(null),
                 run.getContactId() == null ? null : contacts.findById(run.getContactId()).orElse(null), clock.instant());

@@ -3,8 +3,10 @@ package me.nageshk.omnichannel.service.chatbot.run;
 import me.nageshk.omnichannel.db.chatbot.Chatbot;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
+import me.nageshk.omnichannel.db.chatbot.ChatbotSettings;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageSource;
+import me.nageshk.omnichannel.service.chatbot.settings.SettingsLayers;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +40,8 @@ public class ChatbotHandoverListener {
             ChatbotRun run = runs.activeForChat(e.chat().getId()).orElse(null);
             if (run == null) return;
             Chatbot chatbot = chatbots.findById(run.getChatbotId()).orElse(null);
-            if (chatbot != null && chatbot.getSettings() != null && !chatbot.getSettings().stopOnAgentReply()) return;
+            if (chatbot != null && !SettingsLayers.resolve(SettingsLayers.over(chatbot.getSettings(),
+                    ChatbotSettings.codeDefaults().asLayer())).stopOnAgentReply()) return;
             runs.handOver(run, e.message().getSentByUserId());
         } catch (RuntimeException ex) {
             log.warn("chatbot hand-over listener failed", ex);

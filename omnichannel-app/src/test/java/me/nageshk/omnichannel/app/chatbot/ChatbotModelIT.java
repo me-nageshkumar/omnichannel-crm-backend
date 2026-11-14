@@ -11,7 +11,7 @@ import me.nageshk.omnichannel.db.chatbot.ChatbotRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
-import me.nageshk.omnichannel.db.chatbot.ChatbotSettings;
+import me.nageshk.omnichannel.db.chatbot.ChatbotSettingsLayer;
 import me.nageshk.omnichannel.db.chatbot.ChatbotStatus;
 import me.nageshk.omnichannel.db.chatbot.StartedBy;
 import me.nageshk.omnichannel.db.chatbot.TaskKind;
@@ -45,7 +45,7 @@ class ChatbotModelIT {
         c.setName(name);
         c.setStatus(ChatbotStatus.DRAFT);
         c.setFlow(Map.of("nodes", java.util.List.of(), "edges", java.util.List.of()));
-        c.setSettings(ChatbotSettings.defaults());
+        c.setSettings(ChatbotSettingsLayer.empty());
         c.setCreationTime(Instant.now());
         return c;
     }

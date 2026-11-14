@@ -40,8 +40,8 @@ class ChatbotApiIT extends ChatbotTestBase {
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         JsonNode bot = created.getBody();
         assertThat(bot.get("status").asString()).isEqualTo("DRAFT");
-        assertThat(bot.get("settings").get("endAfterMinutes").asInt()).isEqualTo(120);
-        assertThat(bot.get("settings").get("invalidReplyRetries").asInt()).isEqualTo(2);
+        assertThat(bot.get("settings").get("endAfterMinutes").isNull()).isTrue();
+        assertThat(bot.get("settings").get("invalidReplyRetries").isNull()).isTrue();
         assertThat(bot.get("flow").get("nodes")).isEmpty();
         ResponseEntity<JsonNode> list = bots(HttpMethod.GET, "", manager, null);
         assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
