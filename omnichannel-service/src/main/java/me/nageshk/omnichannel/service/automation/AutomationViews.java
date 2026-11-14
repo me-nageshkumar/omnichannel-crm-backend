@@ -80,7 +80,8 @@ public class AutomationViews {
             out.add(new RuleSummaryView(r.getId(), r.getName(), r.getEvent(), r.getStatus(), r.getPriority(),
                     summary(r, lookups), last, mine.size(),
                     mine.stream().filter(x -> x.getStatus() == RunStatus.FAILED).count(), r.getCreationTime(),
-                    r.getConditions(), r.getActions() == null ? List.of() : r.getActions()));
+                    r.getConditions(), r.getActions() == null ? List.of() : r.getActions(),
+                    actionSummaries(r.getActions(), lookups)));
         }
         return out;
     }
@@ -108,7 +109,10 @@ public class AutomationViews {
      * shows its type ("Send template", "Assign chat", "Add to CRM").
      */
     public List<String> actionSummaries(String workspaceId, List<AutomationAction> actions) {
-        Lookups lookups = new Lookups(workspaceId);
+        return actionSummaries(actions, new Lookups(workspaceId));
+    }
+
+    private List<String> actionSummaries(List<AutomationAction> actions, Lookups lookups) {
         List<String> out = new ArrayList<>();
         for (AutomationAction a : actions == null ? List.<AutomationAction>of() : actions) {
             String part = part(a, lookups);
