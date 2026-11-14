@@ -111,3 +111,6 @@ WhatsApp messages: take care sharing it or a backup.
   reports itself disconnected, `list_connected_browsers` then a new tab brings it back. To force failures, wrap
   `window.fetch` and stay on the page.
 - **Demo segments show 0 on purpose:** no deal has the gold tier and messages are recent.
+- **React Flow controlled nodes:** a card stays `visibility: hidden` until React Flow knows its size, and it forgets the
+  size whenever the node object is replaced unless `measured` is handed back (`FlowCanvas` keeps the `dimensions`
+  changes). Opening the editor with `?run=` broke this way on 2026-11-14: the run arrived right after mount.
