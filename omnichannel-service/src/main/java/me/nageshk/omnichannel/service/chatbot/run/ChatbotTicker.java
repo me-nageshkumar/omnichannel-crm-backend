@@ -17,7 +17,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.service.chatbot.node.RunContext;
 import me.nageshk.omnichannel.service.chatbot.node.SendMessageExecutor;
 import me.nageshk.omnichannel.service.chatbot.node.TaskAnswer;
-import me.nageshk.omnichannel.service.chatbot.settings.SettingsLayers;
+import me.nageshk.omnichannel.service.chatbot.settings.ChatbotSettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -48,10 +48,13 @@ public class ChatbotTicker implements TaskAnswerSource {
     private final RunClaims claims;
     private final ThreadPoolTaskExecutor pool;
     private final Clock clock;
+    private final ChatbotSettingsService settingsService;
 
     public ChatbotTicker(MongoTemplate mongo, ChatbotRepository chatbots, WaWebChatRepository chats,
             ContactRepository contacts, @Lazy ChatbotRunService runs, @Lazy ChatbotRunner runner, ChatbotSender sender,
-            RunClaims claims, ThreadPoolTaskExecutor chatbotExecutor, Clock clock) {
+            RunClaims claims, ThreadPoolTaskExecutor chatbotExecutor, Clock clock,
+            ChatbotSettingsService settingsService) {
+        this.settingsService = settingsService;
         this.mongo = mongo;
         this.chatbots = chatbots;
         this.chats = chats;
@@ -90,7 +93,9 @@ public class ChatbotTicker implements TaskAnswerSource {
                     new Update().set("reminderSent", true).unset("remindAt"), FindAndModifyOptions.options().returnNew(true), ChatbotRun.class);
             if (claimed == null) continue;
             RunContext ctx = contextFor(claimed);
+            // turned off since it was scheduled, or due no earlier than the end: no reminder (spec 2026-11-14 §4.3–§4.4)
             if (ctx == null || !ctx.settings().reminderOn()) continue;
+            if (run.getEndAt() != null && !run.getRemindAt().isBefore(run.getEndAt())) continue;
             try {
                 sender.send(ctx, SendMessageExecutor.textMessage(ctx.render(ctx.settings().reminderMessage())));
             } catch (RuntimeException e) {
@@ -139,7 +144,7 @@ public class ChatbotTicker implements TaskAnswerSource {
     private RunContext contextFor(ChatbotRun run) {
         Chatbot chatbot = chatbots.findById(run.getChatbotId()).orElse(null);
         if (chatbot == null) return null;
-        ChatbotSettings settings = SettingsLayers.resolve(SettingsLayers.over(chatbot.getSettings(), ChatbotSettings.codeDefaults().asLayer()));
+        ChatbotSettings settings = settingsService.resolve(chatbot.getWorkspaceId(), chatbot.getSettings());
         RunContext ctx = new RunContext(run, chatbot, null, settings,
                 run.getChatId() == null ? null : chats.findById(run.getChatId()).orElse(null),
                 run.getContactId() == null ? null : contacts.findById(run.getContactId()).orElse(null), clock.instant());

@@ -38,6 +38,7 @@ import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
 import me.nageshk.omnichannel.service.chatbot.node.Problem;
 import me.nageshk.omnichannel.service.chatbot.node.Severity;
 import me.nageshk.omnichannel.service.chatbot.node.ValidationContext;
+import me.nageshk.omnichannel.service.chatbot.settings.ChatbotSettingsService;
 import me.nageshk.omnichannel.service.chatbot.settings.SettingsLayers;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -71,10 +72,12 @@ public class ChatbotService {
     private final ObjectMapper mapper;
     private final OmnichannelProperties props;
     private final Clock clock;
+    private final ChatbotSettingsService settingsService;
 
     public ChatbotService(ChatbotRepository chatbots, ChatbotVersionRepository versions, WorkspaceRepository workspaces,
             UserRepository users, FlowParser parser, FlowValidator validator, MongoTemplate mongo, ObjectMapper mapper,
-            OmnichannelProperties props, Clock clock) {
+            OmnichannelProperties props, Clock clock, ChatbotSettingsService settingsService) {
+        this.settingsService = settingsService;
         this.chatbots = chatbots;
         this.versions = versions;
         this.workspaces = workspaces;
@@ -306,7 +309,8 @@ public class ChatbotService {
         Map<String, String> names = new HashMap<>();
         return new ChatbotView(c.getId(), c.getName(), c.getDescription(), c.getStatus(), c.getFlow(), c.getSettings(),
                 c.getVersionNumber(), c.getVersion(), ref(c.getCreatedBy(), names), c.getCreationTime(),
-                c.getLastUpdateTime(), c.getPublishedAt(), ref(c.getPublishedBy(), names));
+                c.getLastUpdateTime(), c.getPublishedAt(), ref(c.getPublishedBy(), names),
+                settingsService.inheritedFor(c.getWorkspaceId()), settingsService.inheritedSources(c.getWorkspaceId()));
     }
 
     private AutomationRef ref(String userId, Map<String, String> names) {

@@ -203,4 +203,62 @@ class ChatbotApiIT extends ChatbotTestBase {
         assertThat(o.has("templates")).isTrue();
         assertThat(o.has("agents")).isTrue();
     }
+
+    private ResponseEntity<JsonNode> saveSettings(JsonNode bot, Map<String, Object> settings) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("flow", mapper.convertValue(bot.get("flow"), Map.class));
+        body.put("settings", settings);
+        body.put("version", bot.get("version").asLong());
+        return bots(HttpMethod.PUT, "/" + bot.get("id").asString(), manager, body);
+    }
+
+    @Test
+    void newChatbotInheritsEverything() {
+        JsonNode bot = createChatbot("Inherits", flow(List.of(), List.of()));
+        bot.get("settings").properties().forEach(e -> assertThat(e.getValue().isNull()).as(e.getKey()).isTrue());
+        assertThat(bot.at("/inheritedSettings/endAfterMinutes").asInt()).isEqualTo(120);
+        assertThat(bot.at("/inheritedSources/endAfterMinutes").asString()).isEqualTo("PLATFORM");
+
+        Map<String, Object> own = new LinkedHashMap<>();
+        own.put("endAfterMinutes", 60);
+        Map<String, Object> brandSave = new LinkedHashMap<>();
+        brandSave.put("own", own);
+        brandSave.put("version", null);
+        assertThat(rest.exchange(url("/api/workspaces/" + brand.getId() + "/chatbots/settings"), HttpMethod.PUT,
+                auth(manager, brandSave), JsonNode.class).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        JsonNode again = bots(HttpMethod.GET, "/" + bot.get("id").asString(), manager, null).getBody();
+        assertThat(again.at("/inheritedSettings/endAfterMinutes").asInt()).isEqualTo(60);
+        assertThat(again.at("/inheritedSources/endAfterMinutes").asString()).isEqualTo("BRAND");
+        assertThat(again.at("/inheritedSources/retryMessage").asString()).isEqualTo("PLATFORM");
+    }
+
+    @Test
+    void chatbotLayerIsSavedAndChecked() {
+        JsonNode bot = createChatbot("Own layer", flow(List.of(), List.of()));
+        ResponseEntity<JsonNode> ok = saveSettings(bot, Map.of("endAfterMinutes", 30));
+        assertThat(ok.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ok.getBody().at("/chatbot/settings/endAfterMinutes").asInt()).isEqualTo(30);
+        assertThat(ok.getBody().at("/chatbot/settings/retryMessage").isNull()).isTrue();
+
+        ResponseEntity<JsonNode> bad = saveSettings(ok.getBody().get("chatbot"), Map.of("retryMessage", ""));
+        assertThat(bad.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(bad.getBody().toString()).contains("settings.retryMessage");
+    }
+
+    @Test
+    void oldShapeSaveIsAcceptedAsALayer() {
+        JsonNode bot = createChatbot("Old console", flow(List.of(), List.of()));
+        Map<String, Object> old = new LinkedHashMap<>();
+        old.put("reminderAfterMinutes", null);
+        old.put("reminderMessage", null);
+        old.put("endAfterMinutes", 120);
+        old.put("endMessage", null);
+        old.put("invalidReplyRetries", 2);
+        old.put("retryMessage", "Sorry, I didn't get that. Please choose one of the options.");
+        old.put("giveUpMessage", null);
+        old.put("stopOnAgentReply", true);
+
+        assertThat(saveSettings(bot, old).getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
 }
