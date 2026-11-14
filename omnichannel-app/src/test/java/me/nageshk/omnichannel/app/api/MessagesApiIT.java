@@ -40,6 +40,7 @@ class MessagesApiIT {
     @Autowired me.nageshk.omnichannel.app.support.TestDevices testDevices;
     String deviceToken;
     String deviceKey;
+    String phoneNumberId;
     String bridge;
 
     @BeforeEach
@@ -48,6 +49,7 @@ class MessagesApiIT {
         deviceToken = testUsers.accessToken(testUsers.create("root", "pw", "SUPER_ADMIN", null));
         var connected = testDevices.connected("919928088743");
         deviceKey = connected.deviceKey();
+        phoneNumberId = connected.phoneNumberId();
         bridge = "/api/phone-numbers/" + connected.phoneNumberId() + "/bridge";
     }
 
@@ -90,7 +92,7 @@ class MessagesApiIT {
         String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(phoneNumberId);
 
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() ->
                     postMessage(token, "{\"chatId\":\"1@c.us\",\"content\":\"hello\",\"options\":{\"linkPreview\":false}}"));
@@ -118,7 +120,7 @@ class MessagesApiIT {
         String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(phoneNumberId);
 
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() ->
                     postMessage(token, "{\"chatId\":\"bad\",\"content\":\"x\"}"));
@@ -137,7 +139,7 @@ class MessagesApiIT {
         String token = deviceToken;
         try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(phoneNumberId);
 
             ResponseEntity<JsonNode> res = postMessage(token, "{\"chatId\":\"1@c.us\",\"content\":\"x\"}");
             assertThat(res.getStatusCode()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
@@ -161,7 +163,7 @@ class MessagesApiIT {
 
         try (FakeDevice device = FakeDevice.connectAndAuth(port, deviceKey)) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(phoneNumberId);
             ResponseEntity<JsonNode> after = rest.exchange(bridge + "/status", HttpMethod.GET,
                     new HttpEntity<>(authHeaders(token)), JsonNode.class);
             assertThat(after.getBody().get("deviceConnected").asBoolean()).isTrue();

@@ -96,7 +96,7 @@ class CampaignChatIT extends InboxApiTestBase {
             Consumer<Envelope> beforeAnswer) throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<MessageView> sent = CompletableFuture.supplyAsync(() -> newChats.startForCampaign(
                     DIWALI, brand.getId(), number.getId(), phone, remoteId,
                     new SendRequest(null, templateId, values)).join());

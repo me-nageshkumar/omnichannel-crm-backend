@@ -80,7 +80,7 @@ class CloudSendApiIT extends InboxApiTestBase {
     private Exchange viaDevice(String token, String url, String json, Function<Envelope, Envelope> answer) throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() -> post(token, url, json));
             Envelope req = device.next();
             if ("getNumberId".equals(req.method())) {

@@ -128,7 +128,7 @@ class InboxMediaIT extends InboxApiTestBase {
             Function<Envelope, Envelope> answer) throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<ResponseEntity<T>> http = CompletableFuture.supplyAsync(get);
             Envelope req = device.next();
             assertThat(req.method()).isEqualTo("downloadMedia");
@@ -165,7 +165,7 @@ class InboxMediaIT extends InboxApiTestBase {
         upserts.events.clear();
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<ResponseEntity<byte[]>> http = CompletableFuture.supplyAsync(
                     () -> bytes(managerToken, chat, m));
             Envelope req = device.next();
@@ -267,7 +267,7 @@ class InboxMediaIT extends InboxApiTestBase {
         WaWebChat chat = chatWithAarav();
         WaWebMessage m = imageMessage(chat);
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
-            Thread.sleep(200);
+            testDevices.awaitConnected(number);
 
             ResponseEntity<JsonNode> res = json(managerToken, chat, m);
 
@@ -323,7 +323,7 @@ class InboxMediaIT extends InboxApiTestBase {
         WaWebMessage big = messages.save(m);
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
 
             ResponseEntity<JsonNode> res = json(managerToken, chat, big);
 
@@ -351,7 +351,7 @@ class InboxMediaIT extends InboxApiTestBase {
         WaWebMessage m = message(chat, 10, "just text");
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
 
             assertThat(json(managerToken, chat, m).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
             assertThat(device.poll(Duration.ofMillis(300))).isEmpty();
@@ -386,7 +386,7 @@ class InboxMediaIT extends InboxApiTestBase {
 
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             HttpHeaders h = new HttpHeaders();
             h.setBearerAuth(managerToken);
             h.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);

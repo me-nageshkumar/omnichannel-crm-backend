@@ -103,7 +103,7 @@ class NumberLookupIT extends InboxApiTestBase {
             throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(
                     () -> get(token, phone, force));
             Envelope req = device.next();
@@ -117,7 +117,7 @@ class NumberLookupIT extends InboxApiTestBase {
     private ResponseEntity<JsonNode> getUntouched(String token, String phone, boolean force) throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             ResponseEntity<JsonNode> res = get(token, phone, force);
             assertThat(device.poll(Duration.ofMillis(300))).isEmpty();
             return res;
@@ -215,7 +215,7 @@ class NumberLookupIT extends InboxApiTestBase {
     void theDeviceErrorIsKeptAsTheCause() throws Exception {
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<NumberLookup> call = service.lookup(brand.getId(), number.getId(), "919811111111", false);
             Envelope req = device.next();
             device.send(Envelope.errorResponse(req.id(), "PAGE_ERROR", "boom"));
@@ -241,7 +241,7 @@ class NumberLookupIT extends InboxApiTestBase {
         // the device receives the request and never answers; omnichannel.rpc.timeout=2s
         try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
             device.send(Envelope.event("ready", ready()));
-            Thread.sleep(200);
+            testDevices.awaitReady(number);
             CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(
                     () -> get(agentToken, "919811111111", false));
             assertThat(device.next().method()).isEqualTo("getNumberId");
