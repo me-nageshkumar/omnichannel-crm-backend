@@ -16,8 +16,11 @@ public class TestDevices {
     private final PhoneNumberRepository numbers;
     private final PhoneNumberService service;
     private final DeviceKeys keys;
+    private final me.nageshk.omnichannel.service.inbox.InboxDevices devices;
 
-    public TestDevices(TestUsers testUsers, PhoneNumberRepository numbers, PhoneNumberService service, DeviceKeys keys) {
+    public TestDevices(TestUsers testUsers, PhoneNumberRepository numbers, PhoneNumberService service, DeviceKeys keys,
+            me.nageshk.omnichannel.service.inbox.InboxDevices devices) {
+        this.devices = devices;
         this.testUsers = testUsers;
         this.numbers = numbers;
         this.service = service;
@@ -42,5 +45,19 @@ public class TestDevices {
 
     public DeviceKeys.Connected redeem(PhoneNumber n) {
         return keys.redeem(service.issueConnectCode(n).code(), "127.0.0.1");
+    }
+
+    /**
+     * Waits until the server counts the number as ready to send (its device confirmed and WhatsApp connected): the
+     * "ready" event is handled asynchronously, so a fixed sleep loses the race under a busy parallel run.
+     */
+    public void awaitReady(PhoneNumber n, java.time.Duration timeout) throws InterruptedException {
+        long end = System.nanoTime() + timeout.toNanos();
+        while (!devices.isReady(n.getWorkspaceId(), n.getId())) {
+            if (System.nanoTime() > end) {
+                throw new IllegalStateException("number " + n.getId() + " not ready after " + timeout);
+            }
+            Thread.sleep(20);
+        }
     }
 }
