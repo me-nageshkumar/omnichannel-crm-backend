@@ -164,11 +164,14 @@ as kept history, no TTL.
   re-delivers any DONE/FAILED row still undelivered after 10 s. The run claim (`claimForAnswer`) makes double
   delivery harmless.
 - Timeouts: provider request 60 s, turn 120 s (`omnichannel.ai.*`). The chatbot ticker treats an expired AI_RESPONSE
-  wait as a failed turn (node takes `failure`).
-- **Messages that arrive while the AI is thinking** (conversation mode): the reply listener, when its WHATSAPP_REPLY
-  claim fails, appends the message id to the run's new `pendingReplies` list if the run waits on AI_RESPONSE for that
-  chat (atomic `$push` + `$inc version` on `status=WAITING, waiting.kind=AI_RESPONSE, chatId`). When the turn comes
-  back with `pendingReplies` non-empty:
+  wait as a failed turn (node takes `failure`). While a run waits on AI_RESPONSE no reminder or inactivity end runs
+  (as for Wait timers), since the bot itself is busy.
+- **Messages that arrive while the AI is thinking** (conversation mode): the inbox is the queue (plan ruling R1,
+  replacing an earlier `pendingReplies` field that would race the runner's own save). The node keeps
+  `consumedUntil`, the `creationTime` of the last customer message it gave the AI, and reads unconsumed inbound
+  messages of the chat (`creationTime > consumedUntil`, `timestamp` not before the conversation start, real types)
+  when a turn comes back and before every WHATSAPP_REPLY wait. When a turn comes
+  back with unconsumed messages:
   - if the turn **called no tool and no finish**, the node does not send the reply; it starts a new turn from the same
     base state (OpenAI: the same previous response id, so the unsent reply never enters the chain) with all unanswered
     customer messages joined. At most 2 supersedes, then the reply is sent and the rest becomes the next turn.
@@ -209,7 +212,8 @@ else profile save fails with "This provider cannot connect to MCP servers itself
   leaseUntil, deliveredAt, input text, reply text, finish, toolCalls[{name, ms, ok, resultExcerpt}], usage, latencyMs,
   errorCode, error, createdAt, finishedAt`. Indexes `{status, leaseUntil}`, `{workspaceId, createdAt}`, `{runId}`.
   Kept, no TTL.
-- `ChatbotRun.pendingReplies: List<String>` (message ids).
+- No new run field: the node's state (`conversationId, turns, lastCallId, consumedUntil, startedAt`) lives under
+  `run.variables[nodeName]`.
 - **Secrets** (`common.secret`): `SealedSecret{keyId, iv, ciphertext}` with AES-256-GCM; master keys from
   `omnichannel.secrets.keys` (`OMNICHANNEL_SECRETS_KEYS`, `id:base64` list, first one seals, all can open, so keys can
   rotate). The app refuses to save a secret when no key is configured (clear 503 message), the test profile has a
