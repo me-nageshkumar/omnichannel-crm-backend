@@ -27,7 +27,7 @@ public class Chatbot {
     private String description;
     private ChatbotStatus status;
     private Map<String, Object> flow;
-    private ChatbotSettings settings;
+    private ChatbotSettingsLayer settings;
     private int versionNumber;
     @Version
     private Long version;

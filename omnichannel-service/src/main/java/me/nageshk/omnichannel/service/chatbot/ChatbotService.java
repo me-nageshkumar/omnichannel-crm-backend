@@ -19,7 +19,7 @@ import me.nageshk.omnichannel.db.chatbot.Chatbot;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
-import me.nageshk.omnichannel.db.chatbot.ChatbotSettings;
+import me.nageshk.omnichannel.db.chatbot.ChatbotSettingsLayer;
 import me.nageshk.omnichannel.db.chatbot.ChatbotStatus;
 import me.nageshk.omnichannel.db.chatbot.ChatbotVersion;
 import me.nageshk.omnichannel.db.chatbot.ChatbotVersionRepository;
@@ -38,6 +38,8 @@ import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
 import me.nageshk.omnichannel.service.chatbot.node.Problem;
 import me.nageshk.omnichannel.service.chatbot.node.Severity;
 import me.nageshk.omnichannel.service.chatbot.node.ValidationContext;
+import me.nageshk.omnichannel.service.chatbot.settings.ChatbotSettingsService;
+import me.nageshk.omnichannel.service.chatbot.settings.SettingsLayers;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Sort;
@@ -70,10 +72,12 @@ public class ChatbotService {
     private final ObjectMapper mapper;
     private final OmnichannelProperties props;
     private final Clock clock;
+    private final ChatbotSettingsService settingsService;
 
     public ChatbotService(ChatbotRepository chatbots, ChatbotVersionRepository versions, WorkspaceRepository workspaces,
             UserRepository users, FlowParser parser, FlowValidator validator, MongoTemplate mongo, ObjectMapper mapper,
-            OmnichannelProperties props, Clock clock) {
+            OmnichannelProperties props, Clock clock, ChatbotSettingsService settingsService) {
+        this.settingsService = settingsService;
         this.chatbots = chatbots;
         this.versions = versions;
         this.workspaces = workspaces;
@@ -98,7 +102,7 @@ public class ChatbotService {
         flow.put("nodes", List.of());
         flow.put("edges", List.of());
         c.setFlow(flow);
-        c.setSettings(ChatbotSettings.defaults());
+        c.setSettings(ChatbotSettingsLayer.empty());
         c.setVersionNumber(0);
         c.setCreatedBy(me.userId());
         c.setCreationTime(clock.instant());
@@ -154,7 +158,7 @@ public class ChatbotService {
         if (r.description() != null) c.setDescription(r.description().strip().isEmpty() ? null : r.description().strip());
         Map<String, Object> flowMap = r.flow() == null ? c.getFlow() : r.flow();
         Flow flow = parser.parse(flowMap);
-        if (r.settings() != null) c.setSettings(checkSettings(r.settings()));
+        if (r.settings() != null) c.setSettings(SettingsLayers.check(r.settings(), "settings", false));
         Instant now = clock.instant();
         if (graphChanged(c, flowMap)) {
             ChatbotVersion v = new ChatbotVersion();
@@ -254,29 +258,6 @@ public class ChatbotService {
         return new DuplicateException("name", "\"" + name + "\" already exists in this brand");
     }
 
-    static ChatbotSettings checkSettings(ChatbotSettings s) {
-        Map<String, String> errors = new LinkedHashMap<>();
-        if (s.reminderAfterMinutes() != null && (s.reminderAfterMinutes() < 1 || s.reminderAfterMinutes() > 1440)) {
-            errors.put("settings.reminderAfterMinutes", "must be 1 to 1440 minutes");
-        }
-        if (s.reminderAfterMinutes() != null && (s.reminderMessage() == null || s.reminderMessage().isBlank())) {
-            errors.put("settings.reminderMessage", "is required when the reminder is on");
-        }
-        if (s.endAfterMinutes() < 5 || s.endAfterMinutes() > 2880) errors.put("settings.endAfterMinutes", "must be 5 to 2880 minutes");
-        if (s.invalidReplyRetries() < 0 || s.invalidReplyRetries() > 5) errors.put("settings.invalidReplyRetries", "must be 0 to 5");
-        if (s.retryMessage() == null || s.retryMessage().isBlank()) errors.put("settings.retryMessage", "is required");
-        Map<String, String> texts = new LinkedHashMap<>();
-        texts.put("settings.reminderMessage", s.reminderMessage());
-        texts.put("settings.endMessage", s.endMessage());
-        texts.put("settings.retryMessage", s.retryMessage());
-        texts.put("settings.giveUpMessage", s.giveUpMessage());
-        for (var e : texts.entrySet()) {
-            if (e.getValue() != null && e.getValue().length() > 1024) errors.put(e.getKey(), "must be at most 1024 characters");
-        }
-        if (!errors.isEmpty()) throw new ValidationException(errors);
-        return s;
-    }
-
     /** True when the nodes or edges differ from the newest version's (canvas-only keys ignored). */
     private boolean graphChanged(Chatbot c, Map<String, Object> flow) {
         String now = signature(flow);
@@ -328,7 +309,8 @@ public class ChatbotService {
         Map<String, String> names = new HashMap<>();
         return new ChatbotView(c.getId(), c.getName(), c.getDescription(), c.getStatus(), c.getFlow(), c.getSettings(),
                 c.getVersionNumber(), c.getVersion(), ref(c.getCreatedBy(), names), c.getCreationTime(),
-                c.getLastUpdateTime(), c.getPublishedAt(), ref(c.getPublishedBy(), names));
+                c.getLastUpdateTime(), c.getPublishedAt(), ref(c.getPublishedBy(), names),
+                settingsService.inheritedFor(c.getWorkspaceId()), settingsService.inheritedSources(c.getWorkspaceId()));
     }
 
     private AutomationRef ref(String userId, Map<String, String> names) {

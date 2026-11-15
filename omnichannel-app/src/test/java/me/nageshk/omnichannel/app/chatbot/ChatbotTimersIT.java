@@ -81,7 +81,7 @@ class ChatbotTimersIT extends ChatbotTestBase {
     void reminderSentOnce() throws Exception {
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
         String id = publish(withSettings(createChatbot("Bot", askFlow()),
-                Map.of("reminderAfterMinutes", 5, "reminderMessage", "Still there?")));
+                Map.of("reminderOn", true, "reminderAfterMinutes", 5, "reminderMessage", "Still there?")));
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
             ChatbotRun run = start(id, chat);
             assertThat(run.getRemindAt()).isEqualTo(clock.instant().plus(Duration.ofMinutes(5)));

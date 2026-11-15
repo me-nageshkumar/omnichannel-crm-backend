@@ -19,7 +19,7 @@ public final class ChatbotTimers {
             run.setEndAt(null);
             return;
         }
-        if (settings.reminderAfterMinutes() != null && !run.isReminderSent()) {
+        if (settings.reminderOn() && !run.isReminderSent()) {
             run.setRemindAt(now.plus(Duration.ofMinutes(settings.reminderAfterMinutes())));
         } else {
             run.setRemindAt(null);

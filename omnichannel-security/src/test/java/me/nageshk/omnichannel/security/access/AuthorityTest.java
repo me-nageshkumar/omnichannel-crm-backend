@@ -13,7 +13,14 @@ class AuthorityTest {
     @Test
     void codesAreUnique() {
         Set<String> codes = Arrays.stream(Authority.values()).map(Authority::code).collect(Collectors.toSet());
-        assertThat(codes).hasSize(Authority.values().length).hasSize(49);
+        assertThat(codes).hasSize(Authority.values().length).hasSize(50);
+    }
+
+    @Test
+    void chatbotDefaultsIsAPlatformCodeNoRoleGetsByDefault() {
+        assertThat(Authority.CHATBOT_DEFAULTS_MANAGE.code()).isEqualTo("chatbot-defaults:manage");
+        assertThat(Authority.CHATBOT_DEFAULTS_MANAGE.level()).isEqualTo(me.nageshk.omnichannel.db.access.RoleLevel.PLATFORM);
+        assertThat(Authority.CHATBOT_DEFAULTS_MANAGE.defaultRoles()).isEmpty();
     }
 
     @Test

@@ -29,6 +29,7 @@ import me.nageshk.omnichannel.service.chatbot.node.NodeExecutors;
 import me.nageshk.omnichannel.service.chatbot.node.RunContext;
 import me.nageshk.omnichannel.service.chatbot.node.StepResult;
 import me.nageshk.omnichannel.service.chatbot.node.TaskAnswer;
+import me.nageshk.omnichannel.service.chatbot.settings.ChatbotSettingsService;
 import me.nageshk.omnichannel.service.inbox.InboxEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,12 +64,14 @@ public class ChatbotRunner {
     private final ApplicationEventPublisher publisher;
     private final OmnichannelProperties props;
     private final Clock clock;
+    private final ChatbotSettingsService settingsService;
 
     public ChatbotRunner(ChatbotRepository chatbots, ChatbotVersionRepository versions, ChatbotRunRepository runs,
             WaWebChatRepository chats, ContactRepository contacts, FlowParser parser, NodeExecutors executors,
             ChatbotSender sender, ChatPointer pointer, RunClaims claims, @Lazy ChatbotRunService service,
             @Lazy ThreadPoolTaskExecutor chatbotExecutor, ApplicationEventPublisher publisher,
-            OmnichannelProperties props, Clock clock) {
+            OmnichannelProperties props, Clock clock, ChatbotSettingsService settingsService) {
+        this.settingsService = settingsService;
         this.chatbots = chatbots;
         this.versions = versions;
         this.runs = runs;
@@ -115,7 +118,7 @@ public class ChatbotRunner {
         Map<String, Object> flowMap = versions.findByChatbotIdAndVersionNumber(chatbot.getId(), run.getVersionNumber())
                 .map(v -> v.getFlow()).orElse(chatbot.getFlow());
         Flow flow = parser.parse(flowMap);
-        ChatbotSettings settings = chatbot.getSettings() == null ? ChatbotSettings.defaults() : chatbot.getSettings();
+        ChatbotSettings settings = settingsService.resolve(chatbot.getWorkspaceId(), chatbot.getSettings());
         WaWebChat chat = run.getChatId() == null ? null : chats.findById(run.getChatId()).orElse(null);
         Contact contact = run.getContactId() == null ? null : contacts.findById(run.getContactId()).orElse(null);
         RunContext ctx = new RunContext(run, chatbot, flow, settings, chat, contact, clock.instant());
