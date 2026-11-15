@@ -21,6 +21,10 @@ logging:
     me.nageshk.omnichannel: INFO
 
 omnichannel:
+  # Sealing keys for stored secrets such as AI provider keys: id:base64-of-32-bytes, the first seals, any open.
+  # Unset means secrets cannot be saved (the server still starts).
+  secrets:
+    keys: ${OMNICHANNEL_SECRETS_KEYS:}
   # Cloud interactive messages sent over the bridge are a link to a page here: the public HTTPS origin WhatsApp
   # fetches the preview from. For a local check run a tunnel and point this at it.
   pages:

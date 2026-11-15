@@ -1,4 +1,4 @@
-package me.nageshk.omnichannel.service.chatbot.node;
+package me.nageshk.omnichannel.common.net;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;

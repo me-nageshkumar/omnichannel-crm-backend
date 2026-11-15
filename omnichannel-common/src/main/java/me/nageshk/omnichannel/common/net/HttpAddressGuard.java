@@ -1,4 +1,4 @@
-package me.nageshk.omnichannel.service.chatbot.node;
+package me.nageshk.omnichannel.common.net;
 
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * Keeps the HTTP request node off the server's own network (spec §6): loopback, link-local, site-local and
+ * Keeps outgoing HTTP calls (HTTP request node, AI providers) off the server's own network (spec §6): loopback, link-local, site-local and
  * unique-local addresses and local host names are refused, after resolution. Tests may switch the check off.
  */
 @Component
