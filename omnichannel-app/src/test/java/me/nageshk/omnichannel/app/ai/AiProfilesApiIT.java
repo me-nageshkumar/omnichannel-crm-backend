@@ -311,6 +311,62 @@ class AiProfilesApiIT extends AiTestBase {
         assertThat(field(bad, "mcpServers.1.secret")).isNotBlank();
     }
 
+    private JsonNode withServer() {
+        String conn = connection("Main", "openai");
+        Map<String, Object> b = profile("P", conn);
+        Map<String, Object> m = mcp("crm", "https://a.example.com/x", "PROVIDER", "HEADER", SECRET);
+        m.put("headerName", "X-Api-Key");
+        b.put("mcpServers", List.of(m));
+        return create(b).getBody();
+    }
+
+    private ResponseEntity<JsonNode> putServer(JsonNode v, Map<String, Object> change) {
+        JsonNode s = v.get("mcpServers").get(0);
+        Map<String, Object> server = mcp("crm", s.get("url").asString(), s.get("connectBy").asString(), "HEADER", null);
+        server.put("id", s.get("id").asString());
+        server.put("headerName", s.get("headerName").asString());
+        server.putAll(change);
+        Map<String, Object> b = profile("P", v.get("connectionId").asString());
+        b.put("mcpServers", List.of(server));
+        b.put("version", v.get("version").asLong());
+        return ai(HttpMethod.PUT, "/profiles/" + v.get("id").asString(), manager, b);
+    }
+
+    @Test
+    void keptSecretDoesNotFollowAChangedDestination() {
+        JsonNode v = withServer();
+        assertThat(field(putServer(v, Map.of("url", "https://attacker.example/")), "mcpServers.0.secret"))
+                .isEqualTo("is required when the address changes");
+        field(putServer(v, Map.of("url", "https://a.example.com:8443/x")), "mcpServers.0.secret");
+        field(putServer(v, Map.of("url", "https://a.example.com/x", "connectBy", "APP")), "mcpServers.0.secret");
+        field(putServer(v, Map.of("headerName", "X-Other")), "mcpServers.0.secret");
+        org.bson.Document before = mongo.findOne(new Query(), org.bson.Document.class, "aiProfiles");
+        String cipher = ((org.bson.Document) ((List<?>) before.get("mcpServers")).get(0)).get("secret",
+                org.bson.Document.class).getString("ciphertext");
+
+        assertThat(putServer(v, Map.of("url", "https://a.example.com/other")).getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode v2 = ai(HttpMethod.GET, "/profiles/" + v.get("id").asString(), manager, null).getBody();
+        ResponseEntity<JsonNode> moved = putServer(v2, Map.of("url", "https://b.example.com/x", "secret", "fresh-secret-4321"));
+        assertThat(moved.getStatusCode()).isEqualTo(HttpStatus.OK);
+        org.bson.Document after = mongo.findOne(new Query(), org.bson.Document.class, "aiProfiles");
+        assertThat(((org.bson.Document) ((List<?>) after.get("mcpServers")).get(0)).get("secret", org.bson.Document.class)
+                .getString("ciphertext")).isNotEqualTo(cipher);
+    }
+
+    @Test
+    void repeatedMcpServerIdIs400() {
+        JsonNode v = withServer();
+        JsonNode s = v.get("mcpServers").get(0);
+        Map<String, Object> one = mcp("crm", "https://a.example.com/x", "PROVIDER", "NONE", null);
+        one.put("id", s.get("id").asString());
+        Map<String, Object> two = mcp("crm2", "https://a.example.com/x", "PROVIDER", "NONE", null);
+        two.put("id", s.get("id").asString());
+        Map<String, Object> b = profile("P", v.get("connectionId").asString());
+        b.put("mcpServers", List.of(one, two));
+        assertThat(field(ai(HttpMethod.PUT, "/profiles/" + v.get("id").asString(), manager, b), "mcpServers.1.id"))
+                .isEqualTo("is used twice");
+    }
+
     @Test
     void deleteUsedByDraftOrPublishedIs409() {
         String conn = connection("Main", "openai");

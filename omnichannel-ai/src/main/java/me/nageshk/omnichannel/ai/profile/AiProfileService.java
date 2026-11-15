@@ -173,13 +173,15 @@ public class AiProfileService {
     private List<McpServer> mcpServers(List<McpSave> in, Map<String, McpServer> stored, Map<String, String> errors) {
         List<McpServer> out = new ArrayList<>();
         Set<String> labels = new HashSet<>();
+        Set<String> ids = new HashSet<>();
         for (int i = 0; i < in.size(); i++) {
             McpSave s = in.get(i);
             String at = "mcpServers." + i + ".";
             McpServer old = null;
             if (s.id() != null && !s.id().isBlank()) {
                 old = stored.get(s.id());
-                if (old == null) errors.put(at + "id", "is not a server of this profile");
+                if (!ids.add(s.id())) errors.put(at + "id", "is used twice");
+                else if (old == null) errors.put(at + "id", "is not a server of this profile");
             }
             if (s.label() == null || !LABEL.matcher(s.label()).matches()) {
                 errors.put(at + "label", "must be 1 to 20 characters: a-z, 0-9 and _");
@@ -196,8 +198,11 @@ public class AiProfileService {
             }
             boolean newSecret = s.secret() != null && !s.secret().isBlank();
             if (newSecret && s.secret().length() > 4000) errors.put(at + "secret", "is too long");
-            boolean keep = old != null && old.getSecret() != null && old.getAuth() == auth;
-            if (auth != McpAuth.NONE && !newSecret && !keep) errors.put(at + "secret", "is required");
+            boolean hadSecret = old != null && old.getSecret() != null && old.getAuth() == auth;
+            boolean keep = hadSecret && sameDestination(old, url, s.connectBy(), header);
+            if (auth != McpAuth.NONE && !newSecret && !keep) {
+                errors.put(at + "secret", hadSecret ? "is required when the address changes" : "is required");
+            }
             List<String> tools = clean(s.allowedTools());
             if (tools.size() > 50) errors.put(at + "allowedTools", "at most 50 tools");
             else if (tools.stream().anyMatch(t -> t.length() > 200)) errors.put(at + "allowedTools", "a tool name is too long");
@@ -245,6 +250,20 @@ public class AiProfileService {
                             "This provider cannot connect to MCP servers itself; choose Our app");
                 }
             }
+        }
+    }
+
+    /** A stored secret may go only where it was sent before: same scheme, host and port, connector and header. */
+    private static boolean sameDestination(McpServer old, String url, ConnectBy connectBy, String header) {
+        if (old.getConnectBy() != connectBy) return false;
+        if (old.getAuth() == McpAuth.HEADER && !Objects.equals(old.getHeaderName(), header)) return false;
+        try {
+            URI a = URI.create(old.getUrl());
+            URI b = URI.create(url);
+            return Objects.equals(a.getScheme(), b.getScheme()) && a.getHost() != null
+                    && a.getHost().equalsIgnoreCase(b.getHost()) && a.getPort() == b.getPort();
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 
