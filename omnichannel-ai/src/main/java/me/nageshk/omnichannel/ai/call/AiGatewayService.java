@@ -27,7 +27,7 @@ import me.nageshk.omnichannel.common.api.ValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Service;
 
 /** The AI module's door for other modules: turns go onto the queue here and come back through the listeners. */
@@ -44,13 +44,13 @@ public class AiGatewayService implements AiGateway {
     private final AiCallRepository calls;
     private final AiTurnQueue queue;
     private final AiTurnWorker worker;
-    private final ThreadPoolTaskExecutor pool;
+    private final ThreadPoolTaskScheduler ticker;
     private final AiProperties props;
     private final Clock clock;
 
     public AiGatewayService(AiProfileRepository profiles, AiConnectionRepository connections, AiProviders providers,
             AiProfileService profileService, AiConversationRepository conversations, AiCallRepository calls,
-            AiTurnQueue queue, AiTurnWorker worker, @Qualifier("aiExecutor") ThreadPoolTaskExecutor pool,
+            AiTurnQueue queue, AiTurnWorker worker, @Qualifier("aiScheduler") ThreadPoolTaskScheduler ticker,
             AiProperties props, Clock clock) {
         this.profiles = profiles;
         this.connections = connections;
@@ -60,7 +60,7 @@ public class AiGatewayService implements AiGateway {
         this.calls = calls;
         this.queue = queue;
         this.worker = worker;
-        this.pool = pool;
+        this.ticker = ticker;
         this.props = props;
         this.clock = clock;
     }
@@ -89,11 +89,12 @@ public class AiGatewayService implements AiGateway {
         return id;
     }
 
+    /** On the tick thread, not the AI pool: a tick on a pool thread would count itself as busy. */
     private void wake() {
         try {
-            pool.execute(worker::tick);
+            ticker.execute(worker::tick);
         } catch (RuntimeException e) {
-            log.info("the AI pool is busy; the next scheduled tick picks the turn up ({})", e.toString());
+            log.info("the AI tick thread is busy; the next scheduled tick picks the turn up ({})", e.toString());
         }
     }
 

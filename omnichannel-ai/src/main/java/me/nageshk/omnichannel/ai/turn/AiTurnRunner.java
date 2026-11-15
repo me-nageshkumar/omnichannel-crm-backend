@@ -19,6 +19,7 @@ import me.nageshk.omnichannel.ai.api.TurnResult;
 import me.nageshk.omnichannel.ai.call.AiCall;
 import me.nageshk.omnichannel.ai.call.AiCallRepository;
 import me.nageshk.omnichannel.ai.call.AiCallStatus;
+import me.nageshk.omnichannel.ai.call.AiTurnQueue;
 import me.nageshk.omnichannel.ai.config.AiProperties;
 import me.nageshk.omnichannel.ai.connection.AiConnectionService;
 import me.nageshk.omnichannel.ai.conversation.AiConversation;
@@ -70,8 +71,10 @@ public class AiTurnRunner {
 
     private static final Logger log = LoggerFactory.getLogger(AiTurnRunner.class);
     private static final List<Duration> BACKOFF = List.of(Duration.ofSeconds(1), Duration.ofSeconds(4));
-    /** The worker's lease is turnTimeout + this; no round may start that could outlive it. */
+    /** The worker's lease is turnTimeout + this (MongoAiTurnQueue); the fallback when a call carries no lease. */
     private static final Duration LEASE_SLACK = Duration.ofSeconds(30);
+    /** Kept free at the end of the lease for staging the result and writing the conversation. */
+    private static final Duration SAFETY = Duration.ofSeconds(5);
     private static final int EXCERPT = 500;
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -80,24 +83,27 @@ public class AiTurnRunner {
     private final McpClient mcp;
     private final AiConversationRepository conversations;
     private final AiCallRepository calls;
+    private final AiTurnQueue queue;
     private final AiProperties props;
     private final Clock clock;
     private final Sleeper sleeper;
 
     @Autowired
     public AiTurnRunner(AiProfileService profiles, AiConnectionService connections, McpClient mcp,
-            AiConversationRepository conversations, AiCallRepository calls, AiProperties props, Clock clock) {
-        this(profiles, connections, mcp, conversations, calls, props, clock, d -> Thread.sleep(d.toMillis()));
+            AiConversationRepository conversations, AiCallRepository calls, AiTurnQueue queue, AiProperties props,
+            Clock clock) {
+        this(profiles, connections, mcp, conversations, calls, queue, props, clock, d -> Thread.sleep(d.toMillis()));
     }
 
     AiTurnRunner(AiProfileService profiles, AiConnectionService connections, McpClient mcp,
-            AiConversationRepository conversations, AiCallRepository calls, AiProperties props, Clock clock,
-            Sleeper sleeper) {
+            AiConversationRepository conversations, AiCallRepository calls, AiTurnQueue queue, AiProperties props,
+            Clock clock, Sleeper sleeper) {
         this.profiles = profiles;
         this.connections = connections;
         this.mcp = mcp;
         this.conversations = conversations;
         this.calls = calls;
+        this.queue = queue;
         this.props = props;
         this.clock = clock;
         this.sleeper = sleeper;
@@ -137,7 +143,10 @@ public class AiTurnRunner {
         long started = System.nanoTime();
         Tally tally = new Tally();
         try {
-            turn(call, tally);
+            if (turn(call, tally)) {
+                call.setFinishedAt(clock.instant());
+                return call.toResult();
+            }
         } catch (TurnFailure f) {
             call.fail(f.code, f.getMessage());
         } catch (AiProviderException e) {
@@ -158,18 +167,33 @@ public class AiTurnRunner {
         return call.toResult();
     }
 
-    private void turn(AiCall call, Tally tally) {
+    /** True when the call had already been applied by an earlier claim and was finished from its staged result. */
+    private boolean turn(AiCall call, Tally tally) {
         Instant start = clock.instant();
-        Instant leaseEnd = start.plus(props.turnTimeout()).plus(LEASE_SLACK);
-        // a round (or a retry) starts only while a full provider request still fits inside the lease
-        Instant deadline = leaseEnd.minus(props.requestTimeout());
-        if (deadline.isAfter(start.plus(props.turnTimeout()))) deadline = start.plus(props.turnTimeout());
+        // the lease runs from the claim, not from when a thread took the call; a round (or a retry, or a tool call)
+        // starts only while a full provider request or tool call still fits inside it
+        Instant leaseEnd = call.getLeaseUntil() != null ? call.getLeaseUntil()
+                : start.plus(props.turnTimeout()).plus(LEASE_SLACK);
+        Duration longest = props.requestTimeout().compareTo(props.mcp().toolTimeout()) >= 0 ? props.requestTimeout()
+                : props.mcp().toolTimeout();
+        Instant deadline = leaseEnd.minus(longest).minus(SAFETY);
+        if (deadline.isBefore(start)) deadline = start;
         TurnRequest r = call.turnRequest();
         String ws = call.getWorkspaceId();
-        ResolvedProfile rp = profiles.resolved(ws, r.profileId());
-        AiProvider provider = rp.provider();
         AiConversation conv = conversations.findByIdAndWorkspaceId(call.getConversationId(), ws)
                 .orElseThrow(() -> new TurnFailure("NOT_FOUND", "The AI conversation is gone"));
+        if (call.getId() != null && call.getId().equals(conv.getLastCallId())) {
+            // an earlier claim of this call already moved the conversation on, then died before finishing the row
+            if (call.getStagedAt() == null) {
+                throw new TurnFailure("INTERRUPTED", "The turn was applied but its result was lost");
+            }
+            call.setStatus(AiCallStatus.DONE);
+            call.setErrorCode(null);
+            call.setError(null);
+            return true;
+        }
+        ResolvedProfile rp = profiles.resolved(ws, r.profileId());
+        AiProvider provider = rp.provider();
         if (!Objects.equals(conv.getProvider(), provider.id())) {
             throw new TurnFailure("PROVIDER_CHANGED", "This conversation was held with " + conv.getProvider()
                     + ", but the profile's connection now uses " + provider.id());
@@ -232,7 +256,7 @@ public class AiTurnRunner {
         Map<String, Object> newState;
         int rounds = 0;
         while (true) {
-            if (rounds > 0 && clock.instant().isAfter(deadline)) {
+            if (clock.instant().isAfter(deadline)) {
                 throw new TurnFailure("TIMEOUT",
                         "The turn ran out of time (" + props.turnTimeout().toSeconds() + " s) between tool rounds");
             }
@@ -257,12 +281,17 @@ public class AiTurnRunner {
             }
             List<AiItem> results = new ArrayList<>();
             for (ToolCall c : asked) {
-                if (!FinishTool.NAME.equals(c.name())) results.add(runTool(c, tools.app(), tally));
+                if (FinishTool.NAME.equals(c.name())) continue;
+                if (clock.instant().isAfter(deadline)) {
+                    throw new TurnFailure("TIMEOUT", "The turn ran out of time (" + props.turnTimeout().toSeconds()
+                            + " s) before the tool " + c.name());
+                }
+                results.add(runTool(c, tools.app(), tally));
             }
             transcript.addAll(results);
             if (finishCall.isPresent()) {
                 try {
-                    finish = FinishTool.parse(finishCall.get().argumentsJson(), r.outcomes());
+                    finish = FinishTool.parse(finishCall.get().argumentsJson(), r.outcomes(), r.collect());
                 } catch (IllegalArgumentException e) {
                     throw new TurnFailure("BAD_FINISH", e.getMessage());
                 }
@@ -298,13 +327,24 @@ public class AiTurnRunner {
         conv.setLastCallId(call.getId());
         conv.setProfileId(r.profileId());
         conv.setUpdatedAt(clock.instant());
-        conversations.save(conv);
 
         call.setStatus(AiCallStatus.DONE);
         call.setReply(text);
-        call.setFinish(finish);
+        call.finish(finish);
         call.setErrorCode(null);
         call.setError(null);
+        call.setUsage(tally.usage);
+        call.setToolCalls(tally.logs);
+        call.setToolsUsed(tally.toolsUsed);
+        call.setLatencyMs(Duration.between(start, clock.instant()).toMillis());
+        call.setStagedAt(clock.instant());
+        // the result goes on the row first, and only while this claim holds it: a copy whose lease ran out never
+        // moves the conversation, and a re-claim after a crash here finds the result instead of asking again
+        if (!queue.stage(call)) {
+            throw new TurnFailure("CLAIM_LOST", "The turn was claimed again while it ran");
+        }
+        conversations.save(conv);
+        return false;
     }
 
     /** One round trip: RATE_LIMIT/UNAVAILABLE retried twice in the turn's time, an expired state rebuilt once. */

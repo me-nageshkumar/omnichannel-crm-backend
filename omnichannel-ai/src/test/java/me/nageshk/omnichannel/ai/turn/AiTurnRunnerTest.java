@@ -68,6 +68,7 @@ class AiTurnRunnerTest {
     private final McpClient mcp = mock(McpClient.class);
     private final MemoryStores.Conversations conversations = new MemoryStores.Conversations();
     private final MemoryStores.Calls calls = new MemoryStores.Calls();
+    private final MemoryStores.Claims claims = new MemoryStores.Claims();
     private final List<Duration> sleeps = new ArrayList<>();
     private Instant now = NOW;
     private final Clock clock = new Clock() {
@@ -113,7 +114,7 @@ class AiTurnRunnerTest {
         AiProperties props = new AiProperties(false, Duration.ofSeconds(2), 8, Duration.ofSeconds(60),
                 Duration.ofSeconds(120), 2, maxToolRounds, Duration.ofSeconds(10), new AiProperties.OpenAi("x"),
                 new AiProperties.Mcp(Duration.ofSeconds(20), 65536, Duration.ofMinutes(5)));
-        return new AiTurnRunner(profiles, connections, mcp, conversations, calls, props, clock, sleeps::add);
+        return new AiTurnRunner(profiles, connections, mcp, conversations, calls, claims, props, clock, sleeps::add);
     }
 
     private void use(ScriptedProvider p) {
@@ -252,7 +253,7 @@ class AiTurnRunnerTest {
         assertThat(sent.tools()).extracting(t -> ((AiTool.FunctionTool) t).name()).containsExactly("finish");
         assertThat(sent.toolChoice()).isEqualTo(new ToolChoice(ToolChoice.Mode.NAMED, "finish"));
         assertThat(conversations.get(result.conversationId()).getOpenCallIds()).containsExactly("c1");
-        assertThat(row(result).getFinish()).isEqualTo(result.finish());
+        assertThat(row(result).finish()).isEqualTo(result.finish());
     }
 
     @Test
@@ -318,6 +319,91 @@ class AiTurnRunnerTest {
         assertThat(provider.requests).hasSize(4);
         assertThat(row(r).getStatus()).isEqualTo(AiCallStatus.FAILED);
         assertThat(conversations.get(r.conversationId()).getTurns()).isZero();
+    }
+
+    @Test
+    void deadlineComesFromTheLease() {
+        profile.setMcpServers(List.of(appServer()));
+        when(mcp.call(any(), eq("lookup"), anyString())).thenAnswer(inv -> {
+            now = now.plusSeconds(40);
+            return "slow";
+        });
+        provider.calls("r1", new ToolCall("t1", "crm__lookup", "{}")).text("r2", "late");
+        TurnRequest r = request(null, "Hi");
+        String conversationId = conversations.save(AiConversation.start(r, provider.id(), NOW)).getId();
+        AiCall call = calls.save(AiCall.pending(r, conversationId, provider.id(), "m1", NOW));
+        // claimed 50 s before it got a thread: 100 s of lease left, a request may take 60 s, 5 s margin
+        call.setLeaseUntil(NOW.plusSeconds(100));
+
+        TurnResult result = runner.run(call);
+
+        assertThat(result.errorCode()).isEqualTo("TIMEOUT");
+        assertThat(provider.requests).hasSize(1);
+    }
+
+    @Test
+    void noToolCallPastTheDeadline() {
+        profile.setMcpServers(List.of(appServer()));
+        when(mcp.call(any(), eq("lookup"), eq("{\"id\":1}"))).thenAnswer(inv -> {
+            now = now.plusSeconds(90);
+            return "slow";
+        });
+        provider.calls("r1", new ToolCall("t1", "crm__lookup", "{\"id\":1}"),
+                new ToolCall("t2", "crm__lookup", "{\"id\":2}"));
+
+        TurnResult r = turn(request(null, "Hi"));
+
+        assertThat(r.status()).isEqualTo(TurnStatus.FAILED);
+        assertThat(r.errorCode()).isEqualTo("TIMEOUT");
+        verify(mcp, never()).call(any(), eq("lookup"), eq("{\"id\":2}"));
+        assertThat(row(r).getToolCalls()).hasSize(1);
+    }
+
+    @Test
+    void lostClaimLeavesTheConversation() {
+        claims.held = false;
+        provider.text("r1", "Hello");
+
+        TurnResult r = turn(request(null, "Hi"));
+
+        assertThat(r.status()).isEqualTo(TurnStatus.FAILED);
+        assertThat(r.errorCode()).isEqualTo("CLAIM_LOST");
+        AiConversation c = conversations.get(r.conversationId());
+        assertThat(c.getTurns()).isZero();
+        assertThat(c.getTranscript()).isEmpty();
+        assertThat(c.getLastCallId()).isNull();
+    }
+
+    @Test
+    void appliedTurnIsNotRunAgain() {
+        provider.text("r1", "Hello");
+        TurnRequest r = request(null, "Hi");
+        String conversationId = conversations.save(AiConversation.start(r, provider.id(), NOW)).getId();
+        AiCall call = calls.save(AiCall.pending(r, conversationId, provider.id(), "m1", NOW));
+        call.setStatus(AiCallStatus.RUNNING);
+        call.setAttempts(1);
+        assertThat(runner.run(call).status()).isEqualTo(TurnStatus.DONE);
+        assertThat(claims.staged).containsExactly(call.getId());
+
+        // the worker died between the conversation write and the finish: the row is claimed again as staged
+        AiCall again = claims.stagedCopy(call.getId());
+        again.setAttempts(2);
+        TurnResult r2 = runner.run(again);
+
+        assertThat(r2.status()).isEqualTo(TurnStatus.DONE);
+        assertThat(r2.text()).isEqualTo("Hello");
+        assertThat(r2.usage()).isEqualTo(new AiUsage(10, 5, 1, 0));
+        assertThat(provider.requests).as("the provider is not asked again").hasSize(1);
+        assertThat(conversations.get(conversationId).getTurns()).isEqualTo(1);
+        assertThat(transcript(conversationId)).hasSize(2);
+
+        // applied but nothing staged (cannot happen in order, but never apply twice)
+        AiCall bare = AiCall.pending(r, conversationId, provider.id(), "m1", NOW);
+        bare.setId(call.getId());
+        TurnResult r3 = runner.run(bare);
+        assertThat(r3.status()).isEqualTo(TurnStatus.FAILED);
+        assertThat(r3.errorCode()).isEqualTo("INTERRUPTED");
+        assertThat(provider.requests).hasSize(1);
     }
 
     @Test

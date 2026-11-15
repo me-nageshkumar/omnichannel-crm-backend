@@ -21,7 +21,16 @@ import me.nageshk.omnichannel.ai.call.AiCallStatus;
 import me.nageshk.omnichannel.ai.call.AiTurnQueue;
 import me.nageshk.omnichannel.ai.call.AiTurnWorker;
 import me.nageshk.omnichannel.ai.config.AiProperties;
+import me.nageshk.omnichannel.ai.api.AiField;
+import me.nageshk.omnichannel.ai.api.AiFieldType;
+import me.nageshk.omnichannel.ai.api.AiOutcome;
+import me.nageshk.omnichannel.ai.api.AiReplyFormat;
 import me.nageshk.omnichannel.ai.provider.ProviderReply;
+import me.nageshk.omnichannel.ai.provider.ToolCall;
+import me.nageshk.omnichannel.ai.turn.AiTurnRunner;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,11 +56,17 @@ class AiTurnQueueIT extends AiTestBase {
     static class Recorder implements AiTurnListener {
         final List<TurnResult> results = new CopyOnWriteArrayList<>();
         final AtomicInteger throwNext = new AtomicInteger();
+        final java.util.Set<String> poison = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
         @Override
         public void turnFinished(TurnResult r) {
             results.add(r);
+            if (poison.contains(r.callId())) throw new IllegalStateException("listener refuses " + r.callId());
             if (throwNext.getAndUpdate(n -> Math.max(0, n - 1)) > 0) throw new IllegalStateException("listener down");
+        }
+
+        long offers(String callId) {
+            return results.stream().filter(r -> r.callId().equals(callId)).count();
         }
     }
 
@@ -68,6 +83,7 @@ class AiTurnQueueIT extends AiTestBase {
     @Autowired AiTurnQueue queue;
     @Autowired AiProperties props;
     @Autowired Recorder recorder;
+    @Autowired AiTurnRunner runner;
 
     private String connectionId;
     private String profileId;
@@ -76,6 +92,7 @@ class AiTurnQueueIT extends AiTestBase {
     void setUpProfile() {
         recorder.results.clear();
         recorder.throwNext.set(0);
+        recorder.poison.clear();
         Map<String, Object> c = new LinkedHashMap<>();
         c.put("name", "Scripted");
         c.put("provider", "scripted");
@@ -300,5 +317,144 @@ class AiTurnQueueIT extends AiTestBase {
         assertThat(recorder.results).hasSize(2);
         assertThat(recorder.results).allSatisfy(r -> assertThat(String.valueOf(r)).doesNotContain(KEY)
                 .doesNotContain(SECRET));
+    }
+
+    @Test
+    void staleAttemptCannotFinish() throws Exception {
+        String id = gateway.submit(request(null, "Hi"));
+        AiCall stale = queue.claim(clock.instant()).orElseThrow();
+        clock.advance(props.turnTimeout().plusSeconds(31));
+        AiCall live = queue.claim(clock.instant()).orElseThrow();
+        assertThat(live.getAttempts()).isEqualTo(2);
+        scripted.reply(text("From the stale copy"));
+
+        TurnResult r = runner.run(stale);
+
+        assertThat(r.errorCode()).isEqualTo("CLAIM_LOST");
+        assertThat(queue.finish(stale)).isFalse();
+        AiCall row = row(id);
+        assertThat(row.getStatus()).isEqualTo(AiCallStatus.RUNNING);
+        assertThat(row.getAttempts()).isEqualTo(2);
+        assertThat(row.getReply()).isNull();
+        assertThat(mongo.findById(row.getConversationId(), me.nageshk.omnichannel.ai.conversation.AiConversation.class)
+                .getTurns()).as("a lost claim never writes the conversation").isZero();
+        assertThat(recorder.results).isEmpty();
+    }
+
+    @Test
+    void appliedTurnIsNotRunAgain() throws Exception {
+        String id = gateway.submit(request(null, "Hi"));
+        AiCall first = queue.claim(clock.instant()).orElseThrow();
+        scripted.reply(text("Hello"));
+        runner.run(first); // staged and applied to the conversation; the worker "dies" before finish
+
+        clock.advance(props.turnTimeout().plusSeconds(31));
+        tick();
+
+        AiCall done = row(id);
+        assertThat(done.getStatus()).isEqualTo(AiCallStatus.DONE);
+        assertThat(done.getAttempts()).isEqualTo(2);
+        assertThat(done.getReply()).isEqualTo("Hello");
+        assertThat(scripted.requests()).as("the provider is asked once").hasSize(1);
+        assertThat(recorder.results).extracting(TurnResult::text).containsExactly("Hello");
+        assertThat(mongo.findById(done.getConversationId(), me.nageshk.omnichannel.ai.conversation.AiConversation.class)
+                .getTurns()).isEqualTo(1);
+    }
+
+    @Test
+    void failingListenerIsReofferedAtMostEveryRedeliverAfter() throws Exception {
+        scripted.reply(text("Hello"));
+        String id = gateway.submit(request(null, "Hi"));
+        recorder.poison.add(id);
+
+        tick();
+        tick();
+        assertThat(recorder.offers(id)).isEqualTo(1);
+        clock.advance(props.redeliverAfter().plusSeconds(1));
+        tick();
+        tick();
+        assertThat(recorder.offers(id)).isEqualTo(2);
+        clock.advance(props.redeliverAfter().dividedBy(2));
+        tick();
+        assertThat(recorder.offers(id)).isEqualTo(2);
+        clock.advance(props.redeliverAfter().dividedBy(2).plusSeconds(1));
+        tick();
+        assertThat(recorder.offers(id)).isEqualTo(3);
+        assertThat(row(id).getDeliveryAttempts()).isEqualTo(2);
+
+        // after the cap the row is left undelivered (visible) and no longer offered
+        mongo.updateFirst(Query.query(Criteria.where("_id").is(id)),
+                new Update().set("deliveryAttempts", me.nageshk.omnichannel.ai.call.AiTurnQueue.MAX_DELIVERY_ATTEMPTS),
+                AiCall.class);
+        clock.advance(props.redeliverAfter().plusSeconds(1));
+        tick();
+        assertThat(recorder.offers(id)).isEqualTo(3);
+        assertThat(row(id).getDeliveredAt()).isNull();
+    }
+
+    @Test
+    void poisonRowsDoNotBlockANewerRow() throws Exception {
+        List<AiCall> poison = new ArrayList<>();
+        for (int i = 0; i < 110; i++) {
+            AiCall c = AiCall.pending(request(null, "old " + i), "conv-old", "scripted", "scripted-1",
+                    clock.instant().minusSeconds(600));
+            c.setStatus(AiCallStatus.DONE);
+            c.setReply("old");
+            c.setFinishedAt(clock.instant().minusSeconds(600));
+            c.setNextDeliveryAt(clock.instant().minusSeconds(590));
+            poison.add(c);
+        }
+        mongo.insertAll(poison);
+        poison.forEach(c -> recorder.poison.add(c.getId()));
+        recorder.throwNext.set(0);
+        scripted.reply(text("New"));
+        String id = gateway.submit(request(null, "Hi"));
+        recorder.poison.add(id);
+        tick(); // runs the new turn; its first delivery fails, like the old ones
+        recorder.poison.remove(id);
+
+        clock.advance(props.redeliverAfter().plusSeconds(1));
+        for (int i = 0; i < 30 && row(id).getDeliveredAt() == null; i++) tick();
+
+        assertThat(row(id).getDeliveredAt()).as("the newer row got its turn").isNotNull();
+        assertThat(recorder.offers(id)).isEqualTo(2);
+        assertThat(poison).allSatisfy(c -> assertThat(recorder.offers(c.getId())).isLessThanOrEqualTo(2));
+    }
+
+    @Test
+    void schemaWithDollarAndDottedKeysIsKept() throws Exception {
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("message", Map.of("type", "string"));
+        props.put("user.name", Map.of("type", "string"));
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("$schema", "https://json-schema.org/draft/2020-12/schema");
+        schema.put("type", "object");
+        schema.put("properties", props);
+        schema.put("required", List.of("message", "user.name"));
+        schema.put("additionalProperties", false);
+        schema.put("$defs", Map.of("x.y", Map.of("type", "string")));
+        AiReplyFormat json = new AiReplyFormat(AiReplyFormat.Type.JSON, schema, "message");
+        scripted.reply(text("{\"message\":\"Hi\",\"user.name\":\"Asha\"}"));
+
+        String id = gateway.submit(new TurnRequest(brand.getId(), "run1", "bot1", "Ask", profileId, null, null,
+                List.of("Hi"), List.of(), List.of(), false, json, null, null));
+        tick();
+
+        TurnResult r = gateway.result(brand.getId(), id).orElseThrow();
+        assertThat(r.status()).as(String.valueOf(r.error())).isEqualTo(TurnStatus.DONE);
+        assertThat(r.json()).containsEntry("user.name", "Asha");
+        assertThat(scripted.requests().get(0).format().schema()).isEqualTo(schema);
+
+        scripted.reply(new ProviderReply("", List.of(new ToolCall("c1", "finish",
+                "{\"outcome\":\"done\",\"fields\":{\"contact.city\":\"Pune\"},\"reply\":null}")), Map.of(),
+                new AiUsage(1, 1, 0, 0), null, false));
+        String second = gateway.submit(new TurnRequest(brand.getId(), "run1", "bot1", "Ask", profileId, null, null,
+                List.of("Bye"), List.of(new AiOutcome("done", "Done", null)),
+                List.of(new AiField("contact.city", null, AiFieldType.TEXT)), false, null, r.conversationId(), null));
+        tick();
+
+        TurnResult f = gateway.result(brand.getId(), second).orElseThrow();
+        assertThat(f.status()).as(String.valueOf(f.error())).isEqualTo(TurnStatus.DONE);
+        assertThat(f.finish().fields()).containsEntry("contact.city", "Pune");
     }
 }

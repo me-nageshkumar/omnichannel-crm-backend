@@ -67,8 +67,11 @@ public final class FinishTool {
         return Optional.of(new AiTool.FunctionTool(NAME, description(outcomes), schema));
     }
 
-    /** The finish call's arguments; throws IllegalArgumentException when they are not JSON or name no declared outcome. */
-    public static AiFinish parse(String argumentsJson, List<AiOutcome> outcomes) {
+    /**
+     * The finish call's arguments, fields cut to the declared collect keys; throws IllegalArgumentException when they
+     * are not JSON or name no declared outcome.
+     */
+    public static AiFinish parse(String argumentsJson, List<AiOutcome> outcomes, List<AiField> collect) {
         Map<String, Object> args;
         try {
             args = JSON.readValue(argumentsJson == null ? "" : argumentsJson, new TypeReference<Map<String, Object>>() {});
@@ -80,7 +83,11 @@ public final class FinishTool {
                 && outcomes.stream().anyMatch(o -> o.id().equals(s));
         if (!known) throw new IllegalArgumentException("The finish call names no outcome of this node: " + outcome);
         Map<String, Object> fields = new LinkedHashMap<>();
-        if (args.get("fields") instanceof Map<?, ?> m) m.forEach((k, v) -> fields.put(String.valueOf(k), v));
+        if (args.get("fields") instanceof Map<?, ?> m && collect != null) {
+            for (AiField f : collect) {
+                if (m.containsKey(f.key())) fields.put(f.key(), m.get(f.key()));
+            }
+        }
         Object reply = args.get("reply");
         return new AiFinish((String) outcome, fields, reply instanceof String s && !s.isBlank() ? s : null);
     }

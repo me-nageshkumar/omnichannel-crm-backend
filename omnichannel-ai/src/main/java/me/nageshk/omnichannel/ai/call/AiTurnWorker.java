@@ -1,7 +1,6 @@
 package me.nageshk.omnichannel.ai.call;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -19,15 +18,15 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
 /**
- * Takes turns off the queue and runs them on the AI pool, never on a chatbot thread (spec §5.5). Each finished turn
- * goes to every {@link AiTurnListener}; one that no listener took is offered again after {@code redeliverAfter}.
+ * Takes turns off the queue and runs them on the AI pool, never on a chatbot thread (spec §5.5). A turn is claimed
+ * only when a thread is free for it, so its lease starts when it runs; the rest wait PENDING in MongoDB. Each finished
+ * turn goes to every {@link AiTurnListener}; one that no listener took is offered again every
+ * {@code redeliverAfter}, up to {@link AiTurnQueue#MAX_DELIVERY_ATTEMPTS} times.
  */
 @Service
 public class AiTurnWorker {
 
     private static final Logger log = LoggerFactory.getLogger(AiTurnWorker.class);
-    /** Claims stop while this many runs wait for a thread, so a claimed turn is never refused by the pool. */
-    private static final int MAX_WAITING = 400;
 
     private final AiTurnQueue queue;
     private final AiTurnRunner runner;
@@ -47,28 +46,35 @@ public class AiTurnWorker {
     }
 
     /**
-     * Re-offers undelivered results, then claims until the queue is empty, running each claimed turn on the pool.
+     * Claims turns while a pool thread is free for each, then, with what is left, re-offers due undelivered results.
      * The future completes when those runs and deliveries are done (tests wait on it; the schedule does not).
+     * Overlapping ticks take turns, so two of them never claim the same free thread.
      */
-    public CompletableFuture<Void> tick() {
+    public synchronized CompletableFuture<Void> tick() {
         List<CompletableFuture<Void>> work = new ArrayList<>();
         try {
-            Instant now = clock.instant();
-            for (AiCall c : queue.undelivered(now.minus(props.redeliverAfter()))) {
-                work.add(CompletableFuture.runAsync(() -> deliver(c), pool));
-            }
-            while (pool.getQueueSize() < MAX_WAITING) {
+            while (threadFree()) {
                 Optional<AiCall> claimed = queue.claim(clock.instant());
                 if (claimed.isEmpty()) break;
                 AiCall c = claimed.get();
                 work.add(CompletableFuture.runAsync(() -> process(c), pool));
             }
+            while (threadFree()) {
+                Optional<AiCall> due = queue.claimRedelivery(clock.instant());
+                if (due.isEmpty()) break;
+                AiCall c = due.get();
+                work.add(CompletableFuture.runAsync(() -> deliver(c), pool));
+            }
         } catch (RejectedExecutionException e) {
-            log.warn("the AI pool refused a turn; its lease will run out and it is claimed again");
+            log.warn("the AI pool refused work; a claimed turn is claimed again when its lease runs out");
         } catch (RuntimeException e) {
             log.warn("AI tick failed: {}", e.toString());
         }
         return CompletableFuture.allOf(work.toArray(CompletableFuture[]::new));
+    }
+
+    private boolean threadFree() {
+        return pool.getActiveCount() + pool.getQueueSize() < pool.getMaxPoolSize();
     }
 
     private void process(AiCall c) {
@@ -103,6 +109,11 @@ public class AiTurnWorker {
                         e.toString());
             }
         }
-        if (all) queue.delivered(c.getId());
+        if (all) {
+            queue.delivered(c.getId());
+        } else if (c.getDeliveryAttempts() >= AiTurnQueue.MAX_DELIVERY_ATTEMPTS) {
+            log.warn("AI call {} could not be delivered after {} attempts; it stays undelivered", c.getId(),
+                    c.getDeliveryAttempts());
+        }
     }
 }

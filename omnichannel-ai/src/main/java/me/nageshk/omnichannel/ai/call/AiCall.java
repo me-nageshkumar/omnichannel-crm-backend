@@ -25,7 +25,8 @@ import tools.jackson.databind.json.JsonMapper;
 @Document("aiCalls")
 @CompoundIndexes({
         @CompoundIndex(name = "status_lease", def = "{'status': 1, 'leaseUntil': 1}"),
-        @CompoundIndex(name = "workspace_created", def = "{'workspaceId': 1, 'createdAt': -1}")})
+        @CompoundIndex(name = "workspace_created", def = "{'workspaceId': 1, 'createdAt': -1}"),
+        @CompoundIndex(name = "redelivery", def = "{'deliveredAt': 1, 'nextDeliveryAt': 1}")})
 public class AiCall {
 
     /** One app-side tool call of the turn; the result is cut to an excerpt. */
@@ -44,15 +45,19 @@ public class AiCall {
     private String profileId;
     private String provider;
     private String model;
-    /** The {@link TurnRequest} as submitted. */
-    private Map<String, Object> request;
+    /**
+     * The {@link TurnRequest} as submitted, as JSON text: it holds the node's own JSON schema, whose keys ({@code
+     * $schema}, dotted property names) MongoDB field names cannot always carry.
+     */
+    private String request;
     private AiCallStatus status;
     private int attempts;
     private Instant leaseUntil;
     private Instant deliveredAt;
     private String input;
     private String reply;
-    private AiFinish finish;
+    /** The finish call as JSON text, for the same reason (the fields are keyed by the node's collect keys). */
+    private String finish;
     private List<ToolCallLog> toolCalls = new ArrayList<>();
     private AiUsage usage;
     private boolean toolsUsed;
@@ -63,8 +68,13 @@ public class AiCall {
     private Map<String, Object> stateBefore;
     private Integer transcriptSizeBefore;
     private List<String> openCallIdsBefore;
+    /** Set when the result is written while the claim is held, just before the conversation moves on. */
+    private Instant stagedAt;
     private Instant createdAt;
     private Instant finishedAt;
+    /** When an undelivered result may be offered to the listeners again. */
+    private Instant nextDeliveryAt;
+    private int deliveryAttempts;
 
     /** A PENDING row for a submitted turn. */
     public static AiCall pending(TurnRequest r, String conversationId, String provider, String model, Instant now) {
@@ -77,7 +87,7 @@ public class AiCall {
         c.setProfileId(r.profileId());
         c.setProvider(provider);
         c.setModel(model);
-        c.setRequest(JSON.convertValue(r, new TypeReference<Map<String, Object>>() {}));
+        c.setRequest(JSON.writeValueAsString(r));
         c.setStatus(AiCallStatus.PENDING);
         c.setInput(r.inputs() == null ? "" : String.join("\n", r.inputs()));
         c.setCreatedAt(now);
@@ -85,7 +95,20 @@ public class AiCall {
     }
 
     public TurnRequest turnRequest() {
-        return JSON.convertValue(request, TurnRequest.class);
+        return JSON.readValue(request, TurnRequest.class);
+    }
+
+    /** The finish call, or null. */
+    public AiFinish finish() {
+        return finish == null ? null : JSON.readValue(finish, AiFinish.class);
+    }
+
+    public void finish(AiFinish f) {
+        finish = f == null ? null : JSON.writeValueAsString(f);
+    }
+
+    String finishJson() {
+        return finish;
     }
 
     public void fail(String code, String message) {
@@ -97,7 +120,7 @@ public class AiCall {
     /** The result the listeners get; {@code json} is the reply parsed when the request asked for JSON. */
     public TurnResult toResult() {
         TurnStatus s = status == AiCallStatus.DONE ? TurnStatus.DONE : TurnStatus.FAILED;
-        return new TurnResult(id, s, reply, s == TurnStatus.DONE ? json() : null, finish,
+        return new TurnResult(id, s, reply, s == TurnStatus.DONE ? json() : null, finish(),
                 usage == null ? new AiUsage(0, 0, 0, 0) : usage, toolsUsed, conversationId, runId, errorCode, error);
     }
 
@@ -129,8 +152,8 @@ public class AiCall {
     public void setProvider(String provider) { this.provider = provider; }
     public String getModel() { return model; }
     public void setModel(String model) { this.model = model; }
-    public Map<String, Object> getRequest() { return request; }
-    public void setRequest(Map<String, Object> request) { this.request = request; }
+    public String getRequest() { return request; }
+    public void setRequest(String request) { this.request = request; }
     public AiCallStatus getStatus() { return status; }
     public void setStatus(AiCallStatus status) { this.status = status; }
     public int getAttempts() { return attempts; }
@@ -143,8 +166,6 @@ public class AiCall {
     public void setInput(String input) { this.input = input; }
     public String getReply() { return reply; }
     public void setReply(String reply) { this.reply = reply; }
-    public AiFinish getFinish() { return finish; }
-    public void setFinish(AiFinish finish) { this.finish = finish; }
     public List<ToolCallLog> getToolCalls() { return toolCalls; }
     public void setToolCalls(List<ToolCallLog> toolCalls) { this.toolCalls = toolCalls; }
     public AiUsage getUsage() { return usage; }
@@ -167,4 +188,10 @@ public class AiCall {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getFinishedAt() { return finishedAt; }
     public void setFinishedAt(Instant finishedAt) { this.finishedAt = finishedAt; }
+    public Instant getStagedAt() { return stagedAt; }
+    public void setStagedAt(Instant stagedAt) { this.stagedAt = stagedAt; }
+    public Instant getNextDeliveryAt() { return nextDeliveryAt; }
+    public void setNextDeliveryAt(Instant nextDeliveryAt) { this.nextDeliveryAt = nextDeliveryAt; }
+    public int getDeliveryAttempts() { return deliveryAttempts; }
+    public void setDeliveryAttempts(int deliveryAttempts) { this.deliveryAttempts = deliveryAttempts; }
 }
