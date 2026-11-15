@@ -29,4 +29,21 @@ class ServiceBoundaryTest {
         }
         assertThat(violations).isEmpty();
     }
+
+    @Test
+    void serviceImportsOnlyTheAiApi() throws IOException {
+        String ai = "me.nageshk.omnichannel.ai.";
+        List<String> violations = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                for (String line : Files.readAllLines(file)) {
+                    String t = line.trim();
+                    if (!t.startsWith("import ")) continue;
+                    String target = t.substring("import ".length()).replaceFirst("^static\\s+", "");
+                    if (target.startsWith(ai) && !target.startsWith(ai + "api.")) violations.add(file + ": " + t);
+                }
+            }
+        }
+        assertThat(violations).isEmpty();
+    }
 }

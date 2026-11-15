@@ -15,6 +15,9 @@ omnichannel:
     password: ""
   pages:
     base-url: http://pages.test
+  # tests drive the AI turn worker themselves
+  ai:
+    auto-tick: false
   # tests drive CampaignRunner.tick() themselves
   campaign:
     auto-tick: false

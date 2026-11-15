@@ -17,6 +17,10 @@
   <dependencies>
     <dependency>
       <groupId>me.nageshk</groupId>
+      <artifactId>omnichannel-ai</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>me.nageshk</groupId>
       <artifactId>omnichannel-security</artifactId>
     </dependency>
     <dependency>

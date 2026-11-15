@@ -18,12 +18,13 @@
   <name>omnichannel-crm-backend</name>
   <description>Spring Boot backend for the Omnichannel CRM</description>
 
-  <!-- Modules are listed in build order; each depends only on modules above it (crm: common + security; service and app: see their poms). -->
+  <!-- Modules are listed in build order; each depends only on modules above it (crm and ai: common + security; service and app: see their poms). -->
   <modules>
     <module>omnichannel-common</module>
     <module>omnichannel-db</module>
     <module>omnichannel-security</module>
     <module>omnichannel-crm</module>
+    <module>omnichannel-ai</module>
     <module>omnichannel-service</module>
     <module>omnichannel-app</module>
   </modules>
@@ -65,6 +66,11 @@
       <dependency>
         <groupId>me.nageshk</groupId>
         <artifactId>omnichannel-crm</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>me.nageshk</groupId>
+        <artifactId>omnichannel-ai</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
