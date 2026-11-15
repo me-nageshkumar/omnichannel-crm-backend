@@ -229,4 +229,48 @@ class McpClientTest {
         assertThatThrownBy(() -> client().tools(new McpEndpoint(url, Map.of())))
                 .isInstanceOf(McpException.class).hasMessageContaining("401");
     }
+
+    @Test
+    void stalledBodyTimesOutWithinTheDeadline() throws IOException {
+        String url = start();
+        server.removeContext("/mcp");
+        server.createContext("/mcp", ex -> {
+            try {
+                ex.getRequestBody().readAllBytes();
+                ex.sendResponseHeaders(200, 1000);
+                ex.getResponseBody().write("{\"jsonrpc\"".getBytes(StandardCharsets.UTF_8));
+                ex.getResponseBody().flush();
+                Thread.sleep(4000);
+            } catch (Exception ignored) {
+                // client went away
+            } finally {
+                ex.close();
+            }
+        });
+        long t0 = System.nanoTime();
+        assertThatThrownBy(() -> client(Duration.ofMillis(400), 65536, true).tools(new McpEndpoint(url, Map.of())))
+                .isInstanceOf(McpException.class).hasMessageContaining("in time");
+        assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofMillis(2500));
+    }
+
+    @Test
+    void oversizedBodyIsRefused() throws IOException {
+        String url = start();
+        server.removeContext("/mcp");
+        server.createContext("/mcp", ex -> {
+            try {
+                ex.getRequestBody().readAllBytes();
+                ex.getResponseHeaders().set("Content-Type", "application/json");
+                ex.sendResponseHeaders(200, 0);
+                byte[] chunk = "x".repeat(65536).getBytes(StandardCharsets.UTF_8);
+                for (int i = 0; i < 200; i++) ex.getResponseBody().write(chunk);
+            } catch (Exception ignored) {
+                // client closed the stream
+            } finally {
+                ex.close();
+            }
+        });
+        assertThatThrownBy(() -> client().tools(new McpEndpoint(url, Map.of())))
+                .isInstanceOf(McpException.class).hasMessageContaining("too large");
+    }
 }

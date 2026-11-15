@@ -1,7 +1,11 @@
 package me.nageshk.omnichannel.ai.mcp;
 
 import java.net.URI;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -15,15 +19,16 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import me.nageshk.omnichannel.ai.config.AiProperties;
 import me.nageshk.omnichannel.common.net.HttpAddressGuard;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -38,11 +43,27 @@ public class McpClient {
     static final String PROTOCOL = "2025-06-18";
     private static final int MAX_PAGES = 5;
 
+    private static final int LIST_LIMIT = 1 << 20;
+    private static final int SLACK = 16384;
+    private static final ScheduledExecutorService WATCHDOG = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "mcp-watchdog");
+        t.setDaemon(true);
+        return t;
+    });
+
     private record Raw(int status, String body, HttpHeaders headers) {}
+
+    /** One overall time limit for a whole operation (initialize, notification and request). */
+    private record Deadline(long endNanos) {
+        long remainingNanos() {
+            return endNanos - System.nanoTime();
+        }
+    }
 
     private record Cached(Instant at, List<McpTool> tools) {}
 
-    private final RestClient client;
+    private final HttpClient client;
+    private final Duration toolTimeout;
     private final HttpAddressGuard guard;
     private final int maxResult;
     private final Duration cacheFor;
@@ -54,11 +75,8 @@ public class McpClient {
         this.guard = guard;
         this.maxResult = props.mcp().maxResult();
         this.cacheFor = props.mcp().cacheFor();
-        Duration timeout = props.mcp().toolTimeout();
-        HttpClient jdk = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build();
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(jdk);
-        factory.setReadTimeout(timeout);
-        this.client = RestClient.builder().requestFactory(factory).build();
+        this.toolTimeout = props.mcp().toolTimeout();
+        this.client = HttpClient.newBuilder().connectTimeout(toolTimeout).followRedirects(HttpClient.Redirect.NEVER).build();
     }
 
     public List<McpTool> tools(McpEndpoint e) {
@@ -66,13 +84,14 @@ public class McpClient {
         Cached hit = cache.get(key);
         Instant now = Instant.now();
         if (hit != null && hit.at().plus(cacheFor).isAfter(now)) return hit.tools();
-        String session = open(e);
+        Deadline d = deadline();
+        String session = open(e, d);
         List<McpTool> out = new ArrayList<>();
         String cursor = null;
         for (int page = 0; page < MAX_PAGES; page++) {
             ObjectNode params = mapper.createObjectNode();
             if (cursor != null) params.put("cursor", cursor);
-            JsonNode result = rpc(e, session, "tools/list", params);
+            JsonNode result = rpc(e, session, "tools/list", params, d, LIST_LIMIT);
             for (JsonNode t : result.path("tools")) {
                 String name = t.path("name").asString(null);
                 if (name == null) continue;
@@ -96,11 +115,12 @@ public class McpClient {
         } catch (RuntimeException ex) {
             throw new McpException("The tool arguments are not valid JSON");
         }
-        String session = open(e);
+        Deadline d = deadline();
+        String session = open(e, d);
         ObjectNode params = mapper.createObjectNode();
         params.put("name", tool);
         params.set("arguments", args);
-        JsonNode result = rpc(e, session, "tools/call", params);
+        JsonNode result = rpc(e, session, "tools/call", params, d, 2 * maxResult + SLACK);
         StringBuilder text = new StringBuilder();
         for (JsonNode c : result.path("content")) {
             if (!"text".equals(c.path("type").asString())) continue;
@@ -115,7 +135,11 @@ public class McpClient {
     }
 
     /** initialize, then the initialized notification; returns the session id, or null when the server gave none. */
-    private String open(McpEndpoint e) {
+    private Deadline deadline() {
+        return new Deadline(System.nanoTime() + toolTimeout.toNanos());
+    }
+
+    private String open(McpEndpoint e, Deadline d) {
         try {
             guard.check(URI.create(e.url()));
         } catch (IllegalArgumentException ex) {
@@ -128,20 +152,20 @@ public class McpClient {
         info.put("name", "omnichannel");
         info.put("version", "1");
         long id = ids.incrementAndGet();
-        Raw raw = post(e, null, request("initialize", id, params));
+        Raw raw = post(e, null, request("initialize", id, params), d, LIST_LIMIT);
         parse(raw, e, id);
         String session = raw.headers().getFirst("Mcp-Session-Id");
         ObjectNode note = mapper.createObjectNode();
         note.put("jsonrpc", "2.0");
         note.put("method", "notifications/initialized");
-        Raw ack = post(e, session, note);
+        Raw ack = post(e, session, note, d, LIST_LIMIT);
         if (ack.status() >= 400) throw new McpException("The MCP server answered HTTP " + ack.status());
         return session;
     }
 
-    private JsonNode rpc(McpEndpoint e, String session, String method, ObjectNode params) {
+    private JsonNode rpc(McpEndpoint e, String session, String method, ObjectNode params, Deadline d, int limit) {
         long id = ids.incrementAndGet();
-        return parse(post(e, session, request(method, id, params)), e, id);
+        return parse(post(e, session, request(method, id, params), d, limit), e, id);
     }
 
     private ObjectNode request(String method, long id, ObjectNode params) {
@@ -153,27 +177,65 @@ public class McpClient {
         return n;
     }
 
-    private Raw post(McpEndpoint e, String session, ObjectNode body) {
+    private Raw post(McpEndpoint e, String session, ObjectNode body, Deadline d, int limit) {
+        long left = d.remainingNanos();
+        if (left <= 0) throw new McpException("The MCP server did not answer in time");
+        HttpResponse<InputStream> res = null;
+        ScheduledFuture<?> guardTask = null;
         try {
-            return client.post().uri(URI.create(e.url()))
-                    .headers(h -> {
-                        e.headers().forEach(h::set);
-                        h.setContentType(MediaType.APPLICATION_JSON);
-                        h.set(HttpHeaders.ACCEPT, "application/json, text/event-stream");
-                        if (!"initialize".equals(body.path("method").asString())) h.set("MCP-Protocol-Version", PROTOCOL);
-                        if (session != null) h.set("Mcp-Session-Id", session);
-                    })
-                    .body(mapper.writeValueAsString(body))
-                    .exchange((req, res) -> new Raw(res.getStatusCode().value(),
-                            new String(res.getBody().readAllBytes(), StandardCharsets.UTF_8), res.getHeaders()), false);
-        } catch (ResourceAccessException ex) {
+            HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(e.url())).timeout(Duration.ofNanos(left))
+                    .header("Content-Type", "application/json").header("Accept", "application/json, text/event-stream");
+            if (!"initialize".equals(body.path("method").asString())) rb.header("MCP-Protocol-Version", PROTOCOL);
+            if (session != null) rb.header("Mcp-Session-Id", session);
+            e.headers().forEach(rb::header);
+            res = client.send(rb.POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
+            InputStream in = res.body();
+            guardTask = WATCHDOG.schedule(() -> {
+                try {
+                    in.close();
+                } catch (IOException ignored) {
+                    // already closed
+                }
+            }, Math.max(1, d.remainingNanos()), TimeUnit.NANOSECONDS);
+            byte[] bytes = readBounded(in, limit);
+            HttpHeaders h = new HttpHeaders();
+            res.headers().map().forEach((k, v) -> h.addAll(k, v));
+            return new Raw(res.statusCode(), new String(bytes, StandardCharsets.UTF_8), h);
+        } catch (IOException ex) {
+            if (d.remainingNanos() <= 0) throw new McpException("The MCP server did not answer in time");
             throw transport(ex, e);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new McpException("The MCP call was interrupted");
+        } catch (McpException ex) {
+            throw ex;
         } catch (RuntimeException ex) {
             throw new McpException(redact("The MCP call failed: " + ex.getMessage(), e));
+        } finally {
+            if (guardTask != null) guardTask.cancel(false);
+            if (res != null) {
+                try {
+                    res.body().close();
+                } catch (IOException ignored) {
+                    // nothing more to release
+                }
+            }
         }
     }
 
-    private McpException transport(ResourceAccessException ex, McpEndpoint e) {
+    private static byte[] readBounded(InputStream in, int limit) throws IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) >= 0) {
+            if (out.size() + n > limit) throw new McpException("The MCP server's response is too large");
+            out.write(buf, 0, n);
+        }
+        return out.toByteArray();
+    }
+
+    private McpException transport(Exception ex, McpEndpoint e) {
         Throwable t = ex;
         while (t != null) {
             if (t instanceof HttpTimeoutException || t instanceof java.net.SocketTimeoutException) {
