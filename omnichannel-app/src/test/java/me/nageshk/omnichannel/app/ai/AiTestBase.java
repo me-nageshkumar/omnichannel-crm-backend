@@ -2,7 +2,9 @@ package me.nageshk.omnichannel.app.ai;
 
 import java.util.ArrayList;
 import java.util.List;
+import me.nageshk.omnichannel.ai.call.AiCall;
 import me.nageshk.omnichannel.ai.connection.AiConnection;
+import me.nageshk.omnichannel.ai.conversation.AiConversation;
 import me.nageshk.omnichannel.app.automation.AutomationTestBase;
 import me.nageshk.omnichannel.app.support.OpenAiStub;
 import me.nageshk.omnichannel.app.support.ScriptedAiProvider;
@@ -33,6 +35,8 @@ public abstract class AiTestBase extends AutomationTestBase {
     protected List<Class<?>> collections() {
         List<Class<?>> c = new ArrayList<>(super.collections());
         c.add(AiConnection.class);
+        c.add(AiCall.class);
+        c.add(AiConversation.class);
         c.add(me.nageshk.omnichannel.db.chatbot.Chatbot.class);
         c.add(me.nageshk.omnichannel.db.chatbot.ChatbotVersion.class);
         return c;

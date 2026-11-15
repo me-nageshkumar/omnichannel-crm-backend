@@ -25,6 +25,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -32,21 +36,23 @@ import org.springframework.stereotype.Service;
 public class AiConnectionService {
 
     private static final Logger log = LoggerFactory.getLogger(AiConnectionService.class);
-    static final String REFUSED = "The provider refused the key";
+    public static final String REFUSED = "The provider refused the key";
 
     private final AiConnectionRepository repository;
     private final AiProviders providers;
     private final SecretBox secrets;
     private final AiProfileRepository profiles;
     private final Clock clock;
+    private final MongoTemplate mongo;
 
     public AiConnectionService(AiConnectionRepository repository, AiProviders providers, SecretBox secrets,
-            AiProfileRepository profiles, Clock clock) {
+            AiProfileRepository profiles, Clock clock, MongoTemplate mongo) {
         this.repository = repository;
         this.providers = providers;
         this.secrets = secrets;
         this.profiles = profiles;
         this.clock = clock;
+        this.mongo = mongo;
     }
 
     public List<ProviderView> providers() {
@@ -138,6 +144,17 @@ public class AiConnectionService {
     /** The opened key of a connection of the brand, for a provider call; never exposed over HTTP. */
     public AiCredential credential(String workspaceId, String id) {
         return credential(find(workspaceId, id));
+    }
+
+    /**
+     * Marks a connection INVALID after the provider refused its key during a turn. One atomic update, so it never
+     * fights the version of an edit saved at the same time.
+     */
+    public void markInvalid(String workspaceId, String id, String message) {
+        mongo.updateFirst(Query.query(Criteria.where("_id").is(id).and("workspaceId").is(workspaceId)),
+                new Update().set("status", AiConnectionStatus.INVALID).set("lastError", message)
+                        .set("checkedAt", clock.instant()),
+                AiConnection.class);
     }
 
     private AiCredential credential(AiConnection c) {
