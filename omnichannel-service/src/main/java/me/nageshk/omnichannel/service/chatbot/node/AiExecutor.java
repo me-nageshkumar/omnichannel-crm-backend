@@ -36,16 +36,15 @@ import me.nageshk.omnichannel.service.chatbot.flow.NodeType;
 import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.AiNodeSettings;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.AiNodeSettings.Mode;
-import me.nageshk.omnichannel.service.chatbot.run.ChatbotSender;
-import me.nageshk.omnichannel.service.chatbot.run.NodeFailed;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
  * The AI node (spec §5.9). It submits a turn to the AI module and waits on AI_RESPONSE, so no chatbot thread is held
  * while the model thinks (§5.5). Its state lives under {@code variables[nodeName]} while it waits; the result
- * replaces it when it goes on. Single-call mode runs here; conversation mode is validated here and runs in Task 9.
- * The bean is named apart from the AI module's {@code aiExecutor} thread pool.
+ * replaces it when it goes on. Single-call mode runs here; conversation mode runs in {@link AiConversationFlow}. Every
+ * AI text the customer gets is WhatsApp-formatted ({@link WhatsAppFormat}) and sent through {@link AiPendingSend}. The
+ * bean is named apart from the AI module's {@code aiExecutor} thread pool.
  */
 @Component("aiNodeExecutor")
 public class AiExecutor extends BaseExecutor {
@@ -56,24 +55,22 @@ public class AiExecutor extends BaseExecutor {
     static final int MAX_TEXT = 4096;
     static final int MAX_INSTRUCTIONS = 20000;
     static final int MAX_LIST = 20;
-    /** Node-state key of a reply the AI gave that has not reached the customer yet. */
-    static final String PENDING_SEND = "pendingSend";
-
     private final AiGateway gateway;
-    private final Duration turnTimeout;
-    private final int attempts;
+    /** How long a turn may take before the ticker fails it: every attempt's timeout, and a margin. */
+    private final Duration aiWait;
+    private final AiConversationFlow conversation;
 
     /**
      * The two timing values are read from the AI module's own {@code omnichannel.ai.*} keys (the service may import
      * only {@code ai.api}, so not {@code AiProperties}); the defaults match it.
      */
-    public AiExecutor(FlowParser parser, AiGateway gateway,
+    public AiExecutor(FlowParser parser, AiGateway gateway, AiInputs inputs,
             @Value("${omnichannel.ai.turn-timeout:120s}") Duration turnTimeout,
             @Value("${omnichannel.ai.attempts:2}") int attempts) {
         super(parser);
         this.gateway = gateway;
-        this.turnTimeout = turnTimeout;
-        this.attempts = attempts;
+        this.aiWait = turnTimeout.multipliedBy(attempts).plusSeconds(30);
+        this.conversation = new AiConversationFlow(gateway, inputs, aiWait);
     }
 
     @Override
@@ -260,10 +257,18 @@ public class AiExecutor extends BaseExecutor {
 
     @Override
     public StepResult run(RunContext ctx, FlowNode node) {
-        // a send retry: the reply was already bought, so resend it instead of asking the AI again
-        if (state(ctx, node).get(PENDING_SEND) instanceof Map<?, ?> pending) return resend(ctx, node, pending);
         AiNodeSettings s = settings(node, AiNodeSettings.class);
-        if (s.modeOrDefault() == Mode.CONVERSATION) throw new NodeFailed("conversation mode arrives in Task 9");
+        // a send retry: the message was already bought, so send the rest of it instead of asking the AI again
+        Map<?, ?> pending = AiPendingSend.of(ctx, node);
+        if (pending != null) {
+            AiPendingSend.deliver(ctx, node);
+            Object then = pending.get("then");
+            if (AiPendingSend.NEXT.equals(then)) return AiPendingSend.storedNext(pending);
+            if (AiPendingSend.CONTINUE.equals(then)) return conversation.afterReply(ctx, node, s);
+            if (AiPendingSend.START.equals(then)) return conversation.begin(ctx, node, s);
+            throw new IllegalStateException("unknown continuation of an unsent AI message: " + then);
+        }
+        if (s.modeOrDefault() == Mode.CONVERSATION) return conversation.start(ctx, node, s);
         String conversationId = continued(ctx, s);
         List<AiOutcome> outcomes = s.outcomesOrEmpty();
         TurnRequest request = new TurnRequest(ctx.workspaceId(), ctx.run().getId(), ctx.run().getChatbotId(),
@@ -287,20 +292,20 @@ public class AiExecutor extends BaseExecutor {
         state.put("lastReply", null);
         state.put("usage", usage(0, 0));
         ctx.vars().put(node.name(), state);
-        Waiting waiting = Waiting.ai(callId, ctx.now(), ctx.now().plus(turnTimeout.multipliedBy(attempts)).plusSeconds(30));
-        return StepResult.wait(waiting, "Waiting for the AI (turn 1, call " + callId + ")");
+        return StepResult.wait(Waiting.ai(callId, ctx.now(), ctx.now().plus(aiWait)),
+                "Waiting for the AI (turn 1, call " + callId + ")");
     }
 
     @Override
     public StepResult onAnswer(RunContext ctx, FlowNode node, TaskAnswer answer) {
-        if (answer.kind() != TaskKind.AI_RESPONSE) throw new IllegalStateException("the AI node got a " + answer.kind());
         AiNodeSettings s = settings(node, AiNodeSettings.class);
-        if (s.modeOrDefault() == Mode.CONVERSATION) throw new NodeFailed("conversation mode arrives in Task 9");
+        boolean conversing = s.modeOrDefault() == Mode.CONVERSATION;
+        if (conversing && answer.kind() == TaskKind.WHATSAPP_REPLY) return conversation.onCustomer(ctx, node, s);
+        if (answer.kind() != TaskKind.AI_RESPONSE) throw new IllegalStateException("the AI node got a " + answer.kind());
         TurnResult r = (TurnResult) answer.payload().get("result");
+        if (conversing) return conversation.onAi(ctx, node, s, r);
         Map<String, Object> prev = state(ctx, node);
-        AiUsage u = r.usage() == null ? new AiUsage(0, 0, 0, 0) : r.usage();
-        Map<String, Object> usage = usage(number(prevUsage(prev).get("inputTokens")) + u.inputTokens(),
-                number(prevUsage(prev).get("outputTokens")) + u.outputTokens());
+        Map<String, Object> usage = addUsage(prev, r.usage());
         String conversationId = r.conversationId() != null ? r.conversationId() : (String) prev.get("conversationId");
         int turns = 1;
         if (r.status() != TurnStatus.DONE) {
@@ -311,7 +316,8 @@ public class AiExecutor extends BaseExecutor {
         List<AiOutcome> outcomes = s.outcomesOrEmpty();
         Optional<AiOutcome> chosen = outcomes.stream().filter(o -> o != null && o.id() != null && o.id().equals(outcome)).findFirst();
         if (!outcomes.isEmpty() && chosen.isEmpty()) return failure("UNKNOWN_OUTCOME", turns, usage, conversationId);
-        String reply = finish != null && !blank(finish.reply()) ? finish.reply() : blank(r.text()) ? null : r.text();
+        boolean ownReply = finish != null && !blank(finish.reply());
+        String reply = ownReply ? finish.reply() : blank(r.text()) ? null : r.text();
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("reply", reply);
@@ -322,67 +328,29 @@ public class AiExecutor extends BaseExecutor {
         result.put("usage", usage);
         result.put("conversationId", conversationId);
 
-        String text = s.sends() ? customerText(s, reply, r.json()) : null;
+        List<String> parts = !s.sends() ? List.of()
+                : WhatsAppFormat.convert(ownReply ? finish.reply() : customerText(s, r.text(), r.json()));
         String summary = chosen.map(o -> "AI chose “" + (blank(o.label()) ? o.id() : o.label()) + "”").orElse("AI replied")
-                + (blank(text) ? "" : " and the reply was sent");
+                + (parts.isEmpty() ? "" : " and the reply was sent");
         StepResult then = StepResult.next(chosen.map(o -> Outputs.outcomeOf(o.id())).orElse(Outputs.NEXT), result, summary);
-        return blank(text) ? then : sendThen(ctx, node, text, then);
-    }
-
-    /**
-     * Sends an AI reply, then goes on as {@code then}. The reply and the way on are first kept in the node state as
-     * {@value #PENDING_SEND}: when the send must be retried (no device, WhatsApp Web not ready) the runner saves the
-     * run with it, and its retry calls {@link #run}, which resends this text instead of buying a new turn. A failed
-     * resend throws again with no step done in between, so the runner's send-attempt cap ends the run as for any
-     * node. Conversation mode (Task 9) sends every reply through here; a continuation other than NEXT adds a
-     * {@code then} value.
-     */
-    private StepResult sendThen(RunContext ctx, FlowNode node, String text, StepResult then) {
-        Map<String, Object> pending = new LinkedHashMap<>();
-        pending.put("text", text);
-        pending.put("then", StepResult.Kind.NEXT.name());
-        pending.put("output", then.output());
-        pending.put("result", then.result());
-        pending.put("summary", then.summary());
-        Map<String, Object> state = new LinkedHashMap<>(state(ctx, node));
-        state.put(PENDING_SEND, pending);
-        ctx.vars().put(node.name(), state);
-        return deliver(ctx, node, text, then);
-    }
-
-    @SuppressWarnings("unchecked")
-    private StepResult resend(RunContext ctx, FlowNode node, Map<?, ?> pending) {
-        if (!StepResult.Kind.NEXT.name().equals(pending.get("then"))) {
-            throw new IllegalStateException("unknown continuation of an unsent AI reply: " + pending.get("then"));
-        }
-        Object result = pending.get("result");
-        StepResult then = StepResult.next((String) pending.get("output"),
-                result instanceof Map<?, ?> m ? new LinkedHashMap<>((Map<String, Object>) m) : null,
-                (String) pending.get("summary"));
-        return deliver(ctx, node, String.valueOf(pending.get("text")), then);
-    }
-
-    /** Sends, and only once it went out drops the pending marker. */
-    private static StepResult deliver(RunContext ctx, FlowNode node, String text, StepResult then) {
-        ctx.sender(ChatbotSender.class).send(ctx, SendMessageExecutor.textMessage(text));
-        Map<String, Object> state = new LinkedHashMap<>(state(ctx, node));
-        state.remove(PENDING_SEND);
-        ctx.vars().put(node.name(), state);
+        if (!parts.isEmpty()) AiPendingSend.send(ctx, node, parts, AiPendingSend.NEXT, then);
         return then;
     }
 
-    /** The text the customer gets: the JSON format's message field, else the reply. */
-    private static String customerText(AiNodeSettings s, String reply, Map<String, Object> json) {
+    // ---- shared with the conversation flow ----
+
+    /** The text the customer gets of a turn: the JSON format's message field, else the text. */
+    static String customerText(AiNodeSettings s, String text, Map<String, Object> json) {
         AiReplyFormat f = s.replyFormat();
         if (f != null && f.type() == AiReplyFormat.Type.JSON) {
             Object v = json == null || f.messageField() == null ? null : json.get(f.messageField());
             return v == null ? null : String.valueOf(v);
         }
-        return reply;
+        return text;
     }
 
     /** Only the code, never the provider's own wording (it may quote a key or an internal detail). */
-    private static StepResult failure(String errorCode, int turns, Map<String, Object> usage, String conversationId) {
+    static StepResult failure(String errorCode, int turns, Map<String, Object> usage, String conversationId) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("errorCode", errorCode);
         result.put("turns", turns);
@@ -392,28 +360,35 @@ public class AiExecutor extends BaseExecutor {
     }
 
     /** The conversation of the {@code continueFrom} node, from its variables; null for a new one. */
-    private static String continued(RunContext ctx, AiNodeSettings s) {
+    static String continued(RunContext ctx, AiNodeSettings s) {
         if (blank(s.continueFrom())) return null;
         Object v = ctx.vars().get(s.continueFrom());
         return v instanceof Map<?, ?> m && m.get("conversationId") instanceof String id && !id.isBlank() ? id : null;
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> state(RunContext ctx, FlowNode node) {
+    static Map<String, Object> state(RunContext ctx, FlowNode node) {
         Object v = ctx.vars().get(node.name());
         return v instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> prevUsage(Map<String, Object> state) {
-        return state.get("usage") instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+    static Map<String, Object> prevUsage(Map<String, Object> state) {
+        return state.get("usage") instanceof Map<?, ?> m ? (Map<String, Object>) m : usage(0, 0);
     }
 
-    private static long number(Object o) {
+    /** The stored usage plus this turn's. */
+    static Map<String, Object> addUsage(Map<String, Object> state, AiUsage u) {
+        AiUsage add = u == null ? new AiUsage(0, 0, 0, 0) : u;
+        Map<String, Object> prev = prevUsage(state);
+        return usage(number(prev.get("inputTokens")) + add.inputTokens(), number(prev.get("outputTokens")) + add.outputTokens());
+    }
+
+    static long number(Object o) {
         return o instanceof Number n ? n.longValue() : 0;
     }
 
-    private static Map<String, Object> usage(long in, long out) {
+    static Map<String, Object> usage(long in, long out) {
         Map<String, Object> u = new LinkedHashMap<>();
         u.put("inputTokens", in);
         u.put("outputTokens", out);

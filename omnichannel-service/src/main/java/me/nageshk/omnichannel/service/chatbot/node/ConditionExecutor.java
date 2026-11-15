@@ -58,8 +58,11 @@ public class ConditionExecutor extends BaseExecutor {
         return StepResult.next(Outputs.OTHERWISE, result, "No case matched");
     }
 
-    /** Fields are written as {@code {{path}}}: strip the braces; values may hold variables: render them. */
-    private static ConditionNode normalise(ConditionNode n, RunContext ctx) {
+    /**
+     * Fields are written as {@code {{path}}}: strip the braces; values may hold variables: render them. The AI node's
+     * exit condition uses it too.
+     */
+    static ConditionNode normalise(ConditionNode n, RunContext ctx) {
         if (n.isGroup()) {
             return new ConditionNode(n.combinator(), n.not(), n.rules().stream().map(r -> normalise(r, ctx)).toList(),
                     null, null, null);

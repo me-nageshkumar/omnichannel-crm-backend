@@ -55,7 +55,7 @@ class AiExecutorValidationTest {
     }
 
     private final FlowParser parser = new FlowParser(MAPPER);
-    private final AiExecutor executor = new AiExecutor(parser, new StubGateway(), Duration.ofSeconds(120), 2);
+    private final AiExecutor executor = new AiExecutor(parser, new StubGateway(), null, Duration.ofSeconds(120), 2);
     private final ValidationContext ctx = new ValidationContext("w1", "bot-1", false);
 
     private static Map<String, Object> single(Map<String, Object> extra) {
