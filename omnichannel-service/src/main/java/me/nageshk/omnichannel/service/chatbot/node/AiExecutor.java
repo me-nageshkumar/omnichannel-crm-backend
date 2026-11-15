@@ -56,6 +56,8 @@ public class AiExecutor extends BaseExecutor {
     static final int MAX_TEXT = 4096;
     static final int MAX_INSTRUCTIONS = 20000;
     static final int MAX_LIST = 20;
+    /** Node-state key of a reply the AI gave that has not reached the customer yet. */
+    static final String PENDING_SEND = "pendingSend";
 
     private final AiGateway gateway;
     private final Duration turnTimeout;
@@ -258,6 +260,8 @@ public class AiExecutor extends BaseExecutor {
 
     @Override
     public StepResult run(RunContext ctx, FlowNode node) {
+        // a send retry: the reply was already bought, so resend it instead of asking the AI again
+        if (state(ctx, node).get(PENDING_SEND) instanceof Map<?, ?> pending) return resend(ctx, node, pending);
         AiNodeSettings s = settings(node, AiNodeSettings.class);
         if (s.modeOrDefault() == Mode.CONVERSATION) throw new NodeFailed("conversation mode arrives in Task 9");
         String conversationId = continued(ctx, s);
@@ -318,17 +322,53 @@ public class AiExecutor extends BaseExecutor {
         result.put("usage", usage);
         result.put("conversationId", conversationId);
 
-        boolean sent = false;
-        if (s.sends()) {
-            String text = customerText(s, reply, r.json());
-            if (!blank(text)) {
-                ctx.sender(ChatbotSender.class).send(ctx, SendMessageExecutor.textMessage(text));
-                sent = true;
-            }
-        }
+        String text = s.sends() ? customerText(s, reply, r.json()) : null;
         String summary = chosen.map(o -> "AI chose “" + (blank(o.label()) ? o.id() : o.label()) + "”").orElse("AI replied")
-                + (sent ? " and the reply was sent" : "");
-        return StepResult.next(chosen.map(o -> Outputs.outcomeOf(o.id())).orElse(Outputs.NEXT), result, summary);
+                + (blank(text) ? "" : " and the reply was sent");
+        StepResult then = StepResult.next(chosen.map(o -> Outputs.outcomeOf(o.id())).orElse(Outputs.NEXT), result, summary);
+        return blank(text) ? then : sendThen(ctx, node, text, then);
+    }
+
+    /**
+     * Sends an AI reply, then goes on as {@code then}. The reply and the way on are first kept in the node state as
+     * {@value #PENDING_SEND}: when the send must be retried (no device, WhatsApp Web not ready) the runner saves the
+     * run with it, and its retry calls {@link #run}, which resends this text instead of buying a new turn. A failed
+     * resend throws again with no step done in between, so the runner's send-attempt cap ends the run as for any
+     * node. Conversation mode (Task 9) sends every reply through here; a continuation other than NEXT adds a
+     * {@code then} value.
+     */
+    private StepResult sendThen(RunContext ctx, FlowNode node, String text, StepResult then) {
+        Map<String, Object> pending = new LinkedHashMap<>();
+        pending.put("text", text);
+        pending.put("then", StepResult.Kind.NEXT.name());
+        pending.put("output", then.output());
+        pending.put("result", then.result());
+        pending.put("summary", then.summary());
+        Map<String, Object> state = new LinkedHashMap<>(state(ctx, node));
+        state.put(PENDING_SEND, pending);
+        ctx.vars().put(node.name(), state);
+        return deliver(ctx, node, text, then);
+    }
+
+    @SuppressWarnings("unchecked")
+    private StepResult resend(RunContext ctx, FlowNode node, Map<?, ?> pending) {
+        if (!StepResult.Kind.NEXT.name().equals(pending.get("then"))) {
+            throw new IllegalStateException("unknown continuation of an unsent AI reply: " + pending.get("then"));
+        }
+        Object result = pending.get("result");
+        StepResult then = StepResult.next((String) pending.get("output"),
+                result instanceof Map<?, ?> m ? new LinkedHashMap<>((Map<String, Object>) m) : null,
+                (String) pending.get("summary"));
+        return deliver(ctx, node, String.valueOf(pending.get("text")), then);
+    }
+
+    /** Sends, and only once it went out drops the pending marker. */
+    private static StepResult deliver(RunContext ctx, FlowNode node, String text, StepResult then) {
+        ctx.sender(ChatbotSender.class).send(ctx, SendMessageExecutor.textMessage(text));
+        Map<String, Object> state = new LinkedHashMap<>(state(ctx, node));
+        state.remove(PENDING_SEND);
+        ctx.vars().put(node.name(), state);
+        return then;
     }
 
     /** The text the customer gets: the JSON format's message field, else the reply. */

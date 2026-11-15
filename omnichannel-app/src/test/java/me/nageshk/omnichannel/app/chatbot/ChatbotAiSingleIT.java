@@ -32,6 +32,7 @@ import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.service.chatbot.run.AiResponseListener;
 import me.nageshk.omnichannel.service.chatbot.run.ChatbotRunService;
+import me.nageshk.omnichannel.service.chatbot.run.ChatbotRunner;
 import me.nageshk.omnichannel.service.chatbot.run.ChatbotTicker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,7 @@ class ChatbotAiSingleIT extends AiTestBase {
     @Autowired AiTurnWorker worker;
     @Autowired AiResponseListener listener;
     @Autowired ThreadPoolTaskExecutor chatbotExecutor;
+    @Autowired ChatbotRunner runner;
 
     private String profileId;
 
@@ -281,6 +283,70 @@ class ChatbotAiSingleIT extends AiTestBase {
             assertThat(done.getSteps().get(0).summary()).isEqualTo("AI failed: TIMEOUT");
             assertThat(sent(d, 0)).isEqualTo("Failed: TIMEOUT");
         }
+    }
+
+    /** A sent-reply flow whose number has no device yet; the AI has answered and the first send failed. */
+    private ChatbotRun answeredWhileOffline(String reply) throws Exception {
+        scripted.reply(text(reply));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", flow(List.of(
+                node("ai", "ai", "Classify", aiSettings(Map.of("sendReply", true))),
+                node("m", "send_message", "Say", textMessage("Then: {{Classify.reply}}"))),
+                List.of(edge("ai", "next", "m")))));
+        ChatbotRun run = start(id, chat);
+        assertWaitingOnAi(run);
+        aiTick();
+        await(() -> run(run.getId()).getRetryAt() != null);
+        ChatbotRun retrying = run(run.getId());
+        assertThat(retrying.getStatus()).isEqualTo(ChatbotRunStatus.RUNNING);
+        assertThat(retrying.getSendAttempts()).isEqualTo(1);
+        return retrying;
+    }
+
+    private void retryLater() throws Exception {
+        clock.advance(Duration.ofSeconds(31));
+        runner.retryDue().get(5, TimeUnit.SECONDS);
+    }
+
+    private long aiCalls() {
+        return mongo.count(new Query(), "aiCalls");
+    }
+
+    @Test
+    void unsentReplyIsResentNotRegeneratedAndTheRunFailsAfterTheSendAttempts() throws Exception {
+        ChatbotRun run = answeredWhileOffline("Your quote is ready");
+        retryLater();
+        retryLater();
+        assertThat(run(run.getId()).getStatus()).isEqualTo(ChatbotRunStatus.RUNNING);
+        retryLater();
+        ChatbotRun failed = run(run.getId());
+        assertThat(failed.getStatus()).isEqualTo(ChatbotRunStatus.FAILED);
+        assertThat(failed.getEndReason()).startsWith("could not send");
+        // every retry resent the one reply: no new AI call was bought
+        aiTick();
+        assertThat(aiCalls()).isEqualTo(1);
+        assertThat(scripted.requests()).hasSize(1);
+    }
+
+    @Test
+    void unsentReplyGoesOutWhenTheDeviceComesBack() throws Exception {
+        ChatbotRun run = answeredWhileOffline("Your quote is ready");
+        retryLater();
+        assertThat(run(run.getId()).getSendAttempts()).isEqualTo(2);
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            retryLater();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            assertThat(sent(d, 0)).isEqualTo("Your quote is ready");
+            assertThat(sent(d, 1)).isEqualTo("Then: Your quote is ready");
+            ChatbotRun done = run(run.getId());
+            assertThat(state(done, "Classify")).containsEntry("reply", "Your quote is ready")
+                    .doesNotContainKey("pendingSend");
+            assertThat(done.getSteps().get(0).output()).isEqualTo("next");
+            assertThat(done.getSteps().get(0).outcome()).isEqualTo(ChatbotStep.Outcome.DONE);
+        }
+        aiTick();
+        assertThat(aiCalls()).isEqualTo(1);
+        assertThat(scripted.requests()).hasSize(1);
     }
 
     @Test
