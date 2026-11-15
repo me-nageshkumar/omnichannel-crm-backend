@@ -126,6 +126,11 @@ public class ChatbotRunner {
         if (run.getVariables() == null) run.setVariables(new LinkedHashMap<>());
         if (run.getSteps() == null) run.setSteps(new ArrayList<>());
         boolean answered = answer != null && !ChatbotTimers.botBusy(answer.kind());
+        // the customer's reply is this run's now, whichever node takes it: a later AI conversation starts after it
+        if (answer != null && answer.kind() == me.nageshk.omnichannel.db.chatbot.TaskKind.WHATSAPP_REPLY) {
+            run.setInboxMark(me.nageshk.omnichannel.db.chatbot.InboxMark.later(run.getInboxMark(),
+                    me.nageshk.omnichannel.db.chatbot.InboxMark.of(answer.message())));
+        }
 
         while (true) {
             FlowNode node;
@@ -217,7 +222,8 @@ public class ChatbotRunner {
         Contact contact = ctx.contact();
         if (contact == null) return finish(ended, ChatbotRunStatus.FAILED, "the contact no longer exists");
         ChatbotRunService.StartResult next = service.start(target, contact, ctx.chat(), run.getStartedBy(), null,
-                me.nageshk.omnichannel.db.chatbot.IfRunning.SKIP, run.isTest(), run.getVariables(), run.getJumps() + 1);
+                me.nageshk.omnichannel.db.chatbot.IfRunning.SKIP, run.isTest(), run.getVariables(), run.getJumps() + 1,
+                run.getInboxMark());
         if (!next.started()) {
             log.warn("jump from run {} to {} did not start: {}", run.getId(), chatbotId, next.reason());
         }

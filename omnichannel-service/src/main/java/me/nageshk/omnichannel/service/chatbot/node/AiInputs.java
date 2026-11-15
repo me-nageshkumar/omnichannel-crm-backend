@@ -6,7 +6,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageSource;
@@ -74,14 +73,6 @@ public class AiInputs {
         }
         Query q = new Query(c).with(Sort.by(Sort.Order.asc("creationTime"), Sort.Order.asc("_id"))).limit(MAX_BATCH);
         return mongo.find(q, WaWebMessage.class);
-    }
-
-    /** The newest message the contact sent in the chat, of any type: everything up to it was there before. */
-    public Optional<WaWebMessage> latest(String chatId) {
-        Query q = new Query(Criteria.where("chatId").is(chatId).and("direction").is(MessageDirection.IN.name())
-                .and("source").is(MessageSource.CONTACT.name()))
-                .with(Sort.by(Sort.Order.desc("creationTime"), Sort.Order.desc("_id"))).limit(1);
-        return Optional.ofNullable(mongo.findOne(q, WaWebMessage.class));
     }
 
     /**

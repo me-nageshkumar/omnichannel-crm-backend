@@ -18,6 +18,7 @@ import me.nageshk.omnichannel.ai.api.TurnStatus;
 import me.nageshk.omnichannel.common.api.CodedException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.db.chatbot.InboxMark;
 import me.nageshk.omnichannel.db.chatbot.Waiting;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 import me.nageshk.omnichannel.service.automation.ConditionEvaluator;
@@ -56,17 +57,23 @@ final class AiConversationFlow {
         this.aiWait = aiWait;
     }
 
-    /** Fresh state; what the contact wrote before the node started is not the conversation's. */
+    /**
+     * Fresh state. The conversation starts after the run's {@link InboxMark}: the trigger message and replies earlier
+     * nodes took stay out, and whatever the customer wrote after them (while a Send message or a Wait ran) is the
+     * first turn. {@code startedAt} is the run's start, so those messages pass the start-time filter.
+     */
     StepResult start(RunContext ctx, FlowNode node, AiNodeSettings s) {
-        Optional<WaWebMessage> latest = inputs.latest(chatId(ctx));
+        chatId(ctx);
+        InboxMark mark = ctx.run().getInboxMark();
+        Instant runStart = ctx.run().getCreatedAt() == null ? ctx.now() : ctx.run().getCreatedAt();
         Map<String, Object> st = new LinkedHashMap<>();
         st.put("conversationId", AiExecutor.continued(ctx, s));
         st.put("turns", 0);
         st.put("lastCallId", null);
         st.put("supersedes", 0);
-        st.put("consumedUntil", latest.map(m -> iso(m.getCreationTime())).orElse(null));
-        st.put("consumedId", latest.map(WaWebMessage::getId).orElse(null));
-        st.put("startedAt", ctx.now().toString());
+        st.put("consumedUntil", mark == null ? null : iso(mark.creationTime()));
+        st.put("consumedId", mark == null ? null : mark.messageId());
+        st.put("startedAt", runStart.toString());
         st.put("inputs", new ArrayList<>());
         st.put("lastReply", null);
         st.put("lastJson", null);
@@ -190,6 +197,7 @@ final class AiConversationFlow {
         st.put("consumedUntil", iso(last.getCreationTime()));
         st.put("consumedId", last.getId());
         ctx.vars().put(node.name(), st);
+        ctx.run().setInboxMark(InboxMark.later(ctx.run().getInboxMark(), InboxMark.of(last)));
         Optional<String> word = exitWord(s, fresh);
         if (word.isPresent()) {
             Map<String, Object> result = result(st);

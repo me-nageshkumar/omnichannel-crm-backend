@@ -19,6 +19,7 @@ import me.nageshk.omnichannel.ai.provider.ProviderRequest;
 import me.nageshk.omnichannel.ai.provider.ToolCall;
 import me.nageshk.omnichannel.app.ai.AiTestBase;
 import me.nageshk.omnichannel.app.automation.AutomationDevice;
+import me.nageshk.omnichannel.db.automation.EventData;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
@@ -40,6 +41,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -642,6 +644,88 @@ class ChatbotAiConversationIT extends AiTestBase {
             List<String> pendingIds = (List<String>) state(done, "Sales").get("pendingAfterFinish");
             assertThat(pendingIds).hasSize(1);
             assertThat(mongo.findById(pendingIds.get(0), WaWebMessage.class).getBody()).isEqualTo("and gift wrap");
+        }
+    }
+
+    /** The device stores {@code text} as a customer message while it answers the bot's first send. */
+    private void customerWritesDuringFirstSend(AutomationDevice d, WaWebChat chat, String text) {
+        AtomicBoolean once = new AtomicBoolean();
+        var normal = d.sendAnswer;
+        d.sendAnswer = req -> {
+            if (once.compareAndSet(false, true)) stored(chat, "text", text);
+            return normal.apply(req);
+        };
+    }
+
+    @Test
+    void messageBeforeTheAiNodeIsItsFirstInput() throws Exception {
+        scripted.reply(text("Red shoes, lovely. Which size?"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hi", "Veenu");
+        String id = publish(flow(List.of(
+                node("m", "send_message", "Welcome", textMessage("Welcome to the shop!")),
+                node("ai", "ai", "Sales", conv(Map.of("exitWords", List.of("stop"))))),
+                List.of(edge("m", "next", "ai"))));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            // the customer goes on while the Send message node runs, before the AI node starts
+            customerWritesDuringFirstSend(d, chat, "I want red shoes");
+            ChatbotRun run = start(id, chat);
+            await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
+            // the trigger "hi" stays out; what came after it is the first turn
+            assertThat(aiCalls().get(0).turnRequest().inputs()).containsExactly("I want red shoes");
+            aiTick();
+            await(() -> waitingOnCustomerAfter(run.getId(), "Sales", 1));
+            assertThat(sent(d)).containsExactly("Welcome to the shop!", "Red shoes, lovely. Which size?");
+        }
+    }
+
+    @Test
+    void messageAfterTheTriggerButBeforeTheRunStarted() throws Exception {
+        scripted.reply(text("Which colour?"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hi", "Veenu");
+        WaWebMessage trigger = mongo.findOne(new Query(Criteria.where("chatId").is(chat.getId())
+                .and("body").is("hi")), WaWebMessage.class);
+        // a burst: the second message is stored before the rule's run is even created
+        incoming(n1, VEENU, "chat", "I want shoes", "Veenu");
+        String id = publish(flow(List.of(node("ai", "ai", "Sales", conv(Map.of("exitWords", List.of("stop"))))),
+                List.of()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            Contact c = contacts.findById(chat.getContactId()).orElseThrow();
+            EventData event = new EventData(null, new EventData.MessageData(trigger.getId(), "hi", "TEXT", null), null,
+                    null, null, null, null, null);
+            ChatbotRunService.StartResult r = runs.start(brand.getId(), id, c, chat, StartedBy.test(manager.getId()),
+                    event, IfRunning.SKIP, true);
+            r.settled().get(5, TimeUnit.SECONDS);
+            String runId = r.run().getId();
+            await(() -> waitingOn(runId, TaskKind.AI_RESPONSE));
+            assertThat(aiCalls().get(0).turnRequest().inputs()).containsExactly("I want shoes");
+        }
+    }
+
+    @Test
+    void messageAfterAnAskAnswerIsTheFirstInput() throws Exception {
+        scripted.reply(text("Thanks Asha, we deliver to Pune."));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(flow(List.of(
+                node("q", "ask_question", "AskName", Map.of("text", "Your name?", "answerType", "TEXT")),
+                node("m", "send_message", "Thanks", textMessage("Thanks {{AskName.answer}}")),
+                node("ai", "ai", "Sales", conv(Map.of("exitWords", List.of("stop"))))),
+                List.of(edge("q", "next", "m"), edge("m", "next", "ai"))));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            await(() -> d.requests("sendMessage").size() == 1);
+            // the Ask answer is that node's; the next message lands while "Thanks" goes out
+            AtomicBoolean once = new AtomicBoolean();
+            var normal = d.sendAnswer;
+            d.sendAnswer = req -> {
+                if (req.params().get("content").asString().startsWith("Thanks") && once.compareAndSet(false, true)) {
+                    stored(chat, "text", "and my city is Pune");
+                }
+                return normal.apply(req);
+            };
+            say("Asha");
+            await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
+            assertThat(aiCalls().get(0).turnRequest().inputs()).containsExactly("and my city is Pune");
+            assertThat(state(run(run.getId()), "AskName")).containsEntry("answer", "Asha");
         }
     }
 }
