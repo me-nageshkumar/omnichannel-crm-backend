@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.ai.profile;
 
 import java.util.List;
+import me.nageshk.omnichannel.ai.mcp.McpTool;
 import me.nageshk.omnichannel.ai.profile.AiProfileViews.Save;
 import me.nageshk.omnichannel.ai.profile.AiProfileViews.View;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
@@ -54,6 +55,14 @@ class AiProfileController {
             @PathVariable String id, @RequestBody Save body) {
         return service.replace(workspaceId, id, me.userId(), body);
     }
+
+    @PostMapping("/{id}/mcp/{serverId}/tools")
+    @PreAuthorize("@access.has(#workspaceId, 'ai:manage')")
+    List<ToolView> mcpTools(@PathVariable String workspaceId, @PathVariable String id, @PathVariable String serverId) {
+        return service.loadTools(workspaceId, id, serverId).stream().map(t -> new ToolView(t.name(), t.description())).toList();
+    }
+
+    record ToolView(String name, String description) {}
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

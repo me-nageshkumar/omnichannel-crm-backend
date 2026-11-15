@@ -16,6 +16,10 @@ import me.nageshk.omnichannel.ai.api.AiCapabilities;
 import me.nageshk.omnichannel.ai.api.AiProfileUsage;
 import me.nageshk.omnichannel.ai.connection.AiConnection;
 import me.nageshk.omnichannel.ai.connection.AiConnectionRepository;
+import me.nageshk.omnichannel.ai.mcp.McpClient;
+import me.nageshk.omnichannel.ai.mcp.McpEndpoint;
+import me.nageshk.omnichannel.ai.mcp.McpException;
+import me.nageshk.omnichannel.ai.mcp.McpTool;
 import me.nageshk.omnichannel.ai.profile.AiProfileViews.McpSave;
 import me.nageshk.omnichannel.ai.profile.AiProfileViews.Save;
 import me.nageshk.omnichannel.ai.profile.AiProfileViews.View;
@@ -50,15 +54,17 @@ public class AiProfileService {
     private final SecretBox secrets;
     private final ObjectProvider<AiProfileUsage> usage;
     private final Clock clock;
+    private final McpClient mcp;
 
     public AiProfileService(AiProfileRepository repository, AiConnectionRepository connections, AiProviders providers,
-            SecretBox secrets, ObjectProvider<AiProfileUsage> usage, Clock clock) {
+            SecretBox secrets, ObjectProvider<AiProfileUsage> usage, Clock clock, McpClient mcp) {
         this.repository = repository;
         this.connections = connections;
         this.providers = providers;
         this.secrets = secrets;
         this.usage = usage;
         this.clock = clock;
+        this.mcp = mcp;
     }
 
     public List<View> list(String workspaceId) {
@@ -78,6 +84,33 @@ public class AiProfileService {
         AiConnection c = connections.findByIdAndWorkspaceId(p.getConnectionId(), workspaceId)
                 .orElseThrow(() -> new NotFoundException("AI connection not found"));
         return new ResolvedProfile(p, c, providers.of(c.getProvider()));
+    }
+
+    /** The tools an "Our app" MCP server offers, for the profile form. */
+    public List<McpTool> loadTools(String workspaceId, String profileId, String serverId) {
+        AiProfile p = find(workspaceId, profileId);
+        McpServer s = p.getMcpServers().stream().filter(x -> serverId.equals(x.getId())).findFirst()
+                .orElseThrow(() -> new NotFoundException("MCP server not found"));
+        if (s.getConnectBy() != ConnectBy.APP) {
+            throw new CodedException(HttpStatus.BAD_REQUEST, "mcp_provider_server", null,
+                    "Tools of this server are loaded by the provider");
+        }
+        try {
+            return mcp.tools(endpoint(s));
+        } catch (McpException e) {
+            throw new CodedException(HttpStatus.BAD_GATEWAY, "mcp_error", null, e.getMessage());
+        }
+    }
+
+    /** Where to reach a server and with which headers; opens the sealed secret, so never log the result's headers. */
+    public McpEndpoint endpoint(McpServer s) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (s.getAuth() != McpAuth.NONE && s.getSecret() != null) {
+            String secret = secrets.open(s.getSecret());
+            if (s.getAuth() == McpAuth.BEARER) headers.put("Authorization", "Bearer " + secret);
+            else headers.put(s.getHeaderName(), secret);
+        }
+        return new McpEndpoint(s.getUrl(), headers);
     }
 
     public View create(String workspaceId, String customerId, String userId, Save in) {

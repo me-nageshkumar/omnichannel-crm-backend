@@ -428,4 +428,95 @@ class AiProfilesApiIT extends AiTestBase {
         assertThat(ai(HttpMethod.POST, "/profiles", viewer, profile("Q", conn)).getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
     }
+
+    private com.sun.net.httpserver.HttpServer mcpStub(java.util.concurrent.atomic.AtomicReference<String> keySeen, boolean fail)
+            throws java.io.IOException {
+        com.sun.net.httpserver.HttpServer srv = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        srv.createContext("/mcp", ex -> {
+            try {
+                JsonNode body = new tools.jackson.databind.json.JsonMapper().readTree(ex.getRequestBody().readAllBytes());
+                keySeen.set(ex.getRequestHeaders().getFirst("X-Api-Key"));
+                if (!body.has("id")) {
+                    ex.sendResponseHeaders(202, -1);
+                    return;
+                }
+                String method = body.get("method").asString();
+                String result = fail ? null : "tools/list".equals(method)
+                        ? "{\"tools\":[{\"name\":\"lookup\",\"description\":\"Find a customer\",\"inputSchema\":{\"type\":\"object\"}}]}"
+                        : "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{}}";
+                String msg = fail ? "{\"jsonrpc\":\"2.0\",\"id\":" + body.get("id") + ",\"error\":{\"code\":-1,\"message\":\"boom " + SECRET + "\"}}"
+                        : "{\"jsonrpc\":\"2.0\",\"id\":" + body.get("id") + ",\"result\":" + result + "}";
+                byte[] b = msg.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                ex.getResponseHeaders().set("Content-Type", "application/json");
+                ex.sendResponseHeaders(200, b.length);
+                ex.getResponseBody().write(b);
+            } finally {
+                ex.close();
+            }
+        });
+        srv.start();
+        return srv;
+    }
+
+    private JsonNode profileWithAppServer(String connectBy, String stubUrl) {
+        String conn = connection("Main", "openai");
+        Map<String, Object> b = profile("P", conn);
+        Map<String, Object> m = mcp("crm", "https://a.example.com/mcp", connectBy, "HEADER", SECRET);
+        m.put("headerName", "X-Api-Key");
+        b.put("mcpServers", List.of(m));
+        JsonNode v = create(b).getBody();
+        mongo.updateFirst(new Query(), new org.springframework.data.mongodb.core.query.Update().set("mcpServers.0.url", stubUrl),
+                "aiProfiles");
+        return v;
+    }
+
+    @Test
+    void loadToolsForAppServer() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<String> key = new java.util.concurrent.atomic.AtomicReference<>();
+        com.sun.net.httpserver.HttpServer srv = mcpStub(key, false);
+        try {
+            JsonNode v = profileWithAppServer("APP", "http://127.0.0.1:" + srv.getAddress().getPort() + "/mcp");
+            String path = "/profiles/" + v.get("id").asString() + "/mcp/" + v.get("mcpServers").get(0).get("id").asString() + "/tools";
+            ResponseEntity<JsonNode> res = ai(HttpMethod.POST, path, manager, null);
+            assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(res.getBody()).hasSize(1);
+            assertThat(res.getBody().get(0).get("name").asString()).isEqualTo("lookup");
+            assertThat(res.getBody().get(0).get("description").asString()).isEqualTo("Find a customer");
+            assertThat(res.getBody().toString()).doesNotContain(SECRET);
+            assertThat(key.get()).isEqualTo(SECRET);
+
+            assertThat(ai(HttpMethod.POST, path, roleUser("ai:view", "Viewer"), null).getStatusCode())
+                    .isEqualTo(HttpStatus.FORBIDDEN);
+            ResponseEntity<JsonNode> unknown = ai(HttpMethod.POST,
+                    "/profiles/" + v.get("id").asString() + "/mcp/nope/tools", manager, null);
+            assertThat(unknown.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        } finally {
+            srv.stop(0);
+        }
+    }
+
+    @Test
+    void loadToolsRefusesProviderServer() throws Exception {
+        JsonNode v = profileWithAppServer("PROVIDER", "https://a.example.com/mcp");
+        ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/profiles/" + v.get("id").asString() + "/mcp/"
+                + v.get("mcpServers").get(0).get("id").asString() + "/tools", manager, null);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody().get("code").asString()).isEqualTo("mcp_provider_server");
+    }
+
+    @Test
+    void loadToolsFailureIs502WithoutSecret() throws Exception {
+        com.sun.net.httpserver.HttpServer srv = mcpStub(new java.util.concurrent.atomic.AtomicReference<>(), true);
+        try {
+            JsonNode v = profileWithAppServer("APP", "http://127.0.0.1:" + srv.getAddress().getPort() + "/mcp");
+            ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/profiles/" + v.get("id").asString() + "/mcp/"
+                    + v.get("mcpServers").get(0).get("id").asString() + "/tools", manager, null);
+            assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+            assertThat(res.getBody().get("code").asString()).isEqualTo("mcp_error");
+            assertThat(res.getBody().toString()).doesNotContain(SECRET).contains("boom");
+        } finally {
+            srv.stop(0);
+        }
+    }
 }
