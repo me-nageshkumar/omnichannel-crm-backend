@@ -63,6 +63,37 @@ class OpenAiRequestsTest {
     }
 
     @Test
+    void strictOnlyWhenTheSchemaAllowsIt() {
+        Map<String, Object> ready = Map.of("type", "object", "additionalProperties", false,
+                "required", List.of("outcome", "fields"),
+                "properties", Map.of("outcome", Map.of("type", "string"),
+                        "fields", Map.of("type", "object", "additionalProperties", false, "required", List.of("city"),
+                                "properties", Map.of("city", Map.of("type", List.of("string", "null")))),
+                        "tags", Map.of("type", "array", "items", Map.of("type", "string"))));
+        Map<String, Object> readyAll = new java.util.LinkedHashMap<>(ready);
+        readyAll.put("required", List.of("outcome", "fields", "tags"));
+        Map<String, Object> optionalParam = Map.of("type", "object",
+                "properties", Map.of("id", Map.of("type", "integer"), "note", Map.of("type", "string")),
+                "required", List.of("id"));
+        Map<String, Object> nestedOpen = Map.of("type", "object", "additionalProperties", false,
+                "required", List.of("filter"),
+                "properties", Map.of("filter", Map.of("type", "object", "properties", Map.of())));
+        var tools = List.<AiTool>of(new AiTool.FunctionTool("a", null, readyAll),
+                new AiTool.FunctionTool("b", null, ready), new AiTool.FunctionTool("c", null, optionalParam),
+                new AiTool.FunctionTool("d", null, nestedOpen), new AiTool.FunctionTool("e", null, Map.of("type", "object")));
+        var r = req(null, List.of(new AiItem.UserText("Hi")), null, tools, null, null, null, null, null, null);
+
+        JsonNode sent = body(r).path("tools");
+        assertThat(List.of(0, 1, 2, 3, 4)).extracting(i -> sent.get(i).path("strict").asBoolean())
+                .containsExactly(true, false, false, false, false);
+        var finish = me.nageshk.omnichannel.ai.turn.FinishTool.of(
+                List.of(new me.nageshk.omnichannel.ai.api.AiOutcome("a", "A", null)),
+                List.of(new me.nageshk.omnichannel.ai.api.AiField("city", null, me.nageshk.omnichannel.ai.api.AiFieldType.TEXT)))
+                .orElseThrow();
+        assertThat(OpenAiRequests.strictReady(finish.parameters())).as("the finish tool is strict").isTrue();
+    }
+
+    @Test
     void toolResultItem() throws IOException {
         var input = List.<AiItem>of(new AiItem.UserText("Hi"),
                 new AiItem.ToolCallItem("c1", "finish", "{\"outcome\":\"a\"}"),
