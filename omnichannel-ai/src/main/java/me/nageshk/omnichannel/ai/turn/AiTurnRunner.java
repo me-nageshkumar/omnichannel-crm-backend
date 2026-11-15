@@ -254,6 +254,7 @@ public class AiTurnRunner {
         String text;
         AiFinish finish = null;
         Map<String, Object> newState;
+        boolean refused;
         int rounds = 0;
         while (true) {
             if (clock.instant().isAfter(deadline)) {
@@ -270,9 +271,20 @@ public class AiTurnRunner {
             text = reply.text() == null ? "" : reply.text();
             newState = reply.state() == null ? Map.of() : reply.state();
             if (!text.isBlank()) transcript.add(new AiItem.AssistantText(text));
+            refused = reply.refused();
             List<ToolCall> asked = reply.toolCalls() == null ? List.of() : reply.toolCalls();
             for (ToolCall c : asked) transcript.add(new AiItem.ToolCallItem(c.id(), c.name(), c.argumentsJson()));
-            if (asked.isEmpty()) break;
+            if (asked.isEmpty()) {
+                // no text, no finish, no tool: a DONE turn would leave the customer in silence
+                if (text.isBlank()) {
+                    if ("max_output_tokens".equals(reply.incompleteReason())) {
+                        throw new TurnFailure("MAX_TOKENS", "The reply was cut at the max output tokens before any text");
+                    }
+                    throw new TurnFailure("EMPTY_REPLY", reply.incompleteReason() == null ? "The model replied with nothing"
+                            : "The reply stopped early (" + reply.incompleteReason() + ") before any text");
+                }
+                break;
+            }
 
             Optional<ToolCall> finishCall = asked.stream().filter(c -> FinishTool.NAME.equals(c.name())).findFirst();
             if (finishCall.isEmpty() && rounds >= props.maxToolRounds()) {
@@ -305,7 +317,8 @@ public class AiTurnRunner {
         }
 
         AiReplyFormat format = r.replyFormat();
-        if (format != null && format.type() == AiReplyFormat.Type.JSON && !(finish != null && text.isBlank())) {
+        // a refusal is the model's own words, not the JSON: the node sends it as it is
+        if (format != null && format.type() == AiReplyFormat.Type.JSON && !(finish != null && text.isBlank()) && !refused) {
             try {
                 JSON.readValue(text, new TypeReference<Map<String, Object>>() {});
             } catch (RuntimeException e) {

@@ -81,8 +81,9 @@ public class AiConnectionService {
         c.setProvider(in.provider());
         c.setCreatedAt(clock.instant());
         c.setUpdatedBy(userId);
-        setKey(c, in.apiKey());
-        runVerify(c, in.apiKey());
+        String key = in.apiKey().strip();
+        setKey(c, key);
+        runVerify(c, key);
         return View.of(persist(c));
     }
 
@@ -107,8 +108,10 @@ public class AiConnectionService {
         c.setProvider(in.provider());
         c.setUpdatedBy(userId);
         if (newKey) {
-            setKey(c, in.apiKey());
-            runVerify(c, in.apiKey());
+            // a pasted key often carries a newline or a space, which the provider would refuse
+            String key = in.apiKey().strip();
+            setKey(c, key);
+            runVerify(c, key);
         }
         return View.of(persist(c));
     }

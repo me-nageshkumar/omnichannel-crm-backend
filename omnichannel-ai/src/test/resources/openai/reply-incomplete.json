@@ -1,0 +1,2 @@
+{"id":"resp_20","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"reasoning","summary":[]}],
+ "usage":{"input_tokens":10,"output_tokens":500}}

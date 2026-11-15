@@ -111,6 +111,21 @@ class OpenAiRequestsTest {
     }
 
     @Test
+    void jsonFormatStrictOnlyWhenTheSchemaAllowsIt() {
+        Map<String, Object> open = Map.of("type", "object", "properties", Map.of("message", Map.of("type", "string")));
+        Map<String, Object> closed = Map.of("type", "object", "additionalProperties", false,
+                "required", List.of("message"), "properties", Map.of("message", Map.of("type", "string")));
+        JsonNode loose = body(req(null, List.of(new AiItem.UserText("Hi")), null, null, null,
+                new AiReplyFormat(AiReplyFormat.Type.JSON, open, "message"), null, null, null, null));
+        JsonNode strict = body(req(null, List.of(new AiItem.UserText("Hi")), null, null, null,
+                new AiReplyFormat(AiReplyFormat.Type.JSON, closed, "message"), null, null, null, null));
+        // strict mode refuses a schema that is not closed and fully required: OpenAI would answer 400 on every turn
+        assertThat(loose.path("text").path("format").path("strict").asBoolean()).isFalse();
+        assertThat(loose.path("text").path("format").path("schema")).isEqualTo(mapper.valueToTree(open));
+        assertThat(strict.path("text").path("format").path("strict").asBoolean()).isTrue();
+    }
+
+    @Test
     void nullOverridesOmitted() {
         var r = req(null, List.of(new AiItem.UserText("Hi")), null, null, new ToolChoice(ToolChoice.Mode.AUTO, null),
                 new AiReplyFormat(AiReplyFormat.Type.TEXT, null, null), null, null, null, null);

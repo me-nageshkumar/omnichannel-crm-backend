@@ -387,6 +387,70 @@ class AiProfilesApiIT extends AiTestBase {
         assertThat(ai(HttpMethod.GET, "/profiles/" + id, manager, null).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
+    /** A chatbot whose draft and newest version (2) are empty; only its old version 1 has the AI node. */
+    private String chatbotWithOldAiVersion(String name, String profileId, String status) {
+        Map<String, Object> flow = Map.of("nodes", List.of(
+                Map.of("id", "n2", "type", "ai", "data", Map.of("name", "Ask", "settings", Map.of("profileId", profileId)))));
+        Map<String, Object> empty = Map.of("nodes", List.of());
+        org.bson.Document bot = new org.bson.Document("workspaceId", brand.getId()).append("name", name)
+                .append("status", status).append("flow", empty).append("versionNumber", 2);
+        String id = mongo.insert(bot, "chatbots").getObjectId("_id").toHexString();
+        mongo.insert(new org.bson.Document("workspaceId", brand.getId()).append("chatbotId", id)
+                .append("versionNumber", 1).append("flow", flow).append("savedAt", Instant.now()), "chatbotVersions");
+        mongo.insert(new org.bson.Document("workspaceId", brand.getId()).append("chatbotId", id)
+                .append("versionNumber", 2).append("flow", empty).append("savedAt", Instant.now()), "chatbotVersions");
+        return id;
+    }
+
+    private org.bson.Document runOn(String chatbotId, int versionNumber, String status) {
+        return mongo.insert(new org.bson.Document("workspaceId", brand.getId()).append("chatbotId", chatbotId)
+                .append("versionNumber", versionNumber).append("status", status)
+                .append("contactId", java.util.UUID.randomUUID().toString()), "chatbotRuns");
+    }
+
+    @Test
+    void anOldVersionBlocksDeleteOnlyWhileARunUsesIt() {
+        String conn = connection("Main", "openai");
+        String id = create(profile("P", conn)).getBody().get("id").asString();
+        String old = chatbotWithOldAiVersion("Moved on", id, "PUBLISHED");
+        // a finished run on the old version does not count
+        runOn(old, 1, "COMPLETED");
+        runOn(old, 2, "WAITING");
+
+        org.bson.Document active = runOn(old, 1, "WAITING");
+        ResponseEntity<JsonNode> refused = ai(HttpMethod.DELETE, "/profiles/" + id, manager, null);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(refused.getBody().get("message").asString()).isEqualTo("Used by chatbots: Moved on");
+
+        mongo.remove(new Query(org.springframework.data.mongodb.core.query.Criteria.where("_id").is(active.get("_id"))),
+                "chatbotRuns");
+        runOn(old, 1, "RUNNING");
+        assertThat(ai(HttpMethod.DELETE, "/profiles/" + id, manager, null).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
+
+        mongo.remove(new Query(), "chatbotRuns");
+        // the old version was saved long ago and nothing runs on it: the profile can go
+        assertThat(ai(HttpMethod.DELETE, "/profiles/" + id, manager, null).getStatusCode())
+                .isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void thePublishedVersionBlocksDelete() {
+        String conn = connection("Main", "openai");
+        String id = create(profile("P", conn)).getBody().get("id").asString();
+        Map<String, Object> flow = Map.of("nodes", List.of(
+                Map.of("id", "n2", "type", "ai", "data", Map.of("name", "Ask", "settings", Map.of("profileId", id)))));
+        org.bson.Document bot = new org.bson.Document("workspaceId", brand.getId()).append("name", "Live")
+                .append("status", "PUBLISHED").append("flow", Map.of("nodes", List.of())).append("versionNumber", 3);
+        String botId = mongo.insert(bot, "chatbots").getObjectId("_id").toHexString();
+        mongo.insert(new org.bson.Document("workspaceId", brand.getId()).append("chatbotId", botId)
+                .append("versionNumber", 3).append("flow", flow).append("savedAt", Instant.now()), "chatbotVersions");
+
+        ResponseEntity<JsonNode> refused = ai(HttpMethod.DELETE, "/profiles/" + id, manager, null);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(refused.getBody().get("message").asString()).isEqualTo("Used by chatbots: Live");
+    }
+
     @Test
     void chatbotOptionsListProfilesForChatbotEditors() {
         String conn = connection("Main", "openai");
@@ -460,10 +524,14 @@ class AiProfilesApiIT extends AiTestBase {
     }
 
     private JsonNode profileWithAppServer(String connectBy, String stubUrl) {
+        return profileWithAppServer(connectBy, stubUrl, SECRET, "X-Api-Key");
+    }
+
+    private JsonNode profileWithAppServer(String connectBy, String stubUrl, String secret, String headerName) {
         String conn = connection("Main", "openai");
         Map<String, Object> b = profile("P", conn);
-        Map<String, Object> m = mcp("crm", "https://a.example.com/mcp", connectBy, "HEADER", SECRET);
-        m.put("headerName", "X-Api-Key");
+        Map<String, Object> m = mcp("crm", "https://a.example.com/mcp", connectBy, "HEADER", secret);
+        m.put("headerName", headerName);
         b.put("mcpServers", List.of(m));
         JsonNode v = create(b).getBody();
         mongo.updateFirst(new Query(), new org.springframework.data.mongodb.core.query.Update().set("mcpServers.0.url", stubUrl),
@@ -491,6 +559,24 @@ class AiProfilesApiIT extends AiTestBase {
             ResponseEntity<JsonNode> unknown = ai(HttpMethod.POST,
                     "/profiles/" + v.get("id").asString() + "/mcp/nope/tools", manager, null);
             assertThat(unknown.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        } finally {
+            srv.stop(0);
+        }
+    }
+
+    @Test
+    void pastedSecretIsStoredTrimmed() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<String> key = new java.util.concurrent.atomic.AtomicReference<>();
+        com.sun.net.httpserver.HttpServer srv = mcpStub(key, false);
+        try {
+            // a secret pasted with a newline and a space, as copied from a terminal
+            JsonNode v = profileWithAppServer("APP", "http://127.0.0.1:" + srv.getAddress().getPort() + "/mcp",
+                    SECRET + "\n ", " X-Api-Key ");
+            assertThat(v.get("mcpServers").get(0).get("headerName").asString()).isEqualTo("X-Api-Key");
+            String path = "/profiles/" + v.get("id").asString() + "/mcp/" + v.get("mcpServers").get(0).get("id").asString() + "/tools";
+            ResponseEntity<JsonNode> res = ai(HttpMethod.POST, path, manager, null);
+            assertThat(res.getStatusCode()).as(String.valueOf(res.getBody())).isEqualTo(HttpStatus.OK);
+            assertThat(key.get()).isEqualTo(SECRET);
         } finally {
             srv.stop(0);
         }

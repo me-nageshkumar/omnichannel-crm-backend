@@ -119,6 +119,10 @@ final class AiConversationFlow {
         st.put("turns", turns);
         st.put("supersedes", 0);
         if (r.finish() != null) return finish(ctx, node, s, r, st, fresh);
+        if (AiExecutor.missingMessage(s, r.text(), r.json())) {
+            return AiExecutor.failure(AiExecutor.NO_MESSAGE_FIELD, turns, AiExecutor.prevUsage(st),
+                    (String) st.get("conversationId"));
+        }
         st.put("lastReply", AiExecutor.blank(r.text()) ? null : r.text());
         st.put("lastJson", r.json());
         List<String> parts = WhatsAppFormat.convert(AiExecutor.customerText(s, r.text(), r.json()));

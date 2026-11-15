@@ -55,6 +55,42 @@ class OpenAiRepliesTest {
     }
 
     @Test
+    void completedReplyHasNoIncompleteReason() throws IOException {
+        assertThat(parse("reply-text.json").incompleteReason()).isNull();
+    }
+
+    @Test
+    void incompleteReplyCarriesTheReason() throws IOException {
+        ProviderReply empty = parse("reply-incomplete.json");
+        assertThat(empty.text()).isEmpty();
+        assertThat(empty.toolCalls()).isEmpty();
+        assertThat(empty.incompleteReason()).isEqualTo("max_output_tokens");
+        // a cut reply that has text is still a reply
+        ProviderReply cut = parse("reply-incomplete-text.json");
+        assertThat(cut.text()).isEqualTo("The first part of");
+        assertThat(cut.incompleteReason()).isEqualTo("max_output_tokens");
+    }
+
+    @Test
+    void failedReplyThrows() {
+        assertThatThrownBy(() -> parse("reply-failed.json")).isInstanceOfSatisfying(AiProviderException.class, e -> {
+            assertThat(e.code()).isEqualTo(AiProviderException.Code.UNAVAILABLE);
+            assertThat(e.getMessage()).contains("server_error");
+        });
+        assertThatThrownBy(() -> parse("reply-failed-prompt.json")).isInstanceOfSatisfying(AiProviderException.class,
+                e -> assertThat(e.code()).isEqualTo(AiProviderException.Code.BAD_REQUEST));
+    }
+
+    @Test
+    void refusalBecomesTheText() throws IOException {
+        ProviderReply r = parse("reply-refusal.json");
+        assertThat(r.text()).isEqualTo("I can't help with that.");
+        assertThat(r.refused()).isTrue();
+        assertThat(r.incompleteReason()).isNull();
+        assertThat(parse("reply-text.json").refused()).isFalse();
+    }
+
+    @Test
     void approvalRequestThrows() {
         assertThatThrownBy(() -> parse("reply-approval.json")).isInstanceOfSatisfying(AiProviderException.class,
                 e -> assertThat(e.code()).isEqualTo(AiProviderException.Code.APPROVAL_REQUIRED));

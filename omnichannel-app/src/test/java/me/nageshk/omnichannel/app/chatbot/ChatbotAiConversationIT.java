@@ -358,6 +358,33 @@ class ChatbotAiConversationIT extends AiTestBase {
     }
 
     @Test
+    void jsonReplyWithoutTheMessageFieldTakesFailure() throws Exception {
+        // not strict-ready, so OpenAI would not enforce it: the model may leave the message out
+        Map<String, Object> schema = Map.of("type", "object", "properties", Map.of(
+                "message", Map.of("type", "string"), "done", Map.of("type", "boolean")));
+        scripted.reply(text("{\"done\":false}"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(flow(List.of(
+                node("ai", "ai", "Sales", conv(Map.of(
+                        "replyFormat", Map.of("type", "JSON", "schema", schema, "messageField", "message"),
+                        "exitWords", List.of("stop")))),
+                node("f", "send_message", "Oops", textMessage("Failed: {{Sales.errorCode}}"))),
+                List.of(edge("ai", "failure", "f"))));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            say("hi");
+            await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
+            aiTick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            // neither silence nor the raw JSON: the node takes failure
+            assertThat(sent(d)).containsExactly("Failed: NO_MESSAGE_FIELD");
+            ChatbotRun done = run(run.getId());
+            assertThat(done.getSteps().get(0).output()).isEqualTo("failure");
+            assertThat(state(done, "Sales")).containsEntry("errorCode", "NO_MESSAGE_FIELD");
+        }
+    }
+
+    @Test
     void maxTurnsReached() throws Exception {
         scripted.reply(text("One"));
         scripted.reply(text("Two"));

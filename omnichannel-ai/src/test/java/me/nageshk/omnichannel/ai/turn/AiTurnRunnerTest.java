@@ -51,6 +51,7 @@ import me.nageshk.omnichannel.ai.provider.AiItem.UserText;
 import me.nageshk.omnichannel.ai.provider.AiProviderException;
 import me.nageshk.omnichannel.ai.provider.AiProviderException.Code;
 import me.nageshk.omnichannel.ai.provider.AiTool;
+import me.nageshk.omnichannel.ai.provider.ProviderReply;
 import me.nageshk.omnichannel.ai.provider.ProviderRequest;
 import me.nageshk.omnichannel.ai.provider.ToolCall;
 import me.nageshk.omnichannel.ai.provider.ToolChoice;
@@ -508,6 +509,56 @@ class AiTurnRunnerTest {
         TurnResult bad = turn(with(request(ok.conversationId(), "Again"), List.of(), List.of(), false, json, null));
         assertThat(bad.status()).isEqualTo(TurnStatus.FAILED);
         assertThat(bad.errorCode()).isEqualTo("BAD_JSON");
+    }
+
+    @Test
+    void emptyReplyFails() {
+        provider.text("r1", "  ");
+
+        TurnResult r = turn(request(null, "Hi"));
+
+        // a turn that says nothing and calls nothing would leave the customer in silence
+        assertThat(r.status()).isEqualTo(TurnStatus.FAILED);
+        assertThat(r.errorCode()).isEqualTo("EMPTY_REPLY");
+        assertThat(conversations.get(r.conversationId()).getLastCallId()).isNull();
+    }
+
+    @Test
+    void emptyReplyCutAtMaxTokensFailsAsMaxTokens() {
+        provider.add(new ProviderReply("", List.of(), Map.of(), new AiUsage(10, 500, 0, 500), "r1",
+                false, "max_output_tokens", false));
+
+        TurnResult r = turn(request(null, "Hi"));
+
+        assertThat(r.status()).isEqualTo(TurnStatus.FAILED);
+        assertThat(r.errorCode()).isEqualTo("MAX_TOKENS");
+        assertThat(r.usage().outputTokens()).isEqualTo(500);
+    }
+
+    @Test
+    void cutReplyWithTextIsStillAReply() {
+        provider.add(new ProviderReply("The first part", List.of(), Map.of(), new AiUsage(1, 1, 0, 0), "r1",
+                false, "max_output_tokens", false));
+
+        TurnResult r = turn(request(null, "Hi"));
+
+        assertThat(r.status()).isEqualTo(TurnStatus.DONE);
+        assertThat(r.text()).isEqualTo("The first part");
+    }
+
+    @Test
+    void refusalIsTheReplyEvenWithAJsonFormat() {
+        AiReplyFormat json = new AiReplyFormat(AiReplyFormat.Type.JSON,
+                Map.of("type", "object", "properties", Map.of("message", Map.of("type", "string"))), "message");
+        provider.add(new ProviderReply("I can't help with that.", List.of(), Map.of(), new AiUsage(1, 1, 0, 0), "r1",
+                false, null, true));
+
+        TurnResult r = turn(with(request(null, "Hi"), List.of(), List.of(), false, json, null));
+
+        // not BAD_JSON: the node sends the refusal's words as they are
+        assertThat(r.status()).isEqualTo(TurnStatus.DONE);
+        assertThat(r.text()).isEqualTo("I can't help with that.");
+        assertThat(r.json()).isNull();
     }
 
     @Test

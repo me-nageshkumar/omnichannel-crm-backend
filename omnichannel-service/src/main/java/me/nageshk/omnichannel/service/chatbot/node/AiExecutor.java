@@ -20,6 +20,7 @@ import me.nageshk.omnichannel.ai.api.AiOverrides;
 import me.nageshk.omnichannel.ai.api.AiProfileInfo;
 import me.nageshk.omnichannel.ai.api.AiReplyFormat;
 import me.nageshk.omnichannel.ai.api.AiUsage;
+import me.nageshk.omnichannel.ai.api.StrictSchemas;
 import me.nageshk.omnichannel.ai.api.TurnRequest;
 import me.nageshk.omnichannel.ai.api.TurnResult;
 import me.nageshk.omnichannel.ai.api.TurnStatus;
@@ -55,6 +56,8 @@ public class AiExecutor extends BaseExecutor {
     static final int MAX_TEXT = 4096;
     static final int MAX_INSTRUCTIONS = 20000;
     static final int MAX_LIST = 20;
+    /** The error code of a JSON reply without the message the customer should get. */
+    static final String NO_MESSAGE_FIELD = "NO_MESSAGE_FIELD";
     private final AiGateway gateway;
     /** How long a turn may take before the ticker fails it: every attempt's timeout, and a margin. */
     private final Duration aiWait;
@@ -119,11 +122,17 @@ public class AiExecutor extends BaseExecutor {
         p.text("initialMessage", s.initialMessage(), MAX_TEXT, false);
         outcomes(s.outcomesOrEmpty(), p);
         collect(s.collectOrEmpty(), p);
-        replyFormat(s, p);
+        replyFormat(s, profile, p);
         exitWords(s.exitWordsOrEmpty(), p);
         if (s.exitCondition() != null) ConditionExecutor.walk(s.exitCondition(), "exitCondition", p);
         if (s.maxTurns() != null && (s.maxTurns() < 1 || s.maxTurns() > 100)) p.error("maxTurns", "must be 1 to 100");
         if (!blank(s.continueFrom())) continueFrom(node, flow, s, profile, ctx, p);
+        if (!single && blank(s.userMessage()) && blank(s.initialMessage())) {
+            // the message that started the chatbot is not the conversation's (it may be old, or another node's)
+            p.warning("userMessage", "Without a user message or an initial message, the conversation waits for the "
+                    + "customer's next message; put {{event.message.text}} here to answer the message that started "
+                    + "the chatbot");
+        }
         if (!single && s.outcomesOrEmpty().isEmpty() && s.exitWordsOrEmpty().isEmpty() && s.exitCondition() == null) {
             p.warning("outcomes", "no outcome, exit word or exit condition: only the turn limit or the customer's "
                     + "silence ends this conversation");
@@ -193,12 +202,15 @@ public class AiExecutor extends BaseExecutor {
         }
     }
 
-    private static void replyFormat(AiNodeSettings s, Problems p) {
+    private static void replyFormat(AiNodeSettings s, AiProfileInfo profile, Problems p) {
         AiReplyFormat f = s.replyFormat();
         if (f == null || f.type() != AiReplyFormat.Type.JSON) return;
         if (f.schema() == null || !(f.schema().get("properties") instanceof Map<?, ?> props)) {
             p.error("replyFormat.schema", "a JSON reply needs a schema with properties");
             return;
+        }
+        if (profile != null && "openai".equals(profile.provider()) && !StrictSchemas.ready(f.schema())) {
+            p.warning("replyFormat.schema", "OpenAI cannot enforce this schema strictly; the model may leave fields out");
         }
         if (!s.sends()) return;
         if (blank(f.messageField())) {
@@ -317,6 +329,9 @@ public class AiExecutor extends BaseExecutor {
         Optional<AiOutcome> chosen = outcomes.stream().filter(o -> o != null && o.id() != null && o.id().equals(outcome)).findFirst();
         if (!outcomes.isEmpty() && chosen.isEmpty()) return failure("UNKNOWN_OUTCOME", turns, usage, conversationId);
         boolean ownReply = finish != null && !blank(finish.reply());
+        if (s.sends() && finish == null && missingMessage(s, r.text(), r.json())) {
+            return failure(NO_MESSAGE_FIELD, turns, usage, conversationId);
+        }
         String reply = ownReply ? finish.reply() : blank(r.text()) ? null : r.text();
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -339,14 +354,28 @@ public class AiExecutor extends BaseExecutor {
 
     // ---- shared with the conversation flow ----
 
-    /** The text the customer gets of a turn: the JSON format's message field, else the text. */
+    /**
+     * The text the customer gets of a turn. With a JSON format: the message field's value when it is there and not
+     * blank; else the text when it is not the JSON (a refusal comes as plain words); else null, never the raw JSON.
+     */
     static String customerText(AiNodeSettings s, String text, Map<String, Object> json) {
         AiReplyFormat f = s.replyFormat();
         if (f != null && f.type() == AiReplyFormat.Type.JSON) {
             Object v = json == null || f.messageField() == null ? null : json.get(f.messageField());
-            return v == null ? null : String.valueOf(v);
+            if (v != null && !String.valueOf(v).isBlank()) return String.valueOf(v);
+            return json == null ? text : null;
         }
         return text;
+    }
+
+    /**
+     * A JSON reply that leaves nothing to send: its message field is missing or blank and the text is the JSON itself.
+     * Since OpenAI enforces only strict-ready schemas, the model may leave the field out; the node then takes
+     * {@code failure} ({@link #NO_MESSAGE_FIELD}) instead of going silent.
+     */
+    static boolean missingMessage(AiNodeSettings s, String text, Map<String, Object> json) {
+        AiReplyFormat f = s.replyFormat();
+        return f != null && f.type() == AiReplyFormat.Type.JSON && blank(customerText(s, text, json));
     }
 
     /** Only the code, never the provider's own wording (it may quote a key or an internal detail). */

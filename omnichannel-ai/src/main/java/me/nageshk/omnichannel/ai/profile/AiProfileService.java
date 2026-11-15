@@ -229,8 +229,10 @@ public class AiProfileService {
             if (auth == McpAuth.HEADER && (header == null || !HEADER.matcher(header).matches())) {
                 errors.put(at + "headerName", "must be a valid HTTP header name");
             }
-            boolean newSecret = s.secret() != null && !s.secret().isBlank();
-            if (newSecret && s.secret().length() > 4000) errors.put(at + "secret", "is too long");
+            // a pasted secret often carries a newline or a space, which is not a valid header value
+            String secret = s.secret() == null ? null : s.secret().strip();
+            boolean newSecret = secret != null && !secret.isEmpty();
+            if (newSecret && secret.length() > 4000) errors.put(at + "secret", "is too long");
             boolean hadSecret = old != null && old.getSecret() != null && old.getAuth() == auth;
             boolean keep = hadSecret && sameDestination(old, url, s.connectBy(), header);
             if (auth != McpAuth.NONE && !newSecret && !keep) {
@@ -250,8 +252,8 @@ public class AiProfileService {
             m.setAllowedTools(tools);
             if (auth != McpAuth.NONE && errors.isEmpty()) {
                 if (newSecret) {
-                    m.setSecret(secrets.seal(s.secret()));
-                    m.setSecretHint(SecretBox.hint(s.secret()));
+                    m.setSecret(secrets.seal(secret));
+                    m.setSecretHint(SecretBox.hint(secret));
                     m.setSecretSetAt(clock.instant());
                 } else {
                     m.setSecret(old.getSecret());

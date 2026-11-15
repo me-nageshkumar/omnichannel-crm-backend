@@ -262,6 +262,53 @@ class ChatbotAiSingleIT extends AiTestBase {
     }
 
     @Test
+    void emptyReplyTakesFailure() throws Exception {
+        scripted.reply(text(""));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", flow(List.of(
+                node("ai", "ai", "Classify", aiSettings(Map.of("sendReply", true))),
+                node("ok", "send_message", "Ok", textMessage("ok")),
+                node("f", "send_message", "Oops", textMessage("Failed: {{Classify.errorCode}}"))),
+                List.of(edge("ai", "next", "ok"), edge("ai", "failure", "f")))));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            assertWaitingOnAi(run);
+            aiTick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            ChatbotRun done = run(run.getId());
+            // a reply with nothing in it is a failed turn, not a silent success
+            assertThat(d.requests("sendMessage")).hasSize(1);
+            assertThat(sent(d, 0)).isEqualTo("Failed: EMPTY_REPLY");
+            assertThat(done.getSteps().get(0).output()).isEqualTo("failure");
+            assertThat(state(done, "Classify")).containsEntry("errorCode", "EMPTY_REPLY");
+        }
+    }
+
+    @Test
+    void jsonReplyWithoutTheMessageFieldTakesFailure() throws Exception {
+        Map<String, Object> schema = Map.of("type", "object", "properties", Map.of(
+                "message", Map.of("type", "string"), "score", Map.of("type", "number")));
+        scripted.reply(text("{\"score\":3}"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", flow(List.of(
+                node("ai", "ai", "Classify", aiSettings(Map.of("sendReply", true,
+                        "replyFormat", Map.of("type", "JSON", "schema", schema, "messageField", "message")))),
+                node("ok", "send_message", "Ok", textMessage("ok")),
+                node("f", "send_message", "Oops", textMessage("Failed: {{Classify.errorCode}}"))),
+                List.of(edge("ai", "next", "ok"), edge("ai", "failure", "f")))));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            assertWaitingOnAi(run);
+            aiTick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            // the raw JSON is never sent to the customer
+            assertThat(d.requests("sendMessage")).hasSize(1);
+            assertThat(sent(d, 0)).isEqualTo("Failed: NO_MESSAGE_FIELD");
+            assertThat(run(run.getId()).getSteps().get(0).output()).isEqualTo("failure");
+        }
+    }
+
+    @Test
     void expiredWaitTakesFailure() throws Exception {
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
         String id = publish(createChatbot("Bot", flow(List.of(

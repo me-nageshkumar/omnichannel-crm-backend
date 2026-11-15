@@ -79,6 +79,20 @@ class AiConnectionsApiIT extends AiTestBase {
     }
 
     @Test
+    void pastedKeyIsStoredTrimmed() {
+        ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/connections", manager, save("Main", "openai", " " + KEY + "\n "));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(res.getBody().get("status").asString()).isEqualTo("OK");
+        assertThat(res.getBody().get("keyHint").asString()).isEqualTo("sk-…a91F");
+        assertThat(OPENAI.last().authorization()).isEqualTo("Bearer " + KEY);
+        // the stored key, opened again for a later check, is the trimmed one
+        OPENAI.reset();
+        ai(HttpMethod.POST, "/connections/" + res.getBody().get("id").asString() + "/verify", manager, null);
+        assertThat(OPENAI.last().authorization()).isEqualTo("Bearer " + KEY);
+    }
+
+    @Test
     void putWithoutKeyKeepsIt() {
         JsonNode created = create("Main").getBody();
         OPENAI.reset();

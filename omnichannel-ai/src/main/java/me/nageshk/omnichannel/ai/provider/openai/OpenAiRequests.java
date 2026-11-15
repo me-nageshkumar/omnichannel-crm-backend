@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import me.nageshk.omnichannel.ai.api.AiReplyFormat;
+import me.nageshk.omnichannel.ai.api.StrictSchemas;
 import me.nageshk.omnichannel.ai.provider.AiItem;
 import me.nageshk.omnichannel.ai.provider.AiTool;
 import me.nageshk.omnichannel.ai.provider.ProviderRequest;
@@ -38,7 +39,8 @@ public final class OpenAiRequests {
             fmt.put("type", "json_schema");
             fmt.put("name", "reply");
             fmt.put("schema", f.schema());
-            fmt.put("strict", true);
+            // strict only when the schema allows it, else OpenAI refuses every request (400)
+            fmt.put("strict", strictReady(f.schema()));
             b.put("text", Map.of("format", fmt));
         }
         if (notBlank(r.reasoningEffort())) b.put("reasoning", Map.of("effort", r.reasoningEffort()));
@@ -106,35 +108,9 @@ public final class OpenAiRequests {
         return m;
     }
 
-    /**
-     * Whether OpenAI's strict mode accepts the schema: every object closed ({@code additionalProperties: false}) with
-     * all its properties required, all the way down. Our finish tool is; most MCP tool schemas are not, and strict
-     * mode would refuse them.
-     */
+    /** Whether OpenAI's strict mode accepts the schema ({@link StrictSchemas}): our finish tool is; most MCP tool schemas are not. */
     static boolean strictReady(Object schema) {
-        if (!(schema instanceof Map<?, ?> s)) return true;
-        if (s.containsKey("$ref") || s.containsKey("oneOf") || s.containsKey("allOf") || s.containsKey("not")
-                || s.containsKey("patternProperties")) {
-            return false;
-        }
-        Object type = s.get("type");
-        boolean object = "object".equals(type) || (type instanceof List<?> l && l.contains("object"))
-                || s.containsKey("properties");
-        if (object) {
-            if (!Boolean.FALSE.equals(s.get("additionalProperties"))) return false;
-            if (!(s.get("properties") instanceof Map<?, ?> props)) return false;
-            if (!(s.get("required") instanceof List<?> required) || !required.containsAll(props.keySet())) return false;
-            for (Object p : props.values()) {
-                if (!strictReady(p)) return false;
-            }
-        }
-        if (s.containsKey("items") && !strictReady(s.get("items"))) return false;
-        if (s.get("anyOf") instanceof List<?> any) {
-            for (Object a : any) {
-                if (!strictReady(a)) return false;
-            }
-        }
-        return true;
+        return StrictSchemas.ready(schema);
     }
 
     private static Object choice(ToolChoice c) {

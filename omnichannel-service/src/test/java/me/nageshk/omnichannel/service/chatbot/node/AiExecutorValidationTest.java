@@ -237,8 +237,44 @@ class AiExecutorValidationTest {
         List<Problem> problems = check(conversation(Map.of()));
         assertThat(errorFields(problems)).isEmpty();
         assertThat(problems).anySatisfy(p -> assertThat(p.severity()).isEqualTo(Severity.WARNING));
-        assertThat(check(conversation(Map.of("exitWords", List.of("stop"))))).isEmpty();
-        assertThat(check(conversation(Map.of("outcomes", List.of(outcome("a")))))).isEmpty();
+        assertThat(check(conversation(Map.of("exitWords", List.of("stop"), "userMessage", "Hi")))).isEmpty();
+        assertThat(check(conversation(Map.of("outcomes", List.of(outcome("a")), "userMessage", "Hi")))).isEmpty();
+    }
+
+    @Test
+    void conversationWithoutAFirstInputWarns() {
+        // the trigger message is not the conversation's: without a first input the bot waits for the next message
+        List<Problem> problems = check(conversation(Map.of("exitWords", List.of("stop"))));
+        assertThat(problems).singleElement().satisfies(p -> {
+            assertThat(p.field()).isEqualTo("settings.userMessage");
+            assertThat(p.severity()).isEqualTo(Severity.WARNING);
+            assertThat(p.message()).isEqualTo("Without a user message or an initial message, the conversation waits "
+                    + "for the customer's next message; put {{event.message.text}} here to answer the message that "
+                    + "started the chatbot");
+        });
+        assertThat(check(conversation(Map.of("exitWords", List.of("stop"), "userMessage", "{{event.message.text}}"))))
+                .isEmpty();
+        assertThat(check(conversation(Map.of("exitWords", List.of("stop"), "initialMessage", "Hello!")))).isEmpty();
+        // a single call always has its user message
+        assertThat(check(single(Map.of()))).isEmpty();
+    }
+
+    @Test
+    void jsonSchemaThatOpenAiCannotEnforceWarns() {
+        Map<String, Object> open = Map.of("type", "object", "properties", Map.of("message", Map.of("type", "string")));
+        Map<String, Object> closed = Map.of("type", "object", "additionalProperties", false,
+                "required", List.of("message"), "properties", Map.of("message", Map.of("type", "string")));
+        Map<String, Object> loose = Map.of("type", "JSON", "schema", open, "messageField", "message");
+        Map<String, Object> strict = Map.of("type", "JSON", "schema", closed, "messageField", "message");
+        List<Problem> problems = check(single(Map.of("profileId", "p2", "replyFormat", loose, "sendReply", true)));
+        assertThat(problems).singleElement().satisfies(p -> {
+            assertThat(p.field()).isEqualTo("settings.replyFormat.schema");
+            assertThat(p.severity()).isEqualTo(Severity.WARNING);
+            assertThat(p.message()).isEqualTo("OpenAI cannot enforce this schema strictly; the model may leave fields out");
+        });
+        assertThat(check(single(Map.of("profileId", "p2", "replyFormat", strict, "sendReply", true)))).isEmpty();
+        // only OpenAI's strict mode is meant
+        assertThat(check(single(Map.of("profileId", "p1", "replyFormat", loose, "sendReply", true)))).isEmpty();
     }
 
     @Test
