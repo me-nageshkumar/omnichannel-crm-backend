@@ -655,6 +655,42 @@ typed task: a WhatsApp reply on a chat, a submitted form, or a timer.
 - Authorities `chatbot:view`, `chatbot:manage`; collections `chatbots`, `chatbotVersions`, `chatbotRuns`, `chatbotForms`;
   config `omnichannel.chatbot.*` (`application.yml`).
 
+## AI connections, profiles and the AI node
+
+Spec `docs/superpowers/specs/2026-11-15-ai-node-design.md`. A brand keeps its own provider **connections** (an API key)
+and **profiles** (connection, model, instructions, tools); the `ai` chatbot node runs a profile. OpenAI is the only
+real provider in v1; the provider SPI (`omnichannel-ai`) is shaped for others.
+
+- `GET /api/workspaces/{ws}/ai/providers` lists providers with their capabilities (`state`, `hostedMcp`,
+  `vectorStores`, `functionTools`, `structuredOutput`, `reasoningEffort`, `temperature`, `webSearch`).
+- Connections: `GET|POST /ai/connections`, `GET|PUT|DELETE /ai/connections/{id}`, `POST /ai/connections/{id}/verify`,
+  `GET /ai/connections/{id}/models`, `GET /ai/connections/{id}/vector-stores`.
+- Profiles: `GET|POST /ai/profiles`, `GET|PUT|DELETE /ai/profiles/{id}`,
+  `POST /ai/profiles/{id}/mcp/{serverId}/tools` (lists the tools of an app-side MCP server).
+- Authorities `ai:view` (reads) and `ai:manage` (writes, verify, tool listing), both BRAND level.
+- Secrets are write-only: the API key and each MCP secret are sealed with `OMNICHANNEL_SECRETS_KEYS` and never come
+  back in a response, log line, run or flow. Views carry `keyHint` / `secretHint` and `keySetAt` / `secretSetAt` only.
+  A save without `apiKey` / `secret` keeps the stored one (it is dropped when the MCP server's host, connect mode or
+  header name changes). Saves carry `version` for optimistic locking (409 on a stale one).
+- Errors: 503 `secrets_unavailable` (no master key configured); 409 `ai_connection_in_use` (a profile uses it) and
+  `ai_profile_in_use` (a chatbot uses it); 502 `ai_provider_refused_key`, `ai_provider_error` (the provider failed) and
+  `mcp_error` (the MCP server failed); 400 `mcp_provider_server` (a provider-side MCP server cannot be loaded by the
+  app); other 400s are field maps keyed by path (`mcpServers.0.connectBy`).
+- Collections `aiConnections`, `aiProfiles`, `aiConversations`, `aiCalls`; config `omnichannel.ai.*` and
+  `omnichannel.secrets.keys`. `GET /chatbots/options` gains `aiProfiles`.
+
+The **`ai` node** (`AiNodeSettings`) has two modes. `SINGLE` makes one call and can act as a classifier;
+`CONVERSATION` talks to the customer over WhatsApp until an outcome, exit word, exit condition or `maxTurns`. Outputs:
+`next` (SINGLE without outcomes), `outcome:<id>` per outcome, `failure` always, and in CONVERSATION `maxTurns` always,
+`exitWord` only when exit words are set and `exitCondition` only when an exit condition is set.
+Result variables: `{{Node.reply}}`, `{{Node.json.*}}`, `{{Node.outcome}}`, `{{Node.fields.<key>}}`, `{{Node.turns}}`,
+`{{Node.usage.inputTokens}}`, `{{Node.usage.outputTokens}}`, `{{Node.conversationId}}`. The run waits on the task kind
+`AI_RESPONSE` while the model works (reminder and inactivity timers are off then). Customer messages that arrive during a
+turn are read back from the inbox, not lost. A failed turn takes `failure` with `{{Node.errorCode}}`, e.g. `EMPTY_REPLY`
+(the model said nothing), `MAX_TOKENS` (cut before any text) or `NO_MESSAGE_FIELD` (a JSON reply without its message
+field). OpenAI enforces a JSON reply schema (`strict`) only when every object is closed and lists all its properties in
+`required`; the node warns otherwise.
+
 ## Page script delivery
 
 The extension fetches `page.js` from this server on every connect when the hash in the `hello`

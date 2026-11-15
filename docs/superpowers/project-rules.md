@@ -50,11 +50,17 @@ npx tsc --noEmit && npm run lint && npm run build
 # Message pages: WhatsApp fetches the link preview from the public origin in OMNICHANNEL_PAGES_BASE_URL (default
 # http://localhost:8080). For a real-device check run a tunnel first, e.g. `cloudflared tunnel --url http://localhost:8089`,
 # and start the jar with OMNICHANNEL_PAGES_BASE_URL=https://<tunnel-host>.
+# AI keys: OMNICHANNEL_SECRETS_KEYS seals the brands' API and MCP secrets. Format: a comma-separated list of
+# id:base64 (e.g. k1:<32 bytes base64>); the first entry seals new secrets, every entry can open. Generate one with
+# `openssl rand -base64 32`. It must be in the environment before `java -jar` (the 8089 deploy needs it). Back the key up
+# outside the repo; if it is lost every brand must re-enter its keys. Never write the value into a file, log or commit.
+# Without it the AI endpoints that store secrets answer 503 secrets_unavailable. The new `chat_created` index on
+# waWebMessages is built at startup (a moment on a big collection).
 # Deploy on 8089: stop the old process and wait for it to exit (up to 30 s), since the build replaces its jar
 kill $(lsof -nP -iTCP:8089 -sTCP:LISTEN -t)
 (cd "$F" && npm run -s build)
 (cd "$B" && ./mvnw -q -Pwith-frontend -DskipTests -Dfrontend.dist="$F/dist" package)
-(cd "$B" && nohup java -jar omnichannel-app/target/omnichannel-app-0.1.0-SNAPSHOT.jar --server.port=8089 \
+(cd "$B" && OMNICHANNEL_SECRETS_KEYS="$OMNICHANNEL_SECRETS_KEYS" nohup java -jar omnichannel-app/target/omnichannel-app-0.1.0-SNAPSHOT.jar --server.port=8089 \
   > /tmp/claude-501/app-8089.log 2>&1 &)
 
 # Extension page script into the backend, from the extension's main checkout (writes into the sibling backend)

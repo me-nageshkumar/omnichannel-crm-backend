@@ -1,0 +1,1 @@
+{"model":"gpt-5","instructions":"Be brief.","input":[{"role":"user","content":"Hi"}],"store":true,"metadata":{"runId":"r1","nodeName":"AI"}}

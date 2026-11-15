@@ -160,3 +160,30 @@ Spec `specs/2026-11-05-cloud-webhook-shape-design.md` (§7), plus what the revie
   times come from real receipts only: an estimated event moves the status but never stamps a time, so the console shows
   ticks without a time for it, and `statusTimes.estimatedAt` (the fetch time) records that the fetch tried, so the next
   fetch does not ask again.
+
+## AI node
+
+Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews found.
+
+- v1 non-goals: only OpenAI (Claude and DeepSeek adapters are later projects); no platform-paid keys, wallets or cost
+  figures; no file upload to vector stores; no OAuth for MCP servers (static bearer or header secret); customer images,
+  audio and documents are not sent to the model; no streaming; no AI in the inbox; no platform defaults for AI.
+- A turn that is superseded by a newer customer message is dropped, but its tokens are still billed.
+- After the AI finishes (an outcome), later customer messages are left to the inbox (`pendingAfterFinish`); an exit
+  word consumes the whole batch of waiting messages.
+- OpenAI keeps stored responses for 30 days; a conversation older than that is rebuilt from our own record.
+- A message that lands in the milliseconds between the last inbox check and the WhatsApp wait being saved waits for the
+  next message (same for Ask).
+- The inbox read starts one minute before the run: a message typed more than a minute before a jump or a delayed
+  automation start is not fed to the AI.
+- Replies pass through the WhatsApp formatter, so a model's `*italic*` becomes `_italic_`; say so in the profile
+  instructions.
+- A residual stage-then-stall race can leave an unsent reply in the AI's context (the next turn then knows what the
+  customer never saw).
+- Changing an MCP URL from `https://h` to `https://h:443` counts as a new address and asks for the secret again.
+- A reply cut at the max output tokens is sent as it is (one cut before any text fails with `MAX_TOKENS`).
+- A restart (or a lost lease) mid-turn re-runs the turn, and with it any app-side MCP tool call it had made but not yet
+  staged with the result: a booking tool could run twice. Make such tools idempotent (e.g. key them on the run id).
+- A JSON reply schema that is not strict-ready is sent to OpenAI with `strict: false`, so the model may leave fields
+  out; a missing message field takes `failure` (`NO_MESSAGE_FIELD`).
+- The `creationTime` watermark can skip a message inserted out of order by a concurrent writer.

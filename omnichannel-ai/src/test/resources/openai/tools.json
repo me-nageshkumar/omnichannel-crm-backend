@@ -1,0 +1,7 @@
+{"model":"gpt-5","input":[{"role":"user","content":"Hi"}],"store":true,
+ "tools":[
+  {"type":"function","name":"finish","description":"End it","strict":false,"parameters":{"type":"object","properties":{"outcome":{"type":"string"}}}},
+  {"type":"mcp","server_label":"crm","server_url":"https://mcp.example.com","headers":{"X-Key":"v"},"allowed_tools":["a","b"],"require_approval":"never"},
+  {"type":"file_search","vector_store_ids":["vs_1"]},
+  {"type":"web_search"}],
+ "tool_choice":{"type":"function","name":"finish"}}

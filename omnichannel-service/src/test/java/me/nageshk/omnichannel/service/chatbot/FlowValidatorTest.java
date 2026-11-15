@@ -180,6 +180,6 @@ class FlowValidatorTest {
         List<Problem> warn = new ArrayList<>();
         warn.add(Problem.warning(new FlowNode("x", "X", NodeType.WAIT, null), "settings", "meh"));
         assertThat(FlowValidator.publishable(warn)).isTrue();
-        assertThat(EnumSet.allOf(TaskKind.class)).hasSize(3);
+        assertThat(EnumSet.allOf(TaskKind.class)).hasSize(4);
     }
 }

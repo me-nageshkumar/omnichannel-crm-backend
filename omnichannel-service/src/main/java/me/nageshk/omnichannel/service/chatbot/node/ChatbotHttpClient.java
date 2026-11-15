@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import me.nageshk.omnichannel.common.config.OmnichannelProperties;
+import me.nageshk.omnichannel.common.net.HttpAddressGuard;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.HttpRequestSettings;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;

@@ -64,6 +64,11 @@ public class ChatbotRun {
     private Instant retryAt;
     private Instant createdAt;
     private Instant finishedAt;
+    /**
+     * The last customer message the run has dealt with: the trigger message at the start (else the chat's newest one),
+     * then each WhatsApp reply a node was answered with or the AI node took. An AI conversation starts after it.
+     */
+    private InboxMark inboxMark;
     /** Every save is conditional on it: a runner that lost the run to a Stop cannot write it back. */
     @Version
     private Long version;

@@ -8,10 +8,16 @@ de:
 server:
   address: 127.0.0.1
 omnichannel:
+  # test-only sealing key
+  secrets:
+    keys: t1:9nGNOJVWSxxIHCGRBcX6zhF6XQBm23VCF+fz0O5TBr8=
   super-admin:
     password: ""
   pages:
     base-url: http://pages.test
+  # tests drive the AI turn worker themselves
+  ai:
+    auto-tick: false
   # tests drive CampaignRunner.tick() themselves
   campaign:
     auto-tick: false

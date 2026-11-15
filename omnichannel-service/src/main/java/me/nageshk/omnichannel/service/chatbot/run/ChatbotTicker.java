@@ -5,6 +5,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import me.nageshk.omnichannel.ai.api.AiUsage;
+import me.nageshk.omnichannel.ai.api.TurnResult;
+import me.nageshk.omnichannel.ai.api.TurnStatus;
 import me.nageshk.omnichannel.db.chatbot.Chatbot;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRepository;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
@@ -30,8 +33,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
 /**
- * The timers (spec §5.6): reminders, inactivity ends, Wait timers (it is the TIMER answer source), send retries and
- * stale runs. Each part runs in its own try/catch; tests call {@link #tick()} by hand.
+ * The timers (spec §5.6): reminders, inactivity ends, Wait timers (it is the TIMER answer source), AI turns that
+ * never came back (answered as a failed turn, AI node spec §5.5), send retries and stale runs. Each part runs in its
+ * own try/catch; tests call {@link #tick()} by hand.
  */
 @Component
 public class ChatbotTicker implements TaskAnswerSource {
@@ -79,6 +83,7 @@ public class ChatbotTicker implements TaskAnswerSource {
         safely("reminders", () -> reminders(now));
         safely("ends", () -> ends(now));
         safely("timers", () -> work.add(timers(now)));
+        safely("aiExpired", () -> work.add(aiExpired(now)));
         safely("retries", () -> work.add(runner.retryDue()));
         safely("stale", () -> stale(now));
         return CompletableFuture.allOf(work.toArray(new CompletableFuture[0]));
@@ -131,6 +136,20 @@ public class ChatbotTicker implements TaskAnswerSource {
         for (ChatbotRun run : mongo.find(due, ChatbotRun.class)) {
             String key = run.getWaiting().key();
             all.add(CompletableFuture.runAsync(() -> runs.answerNow(TaskAnswer.timer(key)), pool));
+        }
+        return CompletableFuture.allOf(all.toArray(new CompletableFuture[0]));
+    }
+
+    /** A wait on an AI turn past its expiry: the node gets a failed turn and takes {@code failure}. */
+    private CompletableFuture<Void> aiExpired(Instant now) {
+        Query due = new Query(Criteria.where("status").is(ChatbotRunStatus.WAITING.name())
+                .and("waiting.kind").is(TaskKind.AI_RESPONSE.name()).and("waiting.expiresAt").lte(now));
+        List<CompletableFuture<Void>> all = new ArrayList<>();
+        for (ChatbotRun run : mongo.find(due, ChatbotRun.class)) {
+            String key = run.getWaiting().key();
+            TurnResult failed = new TurnResult(key, TurnStatus.FAILED, null, null, null, new AiUsage(0, 0, 0, 0), false,
+                    null, run.getId(), "TIMEOUT", "The AI did not answer in time");
+            all.add(CompletableFuture.runAsync(() -> runs.answerNow(TaskAnswer.ai(key, failed)), pool));
         }
         return CompletableFuture.allOf(all.toArray(new CompletableFuture[0]));
     }

@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.service.chatbot.node;
 
 import java.util.Map;
+import me.nageshk.omnichannel.ai.api.TurnResult;
 import me.nageshk.omnichannel.db.chatbot.TaskKind;
 import me.nageshk.omnichannel.db.inbox.WaWebMessage;
 
@@ -17,5 +18,10 @@ public record TaskAnswer(TaskKind kind, String key, Map<String, Object> payload,
 
     public static TaskAnswer timer(String key) {
         return new TaskAnswer(TaskKind.TIMER, key, Map.of(), null);
+    }
+
+    /** A finished AI turn; the payload's {@code result} is the {@link TurnResult}. */
+    public static TaskAnswer ai(String callId, TurnResult r) {
+        return new TaskAnswer(TaskKind.AI_RESPONSE, callId, Map.of("result", r), null);
     }
 }

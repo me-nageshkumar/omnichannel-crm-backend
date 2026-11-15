@@ -48,10 +48,13 @@ public class ChatbotRunService {
     private final ChatbotRunner runner;
     private final ThreadPoolTaskExecutor pool;
     private final Clock clock;
+    private final InboxMarks marks;
 
     public ChatbotRunService(ChatbotRepository chatbots, ChatbotRunRepository runs, ContactAttributeRepository attributes,
             ContactLabelRepository labels, PhoneNumberRepository numbers, RunVariables variables, RunClaims claims,
-            ChatPointer pointer, ChatbotRunner runner, ThreadPoolTaskExecutor chatbotExecutor, Clock clock) {
+            ChatPointer pointer, ChatbotRunner runner, ThreadPoolTaskExecutor chatbotExecutor, Clock clock,
+            InboxMarks marks) {
+        this.marks = marks;
         this.chatbots = chatbots;
         this.runs = runs;
         this.attributes = attributes;
@@ -76,11 +79,12 @@ public class ChatbotRunService {
         if (chatbot.getStatus() != ChatbotStatus.PUBLISHED && !test) {
             return new StartResult(null, false, "Chatbot “" + chatbot.getName() + "” is not published", null);
         }
-        return start(chatbot, contact, chatOrNull, by, event, ifRunning, test, null, 0);
+        return start(chatbot, contact, chatOrNull, by, event, ifRunning, test, null, 0, null);
     }
 
     StartResult start(Chatbot chatbot, Contact contact, WaWebChat chatOrNull, StartedBy by, EventData event,
-            IfRunning ifRunning, boolean test, java.util.Map<String, Object> carriedVariables, int jumps) {
+            IfRunning ifRunning, boolean test, java.util.Map<String, Object> carriedVariables, int jumps,
+            me.nageshk.omnichannel.db.chatbot.InboxMark carriedMark) {
         Instant now = clock.instant();
         ChatbotRun run = new ChatbotRun();
         run.setCustomerId(chatbot.getCustomerId());
@@ -97,6 +101,8 @@ public class ChatbotRunService {
         run.setJumps(jumps);
         run.setLeaseUntil(claims.lease());
         run.setCreatedAt(now);
+        // a jump goes on where the run it came from stood; a new run starts after its trigger message
+        run.setInboxMark(carriedMark != null ? carriedMark : marks.atStart(chatOrNull, event));
         run.setSteps(new java.util.ArrayList<>());
         PhoneNumber number = chatOrNull == null ? null : numbers.findById(chatOrNull.getPhoneNumberId()).orElse(null);
         java.util.Map<String, Object> vars = variables.initial(contact, attributes.findByWorkspaceIdOrderByNameKey(chatbot.getWorkspaceId()),

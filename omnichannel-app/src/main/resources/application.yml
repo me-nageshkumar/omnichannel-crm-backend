@@ -21,12 +21,32 @@ logging:
     me.nageshk.omnichannel: INFO
 
 omnichannel:
+  # Sealing keys for stored secrets such as AI provider keys: id:base64-of-32-bytes, the first seals, any open.
+  # Unset means secrets cannot be saved (the server still starts).
+  secrets:
+    keys: ${OMNICHANNEL_SECRETS_KEYS:}
   # Cloud interactive messages sent over the bridge are a link to a page here: the public HTTPS origin WhatsApp
   # fetches the preview from. For a local check run a tunnel and point this at it.
   pages:
     base-url: ${OMNICHANNEL_PAGES_BASE_URL:http://localhost:8080}
     ttl-days: 90
     reply-window: 48h
+  # Provider-neutral AI: the turn worker, provider calls and the app-side MCP client.
+  ai:
+    auto-tick: true
+    tick: 2s
+    pool-size: 8
+    request-timeout: 60s
+    turn-timeout: 120s
+    attempts: 2
+    max-tool-rounds: 8
+    redeliver-after: 10s
+    openai:
+      base-url: https://api.openai.com/v1
+    mcp:
+      tool-timeout: 20s
+      max-result: 65536
+      cache-for: 5m
   webhooks:
     retention: 30d
     keep-raw: true

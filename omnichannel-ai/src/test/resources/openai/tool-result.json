@@ -1,0 +1,6 @@
+{"model":"gpt-5","input":[
+ {"role":"user","content":"Hi"},
+ {"type":"function_call","call_id":"c1","name":"finish","arguments":"{\"outcome\":\"a\"}"},
+ {"type":"function_call_output","call_id":"c1","output":"finished"},
+ {"role":"assistant","content":"Done"}],
+ "store":true}

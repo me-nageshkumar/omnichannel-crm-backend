@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.service.chatbot;
 
 import java.util.List;
+import me.nageshk.omnichannel.ai.api.AiGateway;
+import me.nageshk.omnichannel.ai.api.AiProfileRef;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRepository;
 import me.nageshk.omnichannel.db.contact.ContactAttributeRepository;
 import me.nageshk.omnichannel.db.contact.ContactLabelRepository;
@@ -19,20 +21,24 @@ public class ChatbotOptionsService {
 
     public record ChatbotOptions(List<OptionsView.NumberOption> numbers, List<OptionsView.AgentOption> agents,
             List<AutomationRef> teams, List<OptionsView.TemplateOption> templates, AutomationCrm.CrmOptions crm,
-            List<AttributeOption> attributes, List<AutomationRef> labels, List<ChatbotViews.ChatbotRef> chatbots) {
+            List<AttributeOption> attributes, List<AutomationRef> labels, List<ChatbotViews.ChatbotRef> chatbots,
+            List<AiProfileRef> aiProfiles) {
     }
 
     private final AutomationOptionsService automation;
     private final ContactAttributeRepository attributes;
     private final ContactLabelRepository labels;
     private final ChatbotRepository chatbots;
+    private final AiGateway ai;
 
     public ChatbotOptionsService(AutomationOptionsService automation, ContactAttributeRepository attributes,
-            ContactLabelRepository labels, ChatbotRepository chatbots) {
+            ContactLabelRepository labels, ChatbotRepository chatbots,
+            AiGateway ai) {
         this.automation = automation;
         this.attributes = attributes;
         this.labels = labels;
         this.chatbots = chatbots;
+        this.ai = ai;
     }
 
     public ChatbotOptions options(String workspaceId) {
@@ -43,6 +49,7 @@ public class ChatbotOptionsService {
                 labels.findByWorkspaceIdOrderByNameKey(workspaceId).stream()
                         .map(l -> new AutomationRef(l.getId(), l.getName())).toList(),
                 chatbots.findAllByWorkspaceIdOrderByNameAsc(workspaceId).stream()
-                        .map(c -> new ChatbotViews.ChatbotRef(c.getId(), c.getName(), c.getStatus())).toList());
+                        .map(c -> new ChatbotViews.ChatbotRef(c.getId(), c.getName(), c.getStatus())).toList(),
+                ai.profiles(workspaceId));
     }
 }

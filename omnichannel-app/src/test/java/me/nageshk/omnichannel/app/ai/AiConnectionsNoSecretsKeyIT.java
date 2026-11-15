@@ -1,0 +1,27 @@
+package me.nageshk.omnichannel.app.ai;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import tools.jackson.databind.JsonNode;
+
+/** A server started without a secrets key refuses to save a key (its own context, hence its own class). */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"omnichannel.rpc.timeout=2s", "omnichannel.secrets.keys="})
+class AiConnectionsNoSecretsKeyIT extends AiTestBase {
+
+    @Test
+    void noSecretsKeyIs503() {
+        ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/connections", manager,
+                Map.of("name", "Main", "provider", "openai", "apiKey", "sk-test-1234567890a91F"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(res.getBody().get("code").asString()).isEqualTo("secrets_unavailable");
+        assertThat(ai(HttpMethod.GET, "/connections", manager, null).getBody().size()).isZero();
+    }
+}

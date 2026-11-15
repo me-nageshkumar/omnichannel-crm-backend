@@ -8,6 +8,9 @@ public final class Outputs {
     public static final String OTHERWISE = "otherwise";
     public static final String SUCCESS = "success";
     public static final String FAILURE = "failure";
+    public static final String EXIT_WORD = "exitWord";
+    public static final String EXIT_CONDITION = "exitCondition";
+    public static final String MAX_TURNS = "maxTurns";
 
     private Outputs() {}
 
@@ -19,5 +22,10 @@ public final class Outputs {
     /** The output a condition case leads to. */
     public static String caseOf(String id) {
         return "case:" + id;
+    }
+
+    /** The output an AI node's outcome leads to. */
+    public static String outcomeOf(String id) {
+        return "outcome:" + id;
     }
 }

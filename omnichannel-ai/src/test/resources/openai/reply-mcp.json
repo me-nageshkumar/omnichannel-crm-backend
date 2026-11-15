@@ -1,0 +1,1 @@
+{"id":"resp_11","output":[{"type":"mcp_list_tools"},{"type":"mcp_call","name":"x"},{"type":"web_search_call"},{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}

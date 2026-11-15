@@ -1,0 +1,2 @@
+{"id":"resp_9","output":[{"type":"message","content":[{"type":"output_text","text":"Hello "},{"type":"output_text","text":"there"}]}],
+ "usage":{"input_tokens":10,"output_tokens":5,"input_tokens_details":{"cached_tokens":4},"output_tokens_details":{"reasoning_tokens":2}}}

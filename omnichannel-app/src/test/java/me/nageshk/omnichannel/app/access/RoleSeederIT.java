@@ -71,7 +71,7 @@ class RoleSeederIT {
                         "inbox:view-all", "inbox:send", "inbox:assign", "inbox:settings", "inbox:import-history", "campaign:view",
                         "campaign:manage", "campaign:settings", "crm:view", "crm:view-all", "crm:edit", "crm:delete",
                         "crm:settings", "crm:export", "crm:segments", "automation:view", "automation:manage", "chatbot:view",
-                        "chatbot:manage");
+                        "chatbot:manage", "ai:view", "ai:manage");
         assertThat(role(BuiltInRoles.AGENT).getAuthorities())
                 .containsExactlyInAnyOrder("contact:view", "contact:annotate", "template:view", "inbox:view",
                         "inbox:view-queue", "inbox:send", "campaign:view", "crm:view", "crm:edit");
@@ -117,7 +117,7 @@ class RoleSeederIT {
     void freshDatabaseCreatesDocumentsAndGivesDefaults() {
         clearAll();
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(50)
+        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(52)
                 .allMatch(AuthorityDefinition::isBuiltIn)
                 .allMatch(d -> "system".equals(d.getCreatedBy()));
         AuthorityDefinition cv = authorities.findById("customer:view").orElseThrow();
@@ -136,7 +136,7 @@ class RoleSeederIT {
         mongo.insert(new org.bson.Document("_id", KNOWN).append("codes",
                 Arrays.stream(Authority.values()).map(Authority::code).toList()), "system_state");
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(50);
+        assertThat(authorities.findAll()).hasSize(52);
         assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities()).doesNotContain("user:view");
         assertThat(mongo.findById(KNOWN, org.bson.Document.class, "system_state")).isNull();
     }
