@@ -124,8 +124,12 @@ previous_response_id, store: true, tools, tool_choice, text.format, reasoning.ef
 metadata {runId, nodeName}`. `GET /v1/models` (verify, models), `GET /v1/vector_stores` (picker). Maps
 `function_call` output items to `ToolCall`s; tool results go back as `function_call_output` with
 `previous_response_id` of the response that asked. `STATE_EXPIRED` when OpenAI says the previous response is not found
-→ the turn engine retries once from our transcript with no previous id. Base URL configurable per connection only in
-tests (`omnichannel.ai.openai.base-url`), so the IT runs against a local stub server.
+→ the turn engine retries once from our transcript with no previous id. A JSON reply format is sent with `strict: true`
+only when the schema is strict-ready (every object `additionalProperties: false` with all properties `required`, no
+`$ref`/`oneOf`/`allOf`/`not`), else `strict: false`, since strict mode refuses other schemas with a 400. A `failed`
+response raises UNAVAILABLE (`server_error`), RATE_LIMIT or BAD_REQUEST; an `incomplete` one carries its reason; a
+`refusal` content part is the reply text. Base URL configurable per connection only in tests
+(`omnichannel.ai.openai.base-url`), so the IT runs against a local stub server.
 
 ### 5.4 Turn engine (`ai.turn`)
 
@@ -143,7 +147,9 @@ tests (`omnichannel.ai.openai.base-url`), so the IT runs against a local stub se
    the connection `INVALID` with the time and fails the turn.
 5. Record the conversation state and an `aiCalls` row (§5.7).
 
-`TurnOutcome`: text, json (parsed when the format is JSON), finish (outcome id, fields) or null, usage, error.
+`TurnOutcome`: text, json (parsed when the format is JSON), finish (outcome id, fields) or null, usage, error. A
+reply with no text, no finish and no tool call fails the turn: `MAX_TOKENS` when it was cut at the max output tokens,
+else `EMPTY_REPLY`; a cut reply that has text is still sent.
 
 ### 5.5 Async execution on a MongoDB queue, so the chatbot pool is never blocked
 
@@ -212,8 +218,12 @@ else profile save fails with "This provider cannot connect to MCP servers itself
   leaseUntil, deliveredAt, input text, reply text, finish, toolCalls[{name, ms, ok, resultExcerpt}], usage, latencyMs,
   errorCode, error, createdAt, finishedAt`. Indexes `{status, leaseUntil}`, `{workspaceId, createdAt}`, `{runId}`.
   Kept, no TTL.
-- No new run field: the node's state (`conversationId, turns, lastCallId, consumedUntil, startedAt`) lives under
-  `run.variables[nodeName]`.
+- One new run field, `ChatbotRun.inboxMark` (`{creationTime, messageId}`, Task 9 ruling): the run-wide inbox
+  watermark, the last customer message the run has dealt with in inbox order. The run start sets it (the trigger
+  message, else the contact's newest message in the chat), a jump carries it over, the runner moves it whenever a node
+  takes a WhatsApp reply, and the AI node moves it when it feeds messages to the model; a conversation starts after
+  it, so the trigger and replies earlier nodes took are not fed to the AI. The node's own state (`conversationId,
+  turns, lastCallId, consumedUntil, startedAt`) lives under `run.variables[nodeName]`.
 - **Secrets** (`common.secret`): `SealedSecret{keyId, iv, ciphertext}` with AES-256-GCM; master keys from
   `omnichannel.secrets.keys` (`OMNICHANNEL_SECRETS_KEYS`, `id:base64` list, first one seals, all can open, so keys can
   rotate). The app refuses to save a secret when no key is configured (clear 503 message), the test profile has a
@@ -249,7 +259,7 @@ else profile save fails with "This provider cannot connect to MCP servers itself
 | `sendReply` | SINGLE: send the AI text to the customer (default false); CONVERSATION: always true |
 | `outcomes` | `[{id, label, description}]`, ids `[a-z0-9_]{1,30}` unique; the description goes into the finish tool |
 | `collect` | `[{key, description, type TEXT|NUMBER|BOOLEAN}]`, the finish tool's `fields` |
-| `replyFormat` | `TEXT` or `JSON {schema, messageField}`; with JSON the customer gets `messageField`'s value |
+| `replyFormat` | `TEXT` or `JSON {schema, messageField}`; with JSON the customer gets `messageField`'s value; when it is missing or blank the reply text goes out if it is not the JSON (a refusal), else the node takes `failure` with `NO_MESSAGE_FIELD` (never the raw JSON, never silence; a finish without a reply still takes its outcome) |
 | `exitWords` | list; a customer message equal to one (case and spacing ignored) ends without calling the AI |
 | `exitCondition` | a `ConditionNode` (the condition node's model) over `{{ThisNode.json.*}}`, checked after each reply |
 | `maxTurns` | CONVERSATION, default 20, 1–100 |
@@ -276,7 +286,10 @@ step is re-used across turns (as Ask's re-ask), with the turn count and last cal
 Validation (executor): profile exists in the brand; outcome ids and collect keys valid and unique; SINGLE needs a
 user message; JSON format needs a schema whose `messageField` is a string property; overrides valid for the profile's
 provider capabilities (e.g. temperature on a provider without it → ERROR); `continueFrom` names an earlier AI node;
-WARNING when CONVERSATION has no outcomes and no exit words/condition (only max turns or silence ends it).
+WARNING when CONVERSATION has no outcomes and no exit words/condition (only max turns or silence ends it); WARNING
+(`userMessage`) when CONVERSATION has neither a user message nor an initial message (the trigger message is not fed
+to the AI, so the bot waits for the customer's next message; `{{event.message.text}}` answers the opening message);
+WARNING (`replyFormat.schema`) when an OpenAI profile's JSON schema is not strict-ready.
 
 Test runs (rule test page) call the real provider with the brand's key.
 

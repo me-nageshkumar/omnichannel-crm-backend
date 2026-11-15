@@ -181,5 +181,9 @@ Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews fou
 - A residual stage-then-stall race can leave an unsent reply in the AI's context (the next turn then knows what the
   customer never saw).
 - Changing an MCP URL from `https://h` to `https://h:443` counts as a new address and asks for the secret again.
-- A reply cut at the max output tokens is sent as it is.
+- A reply cut at the max output tokens is sent as it is (one cut before any text fails with `MAX_TOKENS`).
+- A restart (or a lost lease) mid-turn re-runs the turn, and with it any app-side MCP tool call it had made but not yet
+  staged with the result: a booking tool could run twice. Make such tools idempotent (e.g. key them on the run id).
+- A JSON reply schema that is not strict-ready is sent to OpenAI with `strict: false`, so the model may leave fields
+  out; a missing message field takes `failure` (`NO_MESSAGE_FIELD`).
 - The `creationTime` watermark can skip a message inserted out of order by a concurrent writer.

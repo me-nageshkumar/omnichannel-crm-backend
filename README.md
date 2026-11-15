@@ -681,11 +681,15 @@ real provider in v1; the provider SPI (`omnichannel-ai`) is shaped for others.
 
 The **`ai` node** (`AiNodeSettings`) has two modes. `SINGLE` makes one call and can act as a classifier;
 `CONVERSATION` talks to the customer over WhatsApp until an outcome, exit word, exit condition or `maxTurns`. Outputs:
-`next` (SINGLE without outcomes), `outcome:<id>` per outcome, `exitWord`, `exitCondition`, `maxTurns`, `failure`.
+`next` (SINGLE without outcomes), `outcome:<id>` per outcome, `failure` always, and in CONVERSATION `maxTurns` always,
+`exitWord` only when exit words are set and `exitCondition` only when an exit condition is set.
 Result variables: `{{Node.reply}}`, `{{Node.json.*}}`, `{{Node.outcome}}`, `{{Node.fields.<key>}}`, `{{Node.turns}}`,
 `{{Node.usage.inputTokens}}`, `{{Node.usage.outputTokens}}`, `{{Node.conversationId}}`. The run waits on the task kind
 `AI_RESPONSE` while the model works (reminder and inactivity timers are off then). Customer messages that arrive during a
-turn are read back from the inbox, not lost.
+turn are read back from the inbox, not lost. A failed turn takes `failure` with `{{Node.errorCode}}`, e.g. `EMPTY_REPLY`
+(the model said nothing), `MAX_TOKENS` (cut before any text) or `NO_MESSAGE_FIELD` (a JSON reply without its message
+field). OpenAI enforces a JSON reply schema (`strict`) only when every object is closed and lists all its properties in
+`required`; the node warns otherwise.
 
 ## Page script delivery
 
