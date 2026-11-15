@@ -5,7 +5,7 @@ import java.util.List;
 import me.nageshk.omnichannel.ai.call.AiCall;
 import me.nageshk.omnichannel.ai.connection.AiConnection;
 import me.nageshk.omnichannel.ai.conversation.AiConversation;
-import me.nageshk.omnichannel.app.automation.AutomationTestBase;
+import me.nageshk.omnichannel.app.chatbot.ChatbotTestBase;
 import me.nageshk.omnichannel.app.support.OpenAiStub;
 import me.nageshk.omnichannel.app.support.ScriptedAiProvider;
 import me.nageshk.omnichannel.db.user.User;
@@ -18,9 +18,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.JsonNode;
 
-/** The automation fixture plus the AI collections, the real OpenAI adapter pointed at a local stub, and the scripted provider. */
+/** The chatbot fixture (flow builders, chatbot collections) plus the AI collections, the real OpenAI adapter pointed at a local stub, and the scripted provider. */
 @Import(ScriptedAiProvider.class)
-public abstract class AiTestBase extends AutomationTestBase {
+public abstract class AiTestBase extends ChatbotTestBase {
 
     protected static final OpenAiStub OPENAI = new OpenAiStub();
 
@@ -37,8 +37,6 @@ public abstract class AiTestBase extends AutomationTestBase {
         c.add(AiConnection.class);
         c.add(AiCall.class);
         c.add(AiConversation.class);
-        c.add(me.nageshk.omnichannel.db.chatbot.Chatbot.class);
-        c.add(me.nageshk.omnichannel.db.chatbot.ChatbotVersion.class);
         return c;
     }
 

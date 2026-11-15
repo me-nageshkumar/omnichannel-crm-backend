@@ -9,7 +9,7 @@ public enum NodeType {
     SEND_MESSAGE("send_message"), SEND_TEMPLATE("send_template"), ASK_QUESTION("ask_question"),
     ASK_FORM("ask_form"), CONDITION("condition"), UPDATE_CONTACT("update_contact"),
     DO_NOT_CONTACT("do_not_contact"), ASSIGN_CHAT("assign_chat"), ADD_TO_CRM("add_to_crm"),
-    HTTP_REQUEST("http_request"), WAIT("wait"), JUMP("jump");
+    HTTP_REQUEST("http_request"), WAIT("wait"), JUMP("jump"), AI("ai");
 
     private final String code;
 

@@ -116,6 +116,7 @@ public class InboxViews {
             case WHATSAPP_REPLY -> "WhatsApp reply";
             case FORM -> "form";
             case TIMER -> "timer";
+            case AI_RESPONSE -> "AI reply";
         };
         return new ChatView.ActiveChatbotView(p.runId(), p.chatbotId(), p.chatbotName(), p.nodeName(), waitingFor);
     }
