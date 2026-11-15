@@ -8,6 +8,8 @@ import java.util.Objects;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.ProviderView;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.Save;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.View;
+import me.nageshk.omnichannel.ai.profile.AiProfile;
+import me.nageshk.omnichannel.ai.profile.AiProfileRepository;
 import me.nageshk.omnichannel.ai.provider.AiCredential;
 import me.nageshk.omnichannel.ai.provider.AiModelInfo;
 import me.nageshk.omnichannel.ai.provider.AiProvider;
@@ -19,14 +21,10 @@ import me.nageshk.omnichannel.common.api.DuplicateException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.secret.SecretBox;
-import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -39,15 +37,15 @@ public class AiConnectionService {
     private final AiConnectionRepository repository;
     private final AiProviders providers;
     private final SecretBox secrets;
-    private final MongoTemplate mongo;
+    private final AiProfileRepository profiles;
     private final Clock clock;
 
     public AiConnectionService(AiConnectionRepository repository, AiProviders providers, SecretBox secrets,
-            MongoTemplate mongo, Clock clock) {
+            AiProfileRepository profiles, Clock clock) {
         this.repository = repository;
         this.providers = providers;
         this.secrets = secrets;
-        this.mongo = mongo;
+        this.profiles = profiles;
         this.clock = clock;
     }
 
@@ -118,8 +116,8 @@ public class AiConnectionService {
 
     public void delete(String workspaceId, String id) {
         AiConnection c = find(workspaceId, id);
-        List<String> using = mongo.find(new Query(Criteria.where("workspaceId").is(workspaceId).and("connectionId").is(id)),
-                Document.class, "aiProfiles").stream().map(d -> d.getString("name")).sorted().toList();
+        List<String> using = profiles.findByWorkspaceIdAndConnectionId(workspaceId, id).stream()
+                .map(AiProfile::getName).sorted().toList();
         if (!using.isEmpty()) {
             throw new CodedException(HttpStatus.CONFLICT, "ai_connection_in_use", null,
                     "Used by profiles: " + String.join(", ", using));

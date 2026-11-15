@@ -33,6 +33,8 @@ public abstract class AiTestBase extends AutomationTestBase {
     protected List<Class<?>> collections() {
         List<Class<?>> c = new ArrayList<>(super.collections());
         c.add(AiConnection.class);
+        c.add(me.nageshk.omnichannel.db.chatbot.Chatbot.class);
+        c.add(me.nageshk.omnichannel.db.chatbot.ChatbotVersion.class);
         return c;
     }
 
