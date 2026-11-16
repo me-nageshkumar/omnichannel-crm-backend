@@ -219,7 +219,7 @@ class ChatbotRunIT extends ChatbotTestBase {
         ChatbotRunService.StartResult r = start(id, chat, true);
         ChatbotRun run = run(r.run().getId());
         assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.COMPLETED);
-        assertThat(run.getEndReason()).isEqualTo("SetName: no edge from next");
+        assertThat(run.getEndReason()).isEqualTo("Finished after SetName");
         assertThat(run.getFinishedAt()).isNotNull();
     }
 

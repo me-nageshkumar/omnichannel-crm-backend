@@ -236,6 +236,19 @@ class ChatbotAiSingleIT extends AiTestBase {
     }
 
     @Test
+    void unconnectedFailureSaysSoInTheEndReason() throws Exception {
+        // a failed AI step with nothing after it must not read like a clean finish
+        scripted.fail(new AiProviderException(AiProviderException.Code.AUTH, "Incorrect API key"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", flow(List.of(node("ai", "ai", "Classify", aiSettings(Map.of()))), List.of())));
+        ChatbotRun run = start(id, chat);
+        assertWaitingOnAi(run);
+        aiTick();
+        await(() -> !run(run.getId()).getStatus().active());
+        assertThat(run(run.getId()).getEndReason()).isEqualTo("Finished after Classify (failure)");
+    }
+
+    @Test
     void providerFailureTakesFailure() throws Exception {
         scripted.fail(new AiProviderException(AiProviderException.Code.AUTH, "Incorrect API key sk-xyz"));
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");

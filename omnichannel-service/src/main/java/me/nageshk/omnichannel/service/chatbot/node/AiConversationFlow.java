@@ -151,8 +151,7 @@ final class AiConversationFlow {
         // what the customer said meanwhile is not the AI's any more: the inbox keeps it for whatever comes next
         if (!fresh.isEmpty()) result.put("pendingAfterFinish", fresh.stream().map(WaWebMessage::getId).toList());
         AiOutcome o = chosen.get();
-        String summary = "Turn " + turns + ": AI chose “" + (AiExecutor.blank(o.label()) ? o.id() : o.label())
-                + "” (call " + r.callId() + ")";
+        String summary = "Turn " + turns + ": AI chose “" + (AiExecutor.blank(o.label()) ? o.id() : o.label()) + "”";
         StepResult then = StepResult.next(Outputs.outcomeOf(o.id()), result, summary);
         List<String> parts = WhatsAppFormat.convert(ownReply ? f.reply() : AiExecutor.customerText(s, r.text(), r.json()));
         if (!parts.isEmpty()) AiPendingSend.send(ctx, node, parts, AiPendingSend.NEXT, then);
@@ -184,7 +183,7 @@ final class AiConversationFlow {
         Map<String, Object> st = AiExecutor.state(ctx, node);
         int turns = (int) AiExecutor.number(st.get("turns"));
         String summary = turns == 0 ? "Waiting for the customer's first message"
-                : "Turn " + turns + " answered (call " + st.get("lastCallId") + "); waiting for the customer";
+                : "Turn " + turns + " answered; waiting for the customer";
         Object reply = st.get("lastReply");
         return StepResult.wait(Waiting.whatsApp(chatId(ctx), ctx.now(), reply == null ? null : String.valueOf(reply)),
                 summary);
@@ -237,7 +236,7 @@ final class AiConversationFlow {
         ctx.vars().put(node.name(), st);
         long turn = AiExecutor.number(st.get("turns")) + 1;
         return StepResult.wait(Waiting.ai(callId, ctx.now(), ctx.now().plus(aiWait)), "Turn " + turn
-                + ": waiting for the AI (call " + callId + ")" + (supersedesCallId == null ? "" : ", the customer wrote again"));
+                + ": waiting for the AI" + (supersedesCallId == null ? "" : " (the customer wrote again)"));
     }
 
     // ---- checks ----
