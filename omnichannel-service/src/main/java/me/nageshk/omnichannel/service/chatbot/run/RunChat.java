@@ -41,4 +41,15 @@ public class RunChat {
         ctx.chat(chat);
         return chat;
     }
+
+    /**
+     * The chat as stored now. The run's copy is loaded once per walk, and an earlier node (a send) changes the stored
+     * chat, so a node that saves the chat must start from this, or its save is refused as a stale version.
+     */
+    public WaWebChat fresh(RunContext ctx) {
+        WaWebChat chat = resolve(ctx);
+        WaWebChat now = chats.findById(chat.getId()).orElse(chat);
+        ctx.chat(now);
+        return now;
+    }
 }

@@ -28,18 +28,21 @@ class FinishToolTest {
         props.put("outcome", Map.of("type", "string", "enum", List.of("booked", "later")));
         props.put("fields", Map.of("type", "object", "properties", fieldProps, "required", List.of("city", "age", "vip"),
                 "additionalProperties", false));
-        props.put("reply", Map.of("type", List.of("string", "null")));
+        props.put("reply", Map.of("type", List.of("string", "null"), "description",
+                "The last message the customer gets: a closing message, never a question. Null for none."));
         Map<String, Object> golden = Map.of("type", "object", "properties", props,
                 "required", List.of("outcome", "fields", "reply"), "additionalProperties", false);
 
         assertThat(t.name()).isEqualTo("finish").isEqualTo(FinishTool.NAME);
         assertThat(t.parameters()).isEqualTo(golden);
         assertThat(t.description()).isEqualTo("""
-                Ends the conversation with an outcome. Call it once the conversation has reached one of these outcomes:
+                Ends the conversation with an outcome. Call it only when the conversation is over: never while you \
+                still need an answer or a confirmation from the customer (then reply normally and wait for it). \
+                The outcomes:
                 - booked (Booked): They picked a slot
                 - later (Later)
-                Put the details you learned in fields (null when unknown) and a last message for the customer in reply \
-                (null for none).""");
+                Put the details you learned in fields (null when unknown). reply is the last message the customer \
+                gets: a closing message, never a question (null for none).""");
     }
 
     @Test
