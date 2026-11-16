@@ -24,6 +24,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.service.chatbot.flow.Flow;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowNode;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
+import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
 import me.nageshk.omnichannel.service.chatbot.node.NodeExecutor;
 import me.nageshk.omnichannel.service.chatbot.node.NodeExecutors;
 import me.nageshk.omnichannel.service.chatbot.node.RunContext;
@@ -186,7 +187,8 @@ public class ChatbotRunner {
                     if (run.getSteps().size() >= props.chatbot().maxSteps()) return finish(run, ChatbotRunStatus.FAILED, "too many steps");
                     Optional<String> target = flow.target(node.id(), result.output());
                     // nothing connected after this output: the flow is simply over
-                    if (target.isEmpty()) return finish(run, ChatbotRunStatus.COMPLETED, "Finished after " + node.name());
+                    if (target.isEmpty()) return finish(run, ChatbotRunStatus.COMPLETED, "Finished after " + node.name()
+                            + (Outputs.FAILURE.equals(result.output()) ? " (failure)" : ""));
                     FlowNode next = flow.node(target.get()).orElseThrow();
                     run.setCurrentNodeId(next.id());
                     run.setCurrentNodeName(next.name());
