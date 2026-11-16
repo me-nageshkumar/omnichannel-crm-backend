@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import org.apache.commons.logging.Log;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.mock.env.MockEnvironment;
 
 class AppConfigLoaderTest {
@@ -155,5 +157,27 @@ class AppConfigLoaderTest {
         loader().apply(env, store);
         String key = env.getProperty("omnichannel.secrets.keys");
         assertThat(logged).isNotEmpty().noneMatch(l -> l.contains(key.substring(3)));
+    }
+
+    @Test
+    void realEnvironmentOrderingAppConfigBelowSystemAboveYaml() {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources().addLast(new MapPropertySource("application.yml",
+                Map.of("omnichannel.secrets.keys", "", "omnichannel.pages.base-url", "http://localhost:8080")));
+        MemoryStore store = new MemoryStore();
+        store.doc.put("secretsKeys", List.of(KEY));
+        store.doc.put("pagesBaseUrl", "https://stored.example");
+        loader().apply(env, store);
+        List<String> names = env.getPropertySources().stream().map(ps -> ps.getName()).toList();
+        assertThat(names.indexOf("appConfig")).isGreaterThan(names.indexOf("systemEnvironment"))
+                .isLessThan(names.indexOf("application.yml"));
+        assertThat(env.getProperty("omnichannel.pages.base-url")).isEqualTo("https://stored.example");
+        assertThat(env.getProperty("omnichannel.secrets.keys")).isEqualTo(KEY);
+        System.setProperty("omnichannel.pages.base-url", "https://system.example");
+        try {
+            assertThat(env.getProperty("omnichannel.pages.base-url")).isEqualTo("https://system.example");
+        } finally {
+            System.clearProperty("omnichannel.pages.base-url");
+        }
     }
 }
