@@ -19,6 +19,21 @@ class MongoAppConfigStoreIT {
     @BeforeEach
     void clean() {
         mongo.dropCollection(MongoAppConfigStore.COLLECTION);
+        mongo.dropCollection("aiConnections");
+        mongo.dropCollection("aiProfiles");
+    }
+
+    @Test
+    void sealedSecretsAreFound() {
+        MongoAppConfigStore store = store();
+        assertThat(store.sealedSecretsExist()).isFalse();
+        mongo.getCollection("aiProfiles").insertOne(new org.bson.Document("name", "P").append("mcpServers",
+                List.of(new org.bson.Document("label", "s").append("secret", new org.bson.Document("keyId", "k1").append("ciphertext", "x")))));
+        assertThat(store.sealedSecretsExist()).isTrue();
+        mongo.dropCollection("aiProfiles");
+        mongo.getCollection("aiConnections").insertOne(new org.bson.Document("name", "C").append("apiKey",
+                new org.bson.Document("keyId", "k1").append("ciphertext", "x")));
+        assertThat(store.sealedSecretsExist()).isTrue();
     }
 
     private MongoAppConfigStore store() {

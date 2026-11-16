@@ -627,8 +627,8 @@ on the message (`MessageView.messagePage`) and on the CRM contact's timeline.
 - Public, no login: `GET /t/{token}` (the page; 404 unknown, 410 expired), `GET /t/{token}/og.png`,
   `GET /t/{token}/m` (header media), `POST /t/{token}/e` (the page's beacon), `GET /t/{token}/a` (call-to-action
   redirect).
-- Config `omnichannel.pages`: `base-url` (env `OMNICHANNEL_PAGES_BASE_URL`, must be the public HTTPS origin for link
-  previews), `ttl-days` (90), `reply-window` (48h).
+- Config `omnichannel.pages`: `base-url` (env `OMNICHANNEL_PAGES_BASE_URL`, else `appConfig.pagesBaseUrl`; must be the
+  public HTTPS origin for link previews), `ttl-days` (90), `reply-window` (48h).
 
 ## Chatbots
 
@@ -668,7 +668,8 @@ real provider in v1; the provider SPI (`omnichannel-ai`) is shaped for others.
 - Profiles: `GET|POST /ai/profiles`, `GET|PUT|DELETE /ai/profiles/{id}`,
   `POST /ai/profiles/{id}/mcp/{serverId}/tools` (lists the tools of an app-side MCP server).
 - Authorities `ai:view` (reads) and `ai:manage` (writes, verify, tool listing), both BRAND level.
-- Secrets are write-only: the API key and each MCP secret are sealed with the key in `OMNICHANNEL_SECRETS_KEYS` or, when that is unset, the `appConfig` collection's `secretsKeys` (generated on the first start), and never come
+- Secrets are write-only: the API key and each MCP secret are sealed with the key in `OMNICHANNEL_SECRETS_KEYS` or,
+  when that is unset, the `appConfig` collection's `secretsKeys` (generated on the first start), and never come
   back in a response, log line, run or flow. Views carry `keyHint` / `secretHint` and `keySetAt` / `secretSetAt` only.
   A save without `apiKey` / `secret` keeps the stored one (it is dropped when the MCP server's host, connect mode or
   header name changes). Saves carry `version` for optimistic locking (409 on a stale one).

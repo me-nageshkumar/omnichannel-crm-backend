@@ -195,3 +195,7 @@ Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews fou
   2026-11-16); before going live, move the key out (environment, a key file outside backups, or a secrets service) and
   remove `secretsKeys` from the document.
 - Changes to `appConfig` apply after a restart; there is no settings page.
+- When moving the key out, put the same key (same id) in its new place before the next start: a start that finds no
+  key while sealed secrets exist only warns and saving AI keys answers 503 until the key is back.
+- The startup read gives Mongo 3 seconds; a Mongo slower than that means no key and the default pages URL until the
+  next restart (the app's own Mongo use then decides whether it starts at all).

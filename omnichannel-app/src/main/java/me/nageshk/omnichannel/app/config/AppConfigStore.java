@@ -16,6 +16,9 @@ interface AppConfigStore extends AutoCloseable {
 
     void save(String field, Object value);
 
+    /** Whether any secret is already sealed (an AI connection's key or an MCP server's secret). */
+    boolean sealedSecretsExist();
+
     @Override
     void close();
 }

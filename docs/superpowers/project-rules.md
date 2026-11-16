@@ -51,7 +51,8 @@ npx tsc --noEmit && npm run lint && npm run build
 # holds `secretsKeys` (the sealing keys for the brands' AI and MCP secrets, id:base64 list, first seals, all open) and
 # `pagesBaseUrl` (the public origin WhatsApp fetches message-page previews from). They are read at startup; environment
 # variables (OMNICHANNEL_SECRETS_KEYS, OMNICHANNEL_PAGES_BASE_URL) and command-line arguments still win. The first start
-# with no key generates one and stores it; a pages URL given as OMNICHANNEL_PAGES_BASE_URL is stored for later starts,
+# with no key generates one (id g<date-time>) and stores it, unless sealed secrets already exist (then it warns and
+# asks for the key that sealed them); a pages URL given as OMNICHANNEL_PAGES_BASE_URL is stored for later starts,
 # so after a new tunnel just start once with it. Edit with mongosh and restart. The key now lives in the database and in
 # every mongodump: never share a dump, and move the key out of the database before production. Never print the key.
 # The `chat_created` index on waWebMessages is built at startup (a moment on a big collection).
@@ -59,7 +60,8 @@ npx tsc --noEmit && npm run lint && npm run build
 kill $(lsof -nP -iTCP:8089 -sTCP:LISTEN -t)
 (cd "$F" && npm run -s build)
 (cd "$B" && ./mvnw -q -Pwith-frontend -DskipTests -Dfrontend.dist="$F/dist" package)
-(cd "$B" && nohup java -jar omnichannel-app/target/omnichannel-app-0.1.0-SNAPSHOT.jar --server.port=8089 \
+# OMNICHANNEL_PAGES_BASE_URL is needed only when appConfig has no pagesBaseUrl yet or the tunnel changed (it is stored)
+(cd "$B" && OMNICHANNEL_PAGES_BASE_URL=https://<tunnel-host> nohup java -jar omnichannel-app/target/omnichannel-app-0.1.0-SNAPSHOT.jar --server.port=8089 \
   > /tmp/claude-501/app-8089.log 2>&1 &)
 
 # Extension page script into the backend, from the extension's main checkout (writes into the sibling backend)

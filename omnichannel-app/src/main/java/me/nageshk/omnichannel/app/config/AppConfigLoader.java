@@ -33,6 +33,8 @@ public class AppConfigLoader implements EnvironmentPostProcessor, Ordered {
     static final String PAGES_ENV = "OMNICHANNEL_PAGES_BASE_URL";
     private static final List<String> ABOVE = List.of("commandLineArgs", "systemProperties", "systemEnvironment");
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final java.time.format.DateTimeFormatter ID_TIME =
+            java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private final Log log;
 
@@ -68,11 +70,21 @@ public class AppConfigLoader implements EnvironmentPostProcessor, Ordered {
             Map<String, Object> props = new LinkedHashMap<>();
 
             if (blank(env.getProperty(KEYS_PROPERTY))) {
-                List<String> keys = keys(doc.get(KEYS_FIELD));
-                if (keys.isEmpty()) {
-                    store.saveIfAbsent(KEYS_FIELD, List.of(generateKey()));
+                Object stored = doc.get(KEYS_FIELD);
+                List<String> keys = keys(stored);
+                if (keys.isEmpty() && !empty(stored)) {
+                    log.warn("appConfig: appConfig.secretsKeys is not a list of id:base64 keys; no secrets key is set");
+                } else if (keys.isEmpty() && store.sealedSecretsExist()) {
+                    // a new key could not open what the lost one sealed: ask for the old key instead of hiding it
+                    log.warn("appConfig: no secrets key is set but sealed secrets exist; put the key that sealed them in"
+                            + " appConfig.secretsKeys or OMNICHANNEL_SECRETS_KEYS");
+                } else if (keys.isEmpty()) {
+                    String generated = generateKey();
+                    store.saveIfAbsent(KEYS_FIELD, List.of(generated));
                     keys = keys(store.read().get(KEYS_FIELD));
-                    log.info("appConfig: no secrets key was set; a new one was generated and stored in appConfig");
+                    if (keys.contains(generated)) {
+                        log.info("appConfig: no secrets key was set; a new one was generated and stored in appConfig");
+                    }
                 }
                 if (!keys.isEmpty()) props.put(KEYS_PROPERTY, String.join(",", keys));
             }
@@ -110,18 +122,29 @@ public class AppConfigLoader implements EnvironmentPostProcessor, Ordered {
         else sources.addAfter(after, source);
     }
 
+    /** Keys stored as a list, or as one comma-separated text like the environment variable; anything else: none. */
     private static List<String> keys(Object stored) {
         List<String> out = new ArrayList<>();
+        if (stored instanceof String text) stored = List.of((Object[]) text.split(","));
         if (stored instanceof List<?> list) {
-            for (Object k : list) if (k instanceof String s && !blank(s)) out.add(s.strip());
+            for (Object k : list) {
+                if (!(k instanceof String s)) return List.of();
+                if (!blank(s)) out.add(s.strip());
+            }
         }
         return out;
     }
 
+    private static boolean empty(Object stored) {
+        return stored == null || (stored instanceof List<?> l && l.isEmpty()) || (stored instanceof String t && t.isBlank());
+    }
+
+    /** A fresh key under its own id ("g" + when), so it can never clash with a hand-made or earlier key's id. */
     static String generateKey() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
-        return "k1:" + Base64.getEncoder().encodeToString(bytes);
+        String id = "g" + ID_TIME.format(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+        return id + ":" + Base64.getEncoder().encodeToString(bytes);
     }
 
     private static boolean blank(String s) {

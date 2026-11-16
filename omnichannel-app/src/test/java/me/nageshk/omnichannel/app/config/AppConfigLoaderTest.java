@@ -24,6 +24,12 @@ class AppConfigLoaderTest {
         final List<String> writes = new ArrayList<>();
         Object raceKey;
         RuntimeException failure;
+        boolean sealed;
+
+        @Override
+        public boolean sealedSecretsExist() {
+            return sealed;
+        }
 
         @Override
         public Map<String, Object> read() {
@@ -94,8 +100,8 @@ class AppConfigLoaderTest {
         MockEnvironment env = env();
         loader().apply(env, store);
         String keys = env.getProperty("omnichannel.secrets.keys");
-        assertThat(keys).startsWith("k1:");
-        assertThat(Base64.getDecoder().decode(keys.substring(3))).hasSize(32);
+        assertThat(keys).matches("g\\d{8}-\\d{6}:[A-Za-z0-9+/=]{44}");
+        assertThat(Base64.getDecoder().decode(keys.substring(keys.indexOf(':') + 1))).hasSize(32);
         assertThat(store.doc.get("secretsKeys")).isEqualTo(List.of(keys));
     }
 
@@ -127,7 +133,7 @@ class AppConfigLoaderTest {
         store.doc.put("pagesBaseUrl", "  ");
         MockEnvironment env = env();
         loader().apply(env, store);
-        assertThat(env.getProperty("omnichannel.secrets.keys")).startsWith("k1:");
+        assertThat(env.getProperty("omnichannel.secrets.keys")).startsWith("g");
         assertThat(env.getProperty("omnichannel.pages.base-url")).isEqualTo("http://localhost:8080");
     }
 
@@ -156,7 +162,7 @@ class AppConfigLoaderTest {
         MockEnvironment env = env();
         loader().apply(env, store);
         String key = env.getProperty("omnichannel.secrets.keys");
-        assertThat(logged).isNotEmpty().noneMatch(l -> l.contains(key.substring(3)));
+        assertThat(logged).isNotEmpty().noneMatch(l -> l.contains(key.substring(key.indexOf(':') + 1)));
     }
 
     @Test
@@ -179,5 +185,39 @@ class AppConfigLoaderTest {
         } finally {
             System.clearProperty("omnichannel.pages.base-url");
         }
+    }
+
+    @Test
+    void storedKeysAsTextAreRead() {
+        MemoryStore store = new MemoryStore();
+        store.doc.put("secretsKeys", KEY + ", k8:" + Base64.getEncoder().encodeToString(new byte[32]));
+        MockEnvironment env = env();
+        loader().apply(env, store);
+        assertThat(env.getProperty("omnichannel.secrets.keys")).startsWith(KEY + ",k8:");
+        assertThat(store.writes).isEmpty();
+        assertThat(logged).noneMatch(l -> l.contains("generated"));
+    }
+
+    @Test
+    void unusableStoredKeysAreReportedNotRegenerated() {
+        MemoryStore store = new MemoryStore();
+        store.doc.put("secretsKeys", List.of(123));
+        MockEnvironment env = env();
+        loader().apply(env, store);
+        assertThat(env.getProperty("omnichannel.secrets.keys")).isEmpty();
+        assertThat(store.writes).isEmpty();
+        assertThat(logged).anyMatch(l -> l.contains("appConfig.secretsKeys") && l.contains("not"))
+                .noneMatch(l -> l.contains("generated"));
+    }
+
+    @Test
+    void noKeyIsGeneratedWhileSealedSecretsExist() {
+        MemoryStore store = new MemoryStore();
+        store.sealed = true;
+        MockEnvironment env = env();
+        loader().apply(env, store);
+        assertThat(env.getProperty("omnichannel.secrets.keys")).isEmpty();
+        assertThat(store.writes).isEmpty();
+        assertThat(logged).anyMatch(l -> l.contains("sealed") && l.contains("OMNICHANNEL_SECRETS_KEYS"));
     }
 }

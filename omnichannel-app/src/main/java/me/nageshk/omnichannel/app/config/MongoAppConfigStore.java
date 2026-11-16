@@ -30,11 +30,13 @@ final class MongoAppConfigStore implements AppConfigStore {
 
     private final MongoClient client;
     private final MongoCollection<Document> collection;
+    private final com.mongodb.client.MongoDatabase database;
     private final boolean ownsClient;
 
     MongoAppConfigStore(MongoClient client, String database, boolean ownsClient) {
         this.client = client;
-        this.collection = client.getDatabase(database).getCollection(COLLECTION);
+        this.database = client.getDatabase(database);
+        this.collection = this.database.getCollection(COLLECTION);
         this.ownsClient = ownsClient;
     }
 
@@ -76,6 +78,12 @@ final class MongoAppConfigStore implements AppConfigStore {
     @Override
     public void save(String field, Object value) {
         collection.updateOne(eq("_id", ID), set(field, value), new UpdateOptions().upsert(true));
+    }
+
+    @Override
+    public boolean sealedSecretsExist() {
+        return database.getCollection("aiConnections").find(exists("apiKey.ciphertext")).limit(1).first() != null
+                || database.getCollection("aiProfiles").find(exists("mcpServers.secret.ciphertext")).limit(1).first() != null;
     }
 
     @Override
