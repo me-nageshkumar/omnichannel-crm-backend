@@ -89,6 +89,26 @@ class ChatbotActionsNodesIT extends ChatbotTestBase {
     }
 
     @Test
+    void assignRightAfterASendInTheSameRun() throws Exception {
+        // the send updates the chat in the database; the assignment must not save the run's older copy over it
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        Map<String, Object> f = flow(List.of(
+                node("s", "send_message", "Pay", textMessage("Payment details follow")),
+                node("a", "assign_chat", "Hand", Map.of("mode", "TEAM_ROUND_ROBIN", "teamId", support.getId()))),
+                List.of(edge("s", "next", "a")));
+        String id = publish(createChatbot("Bot", f));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            await(() -> !run(run.getId()).getStatus().active());
+            ChatbotRun done = run(run.getId());
+            assertThat(done.getStatus()).as(done.getEndReason()).isEqualTo(ChatbotRunStatus.COMPLETED);
+            WaWebChat after = chats.findById(chat.getId()).orElseThrow();
+            assertThat(after.getAssignedUserId()).isIn(agent.getId(), agent2.getId());
+            assertThat(after.getLastMessageAt()).isNotNull();
+        }
+    }
+
+    @Test
     void assignRoundRobin() throws Exception {
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
         Map<String, Object> f = flow(List.of(node("a", "assign_chat", "Hand", Map.of("mode", "TEAM_ROUND_ROBIN", "teamId", support.getId()))), List.of());

@@ -57,7 +57,8 @@ public final class FinishTool {
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("outcome", outcome);
         props.put("fields", fieldsSchema);
-        props.put("reply", Map.of("type", List.of("string", "null")));
+        props.put("reply", Map.of("type", List.of("string", "null"), "description",
+                "The last message the customer gets: a closing message, never a question. Null for none."));
 
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
@@ -93,15 +94,17 @@ public final class FinishTool {
     }
 
     private static String description(List<AiOutcome> outcomes) {
-        StringBuilder b = new StringBuilder(
-                "Ends the conversation with an outcome. Call it once the conversation has reached one of these outcomes:");
+        // Models tend to end with a question here ("please confirm") and the flow moves on without the answer: say no.
+        StringBuilder b = new StringBuilder("Ends the conversation with an outcome. Call it only when the conversation is"
+                + " over: never while you still need an answer or a confirmation from the customer (then reply normally"
+                + " and wait for it). The outcomes:");
         for (AiOutcome o : outcomes) {
             b.append("\n- ").append(o.id());
             if (o.label() != null && !o.label().isBlank()) b.append(" (").append(o.label()).append(')');
             if (o.description() != null && !o.description().isBlank()) b.append(": ").append(o.description());
         }
-        b.append("\nPut the details you learned in fields (null when unknown) and a last message for the customer in")
-                .append(" reply (null for none).");
+        b.append("\nPut the details you learned in fields (null when unknown). reply is the last message the customer")
+                .append(" gets: a closing message, never a question (null for none).");
         return b.toString();
     }
 }

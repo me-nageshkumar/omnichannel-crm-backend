@@ -20,6 +20,7 @@ import me.nageshk.omnichannel.service.chatbot.flow.FlowNode;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
 import me.nageshk.omnichannel.service.chatbot.flow.NodeType;
 import me.nageshk.omnichannel.service.chatbot.flow.settings.AssignChatSettings;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 /** Assign chat (spec §4.2): exactly the automation action's choices. */
@@ -46,8 +47,16 @@ public class AssignChatExecutor extends BaseExecutor {
 
     @Override
     public StepResult run(RunContext ctx, FlowNode node) {
+        // start from the stored chat (an earlier send changed it); a message landing in between gets one more try
+        try {
+            return assign(ctx, node, runChat.fresh(ctx));
+        } catch (OptimisticLockingFailureException e) {
+            return assign(ctx, node, runChat.fresh(ctx));
+        }
+    }
+
+    private StepResult assign(RunContext ctx, FlowNode node, WaWebChat chat) {
         AssignChatSettings s = settings(node, AssignChatSettings.class);
-        WaWebChat chat = runChat.resolve(ctx);
         String name = ctx.run().getChatbotName();
         if (s.mode() == null) throw new NodeFailed("no assignment mode");
         switch (s.mode()) {
