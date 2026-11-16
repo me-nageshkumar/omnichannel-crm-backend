@@ -153,6 +153,7 @@ final class AiConversationFlow {
         AiOutcome o = chosen.get();
         String summary = "Turn " + turns + ": AI chose “" + (AiExecutor.blank(o.label()) ? o.id() : o.label()) + "”";
         StepResult then = StepResult.next(Outputs.outcomeOf(o.id()), result, summary);
+        if (!s.sendsClosingMessage()) return then;
         List<String> parts = WhatsAppFormat.convert(ownReply ? f.reply() : AiExecutor.customerText(s, r.text(), r.json()));
         if (!parts.isEmpty()) AiPendingSend.send(ctx, node, parts, AiPendingSend.NEXT, then);
         return then;

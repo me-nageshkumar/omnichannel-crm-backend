@@ -277,6 +277,30 @@ class ChatbotAiConversationIT extends AiTestBase {
     }
 
     @Test
+    void closingMessageOffLeavesTheTalkingToTheNextNode() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        Map<String, Object> settings = new java.util.LinkedHashMap<>(conv(BOOKED));
+        settings.put("sendClosingMessage", false);
+        String id = publish(flow(List.of(
+                node("ai", "ai", "Sales", settings),
+                node("m", "send_message", "After", textMessage("Your order is booked"))),
+                List.of(edge("ai", "outcome:booked", "m"))));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            scripted.reply(finish("", "{\"outcome\":\"booked\",\"fields\":{\"size\":\"M\"},\"reply\":\"Thanks, booked!\"}"));
+            ChatbotRun run = start(id, chat);
+            say("M please");
+            await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
+            aiTick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            // only the next node speaks; the AI's closing line is kept for the flow
+            assertThat(sent(d)).containsExactly("Your order is booked");
+            ChatbotRun done = run(run.getId());
+            assertThat(done.getSteps().get(0).output()).isEqualTo("outcome:booked");
+            assertThat(state(done, "Sales")).containsEntry("reply", "Thanks, booked!");
+        }
+    }
+
+    @Test
     void finishWithTextAndEmptyReply() throws Exception {
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
         String id = publish(flow(List.of(

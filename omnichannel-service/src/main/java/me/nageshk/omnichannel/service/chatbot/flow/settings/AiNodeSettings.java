@@ -14,7 +14,7 @@ import me.nageshk.omnichannel.db.automation.ConditionNode;
 public record AiNodeSettings(String profileId, Mode mode, AiOverrides overrides, String extraInstructions,
         String userMessage, String initialMessage, Boolean sendReply, List<AiOutcome> outcomes, List<AiField> collect,
         AiReplyFormat replyFormat, List<String> exitWords, ConditionNode exitCondition, Integer maxTurns,
-        String continueFrom) {
+        String continueFrom, Boolean sendClosingMessage) {
 
     public static final int DEFAULT_MAX_TURNS = 20;
 
@@ -35,6 +35,14 @@ public record AiNodeSettings(String profileId, Mode mode, AiOverrides overrides,
 
     public List<String> exitWordsOrEmpty() {
         return exitWords == null ? List.of() : exitWords;
+    }
+
+    /**
+     * Whether the AI's closing line goes to the customer when it chooses an outcome. On unless turned off: off leaves the
+     * talking to the next node (the line is still in the node's {@code reply}).
+     */
+    public boolean sendsClosingMessage() {
+        return !Boolean.FALSE.equals(sendClosingMessage);
     }
 
     /** A conversation always sends; a single call only when asked. */
