@@ -187,3 +187,15 @@ Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews fou
 - A JSON reply schema that is not strict-ready is sent to OpenAI with `strict: false`, so the model may leave fields
   out; a missing message field takes `failure` (`NO_MESSAGE_FIELD`).
 - The `creationTime` watermark can skip a message inserted out of order by a concurrent writer.
+
+## Settings in MongoDB (appConfig): known limits
+
+- The secrets sealing key is stored in the same database as the secrets it seals (`appConfig.secretsKeys`), so a
+  database dump or backup can open every brand's AI key and MCP secret. Accepted until production (the user's choice,
+  2026-11-16); before going live, move the key out (environment, a key file outside backups, or a secrets service) and
+  remove `secretsKeys` from the document.
+- Changes to `appConfig` apply after a restart; there is no settings page.
+- When moving the key out, put the same key (same id) in its new place before the next start: a start that finds no
+  key while sealed secrets exist only warns and saving AI keys answers 503 until the key is back.
+- The startup read gives Mongo 3 seconds; a Mongo slower than that means no key and the default pages URL until the
+  next restart (the app's own Mongo use then decides whether it starts at all).

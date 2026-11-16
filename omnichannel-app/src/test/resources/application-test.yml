@@ -8,6 +8,9 @@ de:
 server:
   address: 127.0.0.1
 omnichannel:
+  # tests never read or write the appConfig collection at startup (AppConfigLoaderTest covers it)
+  app-config:
+    enabled: false
   # test-only sealing key
   secrets:
     keys: t1:9nGNOJVWSxxIHCGRBcX6zhF6XQBm23VCF+fz0O5TBr8=

@@ -47,20 +47,21 @@ F=/Users/nagesh/Projects/WhatsAppWebJS/SCM/omnichannel-crm-frontend
 npx vitest run <path> --maxWorkers=4
 npx tsc --noEmit && npm run lint && npm run build
 
-# Message pages: WhatsApp fetches the link preview from the public origin in OMNICHANNEL_PAGES_BASE_URL (default
-# http://localhost:8080). For a real-device check run a tunnel first, e.g. `cloudflared tunnel --url http://localhost:8089`,
-# and start the jar with OMNICHANNEL_PAGES_BASE_URL=https://<tunnel-host>.
-# AI keys: OMNICHANNEL_SECRETS_KEYS seals the brands' API and MCP secrets. Format: a comma-separated list of
-# id:base64 (e.g. k1:<32 bytes base64>); the first entry seals new secrets, every entry can open. Generate one with
-# `openssl rand -base64 32`. It must be in the environment before `java -jar` (the 8089 deploy needs it). Back the key up
-# outside the repo; if it is lost every brand must re-enter its keys. Never write the value into a file, log or commit.
-# Without it the AI endpoints that store secrets answer 503 secrets_unavailable. The new `chat_created` index on
-# waWebMessages is built at startup (a moment on a big collection).
+# Settings in MongoDB (pre-production stop-gap, 2026-11-16): the `appConfig` collection, one document {_id: "app"},
+# holds `secretsKeys` (the sealing keys for the brands' AI and MCP secrets, id:base64 list, first seals, all open) and
+# `pagesBaseUrl` (the public origin WhatsApp fetches message-page previews from). They are read at startup; environment
+# variables (OMNICHANNEL_SECRETS_KEYS, OMNICHANNEL_PAGES_BASE_URL) and command-line arguments still win. The first start
+# with no key generates one (id g<date-time>) and stores it, unless sealed secrets already exist (then it warns and
+# asks for the key that sealed them); a pages URL given as OMNICHANNEL_PAGES_BASE_URL is stored for later starts,
+# so after a new tunnel just start once with it. Edit with mongosh and restart. The key now lives in the database and in
+# every mongodump: never share a dump, and move the key out of the database before production. Never print the key.
+# The `chat_created` index on waWebMessages is built at startup (a moment on a big collection).
 # Deploy on 8089: stop the old process and wait for it to exit (up to 30 s), since the build replaces its jar
 kill $(lsof -nP -iTCP:8089 -sTCP:LISTEN -t)
 (cd "$F" && npm run -s build)
 (cd "$B" && ./mvnw -q -Pwith-frontend -DskipTests -Dfrontend.dist="$F/dist" package)
-(cd "$B" && OMNICHANNEL_SECRETS_KEYS="$OMNICHANNEL_SECRETS_KEYS" nohup java -jar omnichannel-app/target/omnichannel-app-0.1.0-SNAPSHOT.jar --server.port=8089 \
+# OMNICHANNEL_PAGES_BASE_URL is needed only when appConfig has no pagesBaseUrl yet or the tunnel changed (it is stored)
+(cd "$B" && OMNICHANNEL_PAGES_BASE_URL=https://<tunnel-host> nohup java -jar omnichannel-app/target/omnichannel-app-0.1.0-SNAPSHOT.jar --server.port=8089 \
   > /tmp/claude-501/app-8089.log 2>&1 &)
 
 # Extension page script into the backend, from the extension's main checkout (writes into the sibling backend)
