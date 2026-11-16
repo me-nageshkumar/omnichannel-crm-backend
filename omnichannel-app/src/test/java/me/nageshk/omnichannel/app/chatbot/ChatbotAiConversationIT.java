@@ -220,7 +220,8 @@ class ChatbotAiConversationIT extends AiTestBase {
             assertThat(talking.getSteps()).hasSize(1);
             ChatbotStep step = talking.getSteps().get(0);
             assertThat(step.outcome()).isEqualTo(ChatbotStep.Outcome.WAITING);
-            assertThat(step.summary()).contains("Turn 1").contains(aiCalls().get(0).getId());
+            // people read this: no internal call id
+            assertThat(step.summary()).isEqualTo("Turn 1 answered; waiting for the customer");
         }
     }
 
@@ -266,6 +267,7 @@ class ChatbotAiConversationIT extends AiTestBase {
             ChatbotRun done = run(run.getId());
             ChatbotStep step = done.getSteps().get(0);
             assertThat(step.output()).isEqualTo("outcome:booked");
+            assertThat(step.summary()).doesNotContain("call").startsWith("Turn ").contains("AI chose");
             assertThat(step.outcome()).isEqualTo(ChatbotStep.Outcome.DONE);
             assertThat(state(done, "Sales")).containsEntry("outcome", "booked").containsEntry("turns", 2)
                     .containsEntry("fields", Map.of("size", "L")).containsEntry("reply", "Booked, size L.");

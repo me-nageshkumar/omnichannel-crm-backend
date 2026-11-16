@@ -305,7 +305,7 @@ public class AiExecutor extends BaseExecutor {
         state.put("usage", usage(0, 0));
         ctx.vars().put(node.name(), state);
         return StepResult.wait(Waiting.ai(callId, ctx.now(), ctx.now().plus(aiWait)),
-                "Waiting for the AI (turn 1, call " + callId + ")");
+                "Turn 1: waiting for the AI");
     }
 
     @Override

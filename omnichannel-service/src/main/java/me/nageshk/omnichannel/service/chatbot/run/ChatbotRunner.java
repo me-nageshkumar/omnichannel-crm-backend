@@ -185,7 +185,8 @@ public class ChatbotRunner {
                     if (result.result() != null && node.name() != null) run.getVariables().put(node.name(), result.result());
                     if (run.getSteps().size() >= props.chatbot().maxSteps()) return finish(run, ChatbotRunStatus.FAILED, "too many steps");
                     Optional<String> target = flow.target(node.id(), result.output());
-                    if (target.isEmpty()) return finish(run, ChatbotRunStatus.COMPLETED, node.name() + ": no edge from " + result.output());
+                    // nothing connected after this output: the flow is simply over
+                    if (target.isEmpty()) return finish(run, ChatbotRunStatus.COMPLETED, "Finished after " + node.name());
                     FlowNode next = flow.node(target.get()).orElseThrow();
                     run.setCurrentNodeId(next.id());
                     run.setCurrentNodeName(next.name());
