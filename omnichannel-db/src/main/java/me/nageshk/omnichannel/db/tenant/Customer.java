@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.db.tenant;
 import java.time.Instant;
 import lombok.Getter;
 import lombok.Setter;
+import me.nageshk.omnichannel.db.billing.BillingProfile;
 import me.nageshk.omnichannel.db.enablement.Disabled;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
@@ -22,6 +23,8 @@ public class Customer {
     private boolean active;
     private Disabled disabled;
     private String createdBy;
+    /** Who the customer is on its invoices; null until it is filled in. */
+    private BillingProfile billing;
 
     @CreatedDate
     private Instant creationTime;

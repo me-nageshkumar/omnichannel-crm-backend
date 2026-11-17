@@ -133,7 +133,11 @@ public enum Authority {
             ACCOUNT_MANAGER),
     SUBSCRIPTION_MANAGE("subscription:manage", RoleLevel.PLATFORM, "Assign, change and remove a customer's plan",
             ACCOUNT_MANAGER),
-    BILLING_VIEW("billing:view", RoleLevel.COMPANY, "See the company's plan and usage", CUSTOMER_ADMIN);
+    BILLING_VIEW("billing:view", RoleLevel.COMPANY, "See the company's plan and usage", CUSTOMER_ADMIN),
+    BILLING_REQUEST("billing:request", RoleLevel.COMPANY,
+            "Raise and cancel the company's own billing requests, edit its billing profile", CUSTOMER_ADMIN),
+    REFUND_MANAGE("refund:manage", RoleLevel.PLATFORM,
+            "Cancel a plan or add-on with credit, post account credit, record refunds");
 
     private final String code;
     private final RoleLevel level;

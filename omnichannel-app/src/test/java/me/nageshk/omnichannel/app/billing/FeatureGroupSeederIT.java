@@ -26,7 +26,7 @@ class FeatureGroupSeederIT {
         FeatureGroup core = groups.findById("core").orElseThrow();
         assertThat(core.isBuiltIn()).isTrue();
         assertThat(core.getCategory()).isEqualTo(GroupCategory.DEFAULT);
-        assertThat(core.getAuthorities()).contains("billing:view", "user:manage");
+        assertThat(core.getAuthorities()).contains("billing:view", "billing:request", "user:manage");
         assertThat(groups.findById("crm").orElseThrow().getAuthorities()).contains("crm:view").doesNotContain("crm:enable");
         assertThat(groups.findById("ai").orElseThrow().getRequires()).containsExactly("chatbots");
     }
