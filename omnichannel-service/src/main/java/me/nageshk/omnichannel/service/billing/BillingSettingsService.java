@@ -62,9 +62,10 @@ public class BillingSettingsService {
         s.setGraceDays(req.graceDays());
         s.setCustomersWithoutPlan(req.customersWithoutPlan());
         BillingSettings saved = repository.save(s);
-        audit.record(BillingChange.SETTINGS, BillingSettings.ID, "UPDATED", "Edited", before, snapshot(saved), by);
+        // in force at once, whatever becomes of the history row
         store.evict();
         entitlements.evictAll();
+        audit.record(BillingChange.SETTINGS, BillingSettings.ID, "UPDATED", "Edited", before, snapshot(saved), by);
         return view(saved);
     }
 

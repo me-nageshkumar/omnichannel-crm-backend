@@ -274,4 +274,13 @@ class EntitlementsTest {
         g.setAuthorities(new HashSet<>(Set.of(authorities)));
         return g;
     }
+
+    @Test
+    void hugeExtraUnitsDoNotWrapTheLimitAround() {
+        Subscription s = subscription(Set.of(), Map.of(LimitKey.USERS, 5));
+        s.getCurrent().getAddOns().add(limitAddOn(LimitKey.USERS, 2_000_000_000));
+        s.getCurrent().getAddOns().add(limitAddOn(LimitKey.USERS, 2_000_000_000));
+        has(s);
+        assertThat(entitlements.of("c1").limit(LimitKey.USERS)).contains(Integer.MAX_VALUE);
+    }
 }

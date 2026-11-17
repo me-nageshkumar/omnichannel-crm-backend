@@ -175,12 +175,12 @@ public class SubscriptionService {
         sub.setTermRevision(sub.getTermRevision() + 1);
         sub.setRevision(sub.getRevision() + 1);
         subscriptions.save(sub);
+        entitlements.evict(customerId);
         audit.record(BillingChange.SUBSCRIPTION, customerId, had ? "CHANGED" : "ASSIGNED",
                 (had ? "Changed to " : "Assigned ") + plan.getName() + ", " + DAY.format(req.startDate()) + " to "
                         + DAY.format(req.endDate().minusDays(1))
                         + (addOns.isEmpty() ? "" : ", with " + addOns.size() + " add-on" + (addOns.size() == 1 ? "" : "s")),
                 null, snapshot(segment), by);
-        entitlements.evict(customerId);
         return view(customerId);
     }
 
@@ -190,9 +190,9 @@ public class SubscriptionService {
         Subscription sub = subscriptions.findByCustomerId(customerId).orElse(null);
         if (sub == null) return;
         subscriptions.delete(sub);
+        entitlements.evict(customerId);
         audit.record(BillingChange.SUBSCRIPTION, customerId, "REMOVED", "Plan removed",
                 sub.getCurrent() == null ? null : snapshot(sub.getCurrent()), null, by);
-        entitlements.evict(customerId);
     }
 
     /** The add-ons of an assignment, priced as the plan offers them (0 when it does not). */

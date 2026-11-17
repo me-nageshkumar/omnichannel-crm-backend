@@ -37,6 +37,7 @@ import me.nageshk.omnichannel.common.rpc.RpcException;
 import me.nageshk.omnichannel.common.user.InvalidOtpException;
 import me.nageshk.omnichannel.common.user.TwoFactorStateException;
 import me.nageshk.omnichannel.security.auth.AccountLockedException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -232,6 +233,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(LastAccessException.class)
     public ResponseEntity<Map<String, String>> lastAccess(LastAccessException e) {
         return body(HttpStatus.BAD_REQUEST, LastAccessException.CODE, e.getMessage());
+    }
+
+    /** Two requests created the same record at the same moment; this one lost. */
+    @ExceptionHandler(DuplicateKeyException.class)
+    public ResponseEntity<Map<String, String>> duplicateKey(DuplicateKeyException e) {
+        return body(HttpStatus.CONFLICT, "CONFLICT", "the record was created by another request; reload and try again");
     }
 
     /** Someone else changed the record between this request's read and its write. */
