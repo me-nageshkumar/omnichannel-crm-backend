@@ -46,6 +46,8 @@ class ReadOnlySafeHandlersTest {
                 "InboxController#read",
                 // the user's own account
                 "UserController#availability", "UserController#initiate", "UserController#confirm",
-                "UserController#disable", "InitialPasswordController#change", "LogoutController#logout");
+                "UserController#disable", "InitialPasswordController#change", "LogoutController#logout",
+                // asking to renew, upgrade or buy an add-on: the way out of read-only
+                "MyOrderController#quote", "MyOrderController#raise", "MyOrderController#cancel");
     }
 }

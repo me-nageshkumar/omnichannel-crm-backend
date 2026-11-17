@@ -279,7 +279,7 @@ public class FeatureGroupService {
     }
 
     /** For the other billing services: every group by code. */
-    Map<String, FeatureGroup> byCode() {
+    public Map<String, FeatureGroup> byCode() {
         Map<String, FeatureGroup> all = new HashMap<>();
         groups.findAll().forEach(g -> all.put(g.getCode(), g));
         return all;

@@ -4,9 +4,9 @@ import java.util.Comparator;
 import me.nageshk.omnichannel.db.billing.FeatureGroup;
 
 /** The order feature groups are listed in everywhere. */
-final class FeatureGroupOrder {
+public final class FeatureGroupOrder {
 
-    static final Comparator<FeatureGroup> COMPARATOR =
+    public static final Comparator<FeatureGroup> COMPARATOR =
             Comparator.comparingInt(FeatureGroup::getSortOrder).thenComparing(FeatureGroup::getCode);
 
     private FeatureGroupOrder() {}
