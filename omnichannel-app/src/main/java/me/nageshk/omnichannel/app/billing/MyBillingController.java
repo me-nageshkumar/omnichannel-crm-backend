@@ -4,6 +4,8 @@ import java.util.List;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.billing.SubscriptionService;
+import me.nageshk.omnichannel.service.billing.document.CreditNoteService;
+import me.nageshk.omnichannel.service.billing.document.DocumentViews.CreditNoteView;
 import me.nageshk.omnichannel.service.billing.document.DocumentViews.InvoiceView;
 import me.nageshk.omnichannel.service.billing.document.InvoiceService;
 import me.nageshk.omnichannel.service.billing.SubscriptionViews.SubscriptionView;
@@ -21,10 +23,12 @@ public class MyBillingController {
 
     private final SubscriptionService service;
     private final InvoiceService invoices;
+    private final CreditNoteService creditNotes;
 
-    public MyBillingController(SubscriptionService service, InvoiceService invoices) {
+    public MyBillingController(SubscriptionService service, InvoiceService invoices, CreditNoteService creditNotes) {
         this.service = service;
         this.invoices = invoices;
+        this.creditNotes = creditNotes;
     }
 
     @GetMapping("/subscription")
@@ -43,6 +47,18 @@ public class MyBillingController {
     @PreAuthorize("hasAuthority('billing:view')")
     public InvoiceView invoice(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
         return invoices.getFor(customerOf(me), id);
+    }
+
+    @GetMapping("/credit-notes")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public List<CreditNoteView> creditNotes(@AuthenticationPrincipal AuthenticatedUser me) {
+        return creditNotes.list(customerOf(me));
+    }
+
+    @GetMapping("/credit-notes/{id}")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public CreditNoteView creditNote(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        return creditNotes.getFor(customerOf(me), id);
     }
 
     private static String customerOf(AuthenticatedUser me) {

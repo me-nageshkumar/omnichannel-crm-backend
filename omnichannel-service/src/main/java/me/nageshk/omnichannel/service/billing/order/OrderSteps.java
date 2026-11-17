@@ -7,6 +7,7 @@ import me.nageshk.omnichannel.common.billing.OrderKind;
 import me.nageshk.omnichannel.common.billing.OrderStatus;
 import me.nageshk.omnichannel.db.billing.BillingChange;
 import me.nageshk.omnichannel.db.billing.BillingOrder;
+import me.nageshk.omnichannel.db.billing.OrderCredit;
 import me.nageshk.omnichannel.db.billing.OrderTarget;
 import me.nageshk.omnichannel.db.billing.Subscription;
 import me.nageshk.omnichannel.db.billing.SubscriptionAddOn;
@@ -14,6 +15,7 @@ import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
 import me.nageshk.omnichannel.db.billing.TermSegment;
 import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import me.nageshk.omnichannel.service.billing.BillingAudit;
+import me.nageshk.omnichannel.service.billing.document.CreditNoteService;
 import me.nageshk.omnichannel.service.billing.document.InvoiceService;
 import org.bson.types.Decimal128;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -38,10 +40,12 @@ public class OrderSteps {
     private final BillingAudit audit;
     private final MongoTemplate mongo;
     private final InvoiceService invoices;
+    private final CreditNoteService creditNotes;
 
     public OrderSteps(SubscriptionRepository subscriptions, Entitlements entitlements, BillingAudit audit,
-            MongoTemplate mongo, InvoiceService invoices) {
+            MongoTemplate mongo, InvoiceService invoices, CreditNoteService creditNotes) {
         this.invoices = invoices;
+        this.creditNotes = creditNotes;
         this.subscriptions = subscriptions;
         this.entitlements = entitlements;
         this.audit = audit;
@@ -93,8 +97,20 @@ public class OrderSteps {
         supersede(o);
     }
 
-    /** Issues the credit notes the order gives. Nothing yet: Task 10. */
-    public void creditNotes(BillingOrder o) {}
+    /**
+     * Issues the credit notes the order gives and adds their total to the customer's account credit. It runs
+     * before the invoice, so the order's own invoice can draw on that credit. Each note is inserted under the id
+     * the order reserved and the balance remembers the orders that added to it, so nothing here happens twice.
+     */
+    public void creditNotes(BillingOrder o) {
+        if (o.getCredits().isEmpty()) return;
+        for (OrderCredit credit : o.getCredits()) creditNotes.issue(o, credit);
+        mongo.updateFirst(
+                new Query(Criteria.where("customerId").is(o.getCustomerId()).and("creditedOrderIds").ne(o.getId())),
+                new Update().inc("creditBalance", new Decimal128(o.getCreditFromNotes()))
+                        .addToSet("creditedOrderIds", o.getId()).inc("version", 1),
+                Subscription.class);
+    }
 
     /**
      * Issues the order's invoice and takes the account credit it used off the customer's balance. An order with
