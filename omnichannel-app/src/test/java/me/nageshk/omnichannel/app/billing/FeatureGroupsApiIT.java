@@ -174,4 +174,11 @@ class FeatureGroupsApiIT extends BillingApiTestBase {
         // and the group can still be saved with the dead code dropped
         PUT(GROUPS + "/crm", superToken, without(group("crm"), "crm:export")).andExpect(status().isOk());
     }
+
+    @Test
+    void nothingCanRequireAGroupThatIsInEveryPlan() throws Exception {
+        POST(GROUPS, superToken, Map.of("code", "needs-inbox", "name", "Needs inbox", "category", "PAID",
+                "requires", List.of("inbox"))).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.requires").value("Inbox is in every plan already; nothing needs to require it"));
+    }
 }

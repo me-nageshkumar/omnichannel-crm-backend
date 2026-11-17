@@ -99,9 +99,9 @@ public class FeatureGroupService {
         g.setCreatedBy(by);
         apply(g, req);
         FeatureGroup saved = groups.insert(g);
+        entitlements.evictAll();
         audit.record(BillingChange.GROUP, code, "CREATED", "Created with " + saved.getAuthorities().size()
                 + " permissions", null, snapshot(saved), by);
-        entitlements.evictAll();
         return view(saved, planCodesByGroup());
     }
 
@@ -125,9 +125,9 @@ public class FeatureGroupService {
         g.setUpdatedAt(clock.instant());
         g.setUpdatedBy(by);
         FeatureGroup saved = groups.save(g);
+        entitlements.evictAll();
         audit.record(BillingChange.GROUP, code, "UPDATED", summary(oldName, oldCategory, oldAuthorities, saved), before,
                 snapshot(saved), by);
-        entitlements.evictAll();
         return view(saved, planCodesByGroup());
     }
 
@@ -144,8 +144,8 @@ public class FeatureGroupService {
                     "The group is part of a customer's subscription", Map.of("plans", ""));
         }
         groups.delete(g);
-        audit.record(BillingChange.GROUP, code, "DELETED", "Deleted", snapshot(g), null, by);
         entitlements.evictAll();
+        audit.record(BillingChange.GROUP, code, "DELETED", "Deleted", snapshot(g), null, by);
     }
 
     FeatureGroup require(String code) {
@@ -184,6 +184,9 @@ public class FeatureGroupService {
         for (String r : new TreeSet<>(requires)) {
             if (r.equals(g.getCode())) errors.putIfAbsent("requires", "a group cannot require itself");
             else if (!all.containsKey(r)) errors.putIfAbsent("requires", r + " is not a group");
+            else if (all.get(r).getCategory() == GroupCategory.DEFAULT) {
+                errors.putIfAbsent("requires", all.get(r).getName() + " is in every plan already; nothing needs to require it");
+            }
         }
         if (!errors.containsKey("requires") && reaches(requires, g.getCode(), all)) {
             errors.put("requires", "the groups would require each other");
@@ -276,7 +279,7 @@ public class FeatureGroupService {
     }
 
     /** For the other billing services: every group by code. */
-    Map<String, FeatureGroup> byCode() {
+    public Map<String, FeatureGroup> byCode() {
         Map<String, FeatureGroup> all = new HashMap<>();
         groups.findAll().forEach(g -> all.put(g.getCode(), g));
         return all;

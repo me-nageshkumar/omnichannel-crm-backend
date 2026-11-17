@@ -99,6 +99,10 @@ omnichannel:
     test-idle: 30m
     send-timeout: 60s
     retry-delay: 2m
+  # billing: a ticker finishes interrupted activations and refunds, expires old quotes and rolls paid renewals in
+  billing:
+    auto-tick: true
+    tick: 30s
   # chatbot runs: a small pool walks flows off the request threads; a ticker answers timers and ends idle runs
   chatbot:
     auto-tick: true

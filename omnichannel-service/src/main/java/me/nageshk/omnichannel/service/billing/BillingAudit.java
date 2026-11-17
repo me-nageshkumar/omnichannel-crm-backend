@@ -40,6 +40,26 @@ public class BillingAudit {
         changes.save(c);
     }
 
+    /**
+     * Records a change under an id of the caller's choosing, so that doing the same step again (an activation that
+     * is finished after a failure) leaves one row.
+     */
+    public void recordOnce(String id, String targetType, String targetId, String kind, String summary, String by) {
+        BillingChange c = new BillingChange();
+        c.setId(id);
+        c.setTargetType(targetType);
+        c.setTargetId(targetId);
+        c.setKind(kind);
+        c.setSummary(summary);
+        c.setBy(by);
+        c.setAt(clock.instant());
+        try {
+            changes.insert(c);
+        } catch (org.springframework.dao.DuplicateKeyException alreadyRecorded) {
+            // the first attempt wrote it
+        }
+    }
+
     /** Newest first. */
     public List<EventView> history(String targetType, String targetId) {
         Map<String, String> names = new HashMap<>();

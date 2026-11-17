@@ -163,7 +163,9 @@ public class Entitlements {
         for (SubscriptionAddOn a : segment.getAddOns()) {
             // extra units only mean something under a limit the plan sets
             if (a.getKind() == AddOnKind.LIMIT && limits.containsKey(a.getLimitKey())) {
-                limits.merge(a.getLimitKey(), a.getQuantity(), Integer::sum);
+                // summed wide and capped: absurd quantities must not wrap the limit around to a negative number
+                long raised = (long) limits.get(a.getLimitKey()) + Math.max(0, a.getQuantity());
+                limits.put(a.getLimitKey(), (int) Math.min(Integer.MAX_VALUE, raised));
             }
         }
         return Map.copyOf(limits);

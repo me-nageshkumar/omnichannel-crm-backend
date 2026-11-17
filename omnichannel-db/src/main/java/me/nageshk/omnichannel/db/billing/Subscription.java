@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
@@ -17,6 +18,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
  * so nothing has to run for a customer to change state.
  */
 @Document("subscriptions")
+@CompoundIndex(name = "next_termStart", def = "{'next.termStart': 1}", sparse = true)
 @Getter
 @Setter
 public class Subscription {
@@ -42,6 +44,12 @@ public class Subscription {
     /** Counts every applied change. */
     private long revision;
     private Set<String> appliedOrderIds = new HashSet<>();
+    /** Orders whose credit notes have been added to, and whose use of credit has been taken from, the balance. */
+    private Set<String> creditedOrderIds = new HashSet<>();
+    private Set<String> debitedOrderIds = new HashSet<>();
+    private Set<String> refundIds = new HashSet<>();
+    /** The plan was cancelled: read-only from the term's end, with no grace, until a new plan is bought. */
+    private boolean cancelled;
 
     @Version
     private Long version;

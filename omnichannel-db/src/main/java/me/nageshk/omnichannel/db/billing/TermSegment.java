@@ -30,4 +30,7 @@ public class TermSegment {
     /** What was paid for the plan for this term, before tax; 0 when it was given free. */
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal planPaid = BigDecimal.ZERO;
+
+    /** The invoice the plan was billed on; null when it was given free, so no credit can come back. */
+    private String planInvoiceId;
 }

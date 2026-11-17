@@ -8,17 +8,30 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import me.nageshk.omnichannel.common.billing.LimitKey;
+import me.nageshk.omnichannel.db.billing.AddOnKind;
+import me.nageshk.omnichannel.db.billing.PlanRepository;
+import me.nageshk.omnichannel.db.billing.PlanTerms;
+import me.nageshk.omnichannel.db.billing.Subscription;
+import me.nageshk.omnichannel.db.billing.SubscriptionAddOn;
+import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
 import me.nageshk.omnichannel.security.access.BuiltInRoles;
+import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
 class SubscriptionApiIT extends BillingApiTestBase {
 
     static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    @Autowired SubscriptionRepository subscriptions;
+    @Autowired PlanRepository plans;
+    @Autowired Entitlements entitlements;
 
     String path;
     LocalDate today;
@@ -32,15 +45,25 @@ class SubscriptionApiIT extends BillingApiTestBase {
         POST("/api/billing/plans", superToken, planBody("draft-plan")).andExpect(status().isCreated());
     }
 
-    private Map<String, Object> assign(String planCode, LocalDate start, LocalDate end, Long revision,
-            Map<String, Object>... addOns) {
-        Map<String, Object> b = new LinkedHashMap<>();
-        b.put("planCode", planCode);
-        b.put("startDate", start == null ? null : start.toString());
-        b.put("endDate", end == null ? null : end.toString());
-        b.put("addOns", List.of(addOns));
-        b.put("revision", revision);
-        return b;
+    /** Puts the customer on Gold for these dates, as an activated order would. */
+    private Subscription give(LocalDate start, LocalDate end) {
+        Subscription s = billing.assign(customer.getId(), Set.of("crm"), Map.of(LimitKey.USERS, 5),
+                start.atStartOfDay(IST).toInstant(), end.atStartOfDay(IST).toInstant());
+        s.getCurrent().setPlanCode("gold-monthly");
+        s.getCurrent().setTerms(PlanTerms.of(plans.findById("gold-monthly").orElseThrow()));
+        Subscription saved = subscriptions.save(s);
+        entitlements.evict(customer.getId());
+        return saved;
+    }
+
+    private static SubscriptionAddOn addOn(AddOnKind kind, String groupCode, LimitKey key, int quantity) {
+        SubscriptionAddOn a = new SubscriptionAddOn();
+        a.setId(java.util.UUID.randomUUID().toString());
+        a.setKind(kind);
+        a.setGroupCode(groupCode);
+        a.setLimitKey(key);
+        a.setQuantity(quantity);
+        return a;
     }
 
     private static JsonNode limit(JsonNode view, String key) {
@@ -69,12 +92,15 @@ class SubscriptionApiIT extends BillingApiTestBase {
     }
 
     @Test
-    void assigningAPlanStartsATermAtMidnightInTheBillingZone() throws Exception {
+    void aPlanWithAddOnsIsShownWithItsTermAndLimits() throws Exception {
         LocalDate start = today.minusDays(1);
         LocalDate end = today.plusDays(30);
-        JsonNode v = json(PUT(path, amToken, assign("gold-monthly", start, end, null,
-                Map.of("kind", "GROUP", "groupCode", "automations"),
-                Map.of("kind", "LIMIT", "limitKey", "USERS", "quantity", 5))).andExpect(status().isOk()));
+        Subscription given = give(start, end);
+        given.getCurrent().getAddOns().add(addOn(AddOnKind.GROUP, "automations", null, 0));
+        given.getCurrent().getAddOns().add(addOn(AddOnKind.LIMIT, null, LimitKey.USERS, 5));
+        subscriptions.save(given);
+        entitlements.evict(customer.getId());
+        JsonNode v = json(GET(path, amToken).andExpect(status().isOk()));
 
         assertThat(v.get("state").asString()).isEqualTo("ACTIVE");
         assertThat(v.at("/plan/code").asString()).isEqualTo("gold-monthly");
@@ -102,73 +128,18 @@ class SubscriptionApiIT extends BillingApiTestBase {
     }
 
     @Test
-    void refusesAnAssignmentThatCannotStand() throws Exception {
-        LocalDate start = today;
-        LocalDate end = today.plusMonths(1);
-        PUT(path, amToken, assign("draft-plan", start, end, null)).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fields.planCode").exists());
-        PUT(path, amToken, assign("nope", start, end, null)).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fields.planCode").exists());
-        PUT(path, amToken, assign("gold-monthly", start, start, null)).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fields.endDate").exists());
-        PUT(path, amToken, assign("gold-monthly", null, end, null)).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fields.startDate").exists());
-        PUT(path, amToken, assign("gold-monthly", start, end, null, Map.of("kind", "GROUP", "groupCode", "crm")))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.addOns").exists());   // in the plan
-        PUT(path, amToken, assign("gold-monthly", start, end, null, Map.of("kind", "GROUP", "groupCode", "ai")))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.addOns").exists());   // needs chatbots
-        PUT(path, amToken, assign("gold-monthly", start, end, null, Map.of("kind", "GROUP", "groupCode", "inbox")))
-                .andExpect(status().isBadRequest());                                                   // a default group
-        PUT(path, amToken, assign("gold-monthly", start, end, null,
-                Map.of("kind", "LIMIT", "limitKey", "BRANDS", "quantity", 1)))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.addOns").exists());   // no limit set
-        PUT(path, amToken, assign("gold-monthly", start, end, null,
-                Map.of("kind", "LIMIT", "limitKey", "USERS", "quantity", 0))).andExpect(status().isBadRequest());
-        PUT("/api/billing/customers/000000000000000000000000/subscription", amToken,
-                assign("gold-monthly", start, end, null)).andExpect(status().isNotFound());
-        GET(path, amToken).andExpect(jsonPath("$.state").value("NONE"));
-    }
-
-    @Test
-    void aChangeNeedsTheRevisionItWasMadeFromAndIsKeptInTheHistory() throws Exception {
-        PUT(path, amToken, assign("gold-monthly", today, today.plusMonths(1), null)).andExpect(status().isOk());
-        PUT(path, amToken, assign("gold-monthly", today, today.plusMonths(2), null)).andExpect(status().isConflict());
-        PUT(path, amToken, assign("gold-monthly", today, today.plusMonths(2), 5L)).andExpect(status().isConflict());
-        JsonNode changed = json(PUT(path, amToken, assign("gold-monthly", today, today.plusMonths(2), 1L))
-                .andExpect(status().isOk()));
-        assertThat(changed.get("revision").asLong()).isEqualTo(2);
-
-        JsonNode events = json(GET(path + "/events", amToken).andExpect(status().isOk()));
-        assertThat(events).hasSize(2);
-        assertThat(events.get(0).get("kind").asString()).isEqualTo("CHANGED");
-        assertThat(events.get(1).get("kind").asString()).isEqualTo("ASSIGNED");
-        assertThat(events.get(0).get("byName").asString()).isNotBlank();
-        assertThat(events.get(0).get("summary").asString()).contains("Gold");
-    }
-
-    @Test
     void theDatesGiveTheState() throws Exception {
-        PUT(path, amToken, assign("gold-monthly", today.minusDays(40), today.minusDays(1), null)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value("GRACE")).andExpect(jsonPath("$.readOnly").value(false));
-        PUT(path, amToken, assign("gold-monthly", today.minusDays(40), today.minusDays(8), 1L)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value("EXPIRED")).andExpect(jsonPath("$.readOnly").value(true));
+        give(today.minusDays(40), today.minusDays(1));
+        GET(path, amToken).andExpect(jsonPath("$.state").value("GRACE")).andExpect(jsonPath("$.readOnly").value(false));
+        give(today.minusDays(40), today.minusDays(8));
+        GET(path, amToken).andExpect(jsonPath("$.state").value("EXPIRED")).andExpect(jsonPath("$.readOnly").value(true));
     }
 
     @Test
-    void removingThePlanSetsTheCustomerFree() throws Exception {
-        PUT(path, amToken, assign("gold-monthly", today, today.plusMonths(1), null)).andExpect(status().isOk());
-        DELETE(path, amToken).andExpect(status().isNoContent());
-        GET(path, amToken).andExpect(jsonPath("$.state").value("NONE"));
-        assertThat(strings(json(GET("/api/users/me", adminToken)).at("/workspaces/0/authorities"))).contains("campaign:manage");
-        assertThat(json(GET(path + "/events", amToken))).hasSize(2);
-    }
-
-    @Test
-    void whoMaySeeAndChangeIt() throws Exception {
-        PUT(path, amToken, assign("gold-monthly", today, today.plusMonths(1), null)).andExpect(status().isOk());
+    void whoMaySeeIt() throws Exception {
+        give(today, today.plusMonths(1));
         GET(path, adminToken).andExpect(status().isForbidden());
-        PUT(path, adminToken, assign("gold-monthly", today, today.plusMonths(1), 1L)).andExpect(status().isForbidden());
-        DELETE(path, adminToken).andExpect(status().isForbidden());
+        GET(path + "/events", adminToken).andExpect(status().isForbidden());
 
         GET("/api/my/billing/subscription", adminToken).andExpect(status().isOk())
                 .andExpect(jsonPath("$.plan.code").value("gold-monthly"));
@@ -188,7 +159,7 @@ class SubscriptionApiIT extends BillingApiTestBase {
     @Test
     void theCustomerListShowsThePlanAndFiltersThoseWithout() throws Exception {
         testUsers.customer("Zed without a plan");
-        PUT(path, amToken, assign("gold-monthly", today, today.plusMonths(1), null)).andExpect(status().isOk());
+        give(today, today.plusMonths(1));
 
         JsonNode all = json(GET("/api/customers", amToken).andExpect(status().isOk()));
         assertThat(all.get("total").asInt()).isEqualTo(2);

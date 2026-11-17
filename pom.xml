@@ -145,6 +145,13 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
+          <!--
+            When its tests are done a test process closes its Spring contexts one after another, and each stops its
+            own embedded MongoDB (a second or two apiece). Surefire's default gives that 30 seconds and then kills the
+            process, which left the databases not yet stopped running for good: a dozen per full build, until the
+            machine ran out of memory. Five minutes lets every one be stopped.
+          -->
+          <forkedProcessExitTimeoutInSeconds>300</forkedProcessExitTimeoutInSeconds>
           <systemPropertyVariables>
             <spring.profiles.active>test</spring.profiles.active>
           </systemPropertyVariables>

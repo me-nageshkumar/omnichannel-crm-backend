@@ -78,6 +78,11 @@ without an extension reload.
 `demo-lead` (AGENT), `demo-admin` (CUSTOMER_ADMIN), `nageshk` (Super Admin, not in the brand). The database holds real
 WhatsApp messages: take care sharing it or a backup.
 
+- **Leftover test databases.** Every test process starts embedded MongoDB servers and stops them when it exits; a
+  process that is killed (a build stopped half way, a machine put to sleep) leaves them running. If builds turn slow,
+  count them with `pgrep -f '/.embedmongo/' | wc -l`: with no build running the answer should be 0, and any that are
+  there can be stopped with `pkill -f '/.embedmongo/'` (your own MongoDB is not under that path).
+
 ## 3. Where everything is
 
 - **Specs** in `docs/superpowers/specs/` (CRM port `2026-10-23-crm-port-design.md` and its follow-ups, chat history
@@ -93,12 +98,20 @@ WhatsApp messages: take care sharing it or a backup.
   and `-console.md`. Code in `service.chatbot` (`flow` parser and settings, `node` executors, `run` runner, ticker and
   answer sources, `form` pages), documents in `db.chatbot`, API in `app.chatbot`; the automation action is
   `service.automation.StartChatbotHandler`. Tests in `app.chatbot` extend `AutomationTestBase` through `ChatbotTestBase`.
-- **Subscription plans:** spec `specs/2026-11-17-subscription-plans-design.md` (three phases; phase 1 built), plans
-  `plans/2026-11-17-subscriptions-1-entitlements-backend.md` and `-console.md`. Enums in `common.billing`, documents
+- **Subscription plans:** spec `specs/2026-11-17-subscription-plans-design.md` (three phases; 1 and 2 built), plans
+  `plans/2026-11-17-subscriptions-1-entitlements-backend.md` and `-console.md`,
+  `plans/2026-11-18-subscriptions-2-money-backend.md` and `-console.md`. Enums in `common.billing`, documents
   in `db.billing`, `Entitlements`/`Limits`/`SeedGroups` in `security.entitlement`, services in `service.billing`
-  (`WorkGate` is the gate for work without a user), API in `app.billing` (`ReadOnlyInterceptor`). Tests use
-  `app.support.TestBilling` to put a customer on a plan; a test that changes billing settings or groups must call
-  `billing.reset()` when it ends.
+  (`WorkGate` is the gate for work without a user), API in `app.billing` (`ReadOnlyInterceptor`). Money:
+  `service.billing.money` (rounding, GST, proration, financial year, amount in words), `.pricing` (pure quotes:
+  `OrderPricing`, `CancellationPricing`, `UnusedCredit`), `.order` (`OrderService`, `OrderActivator` and its
+  repeatable `OrderSteps`, `StaffOrderService`, the per-customer `BillingLocks`), `.document` (invoices, credit
+  notes, gapless `DocumentNumbers`, `DocumentPdf`, `BillingDocumentFiles`), `.refund`, and `BillingTicker`. Every
+  change to a subscription's plan or balance goes through an order under the customer's lease; do not write to
+  `subscriptions` any other way. Tests: `app.support.TestBilling` puts a customer on an unpaid plan;
+  `MoneyApiTestBase` is the fixture of the money tests (a fixed clock at 1 Dec 2026, Gold and Platinum, two
+  customers with billing profiles). A test that changes billing settings or groups must call `billing.reset()`
+  when it ends.
 - **Running on AWS cheaply** (nothing deployed yet): `aws-deployment.md` next to this file.
 - **Backup** from before the 2026-11-01 inbox reset:
   `/Users/nagesh/Projects/WhatsAppWebJS/SCM/backups/mongo/omnichannel_crm-20261101-1147-before-chat-reset`.
