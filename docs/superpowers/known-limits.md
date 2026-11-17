@@ -208,3 +208,29 @@ Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews fou
   key while sealed secrets exist only warns and saving AI keys answers 503 until the key is back.
 - The startup read gives Mongo 3 seconds; a Mongo slower than that means no key and the default pages URL until the
   next restart (the app's own Mongo use then decides whether it starts at all).
+
+## Subscription plans: known limits
+
+Phase 1 (entitlements), 2026-11-17. Phases 2 (orders, payments, invoices, credit notes, refunds) and 3 (usage wallet)
+are designed in `specs/2026-11-17-subscription-plans-design.md` and not built.
+
+- A plan is assigned by staff without payment: the term's paid amounts are 0, so it yields no credit when orders
+  arrive. A directly assigned add-on may be any paid group the plan does not include, offered by the plan or not.
+- Counting and creating are two steps: two requests at the same moment can end one over a limit.
+- The entitlement cache is per server (30 seconds at most on a second server); every change on this server is seen at
+  once.
+- A limit lowered below what a customer has keeps everything; only new ones are refused. Disabling a user's login
+  frees its place; switching off its access to one brand does not.
+- The per-brand CRM switch is ignored for a customer with a plan, and such a customer's brand gets its CRM settings
+  document the first time anything asks whether its CRM is on.
+- Losing a feature stops its work at the next message: a waiting chatbot run fails, a running campaign waits (it
+  stays RUNNING and goes on when the plan covers campaigns again), queued automation actions fail.
+- A customer's test runs of chatbots and automation rules are gated like real ones.
+- The two Super Admin bridge endpoints (`/api/phone-numbers/{id}/bridge/messages` and `/bridge/rpc`) are outside
+  every gate.
+- In read-only mode a CRM reminder cannot be marked seen, an AI connection cannot be verified and a profile's MCP
+  tools cannot be listed (those handlers write or call out).
+- Changing the billing zone does not move the terms already stored; they keep the midnights of the zone they were
+  assigned in.
+- Built-in feature groups cannot be deleted (they would be seeded again); they can be renamed, emptied or, except
+  Core, moved between default and paid while no plan lists them.
