@@ -78,6 +78,7 @@ public class AiConnectionService {
         Map<String, String> errors = validate(in);
         if (in.apiKey() == null || in.apiKey().isBlank()) errors.put("apiKey", "is required");
         Map<String, String> settings = settings(in, in.settings(), errors);
+        notTheKey(settings, in.apiKey(), errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
         String name = in.name().trim();
         if (repository.findByWorkspaceIdAndName(workspaceId, name).isPresent()) throw duplicate(name);
@@ -102,13 +103,16 @@ public class AiConnectionService {
         // no settings in the request keeps the stored ones (as a missing key does); settings of the provider the
         // connection is leaving are dropped, not refused
         Map<String, String> given = in.settings() != null ? in.settings() : c.getSettings();
-        if (errors.isEmpty() && !in.provider().equals(c.getProvider())) {
+        // stored settings that are kept are never refused for a key the provider stopped declaring
+        if (errors.isEmpty() && (in.settings() == null || !in.provider().equals(c.getProvider()))) {
             Set<String> declared = providers.of(in.provider()).connectionFields().stream()
                     .map(AiConnectionField::key).collect(Collectors.toSet());
             given = new LinkedHashMap<>(given);
             given.keySet().retainAll(declared);
         }
         Map<String, String> settings = settings(in, given, errors);
+        boolean keyGiven = in.apiKey() != null && !in.apiKey().isBlank();
+        notTheKey(settings, keyGiven ? in.apiKey() : storedKeyOrNull(c), errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
         if (in.version() != null && !Objects.equals(in.version(), c.getVersion())) {
             throw new OptimisticLockingFailureException("AI connection changed since it was read");
@@ -229,6 +233,30 @@ public class AiConnectionService {
     private Map<String, String> settings(Save in, Map<String, String> given, Map<String, String> errors) {
         if (errors.containsKey("provider")) return new LinkedHashMap<>();
         return ConnectionSettings.clean(providers.of(in.provider()).connectionFields(), given, guard, errors);
+    }
+
+    /**
+     * Settings are stored and shown in plain text, so the API key pasted into one is refused. Only the exact key can
+     * be recognised; the fields' help text covers the rest.
+     */
+    private static void notTheKey(Map<String, String> settings, String key, Map<String, String> errors) {
+        if (key == null || key.isBlank()) return;
+        String plain = key.strip();
+        settings.forEach((k, v) -> {
+            if (v.equals(plain)) {
+                errors.putIfAbsent("settings." + k,
+                        "is the API key; settings are not secret, so the key goes in API key only");
+            }
+        });
+    }
+
+    /** The stored key, or null when it cannot be opened (the pasted-key check is then skipped). */
+    private String storedKeyOrNull(AiConnection c) {
+        try {
+            return c.getApiKey() == null ? null : secrets.open(c.getApiKey());
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private void setKey(AiConnection c, String plain) {

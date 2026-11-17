@@ -143,4 +143,19 @@ class ConnectionSettingsTest {
                 new me.nageshk.omnichannel.ai.provider.AiCredential("k", Map.of("organization", "o")), e))
                 .isEqualTo("The provider refused the key or the connection's settings: No such organization");
     }
+
+    @Test
+    void urlWithCredentialsRefused() {
+        // a readable setting must not carry a password
+        clean(of("region", "eu", "endpoint", "https://user:pass@8.8.8.8/v1"));
+
+        assertThat(errors).containsExactly(Map.entry("settings.endpoint", "must not contain a user name or password"));
+    }
+
+    @Test
+    void urlHostThatCannotBeFoundSaysSo() {
+        clean(of("region", "eu", "endpoint", "https://no-such-host.invalid/v1"));
+
+        assertThat(errors).containsExactly(Map.entry("settings.endpoint", "must have a host that can be found"));
+    }
 }
