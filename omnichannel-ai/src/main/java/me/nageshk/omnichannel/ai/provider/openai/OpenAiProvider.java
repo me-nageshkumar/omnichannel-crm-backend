@@ -34,7 +34,9 @@ import tools.jackson.databind.json.JsonMapper;
 public class OpenAiProvider implements AiProvider {
 
     private static final AiCapabilities CAPABILITIES =
-            new AiCapabilities(StateMode.CHAINED, true, true, true, true, true, true, true);
+            new AiCapabilities(StateMode.CHAINED, true, true, true, true,
+                    // OpenAI's reference for reasoning.effort (2026-11); which of them a model takes is the model's business
+                    List.of("none", "minimal", "low", "medium", "high", "xhigh", "max"), true, true);
 
     private static final String NOT_A_SECRET = " Not a secret; the key goes in API key.";
     private static final List<AiConnectionField> FIELDS = List.of(

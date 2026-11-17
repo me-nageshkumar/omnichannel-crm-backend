@@ -52,7 +52,6 @@ public class AiExecutor extends BaseExecutor {
 
     static final Pattern OUTCOME_ID = Pattern.compile("[a-z0-9_]{1,30}");
     static final Pattern COLLECT_KEY = Pattern.compile("[A-Za-z_][A-Za-z0-9_]{0,39}");
-    static final Set<String> EFFORTS = Set.of("minimal", "low", "medium", "high");
     static final int MAX_TEXT = 4096;
     static final int MAX_INSTRUCTIONS = 20000;
     static final int MAX_LIST = 20;
@@ -155,10 +154,11 @@ public class AiExecutor extends BaseExecutor {
             }
         }
         if (o.reasoningEffort() != null) {
-            if (caps != null && !caps.reasoningEffort()) {
+            // no profile (reported on profileId): nothing to check the value against
+            if (caps != null && caps.reasoningEfforts().isEmpty()) {
                 p.error("overrides.reasoningEffort", "the profile's provider does not take a reasoning effort");
-            } else if (!EFFORTS.contains(o.reasoningEffort())) {
-                p.error("overrides.reasoningEffort", "must be one of minimal, low, medium, high");
+            } else if (caps != null && !caps.reasoningEfforts().contains(o.reasoningEffort())) {
+                p.error("overrides.reasoningEffort", "must be one of " + String.join(", ", caps.reasoningEfforts()));
             }
         }
     }

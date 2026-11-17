@@ -243,4 +243,11 @@ class OpenAiProviderTest {
         String s = new AiCredential("sk-abc", java.util.Map.of("organization", "org_1")).toString();
         assertThat(s).doesNotContain("sk-abc").doesNotContain("org_1");
     }
+
+    @Test
+    void declaresEffortValues() throws IOException {
+        OpenAiProvider p = provider(Duration.ofSeconds(5), ex -> reply(ex, 200, "{}"));
+        assertThat(p.capabilities().reasoningEfforts())
+                .containsSubsequence("minimal", "low", "medium", "high");
+    }
 }

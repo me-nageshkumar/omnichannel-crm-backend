@@ -16,7 +16,7 @@ class AiProvidersTest {
             public String id() { return id; }
             public String label() { return id; }
             public AiCapabilities capabilities() {
-                return new AiCapabilities(StateMode.CHAINED, false, false, true, true, false, false, false);
+                return new AiCapabilities(StateMode.CHAINED, false, false, true, true, List.of(), false, false);
             }
             public void verify(AiCredential c) {}
             public List<AiModelInfo> models(AiCredential c) { return List.of(); }

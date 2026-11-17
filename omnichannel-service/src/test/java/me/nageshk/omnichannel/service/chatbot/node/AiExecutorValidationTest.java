@@ -31,9 +31,11 @@ class AiExecutorValidationTest {
 
     private static final ObjectMapper MAPPER = JsonMapper.builder().build();
     private static final AiCapabilities PLAIN = new AiCapabilities(StateMode.TRANSCRIPT, false, false, true, true,
-            false, false, false);
+            List.of(), false, false);
     private static final AiCapabilities RICH = new AiCapabilities(StateMode.CHAINED, true, true, true, true,
-            true, true, true);
+            List.of("minimal", "low", "medium", "high"), true, true);
+    private static final AiCapabilities OWN_EFFORTS = new AiCapabilities(StateMode.TRANSCRIPT, false, false, true, true,
+            List.of("fast", "deep"), false, false);
 
     /** p1: a provider without temperature or reasoning effort; p2: one with both. */
     static final class StubGateway implements AiGateway {
@@ -42,6 +44,7 @@ class AiExecutorValidationTest {
         StubGateway() {
             profiles.put("p1", new AiProfileInfo("p1", "Plain", "scripted", PLAIN, "m1", null, null, null, null));
             profiles.put("p2", new AiProfileInfo("p2", "Rich", "openai", RICH, "gpt", null, null, null, null));
+            profiles.put("p3", new AiProfileInfo("p3", "Own", "other", OWN_EFFORTS, "m3", null, null, null, null));
         }
 
         @Override public String submit(TurnRequest r) { throw new UnsupportedOperationException(); }
@@ -171,6 +174,28 @@ class AiExecutorValidationTest {
         // a JSON format needs a schema
         assertThat(errorFields(check(single(Map.of("replyFormat", Map.of("type", "JSON"))))))
                 .containsExactly("settings.replyFormat.schema");
+    }
+
+    @Test
+    void effortOutsideTheProvidersListIsAnError() {
+        assertThat(check(single(Map.of("profileId", "p3", "overrides", Map.of("reasoningEffort", "low")))))
+                .singleElement().satisfies(p -> {
+                    assertThat(p.field()).isEqualTo("settings.overrides.reasoningEffort");
+                    assertThat(p.message()).isEqualTo("must be one of fast, deep");
+                });
+    }
+
+    @Test
+    void effortFromTheProvidersListIsAccepted() {
+        assertThat(errorFields(check(single(Map.of("profileId", "p3",
+                "overrides", Map.of("reasoningEffort", "deep")))))).isEmpty();
+    }
+
+    @Test
+    void effortOnAProviderThatTakesNoneSaysSo() {
+        assertThat(check(single(Map.of("overrides", Map.of("reasoningEffort", "low"))))).singleElement()
+                .satisfies(p -> assertThat(p.message())
+                        .isEqualTo("the profile's provider does not take a reasoning effort"));
     }
 
     @Test

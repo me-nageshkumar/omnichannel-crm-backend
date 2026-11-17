@@ -187,6 +187,11 @@ Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews fou
 - A JSON reply schema that is not strict-ready is sent to OpenAI with `strict: false`, so the model may leave fields
   out; a missing message field takes `failure` (`NO_MESSAGE_FIELD`).
 - The `creationTime` watermark can skip a message inserted out of order by a concurrent writer.
+- A connection holds one secret (the API key) plus the provider's plain settings (OpenAI: organization and project
+  ids); providers that need a key pair are not supported. Settings are readable through the API, so never a secret.
+- OpenAI has no per-connection base URL (`omnichannel.ai.openai.base-url` is app-wide, for tests).
+- Reasoning effort values are listed per provider, not per model: a value the chosen model refuses fails the turn with
+  the provider's message.
 
 ## Settings in MongoDB (appConfig): known limits
 
