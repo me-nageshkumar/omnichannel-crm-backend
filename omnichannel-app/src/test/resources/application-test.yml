@@ -21,6 +21,9 @@ omnichannel:
   # tests drive the AI turn worker themselves
   ai:
     auto-tick: false
+  # tests drive BillingTicker.tick() themselves
+  billing:
+    auto-tick: false
   # tests drive CampaignRunner.tick() themselves
   campaign:
     auto-tick: false

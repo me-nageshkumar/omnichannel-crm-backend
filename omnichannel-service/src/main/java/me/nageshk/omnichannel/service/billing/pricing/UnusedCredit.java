@@ -58,9 +58,12 @@ public final class UnusedCredit {
         }
     }
 
-    /** The unused part of one component as of today, before tax. */
+    /**
+     * The unused part of one component as of today, before tax: all of it while it has not begun, the days from
+     * today to its end once it has. A renewal counts as begun from its own start, whether or not the stored
+     * subscription has moved it into place yet.
+     */
     public static BigDecimal unused(Component c, LocalDate today, ZoneId zone) {
-        if (c.next()) return Money.round(c.paid());
         LocalDate end = c.end().atZone(zone).toLocalDate();
         LocalDate from = c.coveredFrom().atZone(zone).toLocalDate();
         return Proration.part(c.paid(), Proration.days(today, end), Proration.days(from, end));
