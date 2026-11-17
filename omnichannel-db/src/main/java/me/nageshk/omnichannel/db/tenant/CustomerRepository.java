@@ -11,4 +11,9 @@ public interface CustomerRepository extends MongoRepository<Customer, String> {
     Page<Customer> findByNameContainingIgnoreCaseAndActive(String name, boolean active, Pageable pageable);
 
     Page<Customer> findByNameContainingIgnoreCase(String name, Pageable pageable);
+
+    Page<Customer> findByNameContainingIgnoreCaseAndIdNotIn(String name, java.util.Collection<String> ids, Pageable pageable);
+
+    Page<Customer> findByNameContainingIgnoreCaseAndActiveAndIdNotIn(String name, boolean active,
+            java.util.Collection<String> ids, Pageable pageable);
 }
