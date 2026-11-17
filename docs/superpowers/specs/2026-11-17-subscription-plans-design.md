@@ -35,12 +35,11 @@ The user asked for a robust, fault-tolerant design and gave the feature list as 
 
 **Goals.** Feature groups, plans, one subscription per customer acting as a permission ceiling, count caps, add-ons
 (feature groups and extra cap units), orders with quotes, staff-recorded payments, GST invoices, grace and read-only,
-a prepaid wallet debited per sent message, console pages for staff and for the Customer Admin, full history of every
-change.
+credit notes and refunds, invoice and credit-note PDF files, a prepaid wallet debited per sent message, console
+pages for staff and for the Customer Admin, full history of every change.
 
-**Non-goals (first version).** Online payment gateway; automatic recurring charges; refunds and credit notes (a wrong
-order is cancelled before payment; after payment staff adjust with a wallet or account credit); PDF generation (the
-invoice page prints); e-mail or WhatsApp reminders; coupons; trials as a separate concept (a staff discount of up to
+**Non-goals (first version).** Online payment gateway; automatic recurring charges; refund requests raised by the
+customer (staff raise them); e-invoicing (IRN) and GST return files; e-mail or WhatsApp reminders; coupons; trials as a separate concept (a staff discount of up to
 100% on one order covers them); several currencies; per-brand plans (the plan is per customer); included message
 quotas; charging for anything but sent WhatsApp messages (the meter list is built to grow).
 
@@ -159,7 +158,8 @@ assumes "what every customer needs to operate and to pay".
 
 `current` and `next` (a **term segment** each; `next` is null unless a renewal was paid early), `anchorDay` (day of
 month of the first term's start), `creditBalance`, `termRevision` (incremented when a segment's plan or dates
-change), `revision` (incremented on every applied change), `appliedOrderIds[]`, `@Version`.
+change), `revision` (incremented on every applied change), `appliedOrderIds[]`, `creditedOrderIds[]`, `debitedOrderIds[]`,
+`refundIds[]` (the guards that make each step apply once), `@Version`.
 
 A term segment: `planCode`, `planRevision`, `terms` (snapshot: plan name, period, rank, discount, item prices, add-on
 prices, limit add-on prices, limits, rates), `groupCodes[]` (the plan's PAID groups), `addOns[{id, kind GROUP |
@@ -219,8 +219,8 @@ A code enum with a scope, so a new cap is one constant and one check:
 (4 decimals; absent or 0 = free).
 
 `wallets` (one per customer): `balance` (Decimal128, 4 decimals, never negative), `lowBalanceAt` (warning threshold,
-set by staff), `pending[]` (ledger entries not yet moved), `creditedOrderIds[]`, `@Version`. `walletEntries` (the ledger, kept, no TTL):
-`id`, `customerId`, `type` (`TOPUP`, `USAGE`, `REVERSAL`, `ADJUSTMENT`), `amount` (signed), `balanceAfter`, `meter`,
+set by staff), `pending[]` (ledger entries not yet moved), `orderIds[]`, `@Version`. `walletEntries` (the ledger, kept, no TTL):
+`id`, `customerId`, `type` (`TOPUP`, `USAGE`, `REVERSAL`, `ADJUSTMENT`, `REFUND`), `amount` (signed), `balanceAfter`, `meter`,
 `source` (CONSOLE, CAMPAIGN, AUTOMATION, CHATBOT), `workspaceId`, `ref` (order id, send id, campaign id…), `note`,
 `by`, `at`.
 
@@ -239,12 +239,13 @@ set by staff), `pending[]` (ledger entries not yet moved), `creditedOrderIds[]`,
 - **Credit for unused time** of a paid component = `paid × remainingDays / coveredDays`, where `coveredDays` runs from
   its `coveredFrom` to `termEnd`. Everything paid for a `next` segment is credited in full. A component that was
   given free (or assigned directly in phase 1) has `paid` 0 and yields no credit.
-- **`paid`** of a component is its line amount after the plan discount and any extra discount, before credit and
-  tax.
-- **GST.** Prices are before tax. `taxable` = charges − credit used; GST = `taxable × rate` (platform setting, 18 to
-  start). When the customer's state equals the supplier's, the invoice shows CGST and SGST (half each, any odd paisa
-  on CGST); otherwise IGST. The credit is shown as an adjustment line that reduces the taxable value (my call; a
-  strict reading of GST would use a credit note, which is a non-goal, so the user should confirm with an accountant).
+- **`paid`** of a component is its line amount after the plan discount and any extra discount, before tax; the
+  component also keeps the `invoiceId` it was billed on, so its unused value can be credited against that invoice.
+- **GST.** Prices are before tax. `taxable` = the charges after discounts; GST = `taxable × rate` (platform setting,
+  18 to start). When the customer's state equals the supplier's, the invoice shows CGST and SGST (half each, any odd
+  paisa on CGST); otherwise IGST. An invoice always carries the full value of what it sells. Money owed back to the
+  customer is never netted inside an invoice: it is a **credit note** against the invoice that was paid (section
+  9.5), with the tax of that invoice.
 - **A quote is fixed.** The amounts on an order are computed once, when it is raised, and never recomputed. An order
   is valid for `quoteValidDays` (platform setting, default 7); after that it is EXPIRED and must be raised again. A
   payment recorded a few days after the quote is therefore charged as quoted (my call).
@@ -259,6 +260,9 @@ set by staff), `pending[]` (ledger entries not yet moved), `creditedOrderIds[]`,
 | `CHANGE` | staff only | as UPGRADE, to any plan (a downgrade), or removing an add-on | as UPGRADE |
 | `ADDON` | customer or staff | prorated add-on price (group, or `quantity` limit units) | unchanged |
 | `ADJUST` | staff only | nothing; sets `termEnd` (a goodwill extension, or bringing in a customer who already paid outside) or posts an amount to `creditBalance`, with a mandatory reason | as set |
+| `CANCEL_ADDON` | staff only | nothing; removes an add-on and credits its unused value (staff may raise the credit up to what was paid for it) | unchanged |
+| `CANCEL_PLAN` | staff only | nothing; ends the subscription today and credits the unused value of the plan, its add-ons and any `next` segment (staff may raise the credit up to what was paid) | `termEnd` = today, no grace: read-only at once |
+| `WALLET_REFUND` | staff only | nothing; takes an amount out of the wallet and credits it, with the GST paid on it | unchanged |
 | `TOPUP` | customer or staff | the top-up amount + GST; the wallet is credited the amount before tax | unchanged |
 
 - **Higher plan** (what a customer may request as UPGRADE): an ACTIVE, `offered` plan whose `rank` is higher, or
@@ -268,9 +272,14 @@ set by staff), `pending[]` (ledger entries not yet moved), `creditedOrderIds[]`,
   carried and charged for the new term at the new plan's add-on price; where the new plan does not offer one, at its
   old unit price scaled by the ratio of the two periods' months. The order is refused if the carried set would break
   a group's `requires`; staff remove that add-on in the same `CHANGE`.
-- **`creditBalance`** is used by `RENEWAL`, `UPGRADE`, `CHANGE` and `ADDON` orders (as much as the charges allow),
-  never by `TOPUP`, and is never paid out. If credit exceeds the charges, the payable amount is 0 and the remainder
-  stays in `creditBalance`.
+- **`creditBalance`** (account credit) is money the platform owes the customer, **tax included**. It grows only by
+  credit notes and staff `ADJUST` postings. It is used against the total of `RENEWAL`, `UPGRADE`, `CHANGE` and
+  `ADDON` orders (as much as the total allows; never `TOPUP`), and what is left can be paid out as a refund (section
+  9.6). **Amount payable** = order total (with GST) − account credit used.
+- On an upgrade or change, the unused value of the old plan and add-ons is credited by credit notes at activation
+  and lands in `creditBalance`, which the same order then uses. The quote shows: new charges, GST, total, credit for
+  unused time (with its GST), account credit already held, amount payable. If the credit exceeds the total, the
+  payable amount is 0 and the remainder stays as account credit.
 - Staff may put an extra discount (0–100%) with a mandatory reason on an order **when they raise it**; it applies to
   plan and add-on lines before credit, never to `TOPUP`. This is how a trial, a complimentary plan or a negotiated
   price is given. To discount a customer's request, staff reject it and raise their own. An order's amounts never
@@ -331,7 +340,7 @@ description, groupCode | limitKey, quantity, amount}]`, `subtotal`, `extraDiscou
 `creditUsed`, `taxable`, `tax{rate, cgst, sgst, igst}`, `total`, `target{planCode, planRevision, terms snapshot,
 addOns}`, `quotedRevision` (the subscription's `revision`, or `termRevision` for an `ADDON`, when quoted), `validUntil`, `raisedBy`, `raisedAt`,
 `payment{method BANK_TRANSFER | UPI | CHEQUE | CASH | OTHER | NONE, reference, receivedOn, note, recordedBy,
-recordedAt}`, `invoiceId`, `rejectedReason`, `steps{applied, credited, invoiced}`, `@Version`.
+recordedAt}`, `invoiceId`, `rejectedReason`, `steps{applied, wallet, creditNoted, invoiced}`, `@Version`.
 
 `REQUESTED → ACTIVATING → ACTIVATED`, or `REQUESTED → CANCELLED` (by whoever raised it) `| REJECTED` (staff, with a
 reason) `| EXPIRED | SUPERSEDED`.
@@ -351,7 +360,7 @@ reason) `| EXPIRED | SUPERSEDED`.
 Everything that changes one customer's subscription runs under a **per-customer lease** (`billingLocks`, taken with
 `findAndModify`, like the job locks of the CRM). Under the lease, in this order:
 
-0. Finish any order of this customer still in ACTIVATING (steps 2 to 5), so orders apply strictly one after another.
+0. Finish any order of this customer still in ACTIVATING (steps 2 to 6), so orders apply strictly one after another.
 1. **Record.** Check that the order is not expired or stale, then one `findAndModify`: `{_id, status: REQUESTED} →
    status ACTIVATING, payment`. It can succeed only once. Because of the lease and step 0, an order that passed the
    check cannot become stale before it is applied.
@@ -359,11 +368,15 @@ Everything that changes one customer's subscription runs under a **per-customer 
    `creditBalance`, revisions, `$addToSet appliedOrderIds`. `NEW` on a customer without a subscription is an upsert
    on the unique `customerId`. Then the `subscriptionEvents` row (unique on order id), superseding of stale orders,
    and cache eviction.
-3. **Credit the wallet** (`TOPUP` only; section 10.1).
-4. **Invoice.** Insert the invoice; a unique index on `orderId` makes a repeat find the existing one. The number
+3. **Wallet** (`TOPUP` credits it, `WALLET_REFUND` debits it; section 10.1).
+4. **Credit notes** (orders that credit unused or returned value; section 9.5): insert each, unique on (order id,
+   invoice id), numbered like invoices; then one update adds their total to `creditBalance`, guarded by
+   `creditedOrderIds ≠ orderId` on the subscription.
+5. **Invoice** (orders with charges), then the account credit it uses is taken from `creditBalance` in one update
+   guarded by `debitedOrderIds ≠ orderId`. Insert the invoice; a unique index on `orderId` makes a repeat find the existing one. The number
    (section 9.3) is taken by inserting with the next sequence under a unique index and retrying on a duplicate, so
    numbers have no gaps even after a crash.
-5. `status ACTIVATED`.
+6. `status ACTIVATED`.
 
 Each step is safe to repeat and is recorded in `steps`. A ticker (lease-based, like the other workers) re-drives any
 order left in ACTIVATING for more than a minute, under the same customer lease. It also marks REQUESTED orders past
@@ -378,12 +391,60 @@ code, taxable value, CGST/SGST or IGST, total, total in words, payment method an
 Number: `<prefix>/<financial year>/<6-digit sequence>`, e.g. `INV/2026-27/000042`; the financial year runs April to
 March in the billing zone and the sequence restarts each year. An order with total 0 gets no invoice.
 
-The console shows an invoice as a page with a print stylesheet; "Print" gives the PDF.
+The console shows an invoice as a page and offers **Download PDF** (section 9.7).
 
-### 9.4 Platform settings and customer profile
+### 9.4 Staff orders without payment
+
+`ADJUST`, `CANCEL_ADDON`, `CANCEL_PLAN` and `WALLET_REFUND` are orders too: raised by staff with a mandatory reason,
+activated at once through the same lease and steps (payment method `NONE`), listed in the customer's order history.
+They need `refund:manage`, except an `ADJUST` that only moves `termEnd`.
+
+### 9.5 Credit notes (`creditNotes`)
+
+A credit note returns value on **one** invoice. Immutable, with a full snapshot like an invoice: supplier, customer,
+the invoice's number and date, lines (what is credited and for which days), taxable value, tax at **that invoice's**
+rate and CGST/SGST or IGST split, total, reason, order number, issued by. Number: `<prefix>/<financial year>/<6-digit
+sequence>` in its own series (default prefix `CN`), taken gaplessly like invoice numbers.
+
+- The credit notes against an invoice can never total more than the invoice, line by line; the invoice shows what
+  has been credited against it.
+- An order that credits several components writes one credit note per invoice those components were billed on.
+- A component with no invoice (free, or assigned in phase 1) yields no credit note and no credit.
+- `WALLET_REFUND` credits top-up invoices, newest first, up to what each still has uncredited. The wallet is debited
+  the amount before tax; the credit note adds the GST that was paid on it. Only money that came from top-ups can be
+  refunded, never a staff `ADJUSTMENT`.
+- The total of an order's credit notes is added to `creditBalance`.
+- GST law limits how late a credit note may be issued for an invoice; the design does not enforce a date (the user
+  should confirm the cut-off with an accountant).
+
+### 9.6 Refunds (`refunds`)
+
+A refund pays account credit out. It never creates credit; credit notes and `ADJUST` do. Staff with `refund:manage`
+record it after paying the customer outside the app: amount (at most `creditBalance`), method, reference, date, note.
+
+`number` (`RF-000012`), `customerId`, `amount`, `method`, `reference`, `paidOn`, `note`, `recordedBy`, `status`
+(`RECORDING → RECORDED`). Under the customer lease: insert the refund, then one update on the subscription guarded
+by `creditBalance ≥ amount` and `refundIds ≠ id` that subtracts the amount and adds the id, then `RECORDED`. A refund
+left in `RECORDING` is finished by the ticker; if the balance guard fails it is marked `FAILED` and nothing was
+taken. A recorded refund is final; a mistake is corrected with an `ADJUST`.
+
+So returning money is always two visible steps: **credit** (a credit note says why and for which invoice) and
+**pay out** (a refund says how it was paid). A customer who prefers to keep the credit simply uses it on the next
+order.
+
+### 9.7 PDF files
+
+Invoices and credit notes can be downloaded as PDF by staff and by the customer. The PDF is rendered on the server
+from the document's stored snapshot (never from live data), on first download, stored in GridFS, and its file id is
+saved on the document with a guarded update; later downloads serve the stored file. Rendering is therefore outside
+the activation path: a rendering fault cannot hold up a payment. Pure Java, no browser, with an embedded font that
+has the rupee sign. A4, one layout for both document types: supplier and customer blocks, number and date, lines,
+HSN/SAC, tax breakdown, total in figures and words, payment or reason, "computer-generated document".
+
+### 9.8 Platform settings and customer profile
 
 `billingSettings` (one document): supplier legal name, address, state, GSTIN, HSN/SAC code, GST rate, invoice prefix,
-billing zone, grace days (default 7), quote valid days (7), renewal window days (30), default wallet low-balance
+credit-note prefix, billing zone, grace days (default 7), quote valid days (7), renewal window days (30), default wallet low-balance
 threshold, `customersWithoutPlan`. Payment recording is refused until the supplier fields are filled.
 
 `Customer.billing`: legal name, address, state (from a fixed list of Indian states and territories), GSTIN (optional,
@@ -396,10 +457,10 @@ Customer Admin while no order is REQUESTED. Required before the customer's first
 
 Every operation is **one** `findAndModify` on the wallet document that changes `balance` and pushes the complete
 ledger entry onto `pending[]`, guarded, for a debit, by `balance ≥ amount`. So the balance and its entry can never
-disagree and the balance cannot go below zero. The only operation that is ever retried is the top-up of an order
-being re-driven; it is guarded by `creditedOrderIds ≠ orderId` and adds the order id to that set in the same update
-(the set stays on the wallet for good; a customer has few top-ups), so a top-up cannot be credited twice even after
-its entry has left `pending`. Usage debits and reversals use a fresh id and are never retried. A mover (inline after each operation, and from the billing ticker) upserts pending entries into
+disagree and the balance cannot go below zero. The only operations that are ever retried are those of an order being
+re-driven (a top-up's credit, a wallet refund's debit); they are guarded by `orderIds ≠ orderId` and add the order
+id to that set in the same update (the set stays on the wallet for good; a customer has few such orders), so neither
+can apply twice even after its entry has left `pending`. Usage debits and reversals use a fresh id and are never retried. A mover (inline after each operation, and from the billing ticker) upserts pending entries into
 `walletEntries` by id and then pulls them from the array. The ledger a user sees is `walletEntries` plus `pending`.
 
 Staff can post an `ADJUSTMENT` (positive or negative, with a mandatory note); it never takes the balance below zero.
@@ -425,7 +486,7 @@ that reason and take their failure path. `lowWallet` (balance below `lowBalanceA
 
 ## 11. API
 
-New authorities (58 after this; the pins in `AuthorityTest` and `RoleSeederIT` move from 52):
+New authorities (59 after this; the pins in `AuthorityTest` and `RoleSeederIT` move from 52):
 
 | Code | Level | Default roles | For |
 |---|---|---|---|
@@ -433,18 +494,21 @@ New authorities (58 after this; the pins in `AuthorityTest` and `RoleSeederIT` m
 | `billing-settings:manage` | PLATFORM | (Super Admin) | billing settings |
 | `subscription:view` | PLATFORM | ACCOUNT_MANAGER | read plans, a customer's subscription, orders, invoices, wallet |
 | `subscription:manage` | PLATFORM | ACCOUNT_MANAGER | raise orders for a customer, record payments, reject, adjust the wallet |
-| `billing:view` | COMPANY | CUSTOMER_ADMIN | see own plan, usage, orders, invoices, wallet |
+| `refund:manage` | PLATFORM | (Super Admin) | cancel a plan or add-on with credit, refund the wallet, post account credit, record refunds |
+| `billing:view` | COMPANY | CUSTOMER_ADMIN | see own plan, usage, orders, invoices, credit notes, refunds, wallet |
 | `billing:request` | COMPANY | CUSTOMER_ADMIN | raise and cancel own requests, edit the billing profile |
 
 Platform, under `/api/billing`: `feature-groups` (CRUD, history, `ungrouped`), `plans` (CRUD, `duplicate`,
 `activate`, `retire`, history), `settings`, `orders` (queue with filters), `customers/{id}/subscription`,
 `customers/{id}/quotes` and `/orders`, `orders/{id}/pay | reject | cancel`, `customers/{id}/wallet` (balance,
-entries, `adjust`, threshold), `customers/{id}/invoices`, `invoices/{id}`.
+entries, `adjust`, threshold), `customers/{id}/invoices`, `invoices/{id}`, `invoices/{id}/pdf`,
+`customers/{id}/credit-notes`, `credit-notes/{id}`, `credit-notes/{id}/pdf`, `customers/{id}/refunds` (list, record).
 
 Customer, under `/api/my/billing` (the customer is the signed-in user's): `subscription` (plan, state, dates, groups,
 add-ons, limits with current use), `options` (plans it may upgrade to, add-ons it may buy), `quotes` (POST: kind and
-target → the priced lines, credit, tax, total; nothing stored), `orders` (list, POST, cancel), `invoices`, `wallet`
-(balance, entries, daily totals by source), `profile`.
+target → the priced lines, credit, tax, total; nothing stored), `orders` (list, POST, cancel), `invoices`,
+`credit-notes`, `refunds` (each with its PDF where it has one), `wallet` (balance, entries, daily totals by source),
+`profile`.
 
 A quote and the order made from it run the same pricing code; the order stores the result.
 
@@ -461,13 +525,15 @@ A quote and the order made from it run the same pricing code; the order stores t
   customer, kind, amount, age; open one to **Record payment** (method, reference, date, optional extra discount with
   reason) or **Reject**.
 - **Customer detail**: a Subscription card (plan, state, term, add-ons, limits with use, credit balance, wallet
-  balance) with Assign plan, Change plan, Renew, Add add-on, Top up, Adjust wallet; tabs for orders, invoices, wallet
-  entries and subscription history. The customer list gains Plan and State columns and a "No plan" filter.
+  balance) with Assign plan, Change plan, Renew, Add add-on, Top up, Adjust wallet and, with `refund:manage`, Cancel
+  add-on, Cancel plan, Refund wallet, Post credit and **Record refund** (each shows the credit the server computed
+  before confirming); tabs for orders, invoices, credit notes, refunds, wallet entries and subscription history. The customer list gains Plan and State columns and a "No plan" filter.
 
 **Customer Admin**: **Plan & billing** (`/billing`, `billing:view`): current plan and state, days left, what is
 included, limits with use, add-ons with **Buy** (shows the prorated quote), **Upgrade** (higher plans with the quote:
 new price, credit for unused time, GST, amount payable), **Renew**, wallet with **Top up** and usage, requests with
-status and how to pay, invoices, billing profile.
+status and how to pay, invoices and credit notes with **Download PDF**, account credit and refunds, billing
+  profile.
 
 **Everyone in the customer**: a banner in the app shell: GRACE ("Your plan ended on 12 Dec. Renew by 19 Dec to keep
 working"), EXPIRED ("…The account is read-only until it is renewed"), low wallet. `/users/me` is refetched when a 402
@@ -489,7 +555,8 @@ may import (their boundary tests widen by that one package); plans, pricing, ord
    (plan, start, end), the ceiling, `AssignmentPolicy`, limits, background gates, read-only filter, banner, `/me`.
    After this the platform can control what each customer uses.
 2. **Money.** Prices, discount, billing settings and profile, quotes, orders, payment recording and activation,
-   invoices, add-ons, upgrade, renewal, change, the customer's Plan & billing page, the requests queue. Direct
+   invoices, add-ons, upgrade, renewal, change, credit notes, refunds, PDF files, the customer's Plan & billing page,
+   the requests queue. Direct
    assignment from phase 1 becomes the `NEW` order.
 3. **Usage.** Wallet, top-up orders, message charging, pause on empty, usage views.
 
@@ -503,11 +570,14 @@ may import (their boundary tests widen by that one package); plans, pricing, ord
 6. Add-ons are of two kinds: a feature group, or extra units of a cap.
 7. Plan edits never change existing subscriptions before their renewal; group membership changes do, at once.
 8. A quote is fixed for 7 days; the invoice is issued only when payment is recorded.
-9. Credit for unused time reduces the taxable value on the invoice (confirm with an accountant).
+9. Unused value is returned by a credit note against the invoice it was paid on, with that invoice's GST; it
+   becomes account credit, which is used on the next order or paid out as a refund. Confirm the latest date a credit
+   note may be issued with an accountant.
 10. A send that times out stays charged; a refused send is returned.
 11. Lowering a cap or losing a feature never deletes or unpublishes anything; it only stops new work.
-12. Downgrades and removing add-ons mid-term are staff-only; a customer may drop add-ons at renewal. Refunds are
-    not built.
+12. Downgrades, cancelling a plan or add-on, wallet refunds and recording refunds are staff-only (`refund:manage`,
+    Super Admin by default); a customer may drop add-ons at renewal. Cancelling a plan makes the customer read-only
+    at once.
 13. For a customer with a subscription the plan replaces the per-brand CRM switch.
 14. A renewal paid early is queued as the next term and changes nothing in the term already paid for.
 15. Every order, even one with nothing to pay, is activated by staff.
@@ -516,7 +586,8 @@ may import (their boundary tests widen by that one package); plans, pricing, ord
 
 ## 16. Left to the builder
 
-Package layout inside the named packages; index names; the Indian state list source; amount-in-words helper; exact
+Package layout inside the named packages; index names; the PDF library (pure Java, licence fit for a commercial
+product, checked against its current documentation) and the embedded font; the Indian state list source; amount-in-words helper; exact
 banner and message copy beyond the examples; how the plan editor lays out its rows; cache implementation; the
 ticker's lease length.
 
@@ -533,7 +604,10 @@ ticker's lease length.
   downgrade a waiting chatbot run stops at its next send.
 - Activation: paying twice applies once; a crash after each step (simulated by calling the steps separately) ends in
   the same final state when re-driven; a stale quote is refused; two add-on orders paid together both apply; a
-  top-up re-driven after its entry was moved is credited once; an early renewal leaves the current term's
+  top-up re-driven after its entry was moved is credited once; credit notes never exceed their invoice and carry
+  its tax split; an upgrade issues credit notes and uses the credit in the same order; a refund above the account
+  credit is refused and a re-driven refund is taken once; a wallet refund cannot return adjustment money; the PDF of
+  an invoice is rendered once and matches the stored snapshot; an early renewal leaves the current term's
   entitlements and credit untouched; invoice numbers are gapless across a duplicate-key retry and restart in April.
 - Wallet: concurrent debits never go below zero; the same entry id applies once; the ledger equals the balance after
   the mover is interrupted; refused send returns the charge; empty wallet pauses a campaign.
