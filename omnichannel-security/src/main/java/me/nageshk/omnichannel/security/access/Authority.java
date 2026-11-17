@@ -126,7 +126,14 @@ public enum Authority {
             "Build and preview CRM segments and use them as campaign audiences",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     CRM_ENABLE("crm:enable", RoleLevel.PLATFORM, "Switch the CRM on or off for a brand and set its limits",
-            ACCOUNT_MANAGER);
+            ACCOUNT_MANAGER),
+    PLAN_MANAGE("plan:manage", RoleLevel.PLATFORM, "Create and edit feature groups and plans"),
+    BILLING_SETTINGS_MANAGE("billing-settings:manage", RoleLevel.PLATFORM, "Edit billing settings"),
+    SUBSCRIPTION_VIEW("subscription:view", RoleLevel.PLATFORM, "See plans and a customer's subscription",
+            ACCOUNT_MANAGER),
+    SUBSCRIPTION_MANAGE("subscription:manage", RoleLevel.PLATFORM, "Assign, change and remove a customer's plan",
+            ACCOUNT_MANAGER),
+    BILLING_VIEW("billing:view", RoleLevel.COMPANY, "See the company's plan and usage", CUSTOMER_ADMIN);
 
     private final String code;
     private final RoleLevel level;
