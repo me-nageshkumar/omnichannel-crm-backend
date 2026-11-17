@@ -27,7 +27,7 @@ public class CrmEnablementController {
     @PreAuthorize("hasAuthority('crm:enable')")
     public EnablementView get(@PathVariable String customerId, @PathVariable String workspaceId) {
         service.requireBrand(customerId, workspaceId);
-        return service.find(workspaceId).map(CrmEnablementController::view)
+        return service.stored(workspaceId).map(CrmEnablementController::view)
                 .orElseGet(() -> new EnablementView(false, null, null));
     }
 

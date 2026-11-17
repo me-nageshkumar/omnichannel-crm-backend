@@ -14,7 +14,8 @@ class CrmModuleBoundaryTest {
 
     private static final String ROOT = "me.nageshk.omnichannel.";
     private static final List<String> ALLOWED = List.of(
-            ROOT + "crm.", ROOT + "common.", ROOT + "security.access.", ROOT + "security.auth.");
+            ROOT + "crm.", ROOT + "common.", ROOT + "security.access.", ROOT + "security.auth.",
+            ROOT + "security.entitlement.");
 
     @Test
     void crmImportsOnlyCommonAndSecurity() throws IOException {

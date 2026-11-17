@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import me.nageshk.omnichannel.common.billing.LimitKey;
 import java.util.Set;
 import java.util.regex.Pattern;
 import me.nageshk.omnichannel.common.api.NotFoundException;
@@ -231,7 +232,8 @@ public class FieldDefinitionService {
                 .and("entityType").is(entity).and("active").is(true)), CrmFieldDefinition.class);
         if (active >= max) {
             throw CrmErrors.conflict("LIMIT_REACHED", "At most " + max + " " + entity.name().toLowerCase()
-                    + " fields are allowed", Map.of("limit", String.valueOf(max)));
+                    + " fields are allowed", Map.of("limit", String.valueOf(max),
+                            "key", LimitKey.CRM_CUSTOM_FIELDS.name(), "used", String.valueOf(active)));
         }
     }
 

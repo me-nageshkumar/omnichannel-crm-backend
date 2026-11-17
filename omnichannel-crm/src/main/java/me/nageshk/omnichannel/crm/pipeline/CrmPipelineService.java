@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import me.nageshk.omnichannel.common.billing.LimitKey;
 import java.util.Optional;
 import java.util.UUID;
 import me.nageshk.omnichannel.common.api.NotFoundException;
@@ -136,9 +137,11 @@ public class CrmPipelineService {
         String name = requireName(req.name());
         validateRotting(req.rottingDays());
         Integer max = ctx.settings().getMaxPipelines();
-        if (max != null && repository.countByWorkspaceId(ctx.workspaceId()) >= max) {
+        long used = max == null ? 0 : repository.countByWorkspaceId(ctx.workspaceId());
+        if (max != null && used >= max) {
             throw CrmErrors.conflict("LIMIT_REACHED", "The brand may have at most " + max + " pipelines",
-                    Map.of("limit", String.valueOf(max)));
+                    Map.of("limit", String.valueOf(max), "key", LimitKey.CRM_PIPELINES.name(),
+                            "used", String.valueOf(used)));
         }
         List<CrmStage> lanes = req.stages() == null
                 ? salesLanes() : StageRules.validate(req.stages(), List.of(), id -> 0).stages();
