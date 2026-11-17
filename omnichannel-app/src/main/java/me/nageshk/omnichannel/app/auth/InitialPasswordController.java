@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.auth;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.Locale;
@@ -47,6 +48,7 @@ public class InitialPasswordController {
         this.encoder = encoder;
     }
 
+    @ReadOnlySafe
     @PostMapping
     public TokenReply change(
             @RequestHeader(value = "Authorization", required = false) String header,

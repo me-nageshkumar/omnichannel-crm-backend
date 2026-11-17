@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.contact;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.util.List;
 import me.nageshk.omnichannel.db.contact.ContactFilterSpec;
 import me.nageshk.omnichannel.db.contact.advanced.RuleGroup;
@@ -46,6 +47,7 @@ public class ContactFilterController {
         return service.get(workspaceId, id);
     }
 
+    @ReadOnlySafe
     @PostMapping("/preview")
     @PreAuthorize("@access.has(#workspaceId, 'contact:view')")
     public ContactFilterService.Preview preview(@PathVariable String workspaceId, @RequestBody PreviewRequest req) {

@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.campaign;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -87,6 +88,7 @@ class CampaignController {
         return views.detail(service.update(me, workspaceId, id, req, upload(file)));
     }
 
+    @ReadOnlySafe
     @PostMapping(path = "/csv/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@access.has(#workspaceId, 'campaign:manage')")
     CsvPreview preview(@PathVariable String workspaceId, @RequestPart("file") MultipartFile file,

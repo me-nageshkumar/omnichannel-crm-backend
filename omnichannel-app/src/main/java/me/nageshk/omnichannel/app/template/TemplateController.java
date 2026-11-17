@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.template;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.util.List;
 import me.nageshk.omnichannel.db.template.TemplateStatus;
 import me.nageshk.omnichannel.db.template.TemplateType;
@@ -105,6 +106,7 @@ public class TemplateController {
     }
 
     /** Fills the template's placeholders; with a {@code contactId} the caller also needs {@code contact:view}. */
+    @ReadOnlySafe
     @PostMapping("/{id}/render")
     @PreAuthorize("@access.has(#workspaceId, 'template:view')")
     public RenderedTemplate render(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,

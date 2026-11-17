@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.contact;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.util.Map;
 import java.util.Set;
 import me.nageshk.omnichannel.db.contact.ContactFilterSpec;
@@ -41,6 +42,7 @@ public class ContactController {
         this.search = search;
     }
 
+    @ReadOnlySafe
     @PostMapping("/search")
     @PreAuthorize("@access.has(#workspaceId, 'contact:view')")
     public ContactSearchService.Page search(@PathVariable String workspaceId, @RequestBody SearchRequest req) {

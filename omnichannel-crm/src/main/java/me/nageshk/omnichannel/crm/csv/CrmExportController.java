@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.crm.csv;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -41,6 +42,7 @@ public class CrmExportController {
         this.clock = clock;
     }
 
+    @ReadOnlySafe
     @PostMapping("/contacts/export")
     @PreAuthorize(EXPORT)
     public ResponseEntity<StreamingResponseBody> contacts(@AuthenticationPrincipal AuthenticatedUser me,
@@ -50,6 +52,7 @@ public class CrmExportController {
         return csv("contacts", exports.contacts(crmAccess.resolve(me, workspaceId), r));
     }
 
+    @ReadOnlySafe
     @PostMapping("/companies/export")
     @PreAuthorize(EXPORT)
     public ResponseEntity<StreamingResponseBody> companies(@AuthenticationPrincipal AuthenticatedUser me,
@@ -59,6 +62,7 @@ public class CrmExportController {
         return csv("companies", exports.companies(crmAccess.resolve(me, workspaceId), r));
     }
 
+    @ReadOnlySafe
     @PostMapping("/deals/export")
     @PreAuthorize(EXPORT)
     public ResponseEntity<StreamingResponseBody> deals(@AuthenticationPrincipal AuthenticatedUser me,

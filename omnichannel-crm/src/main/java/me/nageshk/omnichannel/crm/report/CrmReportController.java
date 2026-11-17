@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.crm.report;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.report.dto.ActivitySummaryView;
 import me.nageshk.omnichannel.crm.report.dto.ByNumberView;
@@ -37,6 +38,7 @@ public class CrmReportController {
         this.reports = reports;
     }
 
+    @ReadOnlySafe
     @PostMapping("/pipeline-summary")
     @PreAuthorize(VIEW)
     public PipelineSummaryView pipelineSummary(@AuthenticationPrincipal AuthenticatedUser me,
@@ -44,6 +46,7 @@ public class CrmReportController {
         return reports.pipelineSummary(crmAccess.resolve(me, workspaceId), filter);
     }
 
+    @ReadOnlySafe
     @PostMapping("/deals-over-time")
     @PreAuthorize(VIEW)
     public DealsOverTimeView dealsOverTime(@AuthenticationPrincipal AuthenticatedUser me,
@@ -51,6 +54,7 @@ public class CrmReportController {
         return reports.dealsOverTime(crmAccess.resolve(me, workspaceId), req);
     }
 
+    @ReadOnlySafe
     @PostMapping("/by-owner")
     @PreAuthorize(VIEW)
     public ByOwnerView byOwner(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
@@ -58,6 +62,7 @@ public class CrmReportController {
         return reports.byOwner(crmAccess.resolve(me, workspaceId), filter);
     }
 
+    @ReadOnlySafe
     @PostMapping("/by-source")
     @PreAuthorize(VIEW)
     public BySourceView bySource(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
@@ -65,6 +70,7 @@ public class CrmReportController {
         return reports.bySource(crmAccess.resolve(me, workspaceId), filter);
     }
 
+    @ReadOnlySafe
     @PostMapping("/by-number")
     @PreAuthorize(VIEW)
     public ByNumberView byNumber(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
@@ -72,6 +78,7 @@ public class CrmReportController {
         return reports.byNumber(crmAccess.resolve(me, workspaceId), filter);
     }
 
+    @ReadOnlySafe
     @PostMapping("/lifecycle-funnel")
     @PreAuthorize(VIEW)
     public LifecycleFunnelView lifecycleFunnel(@AuthenticationPrincipal AuthenticatedUser me,
@@ -79,6 +86,7 @@ public class CrmReportController {
         return reports.lifecycleFunnel(crmAccess.resolve(me, workspaceId), filter);
     }
 
+    @ReadOnlySafe
     @PostMapping("/activity-summary")
     @PreAuthorize(VIEW)
     public ActivitySummaryView activitySummary(@AuthenticationPrincipal AuthenticatedUser me,
@@ -86,6 +94,7 @@ public class CrmReportController {
         return reports.activitySummary(crmAccess.resolve(me, workspaceId), filter);
     }
 
+    @ReadOnlySafe
     @PostMapping("/stage-duration")
     @PreAuthorize(VIEW)
     public StageDurationView stageDuration(@AuthenticationPrincipal AuthenticatedUser me,
@@ -93,6 +102,7 @@ public class CrmReportController {
         return reports.stageDuration(crmAccess.resolve(me, workspaceId), filter);
     }
 
+    @ReadOnlySafe
     @PostMapping("/grid")
     @PreAuthorize(VIEW)
     public GridView grid(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
@@ -100,6 +110,7 @@ public class CrmReportController {
         return reports.grid(crmAccess.resolve(me, workspaceId), req);
     }
 
+    @ReadOnlySafe
     @PostMapping("/campaigns")
     @PreAuthorize(VIEW)
     public CampaignsView campaigns(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
