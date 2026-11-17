@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.ai.connection;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import me.nageshk.omnichannel.common.secret.SealedSecret;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
@@ -19,6 +21,8 @@ public class AiConnection {
     private String name;
     private String provider;
     private SealedSecret apiKey;
+    /** The provider's plain settings (never secrets); absent on documents saved before they existed. */
+    private Map<String, String> settings = new LinkedHashMap<>();
     private String keyHint;
     private Instant keySetAt;
     private AiConnectionStatus status = AiConnectionStatus.UNVERIFIED;
@@ -41,6 +45,8 @@ public class AiConnection {
     public void setProvider(String provider) { this.provider = provider; }
     public SealedSecret getApiKey() { return apiKey; }
     public void setApiKey(SealedSecret apiKey) { this.apiKey = apiKey; }
+    public Map<String, String> getSettings() { return settings == null ? new LinkedHashMap<>() : settings; }
+    public void setSettings(Map<String, String> settings) { this.settings = settings; }
     public String getKeyHint() { return keyHint; }
     public void setKeyHint(String keyHint) { this.keyHint = keyHint; }
     public Instant getKeySetAt() { return keySetAt; }

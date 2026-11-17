@@ -5,6 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import me.nageshk.omnichannel.ai.api.AiConnectionField;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.ProviderView;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.Save;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.View;
@@ -20,6 +23,7 @@ import me.nageshk.omnichannel.common.api.CodedException;
 import me.nageshk.omnichannel.common.api.DuplicateException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.common.net.HttpAddressGuard;
 import me.nageshk.omnichannel.common.secret.SecretBox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,15 +48,17 @@ public class AiConnectionService {
     private final AiProfileRepository profiles;
     private final Clock clock;
     private final MongoTemplate mongo;
+    private final HttpAddressGuard guard;
 
     public AiConnectionService(AiConnectionRepository repository, AiProviders providers, SecretBox secrets,
-            AiProfileRepository profiles, Clock clock, MongoTemplate mongo) {
+            AiProfileRepository profiles, Clock clock, MongoTemplate mongo, HttpAddressGuard guard) {
         this.repository = repository;
         this.providers = providers;
         this.secrets = secrets;
         this.profiles = profiles;
         this.clock = clock;
         this.mongo = mongo;
+        this.guard = guard;
     }
 
     public List<ProviderView> providers() {
@@ -70,6 +76,7 @@ public class AiConnectionService {
     public View create(String workspaceId, String customerId, String userId, Save in) {
         Map<String, String> errors = validate(in);
         if (in.apiKey() == null || in.apiKey().isBlank()) errors.put("apiKey", "is required");
+        Map<String, String> settings = settings(in, in.settings(), errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
         String name = in.name().trim();
         if (repository.findByWorkspaceIdAndName(workspaceId, name).isPresent()) throw duplicate(name);
@@ -81,6 +88,7 @@ public class AiConnectionService {
         c.setProvider(in.provider());
         c.setCreatedAt(clock.instant());
         c.setUpdatedBy(userId);
+        c.setSettings(settings);
         String key = in.apiKey().strip();
         setKey(c, key);
         runVerify(c, key);
@@ -90,6 +98,16 @@ public class AiConnectionService {
     public View replace(String workspaceId, String id, String userId, Save in) {
         AiConnection c = find(workspaceId, id);
         Map<String, String> errors = validate(in);
+        // no settings in the request keeps the stored ones (as a missing key does); settings of the provider the
+        // connection is leaving are dropped, not refused
+        Map<String, String> given = in.settings() != null ? in.settings() : c.getSettings();
+        if (errors.isEmpty() && !in.provider().equals(c.getProvider())) {
+            Set<String> declared = providers.of(in.provider()).connectionFields().stream()
+                    .map(AiConnectionField::key).collect(Collectors.toSet());
+            given = new LinkedHashMap<>(given);
+            given.keySet().retainAll(declared);
+        }
+        Map<String, String> settings = settings(in, given, errors);
         if (!errors.isEmpty()) throw new ValidationException(errors);
         if (in.version() != null && !Objects.equals(in.version(), c.getVersion())) {
             throw new OptimisticLockingFailureException("AI connection changed since it was read");
@@ -107,11 +125,16 @@ public class AiConnectionService {
         c.setName(name);
         c.setProvider(in.provider());
         c.setUpdatedBy(userId);
+        boolean newSettings = !settings.equals(c.getSettings());
+        c.setSettings(settings);
         if (newKey) {
             // a pasted key often carries a newline or a space, which the provider would refuse
             String key = in.apiKey().strip();
             setKey(c, key);
             runVerify(c, key);
+        } else if (newSettings) {
+            // the status shown must be about the settings in force
+            runVerify(c, secrets.open(c.getApiKey()));
         }
         return View.of(persist(c));
     }
@@ -161,7 +184,7 @@ public class AiConnectionService {
     }
 
     private AiCredential credential(AiConnection c) {
-        return new AiCredential(secrets.open(c.getApiKey()));
+        return new AiCredential(secrets.open(c.getApiKey()), c.getSettings());
     }
 
     private <T> T call(AiConnection c, java.util.function.Function<AiProvider, T> f) {
@@ -190,6 +213,12 @@ public class AiConnectionService {
         return errors;
     }
 
+    /** The cleaned settings for the request's provider; empty (and no settings errors) when the provider is unknown. */
+    private Map<String, String> settings(Save in, Map<String, String> given, Map<String, String> errors) {
+        if (errors.containsKey("provider")) return new LinkedHashMap<>();
+        return ConnectionSettings.clean(providers.of(in.provider()).connectionFields(), given, guard, errors);
+    }
+
     private void setKey(AiConnection c, String plain) {
         c.setApiKey(secrets.seal(plain));
         c.setKeyHint(SecretBox.hint(plain));
@@ -200,7 +229,7 @@ public class AiConnectionService {
     private void runVerify(AiConnection c, String plainKey) {
         c.setCheckedAt(clock.instant());
         try {
-            providers.of(c.getProvider()).verify(new AiCredential(plainKey));
+            providers.of(c.getProvider()).verify(new AiCredential(plainKey, c.getSettings()));
             c.setStatus(AiConnectionStatus.OK);
             c.setLastError(null);
         } catch (AiProviderException e) {
