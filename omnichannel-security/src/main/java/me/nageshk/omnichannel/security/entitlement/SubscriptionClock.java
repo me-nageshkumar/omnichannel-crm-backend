@@ -22,13 +22,18 @@ public final class SubscriptionClock {
         return s.getNext() != null ? s.getNext().getTermEnd() : s.getCurrent().getTermEnd();
     }
 
-    /** When read-only begins: {@code graceDays} calendar days after the last term's end. */
+    /**
+     * When read-only begins: {@code graceDays} calendar days after the last term's end. A plan that was cancelled
+     * has no grace: it is read-only from that end.
+     */
     public static Instant graceEnd(Subscription s, int graceDays, ZoneId zone) {
+        if (s.isCancelled()) return lastEnd(s);
         return lastEnd(s).atZone(zone).plusDays(graceDays).toInstant();
     }
 
     public static SubscriptionState stateAt(Subscription s, int graceDays, ZoneId zone, Instant now) {
         if (now.isBefore(lastEnd(s))) return SubscriptionState.ACTIVE;
+        if (s.isCancelled()) return SubscriptionState.EXPIRED;
         return now.isBefore(graceEnd(s, graceDays, zone)) ? SubscriptionState.GRACE : SubscriptionState.EXPIRED;
     }
 }

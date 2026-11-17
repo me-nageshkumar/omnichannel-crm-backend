@@ -46,6 +46,15 @@ class SubscriptionClockTest {
         assertThat(SubscriptionClock.lastEnd(sub)).isEqualTo(Instant.parse("2027-01-31T18:30:00Z"));
     }
 
+    @Test
+    void aCancelledPlanHasNoGrace() {
+        Subscription sub = subscription(segment(START, END), null);
+        sub.setCancelled(true);
+        assertThat(SubscriptionClock.stateAt(sub, 7, IST, Instant.parse("2026-12-31T18:29:59.999Z"))).isEqualTo(ACTIVE);
+        assertThat(SubscriptionClock.stateAt(sub, 7, IST, END)).isEqualTo(EXPIRED);
+        assertThat(SubscriptionClock.graceEnd(sub, 7, IST)).isEqualTo(END);
+    }
+
     static TermSegment segment(Instant start, Instant end) {
         TermSegment s = new TermSegment();
         s.setTermStart(start);

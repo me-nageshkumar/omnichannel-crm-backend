@@ -207,6 +207,25 @@ abstract class MoneyApiTestBase {
         return json(POST(ordersPath(c), amToken, body).andExpect(status().isCreated()));
     }
 
+    static Map<String, Object> upi(String reference) {
+        Map<String, Object> b = new LinkedHashMap<>();
+        b.put("method", "UPI");
+        b.put("reference", reference);
+        b.put("receivedOn", "2026-12-01");
+        return b;
+    }
+
+    /** Records a UPI payment for the order as the account manager. */
+    ResultActions pay(String orderId) throws Exception {
+        return POST("/api/billing/orders/" + orderId + "/pay", amToken, upi("UTR-" + orderId));
+    }
+
+    /** Raises the order and records its payment; returns the activated order. */
+    JsonNode buy(Customer c, Map<String, Object> body) throws Exception {
+        String id = raise(c, body).get("id").asString();
+        return json(pay(id).andExpect(status().isOk()));
+    }
+
     ResultActions GET(String path, String token) throws Exception {
         return mvc.perform(get(path).header("Authorization", "Bearer " + token));
     }

@@ -4,9 +4,11 @@ import java.util.List;
 import me.nageshk.omnichannel.common.billing.OrderStatus;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.billing.order.Caller;
+import me.nageshk.omnichannel.service.billing.order.OrderActivator;
 import me.nageshk.omnichannel.service.billing.order.OrderService;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.OrderPage;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.OrderView;
+import me.nageshk.omnichannel.service.billing.order.OrderViews.PayRequest;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.QuoteRequest;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.QuoteView;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.RejectRequest;
@@ -31,9 +33,11 @@ public class OrderController {
     static final String MANAGE = "hasAuthority('subscription:manage')";
 
     private final OrderService service;
+    private final OrderActivator activator;
 
-    public OrderController(OrderService service) {
+    public OrderController(OrderService service, OrderActivator activator) {
         this.service = service;
+        this.activator = activator;
     }
 
     @PostMapping("/customers/{customerId}/quotes")
@@ -73,6 +77,14 @@ public class OrderController {
     @PreAuthorize(MANAGE)
     public OrderView cancel(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String orderId) {
         return service.cancel(orderId, Caller.staff(me.userId()));
+    }
+
+    /** Records that the order was paid, which puts it into effect. */
+    @PostMapping("/orders/{orderId}/pay")
+    @PreAuthorize(MANAGE)
+    public OrderView pay(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String orderId,
+            @RequestBody PayRequest req) {
+        return activator.pay(orderId, req, me.userId());
     }
 
     @PostMapping("/orders/{orderId}/reject")
