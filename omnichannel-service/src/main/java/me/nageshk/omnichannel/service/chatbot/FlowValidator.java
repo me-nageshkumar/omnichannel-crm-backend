@@ -45,12 +45,26 @@ public class FlowValidator {
         this.sources = sources;
     }
 
+    /** The plan's caps on one chatbot: a draft over a cap can be saved, but an ERROR keeps it from being published. */
+    private static void plan(Flow flow, ValidationContext ctx, List<Problem> out) {
+        if (ctx.maxNodes() != null && flow.nodes().size() > ctx.maxNodes()) {
+            out.add(Problem.flow("plan", "Your plan allows " + ctx.maxNodes() + " nodes in a chatbot"));
+        }
+        if (ctx.maxAiNodes() != null) {
+            long ai = flow.nodes().stream().filter(n -> n.type() == NodeType.AI).count();
+            if (ai > ctx.maxAiNodes()) {
+                out.add(Problem.flow("plan", "Your plan allows " + ctx.maxAiNodes() + " AI nodes in a chatbot"));
+            }
+        }
+    }
+
     public List<Problem> validate(Flow flow, ValidationContext ctx) {
         List<Problem> out = new ArrayList<>();
         if (flow.nodes().isEmpty()) {
             out.add(Problem.flow("nodes", "add at least one node"));
             return out;
         }
+        plan(flow, ctx, out);
         names(flow, out);
         edges(flow, ctx, out);
         entry(flow, out);

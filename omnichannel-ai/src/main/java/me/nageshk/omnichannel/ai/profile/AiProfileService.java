@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.ai.profile;
 
+import me.nageshk.omnichannel.common.billing.LimitKey;
+import me.nageshk.omnichannel.security.entitlement.Limits;
 import java.net.URI;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -54,9 +56,11 @@ public class AiProfileService {
     private final ObjectProvider<AiProfileUsage> usage;
     private final Clock clock;
     private final McpClient mcp;
+    private final Limits limits;
 
     public AiProfileService(AiProfileRepository repository, AiConnectionRepository connections, AiProviders providers,
-            SecretBox secrets, ObjectProvider<AiProfileUsage> usage, Clock clock, McpClient mcp) {
+            SecretBox secrets, ObjectProvider<AiProfileUsage> usage, Clock clock, McpClient mcp, Limits limits) {
+        this.limits = limits;
         this.repository = repository;
         this.connections = connections;
         this.providers = providers;
@@ -113,6 +117,7 @@ public class AiProfileService {
     }
 
     public View create(String workspaceId, String customerId, String userId, Save in) {
+        limits.require(customerId, LimitKey.AI_PROFILES);
         AiProfile p = new AiProfile();
         p.setWorkspaceId(workspaceId);
         p.setCustomerId(customerId);
