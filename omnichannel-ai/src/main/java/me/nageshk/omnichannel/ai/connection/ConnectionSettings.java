@@ -59,10 +59,13 @@ public final class ConnectionSettings {
             return "must be an https URL";
         }
         if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) return "must be an https URL";
+        // settings are readable through the API: a password in the URL would be shown to everyone who may see them
+        if (uri.getRawUserInfo() != null) return "must not contain a user name or password";
         try {
             guard.check(uri);
         } catch (IllegalArgumentException e) {
-            return "must be a public address";
+            return e.getMessage() != null && e.getMessage().contains("could not be resolved")
+                    ? "must have a host that can be found" : "must be a public address";
         }
         return null;
     }

@@ -483,4 +483,43 @@ class AiConnectionsApiIT extends AiTestBase {
         assertThat(openai.get("connectionFields").get(1).get("key").asString()).isEqualTo("project");
         assertThat(scripted.get("connectionFields")).isEmpty();
     }
+
+    @Test
+    void keyPastedIntoASettingIs400() {
+        ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "organization", KEY));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody().get("fields").get("settings.organization").asString())
+                .isEqualTo("is the API key; settings are not secret, so the key goes in API key only");
+        assertThat(mongo.count(new Query(), "aiConnections")).isZero();
+    }
+
+    @Test
+    void storedKeyPastedIntoASettingOnEditIs400() {
+        JsonNode created = create("Main").getBody();
+        OPENAI.reset();
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                withSettings(save("Main", "openai", null), "project", " " + KEY + " "));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody().get("fields").has("settings.project")).isTrue();
+        assertThat(mongo.findOne(new Query(), org.bson.Document.class, "aiConnections").toJson()).doesNotContain(KEY);
+        assertThat(OPENAI.requests()).isEmpty();
+    }
+
+    @Test
+    void renameWithoutSettingsDropsStoredOnesTheProviderNoLongerDeclares() {
+        JsonNode created = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "organization", "org_1")).getBody();
+        mongo.updateFirst(new Query(Criteria.where("name").is("Main")),
+                new org.springframework.data.mongodb.core.query.Update().set("settings.legacy", "x"), "aiConnections");
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                save("Renamed", "openai", null));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody().get("settings").toString()).isEqualTo("{\"organization\":\"org_1\"}");
+    }
 }
