@@ -14,6 +14,8 @@ import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
 import me.nageshk.omnichannel.db.billing.TermSegment;
 import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import me.nageshk.omnichannel.service.billing.BillingAudit;
+import me.nageshk.omnichannel.service.billing.document.InvoiceService;
+import org.bson.types.Decimal128;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -35,9 +37,11 @@ public class OrderSteps {
     private final Entitlements entitlements;
     private final BillingAudit audit;
     private final MongoTemplate mongo;
+    private final InvoiceService invoices;
 
     public OrderSteps(SubscriptionRepository subscriptions, Entitlements entitlements, BillingAudit audit,
-            MongoTemplate mongo) {
+            MongoTemplate mongo, InvoiceService invoices) {
+        this.invoices = invoices;
         this.subscriptions = subscriptions;
         this.entitlements = entitlements;
         this.audit = audit;
@@ -92,8 +96,22 @@ public class OrderSteps {
     /** Issues the credit notes the order gives. Nothing yet: Task 10. */
     public void creditNotes(BillingOrder o) {}
 
-    /** Issues the order's invoice. Nothing yet: Task 9. */
-    public void invoice(BillingOrder o) {}
+    /**
+     * Issues the order's invoice and takes the account credit it used off the customer's balance. An order with
+     * nothing to charge has no invoice. The invoice is inserted under the id the order reserved and the balance
+     * remembers the orders that drew on it, so running this again does neither a second time.
+     */
+    public void invoice(BillingOrder o) {
+        if (o.getInvoiceId() == null || o.getTotal().signum() == 0) return;
+        invoices.issue(o);
+        if (o.getAccountCreditUsed().signum() > 0) {
+            mongo.updateFirst(
+                    new Query(Criteria.where("customerId").is(o.getCustomerId()).and("debitedOrderIds").ne(o.getId())),
+                    new Update().inc("creditBalance", new Decimal128(o.getAccountCreditUsed().negate()))
+                            .addToSet("debitedOrderIds", o.getId()).inc("version", 1),
+                    Subscription.class);
+        }
+    }
 
     /** The add-on the order bought, which pricing put last in {@code priced}, goes onto the stored term of those dates. */
     private static void addTo(Subscription sub, TermSegment priced, BillingOrder o) {

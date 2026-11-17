@@ -153,6 +153,10 @@ public class OrderActivator {
         } else {
             fresh = hasPlan && revision == o.getQuotedRevision();
         }
+        // the account credit the order counts on, beyond what its own credit notes bring, must still be there
+        java.math.BigDecimal needed = o.getAccountCreditUsed().subtract(o.getCreditFromNotes());
+        java.math.BigDecimal held = sub == null || sub.getCreditBalance() == null ? java.math.BigDecimal.ZERO : sub.getCreditBalance();
+        if (needed.signum() > 0 && held.compareTo(needed) < 0) fresh = false;
         if (!fresh) {
             throw new CodedException(HttpStatus.CONFLICT, "ORDER_STALE", null,
                     "The customer's plan changed since this order was priced; raise it again");

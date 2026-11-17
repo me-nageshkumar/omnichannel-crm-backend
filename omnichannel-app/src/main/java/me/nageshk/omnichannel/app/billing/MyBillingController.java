@@ -1,12 +1,16 @@
 package me.nageshk.omnichannel.app.billing;
 
+import java.util.List;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.billing.SubscriptionService;
+import me.nageshk.omnichannel.service.billing.document.DocumentViews.InvoiceView;
+import me.nageshk.omnichannel.service.billing.document.InvoiceService;
 import me.nageshk.omnichannel.service.billing.SubscriptionViews.SubscriptionView;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -16,15 +20,33 @@ import org.springframework.web.bind.annotation.RestController;
 public class MyBillingController {
 
     private final SubscriptionService service;
+    private final InvoiceService invoices;
 
-    public MyBillingController(SubscriptionService service) {
+    public MyBillingController(SubscriptionService service, InvoiceService invoices) {
         this.service = service;
+        this.invoices = invoices;
     }
 
     @GetMapping("/subscription")
     @PreAuthorize("hasAuthority('billing:view')")
     public SubscriptionView subscription(@AuthenticationPrincipal AuthenticatedUser me) {
+        return service.view(customerOf(me));
+    }
+
+    @GetMapping("/invoices")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public List<InvoiceView> invoices(@AuthenticationPrincipal AuthenticatedUser me) {
+        return invoices.list(customerOf(me));
+    }
+
+    @GetMapping("/invoices/{id}")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public InvoiceView invoice(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        return invoices.getFor(customerOf(me), id);
+    }
+
+    private static String customerOf(AuthenticatedUser me) {
         if (me.customerId() == null) throw new NotFoundException("no customer");
-        return service.view(me.customerId());
+        return me.customerId();
     }
 }
