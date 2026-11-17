@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.user;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.security.Principal;
@@ -35,22 +36,26 @@ public class UserController {
         return users.currentUser(principal.getName());
     }
 
+    @ReadOnlySafe
     @PutMapping("/availability")
     public UserService.CurrentUser availability(Principal principal, @RequestBody(required = false) AvailabilityRequest req) {
         return users.setAvailability(principal.getName(), req == null ? null : req.status());
     }
 
+    @ReadOnlySafe
     @PostMapping("/two-factor/initiate")
     public UserService.TwoFactorSetup initiate(Principal principal) {
         return users.initiateTwoFactor(principal.getName());
     }
 
+    @ReadOnlySafe
     @PostMapping("/two-factor/confirm")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void confirm(Principal principal, @Valid @RequestBody ConfirmRequest req) {
         users.confirmTwoFactor(principal.getName(), req.secret(), req.otp());
     }
 
+    @ReadOnlySafe
     @PostMapping("/two-factor/disable")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void disable(Principal principal, @Valid @RequestBody DisableRequest req) {

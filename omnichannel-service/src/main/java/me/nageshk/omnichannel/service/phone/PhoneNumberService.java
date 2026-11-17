@@ -28,7 +28,9 @@ import me.nageshk.omnichannel.db.tenant.Team;
 import me.nageshk.omnichannel.db.tenant.TeamRepository;
 import me.nageshk.omnichannel.db.tenant.Workspace;
 import me.nageshk.omnichannel.db.tenant.WorkspaceRepository;
+import me.nageshk.omnichannel.common.billing.LimitKey;
 import me.nageshk.omnichannel.security.access.AccessService;
+import me.nageshk.omnichannel.security.entitlement.Limits;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.security.enablement.Enablement;
 import me.nageshk.omnichannel.security.phone.DeviceAccessChanged.Reason;
@@ -65,11 +67,13 @@ public class PhoneNumberService {
     private final InboxCleanup inboxCleanup;
     private final TeamRepository teams;
     private final Clock clock;
+    private final Limits limits;
 
     public PhoneNumberService(PhoneNumberRepository numbers, WorkspaceRepository workspaces,
             CustomerRepository customers, Enablement enablement, LiveDevices live, ApplicationEventPublisher events,
             ConnectCodeRepository codes, AccessService access, InboxCleanup inboxCleanup, TeamRepository teams,
-            Clock clock) {
+            Clock clock, Limits limits) {
+        this.limits = limits;
         this.teams = teams;
         this.codes = codes;
         this.inboxCleanup = inboxCleanup;
@@ -103,6 +107,7 @@ public class PhoneNumberService {
         n.setWorkspaceId(workspaceId);
         n.setCreatedBy(me.getUsername());
         if (numbers.existsByNumber(n.getNumber())) throw duplicate();
+        limits.require(customerId, LimitKey.PHONE_NUMBERS);
         try {
             return numbers.insert(n);
         } catch (DuplicateKeyException e) {

@@ -14,7 +14,8 @@ class AiModuleBoundaryTest {
 
     private static final String ROOT = "me.nageshk.omnichannel.";
     private static final List<String> ALLOWED = List.of(
-            ROOT + "ai.", ROOT + "common.", ROOT + "security.access.", ROOT + "security.auth.");
+            ROOT + "ai.", ROOT + "common.", ROOT + "security.access.", ROOT + "security.auth.",
+            ROOT + "security.entitlement.");
 
     @Test
     void aiImportsOnlyCommonAndSecurity() throws IOException {

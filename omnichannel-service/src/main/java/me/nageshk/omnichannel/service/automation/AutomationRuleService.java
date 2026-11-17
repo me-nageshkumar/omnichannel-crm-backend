@@ -13,7 +13,9 @@ import me.nageshk.omnichannel.db.automation.RuleStatus;
 import me.nageshk.omnichannel.db.automation.TestEndReason;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.UserRepository;
+import me.nageshk.omnichannel.common.billing.LimitKey;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.security.entitlement.Limits;
 import org.springframework.stereotype.Service;
 
 /** The rules of a brand: list, edit as a draft, publish and delete. */
@@ -27,10 +29,12 @@ public class AutomationRuleService {
     private final RulePublishValidator publishValidator;
     private final AutomationViews views;
     private final Clock clock;
+    private final Limits limits;
 
     public AutomationRuleService(AutomationRuleRepository rules, AutomationTestService tests,
             AutomationTestRepository testRecords, UserRepository users, RulePublishValidator publishValidator,
-            AutomationViews views, Clock clock) {
+            AutomationViews views, Clock clock, Limits limits) {
+        this.limits = limits;
         this.rules = rules;
         this.tests = tests;
         this.testRecords = testRecords;
@@ -52,6 +56,7 @@ public class AutomationRuleService {
     }
 
     public RuleView create(AuthenticatedUser me, String workspaceId, RuleRequest req) {
+        limits.require(me.customerId(), LimitKey.AUTOMATION_RULES);
         checkShape(req);
         AutomationRule r = new AutomationRule();
         r.setCustomerId(me.customerId());

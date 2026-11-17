@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.crm.segment;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.util.List;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.segment.dto.SegmentCatalogView;
@@ -50,6 +51,7 @@ public class CrmSegmentController {
         return segments.fields(crmAccess.resolve(me, workspaceId));
     }
 
+    @ReadOnlySafe
     @PostMapping("/preview")
     @PreAuthorize(VIEW)
     public SegmentPreviewView preview(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
@@ -64,6 +66,7 @@ public class CrmSegmentController {
         return segments.get(crmAccess.resolve(me, workspaceId), id);
     }
 
+    @ReadOnlySafe
     @PostMapping("/{id}/preview")
     @PreAuthorize(VIEW)
     public SegmentPreviewView previewSaved(@AuthenticationPrincipal AuthenticatedUser me,

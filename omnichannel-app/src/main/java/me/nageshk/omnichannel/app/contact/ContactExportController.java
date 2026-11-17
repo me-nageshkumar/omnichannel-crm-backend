@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.contact;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.io.BufferedWriter;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
@@ -73,6 +74,7 @@ public class ContactExportController {
         this.exportLimit = exportLimit;
     }
 
+    @ReadOnlySafe
     @PostMapping
     @PreAuthorize("@access.has(#workspaceId, 'contact:export')")
     public ResponseEntity<StreamingResponseBody> export(@PathVariable String workspaceId,

@@ -1,5 +1,10 @@
 package me.nageshk.omnichannel.app.tenant;
 
+import me.nageshk.omnichannel.common.billing.SubscriptionState;
+import me.nageshk.omnichannel.db.billing.Subscription;
+import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
+import me.nageshk.omnichannel.security.entitlement.Entitlement;
+import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -42,7 +47,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/customers")
 public class CustomerController {
 
-    public record CustomerView(String id, String name, boolean active, Disabled disabled, Instant creationTime) {}
+    /** {@code planName} is null and {@code subscriptionState} NONE for a customer without a plan. */
+    public record CustomerView(String id, String name, boolean active, Disabled disabled, Instant creationTime,
+            String planName, SubscriptionState subscriptionState) {}
 
     public record PageView(List<CustomerView> items, long total, int page) {}
 
@@ -71,8 +78,13 @@ public class CustomerController {
     private final AccessService access;
     private final WorkspaceService workspaceService;
 
+    private final Entitlements entitlements;
+    private final SubscriptionRepository subscriptions;
+
     public CustomerController(CustomerService service, UserAdminService userAdmin, AccessService access,
-            WorkspaceService workspaceService) {
+            WorkspaceService workspaceService, Entitlements entitlements, SubscriptionRepository subscriptions) {
+        this.entitlements = entitlements;
+        this.subscriptions = subscriptions;
         this.workspaceService = workspaceService;
         this.service = service;
         this.userAdmin = userAdmin;
@@ -82,9 +94,11 @@ public class CustomerController {
     @GetMapping
     @PreAuthorize("hasAuthority('customer:view')")
     public PageView list(@RequestParam(required = false) String q, @RequestParam(required = false) Boolean active,
-            @RequestParam(defaultValue = "0") int page) {
-        Page<Customer> result = service.list(q, active, page);
-        return new PageView(result.getContent().stream().map(CustomerController::view).toList(),
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "false") boolean noPlan) {
+        List<String> withPlan = noPlan
+                ? subscriptions.findAll().stream().map(Subscription::getCustomerId).toList() : null;
+        Page<Customer> result = service.list(q, active, page, withPlan);
+        return new PageView(result.getContent().stream().map(this::view).toList(),
                 result.getTotalElements(), page);
     }
 
@@ -190,7 +204,9 @@ public class CustomerController {
                 EnableLevel.PLATFORM));
     }
 
-    private static CustomerView view(Customer c) {
-        return new CustomerView(c.getId(), c.getName(), c.isActive(), c.getDisabled(), c.getCreationTime());
+    private CustomerView view(Customer c) {
+        Entitlement plan = entitlements.of(c.getId());
+        return new CustomerView(c.getId(), c.getName(), c.isActive(), c.getDisabled(), c.getCreationTime(),
+                plan.planName(), plan.state());
     }
 }

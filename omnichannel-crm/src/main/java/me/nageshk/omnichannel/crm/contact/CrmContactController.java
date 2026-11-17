@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.crm.contact;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.common.CrmPage;
 import me.nageshk.omnichannel.crm.contact.dto.AddContactRequest;
@@ -49,6 +50,7 @@ public class CrmContactController {
         this.channels = channels;
     }
 
+    @ReadOnlySafe
     @PostMapping("/search")
     @PreAuthorize(VIEW)
     public CrmPage<CrmContactView> search(@AuthenticationPrincipal AuthenticatedUser me,

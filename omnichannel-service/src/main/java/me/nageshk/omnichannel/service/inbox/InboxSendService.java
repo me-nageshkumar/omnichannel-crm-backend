@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import me.nageshk.omnichannel.service.billing.WorkGate;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -94,6 +95,7 @@ public class InboxSendService {
     }
 
     private final InboxDevices devices;
+    private final WorkGate workGate;
     private final WaWebWebhookConverter converter;
     private final RpcDispatcher dispatcher;
     private final ObjectMapper mapper;
@@ -139,6 +141,8 @@ public class InboxSendService {
      * @param typedPhone normalised digits typed (or imported) for an unsaved chat, else null
      * @throws ChatClosedException if the chat is closed
      * @throws NoDeviceException if the number is disabled or its device is missing or not CONNECTED
+     * @throws me.nageshk.omnichannel.common.api.SubscriptionInactiveException if the customer's plan does not cover
+     *     the send or its subscription has ended
      * @throws ValidationException for a bad request, a missing template value or a contact card template
      */
     public CompletableFuture<MessageView> send(SendActor actor, String workspaceId, WaWebChat chat,
@@ -148,6 +152,7 @@ public class InboxSendService {
             throw new ChatClosedException();
         }
         DeviceSession device = devices.requireReady(workspaceId, chat);
+        workGate.requireSend(workspaceId, actor);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
         return dispatch(actor, chat, device, out, typedPhone);
     }
@@ -174,6 +179,7 @@ public class InboxSendService {
             throw new ChatClosedException();
         }
         DeviceSession device = devices.requireReady(workspaceId, chat);
+        workGate.requireSend(workspaceId, actor);
         CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
         Outgoing out = cloudOutgoing(chat, m);
         return dispatch(actor, chat, device, out, typedPhone);

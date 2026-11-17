@@ -52,6 +52,7 @@ public class CrmAccess {
     /** As {@link #resolve} but a brand with the CRM off yields a context with {@code enabled=false} instead of 402. */
     public CrmContext resolveForStatus(AuthenticatedUser me, String workspaceId) {
         Set<String> authorities = access.inWorkspace(me, workspaceId);
+        // a brand with nothing stored and no plan that includes the CRM: off, with the defaults to show
         CrmSettings s = settings.find(workspaceId).orElseGet(() -> CrmDefaults.newSettings(workspaceId, me.customerId()));
         return build(me, workspaceId, authorities, s);
     }

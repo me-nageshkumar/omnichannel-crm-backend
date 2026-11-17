@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.contact;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import me.nageshk.omnichannel.service.contact.ContactBulkService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +24,7 @@ public class ContactBulkController {
         this.service = service;
     }
 
+    @ReadOnlySafe
     @PostMapping("/count")
     @PreAuthorize("@access.has(#workspaceId, 'contact:view')")
     public CountResponse count(@PathVariable String workspaceId, @RequestBody CountRequest req) {

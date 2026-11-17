@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.inbox;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -284,6 +285,7 @@ public class InboxController {
         return query.thread(query.requireVisible(me, workspaceId, chatId), before, checked(limit));
     }
 
+    @ReadOnlySafe
     @PostMapping("/chats/{chatId}/read")
     @PreAuthorize("@access.has(#workspaceId, 'inbox:view')")
     public ChatView read(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,

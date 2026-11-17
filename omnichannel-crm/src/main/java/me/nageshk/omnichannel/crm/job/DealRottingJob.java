@@ -6,6 +6,8 @@ import java.time.Instant;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
 import me.nageshk.omnichannel.crm.platform.BrandDirectory;
 import me.nageshk.omnichannel.crm.settings.CrmSettings;
+import me.nageshk.omnichannel.crm.settings.CrmSwitch;
+import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -27,7 +29,10 @@ public class DealRottingJob {
     private final BrandDirectory brands;
     private final Clock clock;
 
-    DealRottingJob(MongoTemplate mongo, BrandDirectory brands, Clock clock) {
+    private final Entitlements entitlements;
+
+    DealRottingJob(MongoTemplate mongo, BrandDirectory brands, Clock clock, Entitlements entitlements) {
+        this.entitlements = entitlements;
         this.mongo = mongo;
         this.brands = brands;
         this.clock = clock;
@@ -39,7 +44,7 @@ public class DealRottingJob {
         long flagged = 0;
         for (String ws : brands.allBrandIds()) {
             CrmSettings s = mongo.findOne(new Query(Criteria.where("workspaceId").is(ws)), CrmSettings.class);
-            if (s == null || !s.isEnabled()) continue;
+            if (s == null || !CrmSwitch.apply(entitlements.ofWorkspace(ws), s).isEnabled()) continue;
             for (CrmPipeline p : mongo.find(new Query(Criteria.where("workspaceId").is(ws)), CrmPipeline.class)) {
                 Integer days = p.getRottingDays() != null ? p.getRottingDays() : s.getDealRottingDays();
                 Criteria open = Criteria.where("workspaceId").is(ws).and("pipelineId").is(p.getId()).and("status")

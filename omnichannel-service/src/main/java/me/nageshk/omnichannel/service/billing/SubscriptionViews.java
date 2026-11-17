@@ -1,0 +1,44 @@
+package me.nageshk.omnichannel.service.billing;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import me.nageshk.omnichannel.common.billing.BillingPeriod;
+import me.nageshk.omnichannel.common.billing.LimitKey;
+import me.nageshk.omnichannel.common.billing.LimitScope;
+import me.nageshk.omnichannel.common.billing.SubscriptionState;
+import me.nageshk.omnichannel.db.billing.AddOnKind;
+import me.nageshk.omnichannel.db.billing.WithoutPlan;
+
+/** What the billing API takes and returns for a customer's subscription and the billing settings. */
+public final class SubscriptionViews {
+
+    private SubscriptionViews() {}
+
+    public record AddOnRequest(AddOnKind kind, String groupCode, LimitKey limitKey, Integer quantity) {}
+
+    /** @param revision the subscription's revision this change was made from; ignored when the customer has none */
+    public record AssignRequest(String planCode, LocalDate startDate, LocalDate endDate, List<AddOnRequest> addOns,
+            Long revision) {}
+
+    public record PlanRef(String code, String name, BillingPeriod period, int rank) {}
+
+    /** @param source DEFAULT (in every plan), PLAN or ADDON */
+    public record GroupRef(String code, String name, String source) {}
+
+    public record AddOnView(String id, AddOnKind kind, String groupCode, LimitKey limitKey, int quantity) {}
+
+    /** @param limit null when unlimited; @param used null for a limit that is not counted across the customer */
+    public record LimitView(LimitKey key, String label, LimitScope scope, Integer limit, Long used) {}
+
+    /** The dates are midnights in {@code zone}; {@code termEnd} is the first moment after the last paid day. */
+    public record SubscriptionView(SubscriptionState state, boolean readOnly, PlanRef plan, Instant termStart,
+            Instant termEnd, Instant graceEnd, String zone, List<GroupRef> groups, List<AddOnView> addOns,
+            List<LimitView> limits, long revision) {}
+
+    public record LimitKeyView(LimitKey key, LimitScope scope, String label) {}
+
+    public record SettingsRequest(String zone, Integer graceDays, WithoutPlan customersWithoutPlan, Long version) {}
+
+    public record SettingsView(String zone, int graceDays, WithoutPlan customersWithoutPlan, Long version) {}
+}

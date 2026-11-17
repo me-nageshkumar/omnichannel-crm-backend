@@ -37,6 +37,8 @@ import me.nageshk.omnichannel.service.chatbot.flow.Flow;
 import me.nageshk.omnichannel.service.chatbot.flow.FlowParser;
 import me.nageshk.omnichannel.service.chatbot.node.Problem;
 import me.nageshk.omnichannel.service.chatbot.node.Severity;
+import me.nageshk.omnichannel.common.billing.LimitKey;
+import me.nageshk.omnichannel.security.entitlement.Limits;
 import me.nageshk.omnichannel.service.chatbot.node.ValidationContext;
 import me.nageshk.omnichannel.service.chatbot.settings.ChatbotSettingsService;
 import me.nageshk.omnichannel.service.chatbot.settings.SettingsLayers;
@@ -73,10 +75,12 @@ public class ChatbotService {
     private final OmnichannelProperties props;
     private final Clock clock;
     private final ChatbotSettingsService settingsService;
+    private final Limits limits;
 
     public ChatbotService(ChatbotRepository chatbots, ChatbotVersionRepository versions, WorkspaceRepository workspaces,
             UserRepository users, FlowParser parser, FlowValidator validator, MongoTemplate mongo, ObjectMapper mapper,
-            OmnichannelProperties props, Clock clock, ChatbotSettingsService settingsService) {
+            OmnichannelProperties props, Clock clock, ChatbotSettingsService settingsService, Limits limits) {
+        this.limits = limits;
         this.settingsService = settingsService;
         this.chatbots = chatbots;
         this.versions = versions;
@@ -93,6 +97,7 @@ public class ChatbotService {
     public ChatbotView create(AuthenticatedUser me, String workspaceId, String name) {
         String clean = cleanName(name);
         var ws = workspaces.findById(workspaceId).orElseThrow(() -> new NotFoundException("workspace not found"));
+        limits.require(ws.getCustomerId(), LimitKey.CHATBOTS);
         Chatbot c = new Chatbot();
         c.setCustomerId(ws.getCustomerId());
         c.setWorkspaceId(workspaceId);
@@ -181,12 +186,19 @@ public class ChatbotService {
         } catch (DuplicateKeyException e) {
             throw clash(c.getName());
         }
-        return new SaveResult(view(saved), validator.validate(flow, new ValidationContext(workspaceId, id, false)));
+        return new SaveResult(view(saved), validator.validate(flow, context(saved)));
     }
 
     /** The problems a save would report, for the test start and the publish check. */
     public List<Problem> problems(Chatbot c) {
-        return validator.validate(parser.parse(c.getFlow()), new ValidationContext(c.getWorkspaceId(), c.getId(), false));
+        return validator.validate(parser.parse(c.getFlow()), context(c));
+    }
+
+    /** The checks' context for a chatbot, with the caps its customer's plan puts on one chatbot. */
+    private ValidationContext context(Chatbot c) {
+        return new ValidationContext(c.getWorkspaceId(), c.getId(), false,
+                limits.effective(c.getCustomerId(), LimitKey.CHATBOT_NODES).orElse(null),
+                limits.effective(c.getCustomerId(), LimitKey.CHATBOT_AI_NODES).orElse(null));
     }
 
     public ChatbotView publish(AuthenticatedUser me, String workspaceId, String id) {

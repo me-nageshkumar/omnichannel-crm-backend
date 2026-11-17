@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.auth;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import me.nageshk.omnichannel.db.auth.RevokedToken;
 import me.nageshk.omnichannel.db.auth.RevokedTokenRepository;
 import me.nageshk.omnichannel.security.auth.JwtAuthFilter;
@@ -29,6 +30,7 @@ public class LogoutController {
     }
 
     /** A token without a {@code jti} (issued before revocation existed) cannot be revoked; it simply expires. */
+    @ReadOnlySafe
     @PostMapping("/api/auth/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void logout(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {

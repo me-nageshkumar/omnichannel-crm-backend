@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.cloud;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.util.concurrent.CompletableFuture;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessage;
@@ -51,6 +52,7 @@ public class CloudMessageController {
     }
 
     /** The composer's preview: the page the message would be sent as, with inert actions and no beacon. */
+    @ReadOnlySafe
     @PostMapping(value = "/preview", produces = "text/html;charset=UTF-8")
     @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
     public String preview(@PathVariable String workspaceId, @PathVariable String phoneNumberId,

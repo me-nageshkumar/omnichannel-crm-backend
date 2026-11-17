@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.automation;
 
+import me.nageshk.omnichannel.common.api.SubscriptionInactiveException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -99,6 +100,8 @@ public class SendTemplateHandler implements ActionHandler {
     }
 
     private static ActionResult failure(Throwable cause, MessageTemplate template) {
+        // not worth another try: the plan stopped covering automations, or the subscription ended
+        if (cause instanceof SubscriptionInactiveException) return ActionResult.failed("The plan does not allow this");
         if (cause instanceof NoDeviceException n) {
             return ActionResult.retryLater(NoDeviceException.WHATSAPP_NOT_READY.equals(n.code())
                     ? "WhatsApp Web is not ready on the number"

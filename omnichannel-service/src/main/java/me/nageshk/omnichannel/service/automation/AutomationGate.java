@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.automation;
 
+import me.nageshk.omnichannel.service.billing.WorkGate;
 import me.nageshk.omnichannel.db.automation.AutomationEventKind;
 import me.nageshk.omnichannel.db.automation.AutomationRuleRepository;
 import me.nageshk.omnichannel.db.automation.AutomationTestRepository;
@@ -14,7 +15,10 @@ public class AutomationGate {
     private final AutomationRuleRepository rules;
     private final AutomationTestRepository tests;
 
-    AutomationGate(AutomationRuleRepository rules, AutomationTestRepository tests) {
+    private final WorkGate workGate;
+
+    AutomationGate(AutomationRuleRepository rules, AutomationTestRepository tests, WorkGate workGate) {
+        this.workGate = workGate;
         this.rules = rules;
         this.tests = tests;
     }
@@ -24,6 +28,8 @@ public class AutomationGate {
      * phone when {@code phone} is not null). A draft under test so queues only its test contact's events.
      */
     public boolean wants(String workspaceId, AutomationEventKind kind, String contactId, String phone) {
+        // a customer whose plan lacks automations, or whose subscription has ended, queues nothing
+        if (!workGate.allows(workspaceId, WorkGate.AUTOMATIONS)) return false;
         if (rules.existsByWorkspaceIdAndEventAndStatus(workspaceId, kind, RuleStatus.PUBLISHED)) return true;
         return tests.findByWorkspaceIdAndEventAndStatus(workspaceId, kind, TestStatus.WAITING).stream()
                 .anyMatch(t -> (contactId != null && contactId.equals(t.getTargetContactId()))

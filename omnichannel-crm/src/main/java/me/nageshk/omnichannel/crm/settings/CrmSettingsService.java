@@ -28,6 +28,8 @@ import me.nageshk.omnichannel.crm.settings.dto.SettingsRequest;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import me.nageshk.omnichannel.security.entitlement.Entitlement;
+import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -44,8 +46,11 @@ public class CrmSettingsService {
     private final PipelineIds pipelineIds;
     private final ActivityLog activities;
 
+    private final Entitlements entitlements;
+
     CrmSettingsService(CrmSettingsRepository repository, BrandDirectory brands, EnablementAudit audit,
-            MongoTemplate mongo, PipelineIds pipelineIds, ActivityLog activities) {
+            MongoTemplate mongo, PipelineIds pipelineIds, ActivityLog activities, Entitlements entitlements) {
+        this.entitlements = entitlements;
         this.activities = activities;
         this.repository = repository;
         this.brands = brands;
@@ -60,7 +65,21 @@ public class CrmSettingsService {
     static final int MAX_LABEL = 60;
     static final int MAX_ITEMS = 100;
 
+    /**
+     * The brand's settings as they are in force: for a customer on a plan the plan decides whether the CRM is on and
+     * may set the limits (see {@link CrmSwitch}), and a brand of such a customer gets its settings on first use.
+     */
     public Optional<CrmSettings> find(String workspaceId) {
+        Entitlement e = entitlements.ofWorkspace(workspaceId);
+        Optional<CrmSettings> stored = repository.findByWorkspaceId(workspaceId);
+        if (stored.isEmpty() && CrmSwitch.planDecides(e) && CrmSwitch.on(e)) {
+            stored = brands.find(workspaceId).map(b -> getOrCreate(workspaceId, b.customerId(), "system"));
+        }
+        return stored.map(s -> CrmSwitch.apply(e, s));
+    }
+
+    /** The settings exactly as stored, with the brand's own switch and limits: for the staff's switch screen. */
+    public Optional<CrmSettings> stored(String workspaceId) {
         return repository.findByWorkspaceId(workspaceId);
     }
 

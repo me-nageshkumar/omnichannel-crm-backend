@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.app.chatbot;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.util.List;
 import java.util.Map;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
@@ -103,6 +104,7 @@ class ChatbotController {
         return new CloudMediaUploadResponse(media.upload(me, workspaceId, type, file).id());
     }
 
+    @ReadOnlySafe
     @PostMapping(value = "/{id}/preview", produces = "text/html;charset=UTF-8")
     @PreAuthorize("@access.has(#workspaceId, 'chatbot:manage')")
     String preview(@PathVariable String workspaceId, @PathVariable String id, @RequestBody JsonNode body) {

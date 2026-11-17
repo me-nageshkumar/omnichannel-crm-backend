@@ -1,5 +1,8 @@
 package me.nageshk.omnichannel.ai.call;
 
+import me.nageshk.omnichannel.common.api.SubscriptionInactiveException;
+import me.nageshk.omnichannel.security.entitlement.Entitlement;
+import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
@@ -47,11 +50,13 @@ public class AiGatewayService implements AiGateway {
     private final ThreadPoolTaskScheduler ticker;
     private final AiProperties props;
     private final Clock clock;
+    private final Entitlements entitlements;
 
     public AiGatewayService(AiProfileRepository profiles, AiConnectionRepository connections, AiProviders providers,
             AiProfileService profileService, AiConversationRepository conversations, AiCallRepository calls,
             AiTurnQueue queue, AiTurnWorker worker, @Qualifier("aiScheduler") ThreadPoolTaskScheduler ticker,
-            AiProperties props, Clock clock) {
+            AiProperties props, Clock clock, Entitlements entitlements) {
+        this.entitlements = entitlements;
         this.profiles = profiles;
         this.connections = connections;
         this.providers = providers;
@@ -75,6 +80,11 @@ public class AiGatewayService implements AiGateway {
             throw new ValidationException("profileId", "is required");
         }
         String ws = r.workspaceId();
+        // a turn spends the brand's own key: none is started outside the customer's plan or after it has ended
+        Entitlement plan = entitlements.ofWorkspace(ws);
+        if (plan.readOnly() || !plan.allows("ai:manage")) {
+            throw new SubscriptionInactiveException("The plan does not allow AI");
+        }
         ResolvedProfile rp = profileService.resolved(ws, r.profileId());
         Instant now = clock.instant();
         String conversationId = r.conversationId();

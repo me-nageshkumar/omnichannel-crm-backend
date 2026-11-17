@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.crm.company;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.util.List;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.common.CrmPage;
@@ -39,6 +40,7 @@ public class CrmCompanyController {
         this.companies = companies;
     }
 
+    @ReadOnlySafe
     @PostMapping("/search")
     @PreAuthorize(VIEW)
     public CrmPage<CompanyView> search(@AuthenticationPrincipal AuthenticatedUser me,

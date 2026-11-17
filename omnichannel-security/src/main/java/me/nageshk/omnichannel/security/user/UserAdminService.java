@@ -29,7 +29,9 @@ import me.nageshk.omnichannel.db.user.TwoFactor;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.UserRepository;
 import me.nageshk.omnichannel.db.user.WorkspaceRole;
+import me.nageshk.omnichannel.common.billing.LimitKey;
 import me.nageshk.omnichannel.security.access.AccessService;
+import me.nageshk.omnichannel.security.entitlement.Limits;
 import me.nageshk.omnichannel.security.access.AssignmentPolicy.Actor;
 import me.nageshk.omnichannel.security.access.AssignmentPolicy.Target;
 import me.nageshk.omnichannel.security.access.AssignmentPolicy;
@@ -66,10 +68,12 @@ public class UserAdminService {
     private final RoleCache roles;
     private final TeamRepository teams;
     private final Enablement enablement;
+    private final Limits limits;
 
     public UserAdminService(UserRepository users, WorkspaceRepository workspaces, AccessService access,
             AssignmentPolicy policy, PasswordPolicy passwords, PasswordEncoder encoder, RoleCache roles,
-            TeamRepository teams, Enablement enablement) {
+            TeamRepository teams, Enablement enablement, Limits limits) {
+        this.limits = limits;
         this.enablement = enablement;
         this.users = users;
         this.workspaces = workspaces;
@@ -105,6 +109,7 @@ public class UserAdminService {
         check(login);
         String username = normalizeUsername(login.username());
         if (users.existsByUsername(username)) throw duplicateUsername();
+        limits.require(customerId, LimitKey.USERS);
         User u = new User();
         u.setName(login.name().trim());
         u.setUsername(username);
@@ -197,6 +202,7 @@ public class UserAdminService {
         if (enabled) {
             if (before) return target;
             enablement.checkEnable(target.getDisabled(), level);
+            limits.require(target.getCustomerId(), LimitKey.USERS);
             target.setDisabled(null);
         } else {
             target.setDisabled(enablement.disable(target.getDisabled(), me, level));

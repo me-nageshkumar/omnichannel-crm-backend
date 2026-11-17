@@ -1,0 +1,48 @@
+package me.nageshk.omnichannel.db.billing;
+
+import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.Set;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
+
+/**
+ * A customer's plan. Whether it is active, in grace or expired is worked out from the dates each time it is read,
+ * so nothing has to run for a customer to change state.
+ */
+@Document("subscriptions")
+@Getter
+@Setter
+public class Subscription {
+
+    @Id
+    private String id;
+
+    @Indexed(unique = true)
+    private String customerId;
+
+    private TermSegment current;
+    /** A renewal paid before the current term ended; in force from its own start. */
+    private TermSegment next;
+    /** The day of month terms end on. */
+    private int anchorDay;
+
+    /** Money the platform owes the customer, tax included. */
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal creditBalance = BigDecimal.ZERO;
+
+    /** Counts changes to a segment's plan or dates. */
+    private long termRevision;
+    /** Counts every applied change. */
+    private long revision;
+    private Set<String> appliedOrderIds = new HashSet<>();
+
+    @Version
+    private Long version;
+}

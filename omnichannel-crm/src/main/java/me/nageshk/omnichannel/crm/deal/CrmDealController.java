@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.crm.deal;
 
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import java.util.List;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.common.CrmPage;
@@ -43,6 +44,7 @@ public class CrmDealController {
         this.board = board;
     }
 
+    @ReadOnlySafe
     @PostMapping("/search")
     @PreAuthorize(VIEW)
     public CrmPage<DealView> search(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,

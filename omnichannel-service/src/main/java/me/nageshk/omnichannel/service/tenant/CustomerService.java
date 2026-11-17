@@ -125,9 +125,19 @@ public class CustomerService {
 
     /** One page of customers by name; {@code q} matches anywhere in the name, ignoring case. */
     public Page<Customer> list(String q, Boolean active, int page) {
+        return list(q, active, page, null);
+    }
+
+    /** As {@link #list(String, Boolean, int)}, leaving out the customers with these ids when {@code except} is not null. */
+    public Page<Customer> list(String q, Boolean active, int page, java.util.Collection<String> except) {
         if (page < 0) throw new ValidationException("page", "must be 0 or more");
         Pageable pageable = PageRequest.of(page, PAGE_SIZE, Sort.by("name").and(Sort.by("id")));
         String name = q == null ? "" : q.trim();
+        if (except != null) {
+            return active == null
+                    ? customers.findByNameContainingIgnoreCaseAndIdNotIn(name, except, pageable)
+                    : customers.findByNameContainingIgnoreCaseAndActiveAndIdNotIn(name, active, except, pageable);
+        }
         return active == null
                 ? customers.findByNameContainingIgnoreCase(name, pageable)
                 : customers.findByNameContainingIgnoreCaseAndActive(name, active, pageable);

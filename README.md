@@ -699,6 +699,62 @@ turn are read back from the inbox, not lost. A failed turn takes `failure` with 
 field). OpenAI enforces a JSON reply schema (`strict`) only when every object is closed and lists all its properties in
 `required`; the node warns otherwise.
 
+## Subscription plans
+
+A customer on a plan can use only what the plan allows; a customer with no plan behaves as before (until the setting
+below says otherwise). Design: `docs/superpowers/specs/2026-11-17-subscription-plans-design.md`. This is phase 1
+(entitlements): plans carry prices, but nothing is charged yet and staff assign plans directly.
+
+- **Feature group** (`featureGroups`): authorities sold together (CRM, Chatbots, …). An authority is in at most one
+  group; one in no group is unavailable to every customer on a plan. `DEFAULT` groups are in every plan; `PAID` ones
+  are included in a plan or held as an add-on. Nine built-in groups are seeded at startup (Core, Inbox, Contacts,
+  Templates as default; Campaigns, Automations, Chatbots, AI, CRM as paid; Chatbots requires Automations, which start them, and AI requires
+  Chatbots); Core always keeps the authorities a
+  Customer Admin needs to manage users and see billing.
+- **Plan** (`plans`): a period (monthly, quarterly, half-yearly, yearly), a rank, the paid groups it includes with a
+  price each, the groups it offers as add-ons, limits, extra-unit prices, a discount % and usage rates. The API returns
+  `actualPrice`, `discountAmount` and `discountedPrice`; clients never compute money. Status `DRAFT` → `ACTIVE` →
+  `RETIRED`. Editing an active plan bumps its `revision` and never changes a customer already on it.
+- **Subscription** (`subscriptions`, one per customer): the plan's terms as sold, add-ons, and the term's dates
+  (midnights in the billing zone). Its state is worked out from the dates on every read: `ACTIVE`, then `GRACE` for
+  `graceDays` after the end, then `EXPIRED` (read-only). `NONE` means no plan.
+- **The ceiling.** `AccessService` limits every customer user's authorities to the customer's entitled set (default
+  groups + the plan's groups + add-on groups), so a plan change reaches all of its users on their next request, and
+  `AssignmentPolicy` compares roles inside that set. `GET /api/users/me` returns the limited authorities and a
+  `subscription` summary (`state`, `planName`, `termEnd`, `graceEnd`, `readOnly`, `zone`).
+- **Limits** (`LimitKey`): users, brands, WhatsApp numbers, automation rules, chatbots, AI profiles (counted across
+  the customer), nodes and AI nodes per chatbot, CRM pipelines and custom fields per brand. Creating over a limit
+  answers 409 `LIMIT_REACHED` with `key`, `limit`, `used`; a chatbot over its node limit can be saved but not
+  published. Lowering a limit never removes anything.
+- **Work without a user.** Sending (`InboxSendService`), campaign claims, automation event intake, chatbot starts and
+  AI turns ask the plan first; a refused send is 402 `SUBSCRIPTION_INACTIVE`. Incoming messages are always stored.
+- **Read-only.** For an `EXPIRED` customer every request that is not a GET is refused with 402
+  `SUBSCRIPTION_EXPIRED`, except handlers marked `@ReadOnlySafe` (searches, previews, counts, exports, reports, and
+  the user's own account). `ReadOnlySafeHandlersTest` pins that list.
+- **The CRM** follows the plan for a customer that has one: on in every brand when the plan or an add-on includes it,
+  with the plan's pipeline and field limits when it sets them. The per-brand switch (`crm:enable`) still rules
+  customers without a plan.
+
+Staff API under `/api/billing` (reads need `subscription:view` or `plan:manage`):
+
+| Method and path | Authority | What |
+|---|---|---|
+| `GET/POST /feature-groups`, `PUT/DELETE /feature-groups/{code}` | `plan:manage` to write | feature groups; built-in ones cannot be deleted |
+| `GET /feature-groups/ungrouped`, `GET /feature-groups/{code}/history` | read | authorities in no group; change history |
+| `GET/POST /plans`, `GET/PUT/DELETE /plans/{code}` | `plan:manage` to write | plans; only a draft can be deleted |
+| `POST /plans/price` | `plan:manage` | the price of a set of items with a discount, for the editor |
+| `POST /plans/{code}/duplicate`, `/activate`, `/retire`, `GET /plans/{code}/history` | `plan:manage` to write | copy into another period; status; history |
+| `GET /limit-keys` | read | the limits a plan can set |
+| `GET/PUT /settings` | `billing-settings:manage` to write | billing zone, grace days, `customersWithoutPlan` |
+| `GET/PUT/DELETE /customers/{id}/subscription`, `GET …/subscription/events` | `subscription:view`, `subscription:manage` to write | a customer's plan: assign with dates and add-ons, change, remove; history |
+
+`GET /api/my/billing/subscription` (`billing:view`, a COMPANY authority) gives a Customer Admin its own plan, state,
+groups and limits with current use. `GET /api/customers` items carry `planName` and `subscriptionState`, and take
+`noPlan=true`.
+
+Setting `customersWithoutPlan` to `READ_ONLY` makes every customer without a subscription read-only: switch it only
+after every live customer has a plan.
+
 ## Page script delivery
 
 The extension fetches `page.js` from this server on every connect when the hash in the `hello`
