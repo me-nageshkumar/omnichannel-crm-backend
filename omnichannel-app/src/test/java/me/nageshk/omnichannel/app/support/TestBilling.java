@@ -54,7 +54,10 @@ public class TestBilling {
         settings.deleteAll();
         groups.deleteAll();
         mongo.remove(new Query(), "plans");
-        mongo.remove(new Query(), "billingChanges");
+        for (String c : List.of("billingChanges", "billingOrders", "invoices", "creditNotes", "refunds", "billingLocks",
+                "billingCounters")) {
+            mongo.remove(new Query(), c);
+        }
         seeder.seed();
         entitlements.evictAll();
     }

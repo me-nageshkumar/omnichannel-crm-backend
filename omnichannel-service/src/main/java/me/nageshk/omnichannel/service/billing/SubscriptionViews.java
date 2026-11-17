@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.billing;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -38,7 +39,28 @@ public final class SubscriptionViews {
 
     public record LimitKeyView(LimitKey key, LimitScope scope, String label) {}
 
-    public record SettingsRequest(String zone, Integer graceDays, WithoutPlan customersWithoutPlan, Long version) {}
+    /** A field that is null keeps what is stored; a blank text clears it. */
+    public record SettingsRequest(String zone, Integer graceDays, WithoutPlan customersWithoutPlan, Long version,
+            String supplierLegalName, String supplierAddress, String supplierStateCode, String supplierGstin,
+            String sacCode, BigDecimal gstRatePercent, String invoicePrefix, String creditNotePrefix,
+            Integer quoteValidDays, Integer renewalWindowDays, String paymentInstructions) {
 
-    public record SettingsView(String zone, int graceDays, WithoutPlan customersWithoutPlan, Long version) {}
+        public SettingsRequest(String zone, Integer graceDays, WithoutPlan customersWithoutPlan, Long version) {
+            this(zone, graceDays, customersWithoutPlan, version, null, null, null, null, null, null, null, null, null,
+                    null, null);
+        }
+    }
+
+    /** {@code complete}: the supplier details an invoice needs are filled in. */
+    public record SettingsView(String zone, int graceDays, WithoutPlan customersWithoutPlan, Long version,
+            String supplierLegalName, String supplierAddress, String supplierStateCode, String supplierGstin,
+            String sacCode, BigDecimal gstRatePercent, String invoicePrefix, String creditNotePrefix,
+            int quoteValidDays, int renewalWindowDays, String paymentInstructions, boolean complete) {}
+
+    public record ProfileRequest(String legalName, String address, String stateCode, String gstin) {}
+
+    /** {@code complete}: enough to issue an invoice to the customer. */
+    public record ProfileView(String legalName, String address, String stateCode, String gstin, boolean complete) {}
+
+    public record StateView(String code, String name) {}
 }
