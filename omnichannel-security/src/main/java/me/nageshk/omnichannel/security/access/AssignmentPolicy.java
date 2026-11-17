@@ -30,6 +30,10 @@ import org.springframework.stereotype.Component;
  * The Super Admin passes every check, but the {@code SUPER_ADMIN} role is never given to anyone.
  * Role codes no longer in the catalogue (or not at a level the role may hold) grant nothing, so
  * they are ignored when comparing.
+ *
+ * <p>A customer on a plan has a ceiling: the authorities its users can hold at most. A role's codes outside
+ * the ceiling grant nothing in that customer, so they are ignored too. Without this an admin on a small plan
+ * could not give a built-in role that names a feature the plan lacks.
  */
 @Component
 public class AssignmentPolicy {
@@ -52,12 +56,28 @@ public class AssignmentPolicy {
      * @param customerId null for platform users
      * @param platformOrCompany PLATFORM codes for a platform user, COMPANY codes for a customer user
      * @param perWorkspace effective set in every workspace the actor can access, by workspace id
+     * @param ceiling the most the actor's customer may hold under its plan; null when nothing is held back
      */
     public record Actor(boolean superAdmin, String customerId, Set<String> platformOrCompany,
-            Map<String, Set<String>> perWorkspace) {
+            Map<String, Set<String>> perWorkspace, Set<String> ceiling) {
         public Actor {
             platformOrCompany = platformOrCompany == null ? Set.of() : Set.copyOf(platformOrCompany);
             perWorkspace = perWorkspace == null ? Map.of() : copy(perWorkspace);
+            ceiling = ceiling == null ? null : Set.copyOf(ceiling);
+        }
+
+        /** An actor whose customer has no plan ceiling. */
+        public Actor(boolean superAdmin, String customerId, Set<String> platformOrCompany,
+                Map<String, Set<String>> perWorkspace) {
+            this(superAdmin, customerId, platformOrCompany, perWorkspace, null);
+        }
+
+        /** The part of a role's or user's set that counts in the actor's customer. */
+        Set<String> within(Set<String> codes) {
+            if (ceiling == null) return codes;
+            Set<String> kept = new HashSet<>(codes);
+            kept.retainAll(ceiling);
+            return kept;
         }
 
         private static Map<String, Set<String>> copy(Map<String, Set<String>> source) {
@@ -90,7 +110,8 @@ public class AssignmentPolicy {
         if (!isAt(role, RoleLevel.BRAND)) return false;
         if (a.superAdmin()) return true;
         Set<String> actorSet = a.perWorkspace().get(workspaceId);
-        return actorSet != null && actorSet.contains(USER_MANAGE) && strictSubset(effective(role), actorSet);
+        return actorSet != null && actorSet.contains(USER_MANAGE)
+                && strictSubset(a.within(effective(role)), actorSet);
     }
 
     /** Rules 1 and 2 for a PLATFORM role. {@code SUPER_ADMIN} is never given, even by the Super Admin. */
@@ -193,7 +214,7 @@ public class AssignmentPolicy {
     /** {@code user:manage} in the workspace and the target's set there strictly below the actor's. */
     private static boolean managesIn(Actor a, String workspaceId, Set<String> targetSet) {
         Set<String> actorSet = a.perWorkspace().get(workspaceId);
-        return actorSet != null && actorSet.contains(USER_MANAGE) && strictSubset(targetSet, actorSet);
+        return actorSet != null && actorSet.contains(USER_MANAGE) && strictSubset(a.within(targetSet), actorSet);
     }
 
     private static boolean sameCustomer(Actor a, Target t) {

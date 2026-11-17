@@ -19,6 +19,7 @@ import me.nageshk.omnichannel.db.tenant.WorkspaceRepository;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.WorkspaceRole;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -34,6 +35,9 @@ import org.springframework.stereotype.Service;
  * disabled workspace gives COMPANY-role holders no authorities there. Platform staff,
  * the Super Admin included, have no brand access in this slice. A workspace without access is
  * reported as not found, so other tenants' ids are not confirmed to exist.
+ *
+ * <p>A customer on a plan holds at most what the plan entitles it to: every customer user's authorities are
+ * limited to that set here, so a plan change reaches all of its users on their next request.
  */
 @Service("access")
 public class AccessService {
@@ -42,12 +46,15 @@ public class AccessService {
     private final AuthorityCatalog catalog;
     private final CustomerRepository customers;
     private final WorkspaceRepository workspaces;
+    private final Entitlements entitlements;
 
-    public AccessService(RoleCache roles, AuthorityCatalog catalog, CustomerRepository customers, WorkspaceRepository workspaces) {
+    public AccessService(RoleCache roles, AuthorityCatalog catalog, CustomerRepository customers,
+            WorkspaceRepository workspaces, Entitlements entitlements) {
         this.roles = roles;
         this.catalog = catalog;
         this.customers = customers;
         this.workspaces = workspaces;
+        this.entitlements = entitlements;
     }
 
     /** The principal for a user: its global authorities, and disabled if its customer is missing or inactive. */
@@ -85,7 +92,7 @@ public class AccessService {
         Set<String> effective = new HashSet<>();
         companyRole.ifPresent(r -> effective.addAll(codes(r, Set.of(RoleLevel.COMPANY, RoleLevel.BRAND))));
         workspaceRole.ifPresent(r -> effective.addAll(codes(r, Set.of(RoleLevel.BRAND))));
-        return effective;
+        return entitled(user.customerId(), effective);
     }
 
     /**
@@ -110,7 +117,9 @@ public class AccessService {
     /** The user's COMPANY role's COMPANY and BRAND codes; empty without a COMPANY role. */
     public Set<String> companyCodes(AuthenticatedUser user) {
         if (user.customerId() == null) return Set.of();
-        return companyRole(user.roleId()).map(r -> codes(r, Set.of(RoleLevel.COMPANY, RoleLevel.BRAND))).orElse(Set.of());
+        return companyRole(user.roleId())
+                .map(r -> entitled(user.customerId(), codes(r, Set.of(RoleLevel.COMPANY, RoleLevel.BRAND))))
+                .orElse(Set.of());
     }
 
     /** The workspaces the user can act in, by name: all of its customer's with a COMPANY role, else its workspace roles'. */
@@ -142,7 +151,8 @@ public class AccessService {
                 .collect(Collectors.toSet());
         Map<String, Set<String>> perWorkspace = new HashMap<>();
         for (Workspace w : workspacesOf(user)) perWorkspace.put(w.getId(), inWorkspace(user, w.getId()));
-        return new AssignmentPolicy.Actor(user.superAdmin(), user.customerId(), global, perWorkspace);
+        Set<String> ceiling = user.customerId() == null ? null : entitlements.of(user.customerId()).authorities();
+        return new AssignmentPolicy.Actor(user.superAdmin(), user.customerId(), global, perWorkspace, ceiling);
     }
 
     /**
@@ -178,7 +188,18 @@ public class AccessService {
             }
             return role.map(r -> codes(r, Set.of(RoleLevel.PLATFORM))).orElse(Set.of());
         }
-        return companyRole(user.getRoleId()).map(r -> codes(r, Set.of(RoleLevel.COMPANY))).orElse(Set.of());
+        return companyRole(user.getRoleId())
+                .map(r -> entitled(user.getCustomerId(), codes(r, Set.of(RoleLevel.COMPANY))))
+                .orElse(Set.of());
+    }
+
+    /** The codes the customer's plan lets its users hold; all of them when the customer has no ceiling. */
+    private Set<String> entitled(String customerId, Set<String> codes) {
+        Set<String> ceiling = entitlements.of(customerId).authorities();
+        if (ceiling == null) return codes;
+        Set<String> kept = new HashSet<>(codes);
+        kept.retainAll(ceiling);
+        return kept;
     }
 
     private Optional<Role> companyRole(String roleId) {

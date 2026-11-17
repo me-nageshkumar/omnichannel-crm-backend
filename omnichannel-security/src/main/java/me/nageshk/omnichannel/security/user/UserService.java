@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.common.billing.SubscriptionState;
 import me.nageshk.omnichannel.common.user.InvalidOtpException;
 import me.nageshk.omnichannel.common.user.TwoFactorStateException;
 import me.nageshk.omnichannel.db.access.RoleLevel;
@@ -23,6 +24,9 @@ import me.nageshk.omnichannel.security.auth.AccountLockedException;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.security.auth.LoginAttemptService;
 import me.nageshk.omnichannel.security.auth.TotpService;
+import me.nageshk.omnichannel.security.entitlement.BillingSettingsStore;
+import me.nageshk.omnichannel.security.entitlement.Entitlement;
+import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -48,7 +52,12 @@ public class UserService {
             Set<String> authorities,
             List<WorkspaceAccess> workspaces,
             boolean mustChangePassword,
-            Availability availability) {}
+            Availability availability,
+            SubscriptionSummary subscription) {}
+
+    /** Where the user's customer stands with its plan; the dates are midnights in {@code zone}. */
+    public record SubscriptionSummary(SubscriptionState state, String planName, Instant termEnd, Instant graceEnd,
+            boolean readOnly, String zone) {}
 
     public record CustomerRef(String id, String name) {}
 
@@ -65,9 +74,14 @@ public class UserService {
     private final LoginAttemptService attempts;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final Entitlements entitlements;
+    private final BillingSettingsStore billingSettings;
 
     public UserService(UserRepository users, AccessService access, RoleCache roles, CustomerRepository customers,
-            TotpService totp, LoginAttemptService attempts, ApplicationEventPublisher events, Clock clock) {
+            TotpService totp, LoginAttemptService attempts, ApplicationEventPublisher events, Clock clock,
+            Entitlements entitlements, BillingSettingsStore billingSettings) {
+        this.entitlements = entitlements;
+        this.billingSettings = billingSettings;
         this.events = events;
         this.clock = clock;
         this.users = users;
@@ -105,7 +119,15 @@ public class UserService {
                 authorities,
                 workspaces,
                 u.isMustChangePassword(),
-                u.getAvailability() == null ? new Availability(Availability.Status.AVAILABLE, null) : u.getAvailability());
+                u.getAvailability() == null ? new Availability(Availability.Status.AVAILABLE, null) : u.getAvailability(),
+                subscriptionOf(u.getCustomerId()));
+    }
+
+    private SubscriptionSummary subscriptionOf(String customerId) {
+        if (customerId == null) return null;
+        Entitlement e = entitlements.of(customerId);
+        return new SubscriptionSummary(e.state(), e.planName(), e.termEnd(), e.graceEnd(), e.readOnly(),
+                e.zone() == null ? billingSettings.get().getZone() : e.zone());
     }
 
     /** The user's own Available / Away switch; publishes {@link UserEvents.AvailabilityChanged} on a real change. */
