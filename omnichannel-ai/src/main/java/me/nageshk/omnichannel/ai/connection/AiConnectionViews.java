@@ -14,7 +14,7 @@ public final class AiConnectionViews {
 
     /**
      * {@code apiKey} is required on create and, when present on replace, sets a new key; {@code settings} are the
-     * provider's plain fields and replace the stored ones; {@code version} guards a replace.
+     * provider's plain fields: absent on replace keeps the stored ones, an empty map clears them; {@code version} guards a replace.
      */
     public record Save(String name, String provider, String apiKey, Map<String, String> settings, Long version) {}
 

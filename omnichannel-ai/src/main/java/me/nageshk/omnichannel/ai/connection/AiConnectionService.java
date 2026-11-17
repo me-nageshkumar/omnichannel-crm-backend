@@ -41,6 +41,7 @@ public class AiConnectionService {
 
     private static final Logger log = LoggerFactory.getLogger(AiConnectionService.class);
     public static final String REFUSED = "The provider refused the key";
+    public static final String UNOPENABLE = "The stored key cannot be opened; enter it again";
 
     private final AiConnectionRepository repository;
     private final AiProviders providers;
@@ -134,7 +135,7 @@ public class AiConnectionService {
             runVerify(c, key);
         } else if (newSettings) {
             // the status shown must be about the settings in force
-            runVerify(c, secrets.open(c.getApiKey()));
+            verifyStored(c);
         }
         return View.of(persist(c));
     }
@@ -142,7 +143,7 @@ public class AiConnectionService {
     public View verify(String workspaceId, String id, String userId) {
         AiConnection c = find(workspaceId, id);
         c.setUpdatedBy(userId);
-        runVerify(c, secrets.open(c.getApiKey()));
+        verifyStored(c);
         return View.of(persist(c));
     }
 
@@ -183,6 +184,16 @@ public class AiConnectionService {
                 AiConnection.class);
     }
 
+    /**
+     * What a refused connection shows. A connection with settings may have been refused for them (a wrong account or
+     * project id), so the provider's own words go along: "refused the key" alone would send people to replace a good key.
+     */
+    public static String refused(AiCredential c, AiProviderException e) {
+        if (c == null || c.settings().isEmpty()) return REFUSED;
+        String detail = e.getMessage() == null || e.getMessage().isBlank() ? "" : ": " + e.getMessage();
+        return REFUSED + " or the connection's settings" + detail;
+    }
+
     private AiCredential credential(AiConnection c) {
         return new AiCredential(secrets.open(c.getApiKey()), c.getSettings());
     }
@@ -192,7 +203,8 @@ public class AiConnectionService {
             return f.apply(providers.of(c.getProvider()));
         } catch (AiProviderException e) {
             if (e.code() == AiProviderException.Code.AUTH) {
-                throw new CodedException(HttpStatus.BAD_GATEWAY, "ai_provider_refused_key", null, REFUSED);
+                throw new CodedException(HttpStatus.BAD_GATEWAY, "ai_provider_refused_key", null,
+                        c.getSettings().isEmpty() ? REFUSED : REFUSED + " or the connection's settings");
             }
             throw new CodedException(HttpStatus.BAD_GATEWAY, "ai_provider_error", null, e.getMessage());
         }
@@ -228,20 +240,39 @@ public class AiConnectionService {
     /** Checks the key with the provider; a failed check is recorded on the connection and never fails the save. */
     private void runVerify(AiConnection c, String plainKey) {
         c.setCheckedAt(clock.instant());
+        AiCredential credential = new AiCredential(plainKey, c.getSettings());
         try {
-            providers.of(c.getProvider()).verify(new AiCredential(plainKey, c.getSettings()));
+            providers.of(c.getProvider()).verify(credential);
             c.setStatus(AiConnectionStatus.OK);
             c.setLastError(null);
         } catch (AiProviderException e) {
             if (e.code() == AiProviderException.Code.AUTH) {
                 c.setStatus(AiConnectionStatus.INVALID);
-                c.setLastError(REFUSED);
+                c.setLastError(refused(credential, e));
             } else {
                 c.setStatus(AiConnectionStatus.UNVERIFIED);
                 c.setLastError(e.getMessage());
             }
             log.info("AI connection '{}' could not be verified: {}", c.getName(), c.getLastError());
         }
+    }
+
+    /**
+     * Checks the stored key. A key that can no longer be opened (its secrets key is gone) is recorded on the
+     * connection like any failed check; it never fails the save.
+     */
+    private void verifyStored(AiConnection c) {
+        String key;
+        try {
+            key = secrets.open(c.getApiKey());
+        } catch (RuntimeException e) {
+            c.setCheckedAt(clock.instant());
+            c.setStatus(AiConnectionStatus.UNVERIFIED);
+            c.setLastError(UNOPENABLE);
+            log.warn("The stored key of AI connection '{}' cannot be opened: {}", c.getName(), e.getMessage());
+            return;
+        }
+        runVerify(c, key);
     }
 
     private AiConnection persist(AiConnection c) {

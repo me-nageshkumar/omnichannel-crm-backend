@@ -48,6 +48,9 @@ public final class ConnectionSettings {
     private static String problem(AiConnectionField f, String value, HttpAddressGuard guard) {
         if (value.length() > MAX_LENGTH) return "must be at most " + MAX_LENGTH + " characters";
         if (value.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) return "must not contain control characters";
+        // values go into HTTP headers and URLs: anything past printable ASCII (a pasted zero-width space, an accent)
+        // would be refused by the HTTP client at call time, long after the save
+        if (value.chars().anyMatch(c -> c > 0x7e)) return "must be plain text without special or invisible characters";
         if (f.kind() != AiConnectionField.Kind.URL) return null;
         URI uri;
         try {

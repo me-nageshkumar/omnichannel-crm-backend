@@ -115,4 +115,32 @@ class ConnectionSettingsTest {
         assertThat(ConnectionSettings.clean(List.of(), Map.of(), guard, errors)).isEmpty();
         assertThat(errors).isEmpty();
     }
+
+    @Test
+    void invisibleCharacterRefused() {
+        // a zero-width space rides along with a pasted id; the HTTP client would refuse it as a header value
+        Map<String, String> out = clean(of("region", "eu\u200b"));
+
+        assertThat(errors).containsExactly(Map.entry("settings.region", "must be plain text without special or invisible characters"));
+        assertThat(out).doesNotContainKey("region");
+    }
+
+    @Test
+    void nonAsciiRefused() {
+        clean(of("region", "caf\u00e9"));
+
+        assertThat(errors).containsExactly(Map.entry("settings.region", "must be plain text without special or invisible characters"));
+    }
+
+    @Test
+    void refusalNamesTheSettingsOnlyWhenThereAreSome() {
+        var e = new me.nageshk.omnichannel.ai.provider.AiProviderException(
+                me.nageshk.omnichannel.ai.provider.AiProviderException.Code.AUTH, "No such organization");
+
+        assertThat(AiConnectionService.refused(new me.nageshk.omnichannel.ai.provider.AiCredential("k"), e))
+                .isEqualTo("The provider refused the key");
+        assertThat(AiConnectionService.refused(
+                new me.nageshk.omnichannel.ai.provider.AiCredential("k", Map.of("organization", "o")), e))
+                .isEqualTo("The provider refused the key or the connection's settings: No such organization");
+    }
 }

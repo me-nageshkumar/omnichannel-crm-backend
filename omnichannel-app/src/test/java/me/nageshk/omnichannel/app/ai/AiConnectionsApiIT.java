@@ -163,6 +163,23 @@ class AiConnectionsApiIT extends AiTestBase {
     }
 
     @Test
+    void settingsOnlySaveWithAnUnopenableKeyIsSavedUnverified() {
+        JsonNode created = create("Main").getBody();
+        mongo.updateFirst(new Query(Criteria.where("name").is("Main")),
+                new org.springframework.data.mongodb.core.query.Update().set("apiKey.keyId", "gone"), "aiConnections");
+        OPENAI.reset();
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                withSettings(save("Main", "openai", null), "project", "proj_9"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody().get("settings").get("project").asString()).isEqualTo("proj_9");
+        assertThat(res.getBody().get("status").asString()).isEqualTo("UNVERIFIED");
+        assertThat(res.getBody().get("lastError").asString()).isEqualTo("The stored key cannot be opened; enter it again");
+        assertThat(OPENAI.requests()).isEmpty();
+    }
+
+    @Test
     void unknownProviderIs400() {
         ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/connections", manager, save("Main", "nope", KEY));
 
@@ -358,6 +375,10 @@ class AiConnectionsApiIT extends AiTestBase {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(res.getBody().get("status").asString()).isEqualTo("INVALID");
+        // not "refused the key": the key was fine, and the provider's own words say what was not
+        assertThat(res.getBody().get("lastError").asString())
+                .startsWith("The provider refused the key or the connection's settings: ")
+                .contains("No such organization");
     }
 
     @Test

@@ -189,6 +189,8 @@ Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews fou
 - The `creationTime` watermark can skip a message inserted out of order by a concurrent writer.
 - A connection holds one secret (the API key) plus the provider's plain settings (OpenAI: organization and project
   ids); providers that need a key pair are not supported. Settings are readable through the API, so never a secret.
+- Nothing stops someone pasting a key into a settings field (the field's help text says not to); it would be stored
+  and shown in plain text.
 - OpenAI has no per-connection base URL (`omnichannel.ai.openai.base-url` is app-wide, for tests).
 - Reasoning effort values are listed per provider, not per model: a value the chosen model refuses fails the turn with
   the provider's message.
