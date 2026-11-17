@@ -199,4 +199,48 @@ class OpenAiProviderTest {
                     assertThat(e.getMessage()).doesNotContain(KEY).contains("«key»");
                 });
     }
+
+    @Test
+    void sendsOrganizationAndProjectHeadersWhenSet() throws IOException {
+        List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        OpenAiProvider p = provider(Duration.ofSeconds(5), ex -> {
+            seen.add(ex.getRequestHeaders().getFirst("OpenAI-Organization") + "|"
+                    + ex.getRequestHeaders().getFirst("OpenAI-Project"));
+            reply(ex, 200, "{}");
+        });
+        AiCredential c = new AiCredential(KEY, java.util.Map.of("organization", "org_1", "project", "proj_1"));
+        p.verify(c);
+        p.models(c);
+        p.vectorStores(c);
+        p.respond(c, request());
+        assertThat(seen).hasSize(4).containsOnly("org_1|proj_1");
+    }
+
+    @Test
+    void sendsNoAccountHeadersWhenUnset() throws IOException {
+        List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        OpenAiProvider p = provider(Duration.ofSeconds(5), ex -> {
+            seen.add(ex.getRequestHeaders().getFirst("OpenAI-Organization") + "|"
+                    + ex.getRequestHeaders().getFirst("OpenAI-Project"));
+            reply(ex, 200, "{}");
+        });
+        p.verify(CRED);
+        assertThat(seen).containsExactly("null|null");
+    }
+
+    @Test
+    void declaresOrganizationAndProject() throws IOException {
+        OpenAiProvider p = provider(Duration.ofSeconds(5), ex -> reply(ex, 200, "{}"));
+        assertThat(p.connectionFields()).extracting(f -> f.key()).containsExactly("organization", "project");
+        assertThat(p.connectionFields()).allSatisfy(f -> {
+            assertThat(f.kind()).isEqualTo(me.nageshk.omnichannel.ai.api.AiConnectionField.Kind.TEXT);
+            assertThat(f.required()).isFalse();
+        });
+    }
+
+    @Test
+    void credentialToStringHidesSettings() {
+        String s = new AiCredential("sk-abc", java.util.Map.of("organization", "org_1")).toString();
+        assertThat(s).doesNotContain("sk-abc").doesNotContain("org_1");
+    }
 }
