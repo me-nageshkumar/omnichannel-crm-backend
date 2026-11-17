@@ -120,7 +120,16 @@ class ActivationIT extends MoneyApiTestBase {
         buy(acme, request("NEW", "gold-monthly"));
         on(day(2026, 12, 11));
         String first = raise(acme, addOnRequest("automations")).get("id").asString();
-        String second = raise(acme, addOnRequest("automations")).get("id").asString();
+        // a second request for it is refused while the first waits
+        POST(ordersPath(acme), amToken, addOnRequest("automations")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_PENDING"));
+        // and one that slipped in all the same (stored before the first was paid) is stale at payment
+        me.nageshk.omnichannel.db.billing.BillingOrder twin = orders.findById(first).orElseThrow();
+        twin.setId(null);
+        twin.setVersion(null);
+        twin.setNumber("ORD-TWIN");
+        twin.setInvoiceId(new org.bson.types.ObjectId().toHexString());
+        String second = orders.save(twin).getId();
         pay(first).andExpect(status().isOk());
         pay(second).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ORDER_STALE"));
         assertThat(sub().getCurrent().getAddOns()).hasSize(1);
