@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 public class BillingSettingsService {
 
     static final int MAX_GRACE_DAYS = 90;
-    private static final Pattern PREFIX = Pattern.compile("[A-Z0-9-]{1,10}");
+    private static final Pattern PREFIX = Pattern.compile("[A-Z0-9]{1,3}");
 
     private final BillingSettingsRepository repository;
     private final BillingSettingsStore store;
@@ -77,10 +77,10 @@ public class BillingSettingsService {
             errors.put("gstRatePercent", "must be between 0 and 100, at most 2 decimals");
         }
         if (req.invoicePrefix() != null && !PREFIX.matcher(req.invoicePrefix()).matches()) {
-            errors.put("invoicePrefix", "use 1 to 10 capital letters, digits or hyphens");
+            errors.put("invoicePrefix", "use 1 to 3 capital letters or digits: a document number may have 16 characters in all");
         }
         if (req.creditNotePrefix() != null && !PREFIX.matcher(req.creditNotePrefix()).matches()) {
-            errors.put("creditNotePrefix", "use 1 to 10 capital letters, digits or hyphens");
+            errors.put("creditNotePrefix", "use 1 to 3 capital letters or digits: a document number may have 16 characters in all");
         }
         if (req.quoteValidDays() != null && (req.quoteValidDays() < 1 || req.quoteValidDays() > 60)) {
             errors.put("quoteValidDays", "must be between 1 and 60");

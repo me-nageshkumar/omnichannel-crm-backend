@@ -752,11 +752,11 @@ Amounts are in INR with GST, computed on the server and stored as `Decimal128`; 
   it changes, so an activation interrupted at any point is finished by the next billing change for the customer or by
   the ticker, and nothing is applied twice. An order is applied only to the subscription it was priced on: paying a
   stale one answers 409 `ORDER_STALE`, and requests made stale by another order become `SUPERSEDED`.
-- **Invoice** (`invoices`, `INV/2026-27/000001`): one for every activated order that charges something; a snapshot
+- **Invoice** (`invoices`, `INV/26-27/000001`): one for every activated order that charges something; a snapshot
   of the supplier (billing settings) and the customer (its billing profile) at that moment, with CGST and SGST for a
   customer in the supplier's state and IGST otherwise. Numbers run without gaps within a financial year (1 April, in
   the billing zone).
-- **Credit note** (`creditNotes`, `CN/2026-27/000001`): on an upgrade, a plan change or a cancellation, the unused
+- **Credit note** (`creditNotes`, `CN/26-27/000001`): on an upgrade, a plan change or a cancellation, the unused
   days of what was paid come back as one credit note per invoice that billed them, with that invoice's tax, never
   more in total than the invoice charged. A term that was not paid for gives no credit.
 - **Account credit** (`subscriptions.creditBalance`, tax included): credit notes add to it; the same order's invoice

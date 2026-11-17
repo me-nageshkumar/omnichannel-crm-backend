@@ -14,6 +14,7 @@ import me.nageshk.omnichannel.db.billing.Invoice;
 import me.nageshk.omnichannel.db.billing.OrderCredit;
 import me.nageshk.omnichannel.db.billing.Subscription;
 import me.nageshk.omnichannel.db.billing.SubscriptionAddOn;
+import me.nageshk.omnichannel.db.billing.TaxAmounts;
 import me.nageshk.omnichannel.db.billing.TermSegment;
 import me.nageshk.omnichannel.service.billing.money.Gst;
 import me.nageshk.omnichannel.service.billing.money.Money;
@@ -88,6 +89,22 @@ public final class UnusedCredit {
     }
 
     /**
+     * The tax a credit of {@code taxable} gives back on the invoice: at the invoice's rate, and never more of any
+     * part than the invoice charged and its earlier notes have left. The note that takes the last of the taxable
+     * value takes exactly the tax that is left, so rounding note by note cannot give back a paisa too much.
+     */
+    private static TaxAmounts cappedTax(Invoice invoice, BigDecimal taxable, boolean last) {
+        TaxAmounts charged = invoice.getTax();
+        TaxAmounts own = Gst.of(taxable, charged.ratePercent(), charged.interState());
+        BigDecimal cgst = charged.cgst().subtract(Money.zeroIfNull(invoice.getCreditedCgst())).max(Money.ZERO);
+        BigDecimal sgst = charged.sgst().subtract(Money.zeroIfNull(invoice.getCreditedSgst())).max(Money.ZERO);
+        BigDecimal igst = charged.igst().subtract(Money.zeroIfNull(invoice.getCreditedIgst())).max(Money.ZERO);
+        if (last) return new TaxAmounts(charged.ratePercent(), cgst, sgst, igst, charged.interState());
+        return new TaxAmounts(charged.ratePercent(), own.cgst().min(cgst), own.sgst().min(sgst), own.igst().min(igst),
+                charged.interState());
+    }
+
+    /**
      * One credit per invoice for the amounts given, each with its invoice's tax and never more than the invoice
      * still has uncredited.
      *
@@ -101,7 +118,7 @@ public final class UnusedCredit {
             BigDecimal left = invoice.getTaxable().subtract(Money.zeroIfNull(invoice.getCredited()));
             BigDecimal taxable = Money.round(amount.min(left));
             if (taxable.signum() <= 0) return;
-            var tax = Gst.of(taxable, invoice.getTax().ratePercent(), invoice.getTax().interState());
+            var tax = cappedTax(invoice, taxable, taxable.compareTo(left) >= 0);
             credits.add(new OrderCredit(new ObjectId().toHexString(), invoiceId, invoice.getNumber(),
                     "Unused value on invoice " + invoice.getNumber(), taxable, tax, taxable.add(tax.total())));
         });

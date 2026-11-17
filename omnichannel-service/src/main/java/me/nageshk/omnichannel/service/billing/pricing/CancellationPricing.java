@@ -13,6 +13,7 @@ import java.util.function.Predicate;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.billing.OrderKind;
 import me.nageshk.omnichannel.db.billing.BillingSettings;
+import me.nageshk.omnichannel.db.billing.FeatureGroup;
 import me.nageshk.omnichannel.db.billing.Invoice;
 import me.nageshk.omnichannel.db.billing.OrderCredit;
 import me.nageshk.omnichannel.db.billing.OrderTarget;
@@ -37,13 +38,29 @@ public final class CancellationPricing {
      * @param now the moment, for the term in force; {@code today} is its date in the billing zone
      */
     public static Quote addOn(Subscription sub, String addOnId, BigDecimal creditTaxable, Instant now, LocalDate today,
-            ZoneId zone, Function<String, Invoice> invoices, BillingSettings settings) {
+            ZoneId zone, Function<String, Invoice> invoices, BillingSettings settings, Map<String, FeatureGroup> groups) {
         if (sub == null || sub.getCurrent() == null) throw new ValidationException("addOnId", "The customer has no plan");
         boolean held = false;
         for (TermSegment seg : new TermSegment[] {sub.getCurrent(), sub.getNext()}) {
             if (seg != null && seg.getAddOns().stream().anyMatch(a -> a.getId().equals(addOnId))) held = true;
         }
         if (!held) throw new ValidationException("addOnId", "The customer does not hold this add-on");
+        // another add-on that needs this one would be left without what it stands on
+        for (TermSegment seg : new TermSegment[] {sub.getCurrent(), sub.getNext()}) {
+            if (seg == null) continue;
+            String going = seg.getAddOns().stream().filter(a -> a.getId().equals(addOnId) && a.getGroupCode() != null)
+                    .map(a -> a.getGroupCode()).findFirst().orElse(null);
+            if (going == null) continue;
+            for (var other : seg.getAddOns()) {
+                FeatureGroup g = other.getGroupCode() == null || other.getId().equals(addOnId) ? null
+                        : groups.get(other.getGroupCode());
+                if (g != null && g.getRequires().contains(going)) {
+                    FeatureGroup needed = groups.get(going);
+                    throw new ValidationException("addOnId",
+                            g.getName() + " needs " + (needed == null ? going : needed.getName()) + "; cancel it first");
+                }
+            }
+        }
         List<OrderCredit> credits = credits(sub, today, zone, invoices, c -> addOnId.equals(c.addOnId()), creditTaxable);
         TermSegment after = OrderPricing.copyOf(SubscriptionClock.segmentAt(sub, now));
         after.getAddOns().removeIf(a -> a.getId().equals(addOnId));

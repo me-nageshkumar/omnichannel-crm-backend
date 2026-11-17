@@ -60,7 +60,7 @@ class BillingTickerIT extends MoneyApiTestBase {
         assertThat(s.getCurrent().getPlanCode()).isEqualTo("gold-monthly");
         assertThat(s.getRevision()).isEqualTo(1);
         tokens();
-        GET("/api/billing/orders/" + id, amToken).andExpect(jsonPath("$.invoiceNumber").value("INV/2026-27/000001"));
+        GET("/api/billing/orders/" + id, amToken).andExpect(jsonPath("$.invoiceNumber").value("INV/26-27/000001"));
     }
 
     @Test
@@ -133,7 +133,7 @@ class BillingTickerIT extends MoneyApiTestBase {
         on(day(2027, 1, 5));
         JsonNode quote = json(POST(quotesPath(acme), amToken, request("UPGRADE", "platinum-monthly")).andExpect(status().isOk()));
         assertThat(quote.get("credits")).hasSize(1);
-        assertThat(quote.at("/credits/0/invoiceNumber").asString()).isEqualTo("INV/2026-27/000002");
+        assertThat(quote.at("/credits/0/invoiceNumber").asString()).isEqualTo("INV/26-27/000002");
         // 900 for 31 days, 27 unused
         assertThat(quote.at("/credits/0/taxable").decimalValue()).isEqualByComparingTo("783.87");
     }

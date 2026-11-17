@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.service.billing.order;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -42,9 +44,11 @@ public class OrderSteps {
     private final MongoTemplate mongo;
     private final InvoiceService invoices;
     private final CreditNoteService creditNotes;
+    private final Clock clock;
 
     public OrderSteps(SubscriptionRepository subscriptions, Entitlements entitlements, BillingAudit audit,
-            MongoTemplate mongo, InvoiceService invoices, CreditNoteService creditNotes) {
+            MongoTemplate mongo, InvoiceService invoices, CreditNoteService creditNotes, Clock clock) {
+        this.clock = clock;
         this.invoices = invoices;
         this.creditNotes = creditNotes;
         this.subscriptions = subscriptions;
@@ -68,8 +72,9 @@ public class OrderSteps {
             OrderTarget target = o.getTarget();
             boolean plain = true;
             if (o.getKind() == OrderKind.ADDON) {
-                addTo(sub, target.getSegmentAfter(), o);
-                if (target.getNextAfter() != null) addTo(sub, target.getNextAfter(), o);
+                Instant now = clock.instant();
+                addTo(sub, target.getSegmentAfter(), o, now);
+                if (target.getNextAfter() != null) addTo(sub, target.getNextAfter(), o, now);
             } else if (o.getKind() == OrderKind.CANCEL_ADDON) {
                 String gone = target.getRemoveAddOnId();
                 sub.getCurrent().getAddOns().removeIf(a -> a.getId().equals(gone));
@@ -81,6 +86,7 @@ public class OrderSteps {
             } else if (o.getKind() == OrderKind.ADJUST) {
                 if (target.getNewTermEnd() != null) {
                     (sub.getNext() != null ? sub.getNext() : sub.getCurrent()).setTermEnd(target.getNewTermEnd());
+                    if (target.getAnchorDay() != null) sub.setAnchorDay(target.getAnchorDay());
                     sub.setTermRevision(sub.getTermRevision() + 1);
                 } else {
                     // account credit is not part of the plan: requests that wait stay good
@@ -149,12 +155,16 @@ public class OrderSteps {
     }
 
     /** The add-on the order bought, which pricing put last in {@code priced}, goes onto the stored term of those dates. */
-    private static void addTo(Subscription sub, TermSegment priced, BillingOrder o) {
+    private static void addTo(Subscription sub, TermSegment priced, BillingOrder o, Instant now) {
         TermSegment stored = sub.getNext() != null && sub.getNext().getTermStart().equals(priced.getTermStart())
                 ? sub.getNext()
                 : sub.getCurrent() != null && sub.getCurrent().getTermStart().equals(priced.getTermStart())
                         ? sub.getCurrent() : null;
-        if (stored == null) throw new IllegalStateException("order " + o.getNumber() + ": the term it was priced for is gone");
+        if (stored == null) {
+            // the term ended while the activation was interrupted: there is nothing left of it to put the add-on on
+            if (!now.isBefore(priced.getTermEnd())) return;
+            throw new IllegalStateException("order " + o.getNumber() + ": the term it was priced for is gone");
+        }
         List<SubscriptionAddOn> pricedAddOns = priced.getAddOns();
         SubscriptionAddOn bought = pricedAddOns.get(pricedAddOns.size() - 1);
         if (stored.getAddOns().stream().anyMatch(a -> a.getId().equals(bought.getId()))) return;

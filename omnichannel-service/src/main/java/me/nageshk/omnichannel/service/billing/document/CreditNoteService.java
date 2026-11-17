@@ -86,7 +86,11 @@ public class CreditNoteService {
             return n;
         });
         mongo.updateFirst(new Query(Criteria.where("_id").is(invoice.getId()).and("creditNoteIds").ne(note.getId())),
-                new Update().inc("credited", new Decimal128(note.getTaxable())).addToSet("creditNoteIds", note.getId()),
+                new Update().inc("credited", new Decimal128(note.getTaxable()))
+                        .inc("creditedCgst", new Decimal128(note.getTax().cgst()))
+                        .inc("creditedSgst", new Decimal128(note.getTax().sgst()))
+                        .inc("creditedIgst", new Decimal128(note.getTax().igst()))
+                        .addToSet("creditNoteIds", note.getId()),
                 Invoice.class);
         return note;
     }

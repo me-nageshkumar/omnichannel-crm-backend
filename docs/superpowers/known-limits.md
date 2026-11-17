@@ -233,6 +233,13 @@ are built. Phase 3 (the usage wallet and per-message charges) is designed in
   customer or the ticker (within about 90 seconds) finishes it. Until then no other billing change for that customer
   goes through if the same step keeps failing.
 - Two requests for the same add-on can both be raised; the second is refused as stale when it is paid.
+- A new plan starts today or earlier, never later: the customer has the plan from the moment it is paid for.
+- Document numbers read `INV/26-27/000001` (16 characters, the most GST allows), so a prefix has at most 3
+  characters. An order is not paid if the GST rate, the supplier's state or the supplier details changed since it
+  was priced (409 `ORDER_STALE` or `BILLING_NOT_SET_UP`): raise it again.
+- An order whose activation keeps failing has no staff action to set it aside; it needs a look at the data.
+- A customer sees its staff-raised orders (adjustments, cancellations) with the reason staff gave.
+- Lists of a customer's orders, invoices, credit notes and refunds are not paged.
 - Staff may post account credit and cancel with any credit up to what was paid; nothing asks a second person to
   approve it. Every such act is an order with a reason in the history.
 - Counting and creating are two steps: two requests at the same moment can end one over a limit.

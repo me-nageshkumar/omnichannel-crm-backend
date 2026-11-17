@@ -22,6 +22,7 @@ import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
 import me.nageshk.omnichannel.db.billing.TermSegment;
 import me.nageshk.omnichannel.db.tenant.CustomerRepository;
 import me.nageshk.omnichannel.security.entitlement.BillingSettingsStore;
+import me.nageshk.omnichannel.service.billing.FeatureGroupService;
 import me.nageshk.omnichannel.service.billing.money.Gst;
 import me.nageshk.omnichannel.service.billing.money.Money;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.AdjustRequest;
@@ -48,10 +49,12 @@ public class StaffOrderService {
     private final BillingNumbers numbers;
     private final OrderActivator activator;
     private final Clock clock;
+    private final FeatureGroupService groups;
 
     public StaffOrderService(SubscriptionRepository subscriptions, CustomerRepository customers,
             InvoiceRepository invoices, BillingSettingsStore settings, BillingNumbers numbers, OrderActivator activator,
-            Clock clock) {
+            Clock clock, FeatureGroupService groups) {
+        this.groups = groups;
         this.subscriptions = subscriptions;
         this.customers = customers;
         this.invoices = invoices;
@@ -95,6 +98,8 @@ public class StaffOrderService {
                 Instant end = termEnd.atStartOfDay(zone).toInstant();
                 if (!end.isAfter(last.getTermStart())) throw new ValidationException("termEnd", "must be after the term's start");
                 target.setNewTermEnd(end);
+                // later terms end on the day of the month this one now ends on, so the next renewal is a full period
+                target.setAnchorDay(termEnd.getDayOfMonth());
             } else {
                 BigDecimal after = Money.zeroIfNull(sub.getCreditBalance()).add(credit);
                 if (after.signum() < 0) {
@@ -141,7 +146,7 @@ public class StaffOrderService {
         return addOnId == null || addOnId.isBlank()
                 ? CancellationPricing.plan(sub, creditTaxable, now, today, zone, id -> invoices.findById(id).orElse(null), s)
                 : CancellationPricing.addOn(sub, addOnId, creditTaxable, now, today, zone,
-                        id -> invoices.findById(id).orElse(null), s);
+                        id -> invoices.findById(id).orElse(null), s, groups.byCode());
     }
 
     private BillingOrder order(String customerId, Quote q, Subscription sub, String reason, String by, BillingSettings s) {

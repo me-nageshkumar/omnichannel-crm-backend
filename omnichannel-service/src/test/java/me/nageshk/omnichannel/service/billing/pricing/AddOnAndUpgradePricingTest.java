@@ -75,13 +75,13 @@ class AddOnAndUpgradePricingTest {
     void stepA() {
         invoices = new HashMap<>();
         sub = null;
-        pay(on(OrderKind.NEW, gold(), DEC_1), "inv-a", "INV/2026-27/000001");
+        pay(on(OrderKind.NEW, gold(), DEC_1), "inv-a", "INV/26-27/000001");
     }
 
     private Quote stepB() {
         PricingFixtures.Ask b = on(OrderKind.ADDON, null, DEC_11);
         b.addOn = groupAddOn("automations");
-        return pay(b, "inv-b", "INV/2026-27/000002");
+        return pay(b, "inv-b", "INV/26-27/000002");
     }
 
     @Test
@@ -149,7 +149,7 @@ class AddOnAndUpgradePricingTest {
     @Test
     void anAddOnBoughtAfterAnEarlyRenewalCoversTheNextTermToo() {
         stepB();
-        pay(on(OrderKind.RENEWAL, gold(), day(2026, 12, 20)), "inv-e", "INV/2026-27/000003");
+        pay(on(OrderKind.RENEWAL, gold(), day(2026, 12, 20)), "inv-e", "INV/26-27/000003");
         PricingFixtures.Ask users = on(OrderKind.ADDON, null, day(2026, 12, 25));
         users.addOn = limitAddOn(LimitKey.USERS, 5);
         Quote q = users.quote();
@@ -175,7 +175,7 @@ class AddOnAndUpgradePricingTest {
         assertThat(d.credits()).hasSize(2);
         OrderCredit onA = d.credits().get(0);
         assertThat(onA.invoiceId()).isEqualTo("inv-a");
-        assertThat(onA.invoiceNumber()).isEqualTo("INV/2026-27/000001");
+        assertThat(onA.invoiceNumber()).isEqualTo("INV/26-27/000001");
         assertThat(onA.taxable()).isEqualByComparingTo("464.52");
         assertThat(onA.tax().cgst()).isEqualByComparingTo("41.81");
         assertThat(onA.tax().sgst()).isEqualByComparingTo("41.80");
@@ -210,7 +210,7 @@ class AddOnAndUpgradePricingTest {
         sub = null;
         PricingFixtures.Ask a = on(OrderKind.NEW, gold(), DEC_1);
         a.customer = BOLT;
-        pay(a, "inv-f", "INV/2026-27/000001");
+        pay(a, "inv-f", "INV/26-27/000001");
         PricingFixtures.Ask d = on(OrderKind.UPGRADE, platinum(), DEC_16);
         d.customer = BOLT;
         // even if the rate has changed since, the credit is at the invoice's rate
@@ -234,7 +234,7 @@ class AddOnAndUpgradePricingTest {
     @Test
     void anUpgradeAfterAnEarlyRenewalCreditsTheWholeNextTerm() {
         stepB();
-        pay(on(OrderKind.RENEWAL, gold(), DEC_16.minusDays(1)), "inv-e", "INV/2026-27/000003");
+        pay(on(OrderKind.RENEWAL, gold(), DEC_16.minusDays(1)), "inv-e", "INV/26-27/000003");
         Quote d = on(OrderKind.UPGRADE, platinum(), DEC_16).quote();
         assertThat(d.credits()).extracting(c -> c.invoiceId() + " " + c.taxable().toPlainString())
                 .containsExactly("inv-a 464.52", "inv-b 154.84", "inv-e 1200.00");
@@ -255,7 +255,7 @@ class AddOnAndUpgradePricingTest {
 
     @Test
     void aCustomerMayOnlyGoUp() {
-        pay(on(OrderKind.UPGRADE, platinum(), DEC_16), "inv-d", "INV/2026-27/000002");
+        pay(on(OrderKind.UPGRADE, platinum(), DEC_16), "inv-d", "INV/26-27/000002");
         PricingFixtures.Ask down = on(OrderKind.UPGRADE, gold(), day(2026, 12, 20));
         down.staff = false;
         refused(down, "planCode", "Only a higher plan can be requested");

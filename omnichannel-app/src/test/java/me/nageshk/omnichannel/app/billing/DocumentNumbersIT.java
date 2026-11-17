@@ -46,7 +46,7 @@ class DocumentNumbersIT extends MoneyApiTestBase {
         for (int i = 1; i <= 20; i++) oneToTwenty.add(i);
         assertThat(sequences).containsExactlyInAnyOrderElementsOf(oneToTwenty);
         assertThat(invoices.count()).isEqualTo(20);
-        assertThat(invoices.findAll()).anyMatch(i -> i.getNumber().equals("INV/2026-27/000020"));
+        assertThat(invoices.findAll()).anyMatch(i -> i.getNumber().equals("INV/26-27/000020"));
     }
 
     @Test
@@ -70,9 +70,9 @@ class DocumentNumbersIT extends MoneyApiTestBase {
         // one second before midnight of 1 April 2027 in India, and that midnight
         clock.set(Instant.parse("2027-03-31T18:29:59Z"));
         tokens();
-        assertThat(buy(acme, request("NEW", "gold-monthly")).get("invoiceNumber").asString()).isEqualTo("INV/2026-27/000001");
+        assertThat(buy(acme, request("NEW", "gold-monthly")).get("invoiceNumber").asString()).isEqualTo("INV/26-27/000001");
         clock.set(Instant.parse("2027-03-31T18:30:00Z"));
         tokens();
-        assertThat(buy(bolt, request("NEW", "gold-monthly")).get("invoiceNumber").asString()).isEqualTo("INV/2027-28/000001");
+        assertThat(buy(bolt, request("NEW", "gold-monthly")).get("invoiceNumber").asString()).isEqualTo("INV/27-28/000001");
     }
 }

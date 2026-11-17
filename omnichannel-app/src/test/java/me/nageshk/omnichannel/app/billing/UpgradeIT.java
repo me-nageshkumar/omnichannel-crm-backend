@@ -72,7 +72,7 @@ class UpgradeIT extends MoneyApiTestBase {
         on(day(2026, 12, 16));
         JsonNode order = raise(acme, request("UPGRADE", "platinum-monthly"));
         assertThat(order.get("credits")).hasSize(2);
-        assertThat(order.at("/credits/0/invoiceNumber").asString()).isEqualTo("INV/2026-27/000001");
+        assertThat(order.at("/credits/0/invoiceNumber").asString()).isEqualTo("INV/26-27/000001");
         assertThat(order.at("/credits/0/taxable").decimalValue()).isEqualByComparingTo("464.52");
         assertThat(order.at("/credits/0/total").decimalValue()).isEqualByComparingTo("548.13");
         assertThat(order.at("/credits/1/taxable").decimalValue()).isEqualByComparingTo("154.84");
@@ -84,14 +84,14 @@ class UpgradeIT extends MoneyApiTestBase {
         JsonNode paid = json(pay(order.get("id").asString()).andExpect(status().isOk()));
         assertThat(paid.get("status").asString()).isEqualTo("ACTIVATED");
         assertThat(paid.get("creditNoteIds")).hasSize(2);
-        assertThat(paid.get("invoiceNumber").asString()).isEqualTo("INV/2026-27/000003");
+        assertThat(paid.get("invoiceNumber").asString()).isEqualTo("INV/26-27/000003");
 
         JsonNode notes = json(GET("/api/billing/customers/" + acme.getId() + "/credit-notes", amToken).andExpect(status().isOk()));
         assertThat(notes).hasSize(2);
         JsonNode first = json(GET("/api/billing/credit-notes/" + paid.at("/creditNoteIds/0").asString(), amToken));
-        assertThat(first.get("number").asString()).isEqualTo("CN/2026-27/000001");
+        assertThat(first.get("number").asString()).isEqualTo("CN/26-27/000001");
         assertThat(first.get("invoiceId").asString()).isEqualTo(inv[0]);
-        assertThat(first.get("invoiceNumber").asString()).isEqualTo("INV/2026-27/000001");
+        assertThat(first.get("invoiceNumber").asString()).isEqualTo("INV/26-27/000001");
         assertThat(first.get("invoiceDate").asString()).isEqualTo("2026-12-01T05:00:00Z");
         assertThat(first.get("taxable").decimalValue()).isEqualByComparingTo("464.52");
         assertThat(first.at("/tax/cgst").decimalValue()).isEqualByComparingTo("41.81");
@@ -101,7 +101,7 @@ class UpgradeIT extends MoneyApiTestBase {
         assertThat(first.at("/customer/legalName").asString()).isEqualTo("Acme Retail Pvt Ltd");
         assertThat(first.get("totalInWords").asString()).startsWith("Rupees Five Hundred Forty-Eight");
         JsonNode second = json(GET("/api/billing/credit-notes/" + paid.at("/creditNoteIds/1").asString(), amToken));
-        assertThat(second.get("number").asString()).isEqualTo("CN/2026-27/000002");
+        assertThat(second.get("number").asString()).isEqualTo("CN/26-27/000002");
         assertThat(second.get("invoiceId").asString()).isEqualTo(inv[1]);
         assertThat(second.get("taxable").decimalValue()).isEqualByComparingTo("154.84");
         assertThat(second.get("total").decimalValue()).isEqualByComparingTo("182.71");
@@ -132,7 +132,7 @@ class UpgradeIT extends MoneyApiTestBase {
         on(day(2026, 12, 17));
         JsonNode order = raise(acme, request("UPGRADE", "diamond-monthly"));
         assertThat(order.get("credits")).hasSize(1);
-        assertThat(order.at("/credits/0/invoiceNumber").asString()).isEqualTo("INV/2026-27/000003");
+        assertThat(order.at("/credits/0/invoiceNumber").asString()).isEqualTo("INV/26-27/000003");
         // 1500 for 31 days, 30 unused
         assertThat(order.at("/credits/0/taxable").decimalValue()).isEqualByComparingTo("1451.61");
     }

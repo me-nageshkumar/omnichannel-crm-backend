@@ -46,7 +46,7 @@ class MoneyDocumentsIT {
 
     private Invoice invoice(String orderId, int sequence) {
         Invoice i = new Invoice();
-        i.setNumber("INV/2026-27/" + String.format("%06d", sequence));
+        i.setNumber("INV/26-27/" + String.format("%06d", sequence));
         i.setFinancialYear("2026-27");
         i.setSequence(sequence);
         i.setOrderId(orderId);
@@ -100,7 +100,7 @@ class MoneyDocumentsIT {
     @Test
     void creditNoteNumbersAreTheirOwnSeries() {
         CreditNote n = new CreditNote();
-        n.setNumber("CN/2026-27/000001");
+        n.setNumber("CN/26-27/000001");
         n.setFinancialYear("2026-27");
         n.setSequence(1);
         n.setInvoiceId("i1");

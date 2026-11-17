@@ -31,7 +31,7 @@ class DocumentPdfTest {
     static Invoice invoice() {
         Invoice inv = new Invoice();
         inv.setId("i1");
-        inv.setNumber("INV/2026-27/000001");
+        inv.setNumber("INV/26-27/000001");
         inv.setOrderNumber("ORD-000001");
         inv.setIssuedAt(Instant.parse("2026-12-01T05:00:00Z"));
         inv.setSupplier(SUPPLIER);
@@ -64,7 +64,7 @@ class DocumentPdfTest {
         byte[] pdf = DocumentPdf.invoice(invoice(), IST);
         assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
         String text = text(pdf);
-        assertThat(text).contains("Tax invoice", "INV/2026-27/000001", "1 Dec 2026", "Omni Cloud Pvt Ltd",
+        assertThat(text).contains("Tax invoice", "INV/26-27/000001", "1 Dec 2026", "Omni Cloud Pvt Ltd",
                 "Acme Retail Pvt Ltd", "29AAACO1234A1Z5", "29ABCDE1234F1Z5", "Karnataka (29)", "998314",
                 "Gold, monthly (1 Dec 2026 – 31 Dec 2026)", "900.00", "CGST 9%", "SGST 9%", "81.00", "1,062.00",
                 "Rupees One Thousand Sixty-Two Only", "UPI", "UTR-778899", "This is a computer-generated document.");
@@ -94,21 +94,21 @@ class DocumentPdfTest {
     @Test
     void aCreditNoteNamesItsInvoiceAndItsReason() throws Exception {
         CreditNote n = new CreditNote();
-        n.setNumber("CN/2026-27/000001");
+        n.setNumber("CN/26-27/000001");
         n.setIssuedAt(Instant.parse("2026-12-16T05:00:00Z"));
         n.setSupplier(SUPPLIER);
         n.setCustomer(ACME);
         n.setSacCode("998314");
-        n.setLines(List.of(new DocumentLine("Unused value on invoice INV/2026-27/000001", new BigDecimal("464.52"))));
+        n.setLines(List.of(new DocumentLine("Unused value on invoice INV/26-27/000001", new BigDecimal("464.52"))));
         n.setTaxable(new BigDecimal("464.52"));
         n.setTax(new TaxAmounts(new BigDecimal("18"), new BigDecimal("41.81"), new BigDecimal("41.80"), BigDecimal.ZERO, false));
         n.setTotal(new BigDecimal("548.13"));
         n.setTotalInWords("Rupees Five Hundred Forty-Eight and Thirteen Paise Only");
-        n.setInvoiceNumber("INV/2026-27/000001");
+        n.setInvoiceNumber("INV/26-27/000001");
         n.setInvoiceDate(Instant.parse("2026-12-01T05:00:00Z"));
         n.setReason("Unused time on upgrade");
         String text = text(DocumentPdf.creditNote(n, IST));
-        assertThat(text).contains("Credit note", "CN/2026-27/000001", "16 Dec 2026", "Against invoice INV/2026-27/000001",
+        assertThat(text).contains("Credit note", "CN/26-27/000001", "16 Dec 2026", "Against invoice INV/26-27/000001",
                 "1 Dec 2026", "Unused time on upgrade", "464.52", "41.81", "41.80", "548.13");
         assertThat(text).doesNotContain("Tax invoice");
     }
@@ -133,6 +133,6 @@ class DocumentPdfTest {
                 + "building after building, street after street, far past the width of the column it is printed in, 560001",
                 "29", "Karnataka", null));
         String text = text(DocumentPdf.invoice(inv, IST));
-        assertThat(text).contains("Ltd", "560001", "INV/2026-27/000001");
+        assertThat(text).contains("Ltd", "560001", "INV/26-27/000001");
     }
 }

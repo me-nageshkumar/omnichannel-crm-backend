@@ -43,7 +43,7 @@ class DocumentPdfIT extends MoneyApiTestBase {
 
         byte[] first = GET("/api/billing/invoices/" + id + "/pdf", amToken).andExpect(status().isOk())
                 .andExpect(content().contentType("application/pdf"))
-                .andExpect(header().string("Content-Disposition", "attachment; filename=\"INV-2026-27-000001.pdf\""))
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"INV-26-27-000001.pdf\""))
                 .andReturn().getResponse().getContentAsByteArray();
         assertThat(new String(first, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
         assertThat(files()).isEqualTo(1);
@@ -76,7 +76,7 @@ class DocumentPdfIT extends MoneyApiTestBase {
 
         GET("/api/billing/credit-notes/" + noteId + "/pdf", amToken).andExpect(status().isOk())
                 .andExpect(content().contentType("application/pdf"))
-                .andExpect(header().string("Content-Disposition", "attachment; filename=\"CN-2026-27-000001.pdf\""));
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"CN-26-27-000001.pdf\""));
         GET("/api/my/billing/credit-notes/" + noteId + "/pdf", adminToken).andExpect(status().isOk());
         assertThat(files()).isEqualTo(1);
         assertThat(creditNotes.findById(noteId).orElseThrow().getPdfFileId()).isNotBlank();

@@ -146,7 +146,7 @@ Fixtures: `quote(over)`, `order(over)`, `invoice(over)`, `creditNote(over)`, `re
 - `PdfButton {path, filename}`: "Download PDF"; `apiDownload` then `saveBlob`; busy while downloading; an inline error on failure.
 - `InvoicePage`, `CreditNotePage`: `PageShell` + `DocumentView` + `PdfButton`.
 
-- [ ] **Step 1: Write the failing tests:** the four tabs list fixtures with server amounts; the invoice page shows every block of step A including "Rupees One Thousand Sixty-Two Only"; the credit note names its invoice; an inter-state document shows IGST only; clicking Download PDF requests the PDF path with the Authorization header and calls `saveBlob` with `INV-2026-27-000001.pdf`; Review Focus 4: a 404 shows "That item no longer exists or you can't see it." beside the button and nothing is saved.
+- [ ] **Step 1: Write the failing tests:** the four tabs list fixtures with server amounts; the invoice page shows every block of step A including "Rupees One Thousand Sixty-Two Only"; the credit note names its invoice; an inter-state document shows IGST only; clicking Download PDF requests the PDF path with the Authorization header and calls `saveBlob` with `INV-26-27-000001.pdf`; Review Focus 4: a 404 shows "That item no longer exists or you can't see it." beside the button and nothing is saved.
 - [ ] **Step 2: Run; expected FAIL.** - [ ] **Step 3: Implement.** - [ ] **Step 4: Run; expected PASS.**
 - [ ] **Step 5: Commit** `feat(billing): invoices, credit notes and refunds for staff`.
 

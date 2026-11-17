@@ -38,7 +38,7 @@ class CreditNotesIT extends MoneyApiTestBase {
         assertThat(note.get("hasPdf").asBoolean()).isTrue();
 
         GET("/api/my/billing/credit-notes", boltToken).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].number").value("CN/2026-27/000001"));
+                .andExpect(jsonPath("$[0].number").value("CN/26-27/000001"));
         GET("/api/my/billing/credit-notes/" + noteId, boltToken).andExpect(status().isOk());
         GET("/api/my/billing/credit-notes", adminToken).andExpect(jsonPath("$.length()").value(0));
         GET("/api/my/billing/credit-notes/" + noteId, adminToken).andExpect(status().isNotFound());

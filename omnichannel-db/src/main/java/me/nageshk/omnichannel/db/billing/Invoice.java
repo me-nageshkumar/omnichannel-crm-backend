@@ -60,6 +60,13 @@ public class Invoice {
     /** The taxable value credit notes have given back on this invoice so far; never more than {@link #taxable}. */
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal credited = BigDecimal.ZERO;
+    /** The tax those credit notes gave back, by part; never more than the invoice's own. */
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal creditedCgst = BigDecimal.ZERO;
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal creditedSgst = BigDecimal.ZERO;
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal creditedIgst = BigDecimal.ZERO;
     private Set<String> creditNoteIds = new HashSet<>();
     private String pdfFileId;
 }

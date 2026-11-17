@@ -21,8 +21,15 @@ public class DocumentNumbers {
         this.mongo = mongo;
     }
 
+    /**
+     * "INV/26-27/000001": GST allows a document number sixteen characters, so the financial year is written short
+     * and a prefix has at most three.
+     *
+     * @param financialYear as stored, "2026-27"
+     */
     public static String number(String prefix, String financialYear, int sequence) {
-        return String.format("%s/%s/%06d", prefix, financialYear, sequence);
+        String year = financialYear.length() == 7 ? financialYear.substring(2) : financialYear;
+        return String.format("%s/%s/%06d", prefix, year, sequence);
     }
 
     /**

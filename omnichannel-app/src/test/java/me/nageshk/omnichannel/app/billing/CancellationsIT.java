@@ -68,7 +68,7 @@ class CancellationsIT extends MoneyApiTestBase {
         assertThat(order.get("creditNoteIds")).hasSize(1);
         JsonNode note = json(GET("/api/billing/credit-notes/" + order.at("/creditNoteIds/0").asString(), amToken));
         assertThat(note.get("reason").asString()).isEqualTo("Add-on cancelled");
-        assertThat(note.get("invoiceNumber").asString()).isEqualTo("INV/2026-27/000002");
+        assertThat(note.get("invoiceNumber").asString()).isEqualTo("INV/26-27/000002");
         assertThat(note.get("total").decimalValue()).isEqualByComparingTo("182.71");
 
         assertThat(sub().getCurrent().getAddOns()).isEmpty();

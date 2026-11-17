@@ -17,13 +17,18 @@ import me.nageshk.omnichannel.common.billing.SubscriptionState;
 import me.nageshk.omnichannel.db.billing.AddOnKind;
 import me.nageshk.omnichannel.db.billing.BillingOrder;
 import me.nageshk.omnichannel.db.billing.BillingOrderRepository;
+import me.nageshk.omnichannel.db.billing.BillingProfile;
 import me.nageshk.omnichannel.db.billing.BillingSettings;
 import me.nageshk.omnichannel.db.billing.OrderPayment;
 import me.nageshk.omnichannel.db.billing.Subscription;
 import me.nageshk.omnichannel.db.billing.SubscriptionAddOn;
 import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
 import me.nageshk.omnichannel.db.billing.TermSegment;
+import me.nageshk.omnichannel.db.tenant.Customer;
+import me.nageshk.omnichannel.db.tenant.CustomerRepository;
 import me.nageshk.omnichannel.security.entitlement.BillingSettingsStore;
+import me.nageshk.omnichannel.service.billing.BillingSettingsService;
+import me.nageshk.omnichannel.service.billing.money.Gst;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.OrderView;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.PayRequest;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -53,9 +58,12 @@ public class OrderActivator {
     private final BillingSettingsStore settings;
     private final MongoTemplate mongo;
     private final Clock clock;
+    private final CustomerRepository customers;
 
     public OrderActivator(BillingOrderRepository orders, SubscriptionRepository subscriptions, OrderService service,
-            OrderSteps steps, BillingLocks locks, BillingSettingsStore settings, MongoTemplate mongo, Clock clock) {
+            OrderSteps steps, BillingLocks locks, BillingSettingsStore settings, MongoTemplate mongo, Clock clock,
+            CustomerRepository customers) {
+        this.customers = customers;
         this.orders = orders;
         this.subscriptions = subscriptions;
         this.service = service;
@@ -87,6 +95,7 @@ public class OrderActivator {
             ZoneId zone = ZoneId.of(s.getZone());
             OrderPayment payment = payment(o, req, by, now, zone);
             requireFresh(o, s, zone, now);
+            requireSameTax(o, s);
 
             BillingOrder taken = mongo.findAndModify(
                     new Query(Criteria.where("_id").is(o.getId()).and("status").is(OrderStatus.REQUESTED)),
@@ -112,7 +121,20 @@ public class OrderActivator {
             o.setStatus(OrderStatus.ACTIVATING);
             o.setPayment(new OrderPayment(OrderPayment.NONE, null, null, null, by, now));
             o.setActivatingSince(now);
-            return service.view(finish(orders.save(o)), new HashMap<>());
+            BillingOrder saved = orders.save(o);
+            try {
+                return service.view(finish(saved), new HashMap<>());
+            } catch (RuntimeException e) {
+                // staff will try again: an order that changed nothing must not be finished later as a second one
+                boolean applied = subscriptions.findByCustomerId(customerId)
+                        .map(sub -> sub.getAppliedOrderIds().contains(saved.getId())).orElse(false);
+                if (!applied) {
+                    mongo.updateFirst(
+                            new Query(Criteria.where("_id").is(saved.getId()).and("status").is(OrderStatus.ACTIVATING)),
+                            new Update().set("status", OrderStatus.CANCELLED).inc("version", 1), BillingOrder.class);
+                }
+                throw e;
+            }
         });
     }
 
@@ -178,6 +200,22 @@ public class OrderActivator {
         if (!fresh) {
             throw new CodedException(HttpStatus.CONFLICT, "ORDER_STALE", null,
                     "The customer's plan changed since this order was priced; raise it again");
+        }
+    }
+
+    /**
+     * An order that will be invoiced was taxed for the supplier and the rate of the day it was priced; the invoice
+     * is issued with today's. If they no longer agree, or the supplier details are incomplete, it is not paid.
+     */
+    private void requireSameTax(BillingOrder o, BillingSettings s) {
+        if (o.getInvoiceId() == null || o.getTax() == null) return;
+        if (!s.supplierComplete()) throw BillingSettingsService.notSetUp("supplier details in billing settings");
+        String customerState = customers.findById(o.getCustomerId()).map(Customer::getBilling)
+                .map(BillingProfile::stateCode).orElse(null);
+        boolean interState = Gst.interState(s.getSupplierStateCode(), customerState);
+        if (s.getGstRatePercent().compareTo(o.getTax().ratePercent()) != 0 || interState != o.getTax().interState()) {
+            throw new CodedException(HttpStatus.CONFLICT, "ORDER_STALE", null,
+                    "The GST rate or the supplier's state changed since this order was priced; raise it again");
         }
     }
 

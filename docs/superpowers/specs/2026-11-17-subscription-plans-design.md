@@ -388,7 +388,7 @@ segment into `current`.
 Issued at payment, never before, so there are no unpaid invoices to void. Immutable. Holds a full snapshot: supplier
 (legal name, address, GSTIN, state), customer billing profile (legal name, address, state, GSTIN), lines, HSN/SAC
 code, taxable value, CGST/SGST or IGST, total, total in words, payment method and reference, order number.
-Number: `<prefix>/<financial year>/<6-digit sequence>`, e.g. `INV/2026-27/000042`; the financial year runs April to
+Number: `<prefix>/<financial year>/<6-digit sequence>`, e.g. `INV/26-27/000042`; the financial year runs April to
 March in the billing zone and the sequence restarts each year. An order with total 0 gets no invoice.
 
 The console shows an invoice as a page and offers **Download PDF** (section 9.7).

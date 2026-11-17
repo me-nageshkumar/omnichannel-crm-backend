@@ -70,6 +70,8 @@ public final class OrderPricing {
         }
         Plan plan = activePlan(in);
         LocalDate start = in.startDate() == null ? in.today() : in.startDate();
+        // the customer has the plan from the moment it is paid for, so a later start would be days given free
+        if (start.isAfter(in.today())) throw new ValidationException("startDate", "A plan starts today or earlier, not later");
         int anchor = start.getDayOfMonth();
         LocalDate end = BillingPeriod.endOf(start, plan.getPeriod(), anchor);
         if (!end.isAfter(in.today())) throw new ValidationException("startDate", "That term has already ended");
@@ -105,13 +107,16 @@ public final class OrderPricing {
         Draft draft = new Draft(in, plan, start, end);
         draft.planLine();
         Set<String> included = includedGroups(plan);
+        Set<String> keptGroups = new HashSet<>();
         for (SubscriptionAddOn held : sub.getCurrent().getAddOns()) {
             if (in.keepAddOnIds() != null && !in.keepAddOnIds().contains(held.getId())) continue;
             // a group the plan now includes needs no add-on any more
             if (held.getKind() == AddOnKind.GROUP && included.contains(held.getGroupCode())) continue;
             if (held.getKind() == AddOnKind.LIMIT && !plan.getLimits().containsKey(held.getLimitKey())) continue;
             draft.addOnLine(carried(held, plan, plan.getPeriod(), sub.getCurrent().getTerms().period(), in), held.getId());
+            if (held.getKind() == AddOnKind.GROUP) keptGroups.add(held.getGroupCode());
         }
+        requireGroups(in, included, keptGroups, "keepAddOnIds");
         String segment = in.state() == SubscriptionState.ACTIVE ? OrderTarget.NEXT : OrderTarget.CURRENT;
         return draft.finish(segment, anchor, List.of());
     }

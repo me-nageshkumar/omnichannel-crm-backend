@@ -36,11 +36,11 @@ class InvoicesIT extends MoneyApiTestBase {
     @Test
     void aPaidOrderIssuesATaxInvoice() throws Exception {
         JsonNode order = buy(acme, request("NEW", "gold-monthly"));
-        assertThat(order.get("invoiceNumber").asString()).isEqualTo("INV/2026-27/000001");
+        assertThat(order.get("invoiceNumber").asString()).isEqualTo("INV/26-27/000001");
 
         JsonNode inv = json(GET("/api/billing/invoices/" + order.get("invoiceId").asString(), amToken)
                 .andExpect(status().isOk()));
-        assertThat(inv.get("number").asString()).isEqualTo("INV/2026-27/000001");
+        assertThat(inv.get("number").asString()).isEqualTo("INV/26-27/000001");
         assertThat(inv.get("orderNumber").asString()).isEqualTo("ORD-000001");
         assertThat(inv.get("issuedAt").asString()).isEqualTo("2026-12-01T05:00:00Z");
         assertThat(inv.at("/supplier/legalName").asString()).isEqualTo("Omni Cloud Pvt Ltd");
@@ -67,10 +67,10 @@ class InvoicesIT extends MoneyApiTestBase {
 
         on(day(2026, 12, 11));
         JsonNode addOn = buy(acme, addOnRequest("automations"));
-        assertThat(addOn.get("invoiceNumber").asString()).isEqualTo("INV/2026-27/000002");
+        assertThat(addOn.get("invoiceNumber").asString()).isEqualTo("INV/26-27/000002");
         JsonNode list = json(GET(invoicesPath(acme), amToken).andExpect(status().isOk()));
         assertThat(list).hasSize(2);
-        assertThat(list.at("/0/number").asString()).isEqualTo("INV/2026-27/000002");
+        assertThat(list.at("/0/number").asString()).isEqualTo("INV/26-27/000002");
         assertThat(list.at("/0/total").decimalValue()).isEqualByComparingTo("239.81");
     }
 
@@ -147,7 +147,7 @@ class InvoicesIT extends MoneyApiTestBase {
         // as if the server had stopped right after inserting the invoice
         String number = invoiceService.issue(orders.findById(id).orElseThrow()).getNumber();
         JsonNode paid = json(pay(id).andExpect(status().isOk()));
-        assertThat(paid.get("invoiceNumber").asString()).isEqualTo(number).isEqualTo("INV/2026-27/000001");
+        assertThat(paid.get("invoiceNumber").asString()).isEqualTo(number).isEqualTo("INV/26-27/000001");
         assertThat(invoices.count()).isEqualTo(1);
     }
 
@@ -173,7 +173,7 @@ class InvoicesIT extends MoneyApiTestBase {
         String theirs = buy(bolt, request("NEW", "gold-monthly")).get("invoiceId").asString();
 
         GET("/api/my/billing/invoices", adminToken).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].number").value("INV/2026-27/000001"));
+                .andExpect(jsonPath("$[0].number").value("INV/26-27/000001"));
         GET("/api/my/billing/invoices/" + mine, adminToken).andExpect(status().isOk());
         GET("/api/my/billing/invoices/" + theirs, adminToken).andExpect(status().isNotFound());
         // the staff paths are closed to it
