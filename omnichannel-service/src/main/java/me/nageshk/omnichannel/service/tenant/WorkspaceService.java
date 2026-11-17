@@ -4,7 +4,9 @@ import me.nageshk.omnichannel.common.api.DuplicateException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.enablement.EnableLevel;
+import me.nageshk.omnichannel.common.billing.LimitKey;
 import me.nageshk.omnichannel.db.tenant.Team;
+import me.nageshk.omnichannel.security.entitlement.Limits;
 import me.nageshk.omnichannel.db.tenant.TeamRepository;
 import me.nageshk.omnichannel.db.tenant.Workspace;
 import me.nageshk.omnichannel.db.tenant.WorkspaceRepository;
@@ -28,9 +30,11 @@ public class WorkspaceService {
     private final TeamRepository teams;
     private final Enablement enablement;
     private final ApplicationEventPublisher events;
+    private final Limits limits;
 
     public WorkspaceService(WorkspaceRepository workspaces, TeamRepository teams, Enablement enablement,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events, Limits limits) {
+        this.limits = limits;
         this.events = events;
         this.enablement = enablement;
         this.workspaces = workspaces;
@@ -44,6 +48,7 @@ public class WorkspaceService {
      * @throws DuplicateException (field {@code name}) if the customer already has a workspace so named
      */
     public Workspace create(String customerId, String name) {
+        limits.require(customerId, LimitKey.BRANDS);
         Workspace w = new Workspace();
         w.setCustomerId(customerId);
         w.setName(requireName(name));
