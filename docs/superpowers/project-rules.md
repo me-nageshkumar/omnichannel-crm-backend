@@ -78,6 +78,11 @@ without an extension reload.
 `demo-lead` (AGENT), `demo-admin` (CUSTOMER_ADMIN), `nageshk` (Super Admin, not in the brand). The database holds real
 WhatsApp messages: take care sharing it or a backup.
 
+- **Leftover test databases.** Every test process starts embedded MongoDB servers and stops them when it exits; a
+  process that is killed (a build stopped half way, a machine put to sleep) leaves them running. If builds turn slow,
+  count them with `pgrep -f '/.embedmongo/' | wc -l`: with no build running the answer should be 0, and any that are
+  there can be stopped with `pkill -f '/.embedmongo/'` (your own MongoDB is not under that path).
+
 ## 3. Where everything is
 
 - **Specs** in `docs/superpowers/specs/` (CRM port `2026-10-23-crm-port-design.md` and its follow-ups, chat history
