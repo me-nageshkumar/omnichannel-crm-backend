@@ -2,8 +2,11 @@ package me.nageshk.omnichannel.app.billing;
 
 import java.util.List;
 import me.nageshk.omnichannel.common.api.NotFoundException;
+import me.nageshk.omnichannel.db.billing.CreditNote;
+import me.nageshk.omnichannel.db.billing.Invoice;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.billing.SubscriptionService;
+import me.nageshk.omnichannel.service.billing.document.BillingDocumentFiles;
 import me.nageshk.omnichannel.service.billing.document.CreditNoteService;
 import me.nageshk.omnichannel.service.billing.document.DocumentViews.CreditNoteView;
 import me.nageshk.omnichannel.service.billing.document.DocumentViews.InvoiceView;
@@ -11,6 +14,7 @@ import me.nageshk.omnichannel.service.billing.document.InvoiceService;
 import me.nageshk.omnichannel.service.billing.refund.RefundService;
 import me.nageshk.omnichannel.service.billing.refund.RefundService.RefundView;
 import me.nageshk.omnichannel.service.billing.SubscriptionViews.SubscriptionView;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,13 +31,15 @@ public class MyBillingController {
     private final InvoiceService invoices;
     private final CreditNoteService creditNotes;
     private final RefundService refunds;
+    private final BillingDocumentFiles files;
 
     public MyBillingController(SubscriptionService service, InvoiceService invoices, CreditNoteService creditNotes,
-            RefundService refunds) {
+            RefundService refunds, BillingDocumentFiles files) {
         this.service = service;
         this.invoices = invoices;
         this.creditNotes = creditNotes;
         this.refunds = refunds;
+        this.files = files;
     }
 
     @GetMapping("/subscription")
@@ -64,6 +70,20 @@ public class MyBillingController {
     @PreAuthorize("hasAuthority('billing:view')")
     public CreditNoteView creditNote(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
         return creditNotes.getFor(customerOf(me), id);
+    }
+
+    @GetMapping("/invoices/{id}/pdf")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public ResponseEntity<byte[]> invoicePdf(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        Invoice inv = invoices.requireFor(customerOf(me), id);
+        return InvoiceController.download(inv.getNumber(), files.pdfOf(inv));
+    }
+
+    @GetMapping("/credit-notes/{id}/pdf")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public ResponseEntity<byte[]> creditNotePdf(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        CreditNote note = creditNotes.requireFor(customerOf(me), id);
+        return InvoiceController.download(note.getNumber(), files.pdfOf(note));
     }
 
     @GetMapping("/refunds")
