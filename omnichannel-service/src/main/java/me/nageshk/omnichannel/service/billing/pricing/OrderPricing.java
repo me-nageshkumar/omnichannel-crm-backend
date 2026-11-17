@@ -36,6 +36,7 @@ import me.nageshk.omnichannel.service.billing.PlanPricing;
 import me.nageshk.omnichannel.service.billing.SubscriptionViews.AddOnRequest;
 import me.nageshk.omnichannel.service.billing.money.Gst;
 import me.nageshk.omnichannel.service.billing.money.Money;
+import me.nageshk.omnichannel.service.billing.money.Proration;
 
 /**
  * Prices a request. A pure function of its input: it reads no database and no clock, so the same input always
@@ -53,6 +54,9 @@ public final class OrderPricing {
         return switch (in.kind()) {
             case NEW -> newPlan(in);
             case RENEWAL -> renewal(in);
+            case ADDON -> addOn(in);
+            case UPGRADE -> change(in, true);
+            case CHANGE -> change(in, false);
             default -> throw new ValidationException("kind", "cannot be priced");
         };
     }
@@ -110,6 +114,146 @@ public final class OrderPricing {
         }
         String segment = in.state() == SubscriptionState.ACTIVE ? OrderTarget.NEXT : OrderTarget.CURRENT;
         return draft.finish(segment, anchor, List.of());
+    }
+
+    // --- an add-on ---------------------------------------------------------------------------------------------
+
+    private static Quote addOn(QuoteInput in) {
+        Subscription sub = in.subscription();
+        if (sub == null || sub.getCurrent() == null) throw new ValidationException("kind", "The customer has no plan");
+        Instant now = instant(in, in.today());
+        TermSegment current = SubscriptionClock.segmentAt(sub, now);
+        LocalDate start = date(in, current.getTermStart());
+        LocalDate end = date(in, current.getTermEnd());
+        long remaining = Proration.days(in.today(), end);
+        if (in.state() != SubscriptionState.ACTIVE || remaining < 1) {
+            throw new ValidationException("kind", "Add-ons can be bought while the plan is active");
+        }
+        if (in.addOn() == null || in.addOn().kind() == null) throw new ValidationException("addOn", "is required");
+        // an add-on is sold on the terms the customer's term was sold under, not on the plan as edited since
+        Plan terms = planOf(current);
+        Wanted w = wanted(in, terms, in.addOn(), current.getGroupCodes(), "addOn");
+        Set<String> held = heldGroups(current);
+        if (w.kind() == AddOnKind.GROUP) {
+            if (held.contains(w.groupCode())) throw new ValidationException("addOn", w.label() + " is already held");
+            Set<String> after = new HashSet<>(held);
+            after.add(w.groupCode());
+            requireGroups(in, current.getGroupCodes(), after, "addOn");
+        }
+        BigDecimal extra = extraDiscount(in);
+        List<OrderLine> lines = new ArrayList<>();
+        OrderTarget target = new OrderTarget();
+
+        BigDecimal part = Money.percentOff(Proration.part(w.periodPrice(), remaining, Proration.days(start, end)), extra);
+        lines.add(addOnLine(w, in.today(), end, part));
+        target.setSegmentAfter(withAddOn(current, w, part, now, null));
+        String id = target.getSegmentAfter().getAddOns().get(target.getSegmentAfter().getAddOns().size() - 1).getId();
+
+        // a renewal already paid for: the add-on goes on for that whole term as well
+        TermSegment next = sub.getNext() != null && current != sub.getNext() ? sub.getNext() : null;
+        if (next != null) {
+            Wanted again = wanted(in, planOf(next), in.addOn(), next.getGroupCodes(), "addOn");
+            BigDecimal full = Money.percentOff(again.periodPrice(), extra);
+            lines.add(addOnLine(again, date(in, next.getTermStart()), date(in, next.getTermEnd()), full));
+            target.setNextAfter(withAddOn(next, again, full, next.getTermStart(), id));
+        }
+        return totals(in, lines, extra, List.of(), target, null);
+    }
+
+    private static OrderLine addOnLine(Wanted w, LocalDate from, LocalDate end, BigDecimal amount) {
+        return new OrderLine(w.kind() == AddOnKind.GROUP ? OrderLine.ADDON : OrderLine.LIMIT_ADDON,
+                "Add-on: " + w.label() + " " + span(from, end), w.groupCode(), w.limitKey(), w.quantity(),
+                w.periodPrice(), amount);
+    }
+
+    /** A copy of the segment with the add-on in it. */
+    private static TermSegment withAddOn(TermSegment seg, Wanted w, BigDecimal paid, Instant coveredFrom, String id) {
+        TermSegment copy = copyOf(seg);
+        SubscriptionAddOn a = new SubscriptionAddOn();
+        a.setId(id == null ? UUID.randomUUID().toString() : id);
+        a.setKind(w.kind());
+        a.setGroupCode(w.groupCode());
+        a.setLimitKey(w.limitKey());
+        a.setQuantity(w.quantity());
+        a.setUnitPrice(w.periodPrice());
+        a.setPaid(paid);
+        a.setCoveredFrom(coveredFrom);
+        copy.getAddOns().add(a);
+        return copy;
+    }
+
+    static TermSegment copyOf(TermSegment seg) {
+        TermSegment copy = new TermSegment();
+        copy.setPlanCode(seg.getPlanCode());
+        copy.setPlanRevision(seg.getPlanRevision());
+        copy.setTerms(seg.getTerms());
+        copy.setGroupCodes(new HashSet<>(seg.getGroupCodes()));
+        copy.setAddOns(new ArrayList<>(seg.getAddOns()));
+        copy.setTermStart(seg.getTermStart());
+        copy.setTermEnd(seg.getTermEnd());
+        copy.setPlanPaid(seg.getPlanPaid());
+        copy.setPlanInvoiceId(seg.getPlanInvoiceId());
+        return copy;
+    }
+
+    /** The terms a segment was sold under, as a plan to look offers up in. */
+    private static Plan planOf(TermSegment seg) {
+        PlanTerms t = seg.getTerms();
+        Plan p = new Plan();
+        p.setCode(seg.getPlanCode());
+        p.setName(t.planName());
+        p.setPeriod(t.period());
+        p.setRank(t.rank());
+        p.setItems(new ArrayList<>(t.items()));
+        p.setAddOns(new ArrayList<>(t.addOns()));
+        p.setLimitAddOns(new ArrayList<>(t.limitAddOns()));
+        p.getLimits().putAll(t.limits());
+        p.setDiscountPercent(t.discountPercent());
+        return p;
+    }
+
+    private static Set<String> heldGroups(TermSegment seg) {
+        Set<String> held = new HashSet<>();
+        for (SubscriptionAddOn a : seg.getAddOns()) if (a.getKind() == AddOnKind.GROUP) held.add(a.getGroupCode());
+        return held;
+    }
+
+    // --- an upgrade, or a change by staff -------------------------------------------------------------------------
+
+    private static Quote change(QuoteInput in, boolean upgrade) {
+        Subscription sub = in.subscription();
+        if (sub == null || sub.getCurrent() == null) throw new ValidationException("kind", "The customer has no plan");
+        if (sub.isCancelled()) throw new ValidationException("kind", "The plan was cancelled; start a new one");
+        Plan plan = activePlan(in);
+        TermSegment current = SubscriptionClock.segmentAt(sub, instant(in, in.today()));
+        PlanTerms held = current.getTerms();
+        if (upgrade && !in.staff()) {
+            boolean higher = plan.getRank() > held.rank()
+                    || (plan.getRank() == held.rank() && plan.getPeriod().months() > held.period().months());
+            if (!plan.isOffered() || !higher) throw new ValidationException("planCode", "Only a higher plan can be requested");
+        }
+        LocalDate start = in.today();
+        int anchor = start.getDayOfMonth();
+        LocalDate end = BillingPeriod.endOf(start, plan.getPeriod(), anchor);
+
+        Draft draft = new Draft(in, plan, start, end);
+        draft.planLine();
+        Set<String> included = includedGroups(plan);
+        Set<String> kept = new HashSet<>();
+        if (upgrade) {
+            for (SubscriptionAddOn a : current.getAddOns()) {
+                // what the new plan gives anyway is not carried
+                if (a.getKind() == AddOnKind.GROUP && included.contains(a.getGroupCode())) continue;
+                if (a.getKind() == AddOnKind.LIMIT && !plan.getLimits().containsKey(a.getLimitKey())) continue;
+                draft.addOnLine(carried(a, plan, plan.getPeriod(), held.period(), in), a.getId());
+                if (a.getKind() == AddOnKind.GROUP) kept.add(a.getGroupCode());
+            }
+            requireGroups(in, included, kept, "addOns");
+        } else {
+            for (Wanted w : wantedAddOns(in, plan, in.addOns())) draft.addOnLine(w, null);
+        }
+        List<OrderCredit> credits = UnusedCredit.of(sub, in.today(), in.zone(), in.invoices(), c -> true, null);
+        return draft.finish(OrderTarget.CURRENT, anchor, credits);
     }
 
     // --- shared -------------------------------------------------------------------------------------------------
