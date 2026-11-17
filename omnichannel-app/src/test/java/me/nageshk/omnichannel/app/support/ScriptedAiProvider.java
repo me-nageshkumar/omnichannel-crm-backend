@@ -43,7 +43,7 @@ public class ScriptedAiProvider implements AiProvider {
 
     @Override
     public AiCapabilities capabilities() {
-        return new AiCapabilities(StateMode.TRANSCRIPT, false, false, true, true, false, false, false);
+        return new AiCapabilities(StateMode.TRANSCRIPT, false, false, true, true, List.of(), false, false);
     }
 
     @Override

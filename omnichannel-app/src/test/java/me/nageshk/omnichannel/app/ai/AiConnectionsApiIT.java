@@ -163,6 +163,23 @@ class AiConnectionsApiIT extends AiTestBase {
     }
 
     @Test
+    void settingsOnlySaveWithAnUnopenableKeyIsSavedUnverified() {
+        JsonNode created = create("Main").getBody();
+        mongo.updateFirst(new Query(Criteria.where("name").is("Main")),
+                new org.springframework.data.mongodb.core.query.Update().set("apiKey.keyId", "gone"), "aiConnections");
+        OPENAI.reset();
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                withSettings(save("Main", "openai", null), "project", "proj_9"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody().get("settings").get("project").asString()).isEqualTo("proj_9");
+        assertThat(res.getBody().get("status").asString()).isEqualTo("UNVERIFIED");
+        assertThat(res.getBody().get("lastError").asString()).isEqualTo("The stored key cannot be opened; enter it again");
+        assertThat(OPENAI.requests()).isEmpty();
+    }
+
+    @Test
     void unknownProviderIs400() {
         ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/connections", manager, save("Main", "nope", KEY));
 
@@ -303,5 +320,167 @@ class AiConnectionsApiIT extends AiTestBase {
                         .doesNotContain(KEY);
             }
         }
+    }
+
+    private static Map<String, Object> withSettings(Map<String, Object> body, String... kv) {
+        Map<String, String> settings = new LinkedHashMap<>();
+        for (int i = 0; i < kv.length; i += 2) settings.put(kv[i], kv[i + 1]);
+        body.put("settings", settings);
+        return body;
+    }
+
+    @Test
+    void settingsAreStoredReturnedAndSent() {
+        ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "organization", " org_1 "));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(res.getBody().get("settings").toString()).isEqualTo("{\"organization\":\"org_1\"}");
+        assertThat(OPENAI.last().organization()).isEqualTo("org_1");
+        assertThat(OPENAI.last().project()).isNull();
+        JsonNode read = ai(HttpMethod.GET, "/connections/" + res.getBody().get("id").asString(), manager, null).getBody();
+        assertThat(read.get("settings").get("organization").asString()).isEqualTo("org_1");
+
+        // the lists the profile form loads carry the settings too
+        OPENAI.reset();
+        ai(HttpMethod.GET, "/connections/" + res.getBody().get("id").asString() + "/models", manager, null);
+        assertThat(OPENAI.last().organization()).isEqualTo("org_1");
+    }
+
+    @Test
+    void settingsOnlyChangeVerifiesAgain() {
+        JsonNode created = create("Main").getBody();
+        OPENAI.reset();
+        Map<String, Object> body = withSettings(save("Main", "openai", null), "project", "proj_9");
+        body.put("version", created.get("version").asLong());
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager, body);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(OPENAI.requests()).hasSize(1);
+        assertThat(OPENAI.last().project()).isEqualTo("proj_9");
+        assertThat(OPENAI.last().authorization()).isEqualTo("Bearer " + KEY);
+        assertThat(res.getBody().get("keyHint").asString()).isEqualTo("sk-…a91F");
+        assertThat(res.getBody().get("keySetAt")).isEqualTo(created.get("keySetAt"));
+        assertThat(res.getBody().get("status").asString()).isEqualTo("OK");
+    }
+
+    @Test
+    void settingsThatTheProviderRefusesShowOnTheConnection() {
+        JsonNode created = create("Main").getBody();
+        OPENAI.enqueue(401, "{\"error\":{\"message\":\"No such organization\"}}");
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                withSettings(save("Main", "openai", null), "organization", "org_wrong"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody().get("status").asString()).isEqualTo("INVALID");
+        // not "refused the key": the key was fine, and the provider's own words say what was not
+        assertThat(res.getBody().get("lastError").asString())
+                .startsWith("The provider refused the key or the connection's settings: ")
+                .contains("No such organization");
+    }
+
+    @Test
+    void unchangedSaveMakesNoProviderCall() {
+        JsonNode created = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "organization", "org_1")).getBody();
+        OPENAI.reset();
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                withSettings(save("Main", "openai", null), "organization", "org_1"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(OPENAI.requests()).isEmpty();
+    }
+
+    @Test
+    void saveWithoutSettingsKeepsThem() {
+        JsonNode created = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "organization", "org_1")).getBody();
+        OPENAI.reset();
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                save("Renamed", "openai", null));
+
+        assertThat(res.getBody().get("settings").get("organization").asString()).isEqualTo("org_1");
+        assertThat(OPENAI.requests()).isEmpty();
+    }
+
+    @Test
+    void emptySettingsClearThem() {
+        JsonNode created = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "organization", "org_1")).getBody();
+        OPENAI.reset();
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                withSettings(save("Main", "openai", null)));
+
+        assertThat(res.getBody().get("settings").size()).isZero();
+        assertThat(OPENAI.last().organization()).isNull();
+    }
+
+    @Test
+    void unknownSettingIs400() {
+        ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "baseUrl", "https://x.example"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody().toString()).contains("settings.baseUrl");
+        assertThat(OPENAI.requests()).isEmpty();
+    }
+
+    @Test
+    void settingWithALineBreakIs400() {
+        ResponseEntity<JsonNode> res = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "organization", "org_1\r\nX-Evil: 1"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody().toString()).contains("settings.organization");
+    }
+
+    @Test
+    void connectionWithoutSettingsFieldStillWorks() {
+        JsonNode created = create("Main").getBody();
+        mongo.updateFirst(new Query(Criteria.where("name").is("Main")),
+                new org.springframework.data.mongodb.core.query.Update().unset("settings"), "aiConnections");
+        assertThat(mongo.findOne(new Query(), org.bson.Document.class, "aiConnections").containsKey("settings")).isFalse();
+
+        JsonNode read = ai(HttpMethod.GET, "/connections/" + created.get("id").asString(), manager, null).getBody();
+        assertThat(read.get("settings").isObject()).isTrue();
+        assertThat(read.get("settings").size()).isZero();
+        ResponseEntity<JsonNode> verified = ai(HttpMethod.POST, "/connections/" + created.get("id").asString() + "/verify",
+                manager, null);
+        assertThat(verified.getBody().get("status").asString()).isEqualTo("OK");
+    }
+
+    @Test
+    void providerChangeDropsTheOldProvidersSettings() {
+        JsonNode created = ai(HttpMethod.POST, "/connections", manager,
+                withSettings(save("Main", "openai", KEY), "organization", "org_1")).getBody();
+
+        ResponseEntity<JsonNode> res = ai(HttpMethod.PUT, "/connections/" + created.get("id").asString(), manager,
+                withSettings(save("Main", "scripted", "good"), "organization", "org_1"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody().get("provider").asString()).isEqualTo("scripted");
+        assertThat(res.getBody().get("settings").size()).isZero();
+    }
+
+    @Test
+    void providersListCarriesConnectionFields() {
+        JsonNode openai = null;
+        JsonNode scripted = null;
+        for (JsonNode p : ai(HttpMethod.GET, "/providers", manager, null).getBody()) {
+            if ("openai".equals(p.get("id").asString())) openai = p;
+            if ("scripted".equals(p.get("id").asString())) scripted = p;
+        }
+
+        assertThat(openai.get("connectionFields")).hasSize(2);
+        assertThat(openai.get("connectionFields").get(0).get("key").asString()).isEqualTo("organization");
+        assertThat(openai.get("connectionFields").get(0).get("kind").asString()).isEqualTo("TEXT");
+        assertThat(openai.get("connectionFields").get(0).get("required").asBoolean()).isFalse();
+        assertThat(openai.get("connectionFields").get(1).get("key").asString()).isEqualTo("project");
+        assertThat(scripted.get("connectionFields")).isEmpty();
     }
 }

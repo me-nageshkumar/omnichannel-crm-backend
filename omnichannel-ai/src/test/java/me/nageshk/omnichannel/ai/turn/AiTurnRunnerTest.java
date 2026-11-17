@@ -465,6 +465,18 @@ class AiTurnRunnerTest {
     }
 
     @Test
+    void authOnAConnectionWithSettingsNamesThem() {
+        when(connections.credential(WS, "conn1"))
+                .thenReturn(new AiCredential("k1", java.util.Map.of("organization", "org_wrong")));
+        provider.fail(new AiProviderException(Code.AUTH, "No such organization"));
+
+        turn(request(null, "Hi"));
+
+        verify(connections).markInvalid(WS, "conn1",
+                "The provider refused the key or the connection's settings: No such organization");
+    }
+
+    @Test
     void authMarksConnectionInvalid() {
         provider.fail(new AiProviderException(Code.AUTH, "Incorrect API key"));
 

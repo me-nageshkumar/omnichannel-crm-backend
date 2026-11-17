@@ -28,7 +28,7 @@ class ScriptedProvider implements AiProvider {
 
     ScriptedProvider(String id, StateMode state) {
         this.id = id;
-        this.capabilities = new AiCapabilities(state, true, true, true, true, true, true, true);
+        this.capabilities = new AiCapabilities(state, true, true, true, true, List.of("minimal", "low", "medium", "high"), true, true);
     }
 
     @Override

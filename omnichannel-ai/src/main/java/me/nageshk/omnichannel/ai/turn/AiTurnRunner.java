@@ -392,7 +392,7 @@ public class AiTurnRunner {
                                 current.temperature(), current.metadata());
                     }
                     case AUTH -> {
-                        connections.markInvalid(ws, connectionId, AiConnectionService.REFUSED);
+                        connections.markInvalid(ws, connectionId, AiConnectionService.refused(credential, e));
                         throw e;
                     }
                     default -> throw e;

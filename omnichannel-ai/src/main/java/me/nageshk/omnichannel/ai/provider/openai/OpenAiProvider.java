@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import me.nageshk.omnichannel.ai.api.AiCapabilities;
+import me.nageshk.omnichannel.ai.api.AiConnectionField;
 import me.nageshk.omnichannel.ai.api.StateMode;
 import me.nageshk.omnichannel.ai.config.AiProperties;
 import me.nageshk.omnichannel.ai.provider.AiCredential;
@@ -33,7 +34,16 @@ import tools.jackson.databind.json.JsonMapper;
 public class OpenAiProvider implements AiProvider {
 
     private static final AiCapabilities CAPABILITIES =
-            new AiCapabilities(StateMode.CHAINED, true, true, true, true, true, true, true);
+            new AiCapabilities(StateMode.CHAINED, true, true, true, true,
+                    // OpenAI's reference for reasoning.effort (2026-11); which of them a model takes is the model's business
+                    List.of("none", "minimal", "low", "medium", "high", "xhigh", "max"), true, true);
+
+    private static final String NOT_A_SECRET = " Not a secret; the key goes in API key.";
+    private static final List<AiConnectionField> FIELDS = List.of(
+            new AiConnectionField("organization", "Organization ID",
+                    "Optional. Sent as OpenAI-Organization." + NOT_A_SECRET, AiConnectionField.Kind.TEXT, false),
+            new AiConnectionField("project", "Project ID",
+                    "Optional. Sent as OpenAI-Project." + NOT_A_SECRET, AiConnectionField.Kind.TEXT, false));
 
     private record Raw(int status, String body, HttpHeaders headers) {
     }
@@ -65,6 +75,11 @@ public class OpenAiProvider implements AiProvider {
     @Override
     public AiCapabilities capabilities() {
         return CAPABILITIES;
+    }
+
+    @Override
+    public List<AiConnectionField> connectionFields() {
+        return FIELDS;
     }
 
     @Override
@@ -108,6 +123,8 @@ public class OpenAiProvider implements AiProvider {
             raw = client.method(org.springframework.http.HttpMethod.valueOf(method)).uri(baseUrl + path)
                     .headers(h -> {
                         h.setBearerAuth(c.apiKey());
+                        if (c.setting("organization") != null) h.set("OpenAI-Organization", c.setting("organization"));
+                        if (c.setting("project") != null) h.set("OpenAI-Project", c.setting("project"));
                         h.setAccept(List.of(MediaType.APPLICATION_JSON));
                         if (body != null) h.setContentType(MediaType.APPLICATION_JSON);
                     })

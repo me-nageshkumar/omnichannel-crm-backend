@@ -42,7 +42,6 @@ public class AiProfileService {
     /** A profile with the connection and provider it runs on, for a turn. */
     public record ResolvedProfile(AiProfile profile, AiConnection connection, AiProvider provider) {}
 
-    private static final Set<String> EFFORTS = Set.of("minimal", "low", "medium", "high");
     private static final Pattern LABEL = Pattern.compile("[a-z0-9_]{1,20}");
     private static final Pattern HEADER = Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]{1,100}");
     private static final int MAX_SERVERS = 20;
@@ -155,9 +154,6 @@ public class AiProfileService {
         else if (in.model().length() > 200) errors.put("model", "must be at most 200 characters");
         if (in.instructions() != null && in.instructions().length() > 20000) {
             errors.put("instructions", "must be at most 20000 characters");
-        }
-        if (in.reasoningEffort() != null && !EFFORTS.contains(in.reasoningEffort())) {
-            errors.put("reasoningEffort", "must be one of minimal, low, medium, high");
         }
         if (in.maxOutputTokens() != null && (in.maxOutputTokens() < 1 || in.maxOutputTokens() > 128000)) {
             errors.put("maxOutputTokens", "must be between 1 and 128000");
@@ -275,8 +271,13 @@ public class AiProfileService {
         if (Boolean.TRUE.equals(in.webSearch()) && !caps.webSearch()) {
             errors.putIfAbsent("webSearch", "This provider has no web search");
         }
-        if (in.reasoningEffort() != null && !caps.reasoningEffort()) {
-            errors.putIfAbsent("reasoningEffort", "This provider does not take a reasoning effort");
+        if (in.reasoningEffort() != null) {
+            List<String> efforts = caps.reasoningEfforts();
+            if (efforts.isEmpty()) {
+                errors.putIfAbsent("reasoningEffort", "This provider does not take a reasoning effort");
+            } else if (!efforts.contains(in.reasoningEffort())) {
+                errors.putIfAbsent("reasoningEffort", "must be one of " + String.join(", ", efforts));
+            }
         }
         if (!caps.hostedMcp()) {
             for (int i = 0; i < mcp.size(); i++) {

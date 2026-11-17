@@ -19,7 +19,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class OpenAiStub {
 
-    public record Recorded(String method, String path, String authorization, String body) {}
+    public record Recorded(String method, String path, String authorization, String body, String organization,
+            String project) {}
 
     private record Canned(int status, String body) {}
 
@@ -42,7 +43,8 @@ public final class OpenAiStub {
         String query = ex.getRequestURI().getRawQuery();
         recorded.add(new Recorded(ex.getRequestMethod(),
                 ex.getRequestURI().getRawPath() + (query == null ? "" : "?" + query),
-                ex.getRequestHeaders().getFirst("Authorization"), body));
+                ex.getRequestHeaders().getFirst("Authorization"), body,
+                ex.getRequestHeaders().getFirst("OpenAI-Organization"), ex.getRequestHeaders().getFirst("OpenAI-Project")));
         Canned c = queue.poll();
         if (c == null) c = new Canned(200, "{\"data\":[]}");
         byte[] out = c.body().getBytes(StandardCharsets.UTF_8);

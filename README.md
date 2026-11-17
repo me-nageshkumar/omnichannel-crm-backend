@@ -662,7 +662,14 @@ and **profiles** (connection, model, instructions, tools); the `ai` chatbot node
 real provider in v1; the provider SPI (`omnichannel-ai`) is shaped for others.
 
 - `GET /api/workspaces/{ws}/ai/providers` lists providers with their capabilities (`state`, `hostedMcp`,
-  `vectorStores`, `functionTools`, `structuredOutput`, `reasoningEffort`, `temperature`, `webSearch`).
+  `vectorStores`, `functionTools`, `structuredOutput`, `reasoningEfforts`, `temperature`, `webSearch`) and their
+  `connectionFields`. `reasoningEfforts` is the list of effort values the provider accepts (empty = none); it is per
+  provider, not per model.
+- A connection carries `settings`: the plain, never secret values of the provider's `connectionFields` (OpenAI:
+  `organization`, `project`, sent as `OpenAI-Organization` and `OpenAI-Project`). They are returned by the API. On a
+  `PUT`, leaving `settings` out keeps the stored ones and `{}` clears them; a change verifies the connection again.
+  Problems come back as `settings.<key>` (undeclared key, required, over 500 characters, anything but printable
+  ASCII, a URL that is not public https).
 - Connections: `GET|POST /ai/connections`, `GET|PUT|DELETE /ai/connections/{id}`, `POST /ai/connections/{id}/verify`,
   `GET /ai/connections/{id}/models`, `GET /ai/connections/{id}/vector-stores`.
 - Profiles: `GET|POST /ai/profiles`, `GET|PUT|DELETE /ai/profiles/{id}`,

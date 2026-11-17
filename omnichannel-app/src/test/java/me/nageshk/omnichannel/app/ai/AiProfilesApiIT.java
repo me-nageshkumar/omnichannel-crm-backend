@@ -201,6 +201,48 @@ class AiProfilesApiIT extends AiTestBase {
     }
 
     @Test
+    void effortNotListedByTheProviderIs400() {
+        Map<String, Object> b = profile("P", connection("Main", "openai"));
+        b.put("reasoningEffort", "turbo");
+
+        assertThat(field(create(b), "reasoningEffort"))
+                .isEqualTo("must be one of none, minimal, low, medium, high, xhigh, max");
+    }
+
+    @Test
+    void storedUnlistedEffortStillLoads() {
+        Map<String, Object> b = profile("P", connection("Main", "openai"));
+        b.put("reasoningEffort", "low");
+        JsonNode created = create(b).getBody();
+        String id = created.get("id").asString();
+        mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(
+                        org.springframework.data.mongodb.core.query.Criteria.where("name").is("P")),
+                new org.springframework.data.mongodb.core.query.Update().set("reasoningEffort", "turbo"), "aiProfiles");
+
+        ResponseEntity<JsonNode> read = ai(HttpMethod.GET, "/profiles/" + id, manager, null);
+        assertThat(read.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(read.getBody().get("reasoningEffort").asString()).isEqualTo("turbo");
+
+        b.put("reasoningEffort", "turbo");
+        field(ai(HttpMethod.PUT, "/profiles/" + id, manager, b), "reasoningEffort");
+    }
+
+    @Test
+    void providersListCarriesEffortValues() {
+        JsonNode openai = null;
+        JsonNode scripted = null;
+        for (JsonNode p : ai(HttpMethod.GET, "/providers", manager, null).getBody()) {
+            if ("openai".equals(p.get("id").asString())) openai = p;
+            if ("scripted".equals(p.get("id").asString())) scripted = p;
+        }
+
+        assertThat(openai.get("capabilities").get("reasoningEfforts")).isNotEmpty();
+        assertThat(openai.get("capabilities").has("reasoningEffort")).isFalse();
+        assertThat(scripted.get("capabilities").get("reasoningEfforts").isArray()).isTrue();
+        assertThat(scripted.get("capabilities").get("reasoningEfforts")).isEmpty();
+    }
+
+    @Test
     void ranges() {
         String conn = connection("Main", "openai");
         Map<String, Object> b = profile("P", conn);

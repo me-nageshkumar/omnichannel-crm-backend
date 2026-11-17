@@ -100,4 +100,36 @@ class OpenAiChainIT extends AiTestBase {
                 .isEqualTo(new AiUsage(70, 15, 0, 0));
         assertThat(third.usage()).isEqualTo(new AiUsage(70, 15, 0, 0));
     }
+
+    @Test
+    void aTurnSendsTheConnectionsSettingsAndAnOldConnectionStillRuns() throws Exception {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("name", "OpenAI");
+        c.put("provider", "openai");
+        c.put("apiKey", KEY);
+        c.put("settings", Map.of("organization", "org_1", "project", "proj_1"));
+        String connectionId = ai(HttpMethod.POST, "/connections", manager, c).getBody().get("id").asString();
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("name", "Sales");
+        p.put("connectionId", connectionId);
+        p.put("model", "gpt-5");
+        String profileId = ai(HttpMethod.POST, "/profiles", manager, p).getBody().get("id").asString();
+        OPENAI.reset();
+        OPENAI.enqueue(200, text("resp_1", "Hello", 10, 5));
+
+        assertThat(turn(profileId, null, "Hi").status()).isEqualTo(TurnStatus.DONE);
+        assertThat(OPENAI.last().path()).isEqualTo("/v1/responses");
+        assertThat(OPENAI.last().organization()).isEqualTo("org_1");
+        assertThat(OPENAI.last().project()).isEqualTo("proj_1");
+
+        // a connection saved before settings existed has no such field at all
+        mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(),
+                new org.springframework.data.mongodb.core.query.Update().unset("settings"), "aiConnections");
+        OPENAI.reset();
+        OPENAI.enqueue(200, text("resp_2", "Again", 10, 5));
+
+        assertThat(turn(profileId, null, "Hi").status()).isEqualTo(TurnStatus.DONE);
+        assertThat(OPENAI.last().authorization()).isEqualTo("Bearer " + KEY);
+        assertThat(OPENAI.last().organization()).isNull();
+    }
 }
