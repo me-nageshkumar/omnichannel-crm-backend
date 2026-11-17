@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.service.campaign;
 
+import me.nageshk.omnichannel.common.api.SubscriptionInactiveException;
+import me.nageshk.omnichannel.service.billing.WorkGate;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -105,6 +107,7 @@ public class CampaignRunner {
     private final SenderHealth health;
     private final CampaignObserver observer;
     private final Clock clock;
+    private final WorkGate workGate;
     private final Executor executor;
     private final Duration stuckAfter;
     /** Senders whose work of an earlier tick has not finished. */
@@ -118,7 +121,9 @@ public class CampaignRunner {
             NumberLookupService lookups, NewChatService newChats, TemplateRenderer renderer, InboxDevices devices,
             ContactService contactService, ContactRepository contacts, WaWebChatRepository chats,
             WaWebMessageRepository messages, PacingRandom random, SenderHealth health, CampaignObserver observer,
-            Clock clock, @Qualifier("campaignScheduler") Executor executor, OmnichannelProperties props) {
+            Clock clock, @Qualifier("campaignScheduler") Executor executor, OmnichannelProperties props,
+            WorkGate workGate) {
+        this.workGate = workGate;
         this.observer = observer;
         this.mongo = mongo;
         this.senders = senders;
@@ -220,6 +225,7 @@ public class CampaignRunner {
         String id = s.getPhoneNumberId();
         return (s.getState() == SenderState.WARMING || s.getState() == SenderState.ACTIVE)
                 && devices.isReady(ws, id)
+                && workGate.allows(ws, WorkGate.CAMPAIGNS)
                 && (s.getPausedUntil() == null || !s.getPausedUntil().isAfter(now))
                 && !now.isBefore(SenderPolicy.dayStartsAt(settings, SenderPolicy.today(settings, now),
                         s.getDayStartOffsetMinutes()))
@@ -380,7 +386,8 @@ public class CampaignRunner {
         try {
             sent = newChats.startForCampaign(new CampaignActor(c.getId(), c.getName()), c.getWorkspaceId(),
                     claim.senderId(), r.getPhone(), lookup.remoteId(), new SendRequest(null, r.getTemplateId(), values));
-        } catch (NoDeviceException e) {
+        } catch (NoDeviceException | SubscriptionInactiveException e) {
+            // nothing left the server: the recipient waits for the number, or for the plan to cover campaigns again
             release(claim);
             return;
         } catch (RuntimeException e) {

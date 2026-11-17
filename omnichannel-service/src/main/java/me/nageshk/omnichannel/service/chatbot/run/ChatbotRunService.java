@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.chatbot.run;
 
+import me.nageshk.omnichannel.service.billing.WorkGate;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -49,11 +50,13 @@ public class ChatbotRunService {
     private final ThreadPoolTaskExecutor pool;
     private final Clock clock;
     private final InboxMarks marks;
+    private final WorkGate workGate;
 
     public ChatbotRunService(ChatbotRepository chatbots, ChatbotRunRepository runs, ContactAttributeRepository attributes,
             ContactLabelRepository labels, PhoneNumberRepository numbers, RunVariables variables, RunClaims claims,
             ChatPointer pointer, ChatbotRunner runner, ThreadPoolTaskExecutor chatbotExecutor, Clock clock,
-            InboxMarks marks) {
+            InboxMarks marks, WorkGate workGate) {
+        this.workGate = workGate;
         this.marks = marks;
         this.chatbots = chatbots;
         this.runs = runs;
@@ -76,6 +79,9 @@ public class ChatbotRunService {
             EventData event, IfRunning ifRunning, boolean test) {
         Chatbot chatbot = chatbots.findById(chatbotId).filter(c -> workspaceId.equals(c.getWorkspaceId()))
                 .orElseThrow(() -> new NotFoundException("chatbot not found"));
+        if (!workGate.allows(workspaceId, WorkGate.CHATBOTS)) {
+            return new StartResult(null, false, "The plan does not allow chatbots", null);
+        }
         if (chatbot.getStatus() != ChatbotStatus.PUBLISHED && !test) {
             return new StartResult(null, false, "Chatbot “" + chatbot.getName() + "” is not published", null);
         }
