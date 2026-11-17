@@ -211,11 +211,30 @@ Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews fou
 
 ## Subscription plans: known limits
 
-Phase 1 (entitlements), 2026-11-17. Phases 2 (orders, payments, invoices, credit notes, refunds) and 3 (usage wallet)
-are designed in `specs/2026-11-17-subscription-plans-design.md` and not built.
+Phases 1 (entitlements, 2026-11-17) and 2 (orders, payments, invoices, credit notes, refunds, PDF files, 2026-11-18)
+are built. Phase 3 (the usage wallet and per-message charges) is designed in
+`specs/2026-11-17-subscription-plans-design.md` and not built.
 
-- A plan is assigned by staff without payment: the term's paid amounts are 0, so it yields no credit when orders
-  arrive. A directly assigned add-on may be any paid group the plan does not include, offered by the plan or not.
+- Payments are recorded by staff; there is no payment gateway. A refund is recorded after the money was paid
+  outside the system.
+- A quote is fixed for its validity (`quoteValidDays`): an order paid on its last valid day still credits and
+  charges the days as counted on the day it was raised.
+- A GSTIN is checked for its shape and its state, not its check digit. There is no e-invoicing (IRN, QR code) and no
+  GST return export.
+- A credit note may be issued against an invoice of any age; the law limits this by date. Confirm the limit with an
+  accountant before going live. The list of GST state codes was written from memory and should be checked too.
+- Issued invoices and credit notes never change: correcting the supplier details, the billing zone or a customer's
+  profile affects later documents only. A PDF is drawn on its first download with the billing zone of that moment.
+- The PDF font (DejaVu Sans) has Latin, Greek and Cyrillic and the rupee sign; a legal name or address in another
+  script prints as question marks.
+- A term given before orders existed (phase 1's direct assignment) was not paid for, so upgrading or cancelling it
+  gives no credit.
+- An activation that fails half way answers 500 and the order stays `ACTIVATING`; the next billing change for the
+  customer or the ticker (within about 90 seconds) finishes it. Until then no other billing change for that customer
+  goes through if the same step keeps failing.
+- Two requests for the same add-on can both be raised; the second is refused as stale when it is paid.
+- Staff may post account credit and cancel with any credit up to what was paid; nothing asks a second person to
+  approve it. Every such act is an order with a reason in the history.
 - Counting and creating are two steps: two requests at the same moment can end one over a limit.
 - The entitlement cache is per server (30 seconds at most on a second server); every change on this server is seen at
   once.

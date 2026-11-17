@@ -702,8 +702,9 @@ field). OpenAI enforces a JSON reply schema (`strict`) only when every object is
 ## Subscription plans
 
 A customer on a plan can use only what the plan allows; a customer with no plan behaves as before (until the setting
-below says otherwise). Design: `docs/superpowers/specs/2026-11-17-subscription-plans-design.md`. This is phase 1
-(entitlements): plans carry prices, but nothing is charged yet and staff assign plans directly.
+below says otherwise). Design: `docs/superpowers/specs/2026-11-17-subscription-plans-design.md`. Phase 1
+(entitlements) and phase 2 (money: orders, invoices, credit notes, refunds, PDF files) are built; phase 3 (the usage
+wallet) is not.
 
 - **Feature group** (`featureGroups`): authorities sold together (CRM, Chatbots, …). An authority is in at most one
   group; one in no group is unavailable to every customer on a plan. `DEFAULT` groups are in every plan; `PAID` ones
@@ -735,6 +736,45 @@ below says otherwise). Design: `docs/superpowers/specs/2026-11-17-subscription-p
   with the plan's pipeline and field limits when it sets them. The per-brand switch (`crm:enable`) still rules
   customers without a plan.
 
+### Orders and money
+
+Amounts are in INR with GST, computed on the server and stored as `Decimal128`; clients never compute money.
+
+- **Order** (`billingOrders`, `ORD-000001`): every change to a customer's plan. Kinds: `NEW`, `RENEWAL`, `UPGRADE`
+  (a higher plan, asked for by the customer or staff), `CHANGE` (any plan, staff only), `ADDON` (a feature group or
+  extra units of a limit, charged for the days left in the term), and the staff-only `ADJUST`, `CANCEL_ADDON`,
+  `CANCEL_PLAN`. A **quote** prices a request against the customer as it is now (`service.billing.pricing`, pure
+  code); raising it stores those amounts as an order `REQUESTED`, valid for `quoteValidDays`. Nothing changes until
+  staff **record the payment** (`POST /orders/{id}/pay`), which activates it. Statuses: `REQUESTED`, `ACTIVATING`,
+  `ACTIVATED`, `CANCELLED`, `REJECTED`, `EXPIRED`, `SUPERSEDED`.
+- **Activation** runs under a per-customer lease (`billingLocks`) as repeatable steps, ticked off on the order: apply
+  to the subscription, issue the credit notes, issue the invoice. Each step is guarded by an id set on the document
+  it changes, so an activation interrupted at any point is finished by the next billing change for the customer or by
+  the ticker, and nothing is applied twice. An order is applied only to the subscription it was priced on: paying a
+  stale one answers 409 `ORDER_STALE`, and requests made stale by another order become `SUPERSEDED`.
+- **Invoice** (`invoices`, `INV/2026-27/000001`): one for every activated order that charges something; a snapshot
+  of the supplier (billing settings) and the customer (its billing profile) at that moment, with CGST and SGST for a
+  customer in the supplier's state and IGST otherwise. Numbers run without gaps within a financial year (1 April, in
+  the billing zone).
+- **Credit note** (`creditNotes`, `CN/2026-27/000001`): on an upgrade, a plan change or a cancellation, the unused
+  days of what was paid come back as one credit note per invoice that billed them, with that invoice's tax, never
+  more in total than the invoice charged. A term that was not paid for gives no credit.
+- **Account credit** (`subscriptions.creditBalance`, tax included): credit notes add to it; the same order's invoice
+  and later orders draw on it; staff can post to it (`ADJUST`) and pay it back as a **refund** (`refunds`,
+  `RF-000001`), which is recorded after the money was paid outside the system. It never goes below zero.
+- **A renewal** paid before the term ends waits as `next` and is in force from its own start. **A cancelled plan**
+  ends today with no grace: the customer is read-only until it buys a plan again.
+- **PDF files**: an invoice or credit note is drawn on its first download (Apache PDFBox, the bundled DejaVu Sans
+  font) and kept in the GridFS bucket `billingDocuments`, so every later download is the same file.
+- **The ticker** (`BillingTicker`, every `omnichannel.billing.tick`, 30 s): finishes activations and refunds
+  abandoned for more than a minute, marks old requests `EXPIRED`, and moves a renewal that has begun into `current`.
+  No entitlement depends on it.
+- Before the first order the supplier details (billing settings) and the customer's billing profile must be
+  complete: 409 `BILLING_NOT_SET_UP` with `missing`.
+
+Error codes: `ORDER_PENDING` (another open order already changes the plan; or a profile edit while an order waits),
+`ORDER_NOT_OPEN`, `ORDER_EXPIRED`, `ORDER_STALE`, `NOT_ENOUGH_CREDIT`, `BILLING_NOT_SET_UP` (all 409).
+
 Staff API under `/api/billing` (reads need `subscription:view` or `plan:manage`):
 
 | Method and path | Authority | What |
@@ -745,12 +785,28 @@ Staff API under `/api/billing` (reads need `subscription:view` or `plan:manage`)
 | `POST /plans/price` | `plan:manage` | the price of a set of items with a discount, for the editor |
 | `POST /plans/{code}/duplicate`, `/activate`, `/retire`, `GET /plans/{code}/history` | `plan:manage` to write | copy into another period; status; history |
 | `GET /limit-keys` | read | the limits a plan can set |
-| `GET/PUT /settings` | `billing-settings:manage` to write | billing zone, grace days, `customersWithoutPlan` |
-| `GET/PUT/DELETE /customers/{id}/subscription`, `GET …/subscription/events` | `subscription:view`, `subscription:manage` to write | a customer's plan: assign with dates and add-ons, change, remove; history |
+| `GET/PUT /settings` | `billing-settings:manage` to write | billing zone, grace days, `customersWithoutPlan`, the supplier's legal name, address, state and GSTIN, SAC code, GST rate, number prefixes, quote validity, renewal window, payment instructions |
+| `GET /states` | read | Indian states and their GST codes |
+| `GET /customers/{id}/subscription`, `GET …/subscription/events` | `subscription:view` | a customer's plan, account credit, waiting renewal; history |
+| `GET/PUT /customers/{id}/billing-profile` | `subscription:manage` to write | who the customer is on its invoices |
+| `POST /customers/{id}/quotes`, `POST /customers/{id}/orders` | `subscription:manage` | price a request; raise it as an order |
+| `GET /customers/{id}/orders`, `GET /orders?status=&page=`, `GET /orders/{id}` | read | a customer's orders; every customer's (open ones oldest first); one |
+| `POST /orders/{id}/pay`, `/reject`, `/cancel` | `subscription:manage` | record the payment (activates); turn down with a reason; withdraw |
+| `POST /customers/{id}/adjustments` | `subscription:manage`; `refund:manage` to post credit | move the end of a term, or post account credit, with a reason |
+| `POST /customers/{id}/cancellations`, `/cancellations/quote` | `refund:manage` | cancel an add-on or the plan with credit; what it would give |
+| `GET /customers/{id}/invoices`, `GET /invoices/{id}`, `GET /invoices/{id}/pdf` | read | invoices |
+| `GET /customers/{id}/credit-notes`, `GET /credit-notes/{id}`, `GET /credit-notes/{id}/pdf` | read | credit notes |
+| `GET/POST /customers/{id}/refunds` | `refund:manage` to write | refunds of account credit |
 
-`GET /api/my/billing/subscription` (`billing:view`, a COMPANY authority) gives a Customer Admin its own plan, state,
-groups and limits with current use. `GET /api/customers` items carry `planName` and `subscriptionState`, and take
-`noPlan=true`.
+A plan is no longer assigned by hand: `PUT` and `DELETE /customers/{id}/subscription` are gone. A free plan is an
+order with a 100% extra discount.
+
+A Customer Admin's own billing is under `/api/my/billing` (reads `billing:view`, writes `billing:request`, both
+COMPANY authorities): `GET subscription`, `GET options` (what it may ask for now), `POST quotes` and `POST orders`
+(`RENEWAL`, `UPGRADE`, `ADDON` only, no extra discount), `GET orders`, `POST orders/{id}/cancel` (a request it raised
+itself), `GET invoices`, `credit-notes`, `refunds` with `/{id}` and `/{id}/pdf`, `GET/PUT profile`. Its writes are
+`@ReadOnlySafe`: a customer whose plan has run out can still ask to renew. `GET /api/customers` items carry
+`planName` and `subscriptionState`, and take `noPlan=true`.
 
 Setting `customersWithoutPlan` to `READ_ONLY` makes every customer without a subscription read-only: switch it only
 after every live customer has a plan.
