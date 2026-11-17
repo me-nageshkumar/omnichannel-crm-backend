@@ -68,7 +68,8 @@ public class MyOrderController {
     @GetMapping("/orders")
     @PreAuthorize(VIEW)
     public List<OrderView> list(@AuthenticationPrincipal AuthenticatedUser me) {
-        return service.list(caller(me).customerId());
+        Caller caller = caller(me);
+        return service.list(caller.customerId(), caller);
     }
 
     @GetMapping("/orders/{orderId}")

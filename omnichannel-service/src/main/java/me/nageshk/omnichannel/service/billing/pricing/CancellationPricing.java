@@ -74,13 +74,12 @@ public final class CancellationPricing {
     public static Quote plan(Subscription sub, BigDecimal creditTaxable, Instant now, LocalDate today, ZoneId zone,
             Function<String, Invoice> invoices, BillingSettings settings) {
         if (sub == null || sub.getCurrent() == null) throw new ValidationException("addOnId", "The customer has no plan");
-        if (!now.isBefore(SubscriptionClock.lastEnd(sub))) {
-            throw new ValidationException("addOnId", "The plan has already ended; there is nothing to cancel");
-        }
+        // a plan whose term has ended can still be cancelled: that ends its grace days
+        if (sub.isCancelled()) throw new ValidationException("addOnId", "The plan is already cancelled");
         List<OrderCredit> credits = credits(sub, today, zone, invoices, c -> true, creditTaxable);
         TermSegment after = OrderPricing.copyOf(SubscriptionClock.segmentAt(sub, now));
         Instant end = today.atStartOfDay(zone).toInstant();
-        after.setTermEnd(end.isBefore(after.getTermStart()) ? after.getTermStart() : end);
+        if (end.isBefore(after.getTermEnd())) after.setTermEnd(end.isBefore(after.getTermStart()) ? after.getTermStart() : end);
         OrderTarget target = new OrderTarget();
         target.setSegmentAfter(after);
         target.setCancelPlan(true);

@@ -125,6 +125,17 @@ public class BillingSettingsService {
         m.put("zone", s.getZone());
         m.put("graceDays", s.getGraceDays());
         m.put("customersWithoutPlan", String.valueOf(s.getCustomersWithoutPlan()));
+        // what an invoice depends on, so a change of any of it can be traced
+        m.put("supplierLegalName", s.getSupplierLegalName());
+        m.put("supplierAddress", s.getSupplierAddress());
+        m.put("supplierStateCode", s.getSupplierStateCode());
+        m.put("supplierGstin", s.getSupplierGstin());
+        m.put("sacCode", s.getSacCode());
+        m.put("gstRatePercent", s.getGstRatePercent() == null ? null : s.getGstRatePercent().toPlainString());
+        m.put("invoicePrefix", s.getInvoicePrefix());
+        m.put("creditNotePrefix", s.getCreditNotePrefix());
+        m.put("quoteValidDays", s.getQuoteValidDays());
+        m.put("renewalWindowDays", s.getRenewalWindowDays());
         return m;
     }
 

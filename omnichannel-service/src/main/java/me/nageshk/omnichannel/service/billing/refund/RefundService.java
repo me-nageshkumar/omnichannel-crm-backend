@@ -101,6 +101,7 @@ public class RefundService {
         else if (reference.length() > 100) errors.put("reference", "at most 100 characters");
         if (paidOn == null) errors.put("paidOn", "is required");
         else if (paidOn.isAfter(now.atZone(settings.zone()).toLocalDate())) errors.put("paidOn", "cannot be in the future");
+        else if (paidOn.isBefore(now.atZone(settings.zone()).toLocalDate().minusDays(366))) errors.put("paidOn", "cannot be more than a year ago");
         if (note.length() > 300) errors.put("note", "at most 300 characters");
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
@@ -168,7 +169,10 @@ public class RefundService {
 
     /** What the customer sees: the refunds that were made. */
     public List<RefundView> listRecorded(String customerId) {
-        return list(customerId).stream().filter(r -> r.status() == RefundStatus.RECORDED).toList();
+        return list(customerId).stream().filter(r -> r.status() == RefundStatus.RECORDED)
+                .map(r -> new RefundView(r.id(), r.number(), r.amount(), r.method(), r.reference(), r.paidOn(), null, null,
+                        r.recordedAt(), r.status()))
+                .toList();
     }
 
     private void requireCustomer(String customerId) {

@@ -5,7 +5,9 @@ import me.nageshk.omnichannel.common.billing.OrderStatus;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.billing.order.Caller;
 import me.nageshk.omnichannel.service.billing.order.OrderActivator;
+import me.nageshk.omnichannel.service.billing.order.OrderOptions;
 import me.nageshk.omnichannel.service.billing.order.OrderService;
+import me.nageshk.omnichannel.service.billing.order.OrderViews.OptionsView;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.OrderPage;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.OrderView;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.PayRequest;
@@ -34,8 +36,10 @@ public class OrderController {
 
     private final OrderService service;
     private final OrderActivator activator;
+    private final OrderOptions options;
 
-    public OrderController(OrderService service, OrderActivator activator) {
+    public OrderController(OrderService service, OrderActivator activator, OrderOptions options) {
+        this.options = options;
         this.service = service;
         this.activator = activator;
     }
@@ -59,6 +63,13 @@ public class OrderController {
     @PreAuthorize(VIEW)
     public List<OrderView> list(@PathVariable String customerId) {
         return service.list(customerId);
+    }
+
+    /** What the customer may be sold now, on the terms its term was sold under. */
+    @GetMapping("/customers/{customerId}/options")
+    @PreAuthorize(VIEW)
+    public OptionsView options(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String customerId) {
+        return options.of(customerId, Caller.staff(me.userId()));
     }
 
     @GetMapping("/orders")

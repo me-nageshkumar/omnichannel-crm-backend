@@ -42,6 +42,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class StaffOrderService {
 
+    private static final BigDecimal MOST_CREDIT = new BigDecimal("10000000");
+
     private final SubscriptionRepository subscriptions;
     private final CustomerRepository customers;
     private final InvoiceRepository invoices;
@@ -83,6 +85,7 @@ public class StaffOrderService {
         } else if (credit != null) {
             if (credit.signum() == 0) errors.put("creditAmount", "cannot be 0");
             else if (credit.stripTrailingZeros().scale() > 2) errors.put("creditAmount", "at most 2 decimals");
+            else if (credit.abs().compareTo(MOST_CREDIT) > 0) errors.put("creditAmount", "at most 1,00,00,000 at a time");
         }
         if (!errors.isEmpty()) throw new ValidationException(errors);
 
@@ -93,8 +96,12 @@ public class StaffOrderService {
             String field = termEnd != null ? "termEnd" : "creditAmount";
             if (sub == null) throw new ValidationException(field, "The customer has no plan");
             OrderTarget target = new OrderTarget();
+            target.setSegmentAfter(sub.getCurrent());
             if (termEnd != null) {
+                if (sub.isCancelled()) throw new ValidationException("termEnd", "The plan was cancelled; start a new one");
                 TermSegment last = sub.getNext() != null ? sub.getNext() : sub.getCurrent();
+                // the order shows the term it moved
+                target.setSegmentAfter(last);
                 Instant end = termEnd.atStartOfDay(zone).toInstant();
                 if (!end.isAfter(last.getTermStart())) throw new ValidationException("termEnd", "must be after the term's start");
                 target.setNewTermEnd(end);
@@ -108,7 +115,6 @@ public class StaffOrderService {
                 }
                 target.setCreditPosting(Money.round(credit));
             }
-            target.setSegmentAfter(sub.getCurrent());
             Quote nothing = new Quote(OrderKind.ADJUST, new ArrayList<>(), BigDecimal.ZERO, Money.ZERO,
                     Gst.of(Money.ZERO, s.getGstRatePercent(), false), Money.ZERO, new ArrayList<>(), Money.ZERO,
                     Money.round(Money.zeroIfNull(sub.getCreditBalance())), Money.ZERO, Money.ZERO, target, null);

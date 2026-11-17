@@ -254,6 +254,7 @@ public class OrderActivator {
         else if (reference.length() > 100) errors.put("reference", "at most 100 characters");
         if (receivedOn == null) errors.put("receivedOn", "is required");
         else if (receivedOn.isAfter(now.atZone(zone).toLocalDate())) errors.put("receivedOn", "cannot be in the future");
+        else if (receivedOn.isBefore(now.atZone(zone).toLocalDate().minusDays(366))) errors.put("receivedOn", "cannot be more than a year ago");
         if (!errors.isEmpty()) throw new ValidationException(errors);
         return new OrderPayment(method, reference, receivedOn, note.isEmpty() ? null : note, by, now);
     }

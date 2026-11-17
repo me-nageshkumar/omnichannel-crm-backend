@@ -238,7 +238,9 @@ are built. Phase 3 (the usage wallet and per-message charges) is designed in
   characters. An order is not paid if the GST rate, the supplier's state or the supplier details changed since it
   was priced (409 `ORDER_STALE` or `BILLING_NOT_SET_UP`): raise it again.
 - An order whose activation keeps failing has no staff action to set it aside; it needs a look at the data.
-- A customer sees its staff-raised orders (adjustments, cancellations) with the reason staff gave.
+- A customer sees its staff-raised orders (adjustments, cancellations) without staff's reasons, notes or names.
+- With a paid renewal whose terms no longer offer an add-on, that add-on cannot be bought for the current term
+  either. An add-on of extra units carried onto a plan with another unit size keeps its quantity.
 - Lists of a customer's orders, invoices, credit notes and refunds are not paged.
 - Staff may post account credit and cancel with any credit up to what was paid; nothing asks a second person to
   approve it. Every such act is an order with a reason in the history.

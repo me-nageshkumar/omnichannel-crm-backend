@@ -790,6 +790,7 @@ Staff API under `/api/billing` (reads need `subscription:view` or `plan:manage`)
 | `GET /customers/{id}/subscription`, `GET …/subscription/events` | `subscription:view` | a customer's plan, account credit, waiting renewal; history |
 | `GET/PUT /customers/{id}/billing-profile` | `subscription:manage` to write | who the customer is on its invoices |
 | `POST /customers/{id}/quotes`, `POST /customers/{id}/orders` | `subscription:manage` | price a request; raise it as an order |
+| `GET /customers/{id}/options` | read | what the customer may be sold now: renewal, higher plans, the add-ons its term offers |
 | `GET /customers/{id}/orders`, `GET /orders?status=&page=`, `GET /orders/{id}` | read | a customer's orders; every customer's (open ones oldest first); one |
 | `POST /orders/{id}/pay`, `/reject`, `/cancel` | `subscription:manage` | record the payment (activates); turn down with a reason; withdraw |
 | `POST /customers/{id}/adjustments` | `subscription:manage`; `refund:manage` to post credit | move the end of a term, or post account credit, with a reason |

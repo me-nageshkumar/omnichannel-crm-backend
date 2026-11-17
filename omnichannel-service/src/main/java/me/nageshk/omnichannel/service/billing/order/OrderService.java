@@ -130,6 +130,16 @@ public class OrderService {
                 throw new CodedException(HttpStatus.CONFLICT, "ORDER_PENDING", null,
                         "Another request to change this plan is waiting for payment; cancel it first");
             }
+            if (q.kind() == OrderKind.ADDON && groupBought(q.target().getSegmentAfter()) != null) {
+                String group = groupBought(q.target().getSegmentAfter());
+                boolean asked = orders.findByCustomerIdAndStatusOrderByRaisedAtAscIdAsc(customerId, OrderStatus.REQUESTED)
+                        .stream().anyMatch(x -> x.getKind() == OrderKind.ADDON && now.isBefore(x.getValidUntil())
+                                && group.equals(groupBought(x.getTarget().getSegmentAfter())));
+                if (asked) {
+                    throw new CodedException(HttpStatus.CONFLICT, "ORDER_PENDING", null,
+                            "A request for this add-on is already waiting for payment");
+                }
+            }
             BillingOrder o = new BillingOrder();
             o.setNumber(numbers.order());
             o.setCustomerId(customerId);
@@ -160,15 +170,38 @@ public class OrderService {
             BillingOrder saved = orders.save(o);
             audit.record(BillingChange.SUBSCRIPTION, customerId, "ORDER_RAISED",
                     "Order " + saved.getNumber() + " raised: " + summary(saved), null, null, caller.userId());
-            return view(saved, new HashMap<>());
+            return seenBy(caller, view(saved, new HashMap<>()));
         });
     }
 
-    /** Newest first. */
+    /** Newest first, as staff see them. */
     public List<OrderView> list(String customerId) {
+        return list(customerId, Caller.staff(null));
+    }
+
+    /** Newest first, as the caller may see them. */
+    public List<OrderView> list(String customerId, Caller caller) {
         if (!customers.existsById(customerId)) throw new NotFoundException("customer not found");
         Map<String, String> names = new HashMap<>();
-        return orders.findByCustomerIdOrderByRaisedAtDescIdDesc(customerId).stream().map(o -> view(o, names)).toList();
+        return orders.findByCustomerIdOrderByRaisedAtDescIdDesc(customerId).stream()
+                .map(o -> seenBy(caller, view(o, names))).toList();
+    }
+
+    /**
+     * An order as its customer may see it: the amounts and what became of it, without what staff wrote for
+     * themselves (their reasons and payment notes) or their names.
+     */
+    static OrderView seenBy(Caller caller, OrderView v) {
+        if (caller.staff()) return v;
+        PaymentView p = v.payment() == null ? null
+                : new PaymentView(v.payment().method(), v.payment().reference(), v.payment().receivedOn(), null, null,
+                        v.payment().recordedAt());
+        return new OrderView(v.id(), v.number(), v.customerId(), v.customerName(), v.status(), null,
+                v.raisedByStaff() ? "Your account manager" : v.raisedByName(), v.raisedByStaff(), v.raisedAt(), null, null,
+                p, v.invoiceId(), v.invoiceNumber(), v.creditNoteIds(), v.rejectedReason(), v.kind(), v.lines(),
+                v.extraDiscountPercent(), v.taxable(), v.tax(), v.total(), v.credits(), v.creditFromNotes(),
+                v.accountCredit(), v.accountCreditUsed(), v.payable(), v.planCode(), v.planName(), v.period(),
+                v.termStart(), v.termEnd(), v.validUntil(), v.creditPosting(), v.newTermEnd());
     }
 
     /**
@@ -200,7 +233,7 @@ public class OrderService {
 
     /** @throws NotFoundException if there is none, or it belongs to another customer than the caller's */
     public OrderView get(String orderId, Caller caller) {
-        return view(require(orderId, caller), new HashMap<>());
+        return seenBy(caller, view(require(orderId, caller), new HashMap<>()));
     }
 
     /**
@@ -216,7 +249,7 @@ public class OrderService {
         BillingOrder done = close(o, OrderStatus.CANCELLED, null);
         audit.record(BillingChange.SUBSCRIPTION, o.getCustomerId(), "ORDER_CANCELLED",
                 "Order " + o.getNumber() + " cancelled", null, null, caller.userId());
-        return view(done, new HashMap<>());
+        return seenBy(caller, view(done, new HashMap<>()));
     }
 
     /** Staff turn a request down, saying why. */
@@ -262,6 +295,12 @@ public class OrderService {
         return new QuoteInput(req.kind(), sub, state, plan, groups.byCode(), s, profile, zone,
                 now.atZone(zone).toLocalDate(), req.startDate(), req.addOns(), req.keepAddOnIds(), req.addOn(), extra,
                 caller.staff(), id -> id == null ? null : invoices.findById(id).orElse(null));
+    }
+
+    /** The feature group an add-on order adds (pricing puts the new add-on last); null for extra units. */
+    private static String groupBought(TermSegment priced) {
+        if (priced == null || priced.getAddOns().isEmpty()) return null;
+        return priced.getAddOns().get(priced.getAddOns().size() - 1).getGroupCode();
     }
 
     static SubscriptionState stateOf(Subscription sub, BillingSettings s, ZoneId zone, Instant now) {

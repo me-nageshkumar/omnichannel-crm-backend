@@ -119,7 +119,7 @@ public class OrderSteps {
         audit.recordOnce("order:" + o.getId(), BillingChange.SUBSCRIPTION, customerId, "ORDER_ACTIVATED",
                 "Order " + o.getNumber() + " activated: " + describe(o),
                 o.getPayment() == null ? "system" : o.getPayment().recordedBy());
-        supersede(o);
+        supersede(o, sub.getRevision());
     }
 
     /**
@@ -178,8 +178,10 @@ public class OrderSteps {
      * stale; an add-on makes the open plan changes stale (their carried add-ons and credits no longer add up), but
      * not other add-on requests.
      */
-    private void supersede(BillingOrder o) {
+    private void supersede(BillingOrder o, long revisionNow) {
+        // only what was priced before this change: a request raised since was priced on the result
         Criteria others = Criteria.where("customerId").is(o.getCustomerId()).and("status").is(OrderStatus.REQUESTED)
+                .and("quotedRevision").lt(revisionNow)
                 .and("_id").ne(new org.bson.types.ObjectId(o.getId()));
         if (o.getKind() == OrderKind.ADJUST && o.getTarget().getNewTermEnd() == null) return;
         if (o.getKind() == OrderKind.ADDON) others = others.and("kind").in(STALE_AFTER_ADDON);
