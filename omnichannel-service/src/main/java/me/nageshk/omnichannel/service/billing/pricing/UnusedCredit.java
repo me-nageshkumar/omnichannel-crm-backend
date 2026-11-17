@@ -81,6 +81,16 @@ public final class UnusedCredit {
             BigDecimal amount = overrideTaxable == null ? unused(c, today, zone) : overrideTaxable.min(c.paid());
             if (amount.signum() > 0) byInvoice.merge(c.invoiceId(), amount, BigDecimal::add);
         }
+        return forAmounts(byInvoice, invoices);
+    }
+
+    /**
+     * One credit per invoice for the amounts given, each with its invoice's tax and never more than the invoice
+     * still has uncredited.
+     *
+     * @param byInvoice the amount before tax to give back on each invoice, by invoice id
+     */
+    public static List<OrderCredit> forAmounts(Map<String, BigDecimal> byInvoice, Function<String, Invoice> invoices) {
         List<OrderCredit> credits = new ArrayList<>();
         byInvoice.forEach((invoiceId, amount) -> {
             Invoice invoice = invoices.apply(invoiceId);

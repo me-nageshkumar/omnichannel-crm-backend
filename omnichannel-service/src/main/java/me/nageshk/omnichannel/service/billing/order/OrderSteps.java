@@ -17,6 +17,7 @@ import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import me.nageshk.omnichannel.service.billing.BillingAudit;
 import me.nageshk.omnichannel.service.billing.document.CreditNoteService;
 import me.nageshk.omnichannel.service.billing.document.InvoiceService;
+import me.nageshk.omnichannel.service.billing.money.Money;
 import org.bson.types.Decimal128;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -65,9 +66,27 @@ public class OrderSteps {
                 sub.setCustomerId(customerId);
             }
             OrderTarget target = o.getTarget();
+            boolean plain = true;
             if (o.getKind() == OrderKind.ADDON) {
                 addTo(sub, target.getSegmentAfter(), o);
                 if (target.getNextAfter() != null) addTo(sub, target.getNextAfter(), o);
+            } else if (o.getKind() == OrderKind.CANCEL_ADDON) {
+                String gone = target.getRemoveAddOnId();
+                sub.getCurrent().getAddOns().removeIf(a -> a.getId().equals(gone));
+                if (sub.getNext() != null) sub.getNext().getAddOns().removeIf(a -> a.getId().equals(gone));
+            } else if (o.getKind() == OrderKind.CANCEL_PLAN) {
+                sub.setCurrent(target.getSegmentAfter());
+                sub.setNext(null);
+                sub.setCancelled(true);
+            } else if (o.getKind() == OrderKind.ADJUST) {
+                if (target.getNewTermEnd() != null) {
+                    (sub.getNext() != null ? sub.getNext() : sub.getCurrent()).setTermEnd(target.getNewTermEnd());
+                    sub.setTermRevision(sub.getTermRevision() + 1);
+                } else {
+                    // account credit is not part of the plan: requests that wait stay good
+                    sub.setCreditBalance(Money.round(Money.zeroIfNull(sub.getCreditBalance()).add(target.getCreditPosting())));
+                    plain = false;
+                }
             } else {
                 TermSegment segment = target.getSegmentAfter();
                 // what the term was billed on, so that an upgrade later knows which invoice to credit
@@ -85,7 +104,7 @@ public class OrderSteps {
                 if (target.getAnchorDay() != null) sub.setAnchorDay(target.getAnchorDay());
                 sub.setCancelled(false);
             }
-            sub.setRevision(sub.getRevision() + 1);
+            if (plain) sub.setRevision(sub.getRevision() + 1);
             if (o.getKind().changesTerm()) sub.setTermRevision(sub.getTermRevision() + 1);
             sub.getAppliedOrderIds().add(o.getId());
             subscriptions.save(sub);
@@ -152,13 +171,27 @@ public class OrderSteps {
     private void supersede(BillingOrder o) {
         Criteria others = Criteria.where("customerId").is(o.getCustomerId()).and("status").is(OrderStatus.REQUESTED)
                 .and("_id").ne(new org.bson.types.ObjectId(o.getId()));
-        if (!o.getKind().changesTerm()) others = others.and("kind").in(STALE_AFTER_ADDON);
+        if (o.getKind() == OrderKind.ADJUST && o.getTarget().getNewTermEnd() == null) return;
+        if (o.getKind() == OrderKind.ADDON) others = others.and("kind").in(STALE_AFTER_ADDON);
         mongo.updateMulti(new Query(others), new Update().set("status", OrderStatus.SUPERSEDED).inc("version", 1),
                 BillingOrder.class);
     }
 
     private static String describe(BillingOrder o) {
-        String what = o.getLines().isEmpty() ? o.getKind().name() : o.getLines().get(0).description();
+        if (o.getLines().isEmpty()) {
+            OrderTarget t = o.getTarget();
+            String what = switch (o.getKind()) {
+                case CANCEL_ADDON -> "add-on cancelled";
+                case CANCEL_PLAN -> "plan cancelled";
+                case ADJUST -> t.getNewTermEnd() != null ? "end of the term moved"
+                        : "account credit " + (t.getCreditPosting().signum() > 0 ? "+" : "")
+                                + Money.round(t.getCreditPosting()).toPlainString();
+                default -> o.getKind().name();
+            };
+            if (o.getCreditFromNotes().signum() > 0) what += ", credit " + o.getCreditFromNotes().toPlainString();
+            return o.getReason() == null ? what : what + " (" + o.getReason() + ")";
+        }
+        String what = o.getLines().get(0).description();
         if (o.getLines().size() > 1) what += " and " + (o.getLines().size() - 1) + " more";
         return what + ", total " + o.getTotal().toPlainString();
     }

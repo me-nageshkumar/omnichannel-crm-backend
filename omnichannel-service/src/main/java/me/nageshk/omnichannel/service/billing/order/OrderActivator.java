@@ -98,6 +98,24 @@ public class OrderActivator {
         });
     }
 
+    /**
+     * For what staff do at once (an adjustment, a cancellation): builds the order under the customer's lease, once
+     * anything interrupted is finished, stores it as paid with nothing to pay, and runs its steps.
+     *
+     * @param build makes the order from the customer's state as it is inside the lease
+     */
+    public OrderView activateNow(String customerId, String by, java.util.function.Supplier<BillingOrder> build) {
+        return locks.withCustomer(customerId, () -> {
+            finishPending(customerId);
+            Instant now = clock.instant();
+            BillingOrder o = build.get();
+            o.setStatus(OrderStatus.ACTIVATING);
+            o.setPayment(new OrderPayment(OrderPayment.NONE, null, null, null, by, now));
+            o.setActivatingSince(now);
+            return service.view(finish(orders.save(o)), new HashMap<>());
+        });
+    }
+
     /** Finishes every activation of the customer that was started and not completed, oldest first. */
     public void finishPending(String customerId) {
         locks.withCustomer(customerId, () -> {

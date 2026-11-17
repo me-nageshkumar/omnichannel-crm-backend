@@ -50,6 +50,20 @@ public final class OrderViews {
 
     public record RejectRequest(String reason) {}
 
+    /**
+     * One of the two, with a reason.
+     *
+     * @param termEnd the day after the last day of the term, as in every term's {@code termEnd}
+     * @param creditAmount an amount to add to (or, negative, take from) the account credit, tax included
+     */
+    public record AdjustRequest(LocalDate termEnd, BigDecimal creditAmount, String reason) {}
+
+    /**
+     * @param addOnId the add-on to cancel; null cancels the plan
+     * @param creditTaxable the amount before tax to credit instead of the unused part; null for the unused part
+     */
+    public record CancelRequest(String addOnId, BigDecimal creditTaxable, String reason) {}
+
     public record PayRequest(String method, String reference, LocalDate receivedOn, String note) {}
 
     /** {@code from}: the first day a renewal can be asked for, when it is not allowed yet. */
