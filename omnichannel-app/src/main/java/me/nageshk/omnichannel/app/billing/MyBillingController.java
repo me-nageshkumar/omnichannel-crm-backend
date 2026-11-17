@@ -8,6 +8,8 @@ import me.nageshk.omnichannel.service.billing.document.CreditNoteService;
 import me.nageshk.omnichannel.service.billing.document.DocumentViews.CreditNoteView;
 import me.nageshk.omnichannel.service.billing.document.DocumentViews.InvoiceView;
 import me.nageshk.omnichannel.service.billing.document.InvoiceService;
+import me.nageshk.omnichannel.service.billing.refund.RefundService;
+import me.nageshk.omnichannel.service.billing.refund.RefundService.RefundView;
 import me.nageshk.omnichannel.service.billing.SubscriptionViews.SubscriptionView;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,11 +26,14 @@ public class MyBillingController {
     private final SubscriptionService service;
     private final InvoiceService invoices;
     private final CreditNoteService creditNotes;
+    private final RefundService refunds;
 
-    public MyBillingController(SubscriptionService service, InvoiceService invoices, CreditNoteService creditNotes) {
+    public MyBillingController(SubscriptionService service, InvoiceService invoices, CreditNoteService creditNotes,
+            RefundService refunds) {
         this.service = service;
         this.invoices = invoices;
         this.creditNotes = creditNotes;
+        this.refunds = refunds;
     }
 
     @GetMapping("/subscription")
@@ -59,6 +64,12 @@ public class MyBillingController {
     @PreAuthorize("hasAuthority('billing:view')")
     public CreditNoteView creditNote(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
         return creditNotes.getFor(customerOf(me), id);
+    }
+
+    @GetMapping("/refunds")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public List<RefundView> refunds(@AuthenticationPrincipal AuthenticatedUser me) {
+        return refunds.listRecorded(customerOf(me));
     }
 
     private static String customerOf(AuthenticatedUser me) {
