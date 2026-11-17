@@ -444,7 +444,7 @@ HSN/SAC, tax breakdown, total in figures and words, payment or reason, "computer
 ### 9.8 Platform settings and customer profile
 
 `billingSettings` (one document): supplier legal name, address, state, GSTIN, HSN/SAC code, GST rate, invoice prefix,
-credit-note prefix, billing zone, grace days (default 7), quote valid days (7), renewal window days (30), default wallet low-balance
+credit-note prefix, payment instructions (how a customer pays a request; shown beside its open requests), billing zone, grace days (default 7), quote valid days (7), renewal window days (30), default wallet low-balance
 threshold, `customersWithoutPlan`. Payment recording is refused until the supplier fields are filled.
 
 `Customer.billing`: legal name, address, state (from a fixed list of Indian states and territories), GSTIN (optional,
