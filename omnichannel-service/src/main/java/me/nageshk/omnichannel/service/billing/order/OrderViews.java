@@ -36,7 +36,12 @@ public final class OrderViews {
     public record PaymentView(String method, String reference, LocalDate receivedOn, String note, String recordedByName,
             Instant recordedAt) {}
 
-    /** A quote that was raised: the same amounts, with who raised it and what became of it. */
+    /**
+     * A quote that was raised: the same amounts, with who raised it and what became of it.
+     *
+     * @param creditPosting an adjustment's posting to the account credit (negative takes away); null otherwise
+     * @param newTermEnd the end an adjustment moved the last paid term to; null otherwise
+     */
     public record OrderView(String id, String number, String customerId, String customerName, OrderStatus status,
             String raisedBy, String raisedByName, boolean raisedByStaff, Instant raisedAt, String reason,
             String extraDiscountReason, PaymentView payment, String invoiceId, String invoiceNumber,
@@ -44,7 +49,7 @@ public final class OrderViews {
             OrderKind kind, List<OrderLine> lines, BigDecimal extraDiscountPercent, BigDecimal taxable, TaxAmounts tax,
             BigDecimal total, List<OrderCredit> credits, BigDecimal creditFromNotes, BigDecimal accountCredit,
             BigDecimal accountCreditUsed, BigDecimal payable, String planCode, String planName, BillingPeriod period,
-            Instant termStart, Instant termEnd, Instant validUntil) {}
+            Instant termStart, Instant termEnd, Instant validUntil, BigDecimal creditPosting, Instant newTermEnd) {}
 
     public record OrderPage(List<OrderView> items, long total, int page) {}
 

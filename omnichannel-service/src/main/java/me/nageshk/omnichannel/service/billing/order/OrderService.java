@@ -335,7 +335,9 @@ public class OrderService {
                 o.getTotal(), o.getCredits(), o.getCreditFromNotes(), o.getAccountCredit(), o.getAccountCreditUsed(),
                 o.getPayable(), o.getPlanCode(), o.getPlanName(),
                 after == null || after.getTerms() == null ? null : after.getTerms().period(),
-                after == null ? null : after.getTermStart(), after == null ? null : after.getTermEnd(), o.getValidUntil());
+                after == null ? null : after.getTermStart(), after == null ? null : after.getTermEnd(), o.getValidUntil(),
+                o.getTarget() == null ? null : o.getTarget().getCreditPosting(),
+                o.getTarget() == null ? null : o.getTarget().getNewTermEnd());
     }
 
     private String userName(String userId, Map<String, String> names) {

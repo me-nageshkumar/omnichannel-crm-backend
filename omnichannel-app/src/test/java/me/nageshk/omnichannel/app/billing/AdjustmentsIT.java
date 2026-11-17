@@ -52,6 +52,9 @@ class AdjustmentsIT extends MoneyApiTestBase {
         assertThat(order.get("reason").asString()).isEqualTo("Ten days for the outage");
         assertThat(order.get("total").decimalValue()).isEqualByComparingTo("0");
         assertThat(order.get("invoiceNumber").isNull()).isTrue();
+        // the order says what it moved, so it can be shown
+        assertThat(order.get("newTermEnd").asString()).isEqualTo("2027-01-10T18:30:00Z");
+        assertThat(order.get("creditPosting").isNull()).isTrue();
 
         Subscription s = sub();
         assertThat(s.getCurrent().getTermEnd()).isEqualTo(Instant.parse("2027-01-10T18:30:00Z"));
@@ -79,7 +82,7 @@ class AdjustmentsIT extends MoneyApiTestBase {
         buy(acme, request("NEW", "gold-monthly"));
         POST(path(), amToken, body(null, 250, "Goodwill")).andExpect(status().isForbidden());
         POST(path(), superToken, body(null, 250, "Goodwill for the outage")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("ACTIVATED"));
+                .andExpect(jsonPath("$.status").value("ACTIVATED")).andExpect(jsonPath("$.creditPosting").value(250.00));
         assertThat(sub().getCreditBalance()).isEqualByComparingTo("250.00");
         // a posting does not disturb the plan or the requests that wait
         assertThat(sub().getRevision()).isEqualTo(1);
