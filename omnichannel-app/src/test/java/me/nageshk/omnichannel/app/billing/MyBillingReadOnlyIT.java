@@ -48,6 +48,10 @@ class MyBillingReadOnlyIT extends MoneyApiTestBase {
         String manager = testUsers.accessToken(testUsers.createInCustomer(acme.getId(), "money-manager", null,
                 List.of(new WorkspaceRole(ws.getId(), testUsers.roleId(BuiltInRoles.WORKSPACE_MANAGER)))));
         GET(MY + "/profile", manager).andExpect(status().isForbidden());
+        GET(MY + "/states", manager).andExpect(status().isForbidden());
+        // the states its profile form offers
+        GET(MY + "/states", adminToken).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.code=='29')].name").value("Karnataka"));
         PUT(MY + "/profile", manager, profile("x", "y", "29")).andExpect(status().isForbidden());
         GET(MY + "/profile", amToken).andExpect(status().isForbidden());
     }

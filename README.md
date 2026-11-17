@@ -804,7 +804,7 @@ order with a 100% extra discount.
 A Customer Admin's own billing is under `/api/my/billing` (reads `billing:view`, writes `billing:request`, both
 COMPANY authorities): `GET subscription`, `GET options` (what it may ask for now), `POST quotes` and `POST orders`
 (`RENEWAL`, `UPGRADE`, `ADDON` only, no extra discount), `GET orders`, `POST orders/{id}/cancel` (a request it raised
-itself), `GET invoices`, `credit-notes`, `refunds` with `/{id}` and `/{id}/pdf`, `GET/PUT profile`. Its writes are
+itself), `GET invoices`, `credit-notes`, `refunds` with `/{id}` and `/{id}/pdf`, `GET/PUT profile`, `GET states`. Its writes are
 `@ReadOnlySafe`: a customer whose plan has run out can still ask to renew. `GET /api/customers` items carry
 `planName` and `subscriptionState`, and take `noPlan=true`.
 

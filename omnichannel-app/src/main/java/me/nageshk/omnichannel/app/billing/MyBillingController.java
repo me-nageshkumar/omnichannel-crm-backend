@@ -2,6 +2,7 @@ package me.nageshk.omnichannel.app.billing;
 
 import java.util.List;
 import me.nageshk.omnichannel.common.api.NotFoundException;
+import me.nageshk.omnichannel.common.billing.IndianStates;
 import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import me.nageshk.omnichannel.db.billing.CreditNote;
 import me.nageshk.omnichannel.db.billing.Invoice;
@@ -10,6 +11,7 @@ import me.nageshk.omnichannel.service.billing.BillingProfileService;
 import me.nageshk.omnichannel.service.billing.SubscriptionService;
 import me.nageshk.omnichannel.service.billing.SubscriptionViews.ProfileRequest;
 import me.nageshk.omnichannel.service.billing.SubscriptionViews.ProfileView;
+import me.nageshk.omnichannel.service.billing.SubscriptionViews.StateView;
 import me.nageshk.omnichannel.service.billing.document.BillingDocumentFiles;
 import me.nageshk.omnichannel.service.billing.document.CreditNoteService;
 import me.nageshk.omnichannel.service.billing.document.DocumentViews.CreditNoteView;
@@ -54,6 +56,13 @@ public class MyBillingController {
     @PreAuthorize("hasAuthority('billing:view')")
     public SubscriptionView subscription(@AuthenticationPrincipal AuthenticatedUser me) {
         return service.view(customerOf(me));
+    }
+
+    /** The states and union territories by GST code, for the profile form. */
+    @GetMapping("/states")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public List<StateView> states() {
+        return IndianStates.all().stream().map(st -> new StateView(st.code(), st.name())).toList();
     }
 
     @GetMapping("/profile")
