@@ -2,7 +2,6 @@ package me.nageshk.omnichannel.service.billing;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import me.nageshk.omnichannel.common.billing.BillingPeriod;
 import me.nageshk.omnichannel.common.billing.LimitKey;
@@ -18,10 +17,6 @@ public final class SubscriptionViews {
 
     public record AddOnRequest(AddOnKind kind, String groupCode, LimitKey limitKey, Integer quantity) {}
 
-    /** @param revision the subscription's revision this change was made from; ignored when the customer has none */
-    public record AssignRequest(String planCode, LocalDate startDate, LocalDate endDate, List<AddOnRequest> addOns,
-            Long revision) {}
-
     public record PlanRef(String code, String name, BillingPeriod period, int rank) {}
 
     /** @param source DEFAULT (in every plan), PLAN or ADDON */
@@ -32,10 +27,18 @@ public final class SubscriptionViews {
     /** @param limit null when unlimited; @param used null for a limit that is not counted across the customer */
     public record LimitView(LimitKey key, String label, LimitScope scope, Integer limit, Long used) {}
 
-    /** The dates are midnights in {@code zone}; {@code termEnd} is the first moment after the last paid day. */
+    /**
+     * The dates are midnights in {@code zone}; {@code termEnd} is the first moment after the last paid day.
+     *
+     * @param creditBalance money the platform owes the customer, tax included
+     * @param cancelled the plan was cancelled: no grace, read-only from its end until a plan is bought again
+     */
     public record SubscriptionView(SubscriptionState state, boolean readOnly, PlanRef plan, Instant termStart,
             Instant termEnd, Instant graceEnd, String zone, List<GroupRef> groups, List<AddOnView> addOns,
-            List<LimitView> limits, long revision) {}
+            List<LimitView> limits, long revision, BigDecimal creditBalance, NextTerm next, boolean cancelled) {}
+
+    /** A renewal that is paid for and has not begun. */
+    public record NextTerm(String planName, Instant termStart, Instant termEnd) {}
 
     public record LimitKeyView(LimitKey key, LimitScope scope, String label) {}
 

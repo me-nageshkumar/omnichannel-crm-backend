@@ -48,6 +48,7 @@ class ReadOnlySafeHandlersTest {
                 "UserController#availability", "UserController#initiate", "UserController#confirm",
                 "UserController#disable", "InitialPasswordController#change", "LogoutController#logout",
                 // asking to renew, upgrade or buy an add-on: the way out of read-only
-                "MyOrderController#quote", "MyOrderController#raise", "MyOrderController#cancel");
+                "MyOrderController#quote", "MyOrderController#raise", "MyOrderController#cancel",
+                "MyBillingController#putProfile");
     }
 }

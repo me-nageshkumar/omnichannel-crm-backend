@@ -2,10 +2,14 @@ package me.nageshk.omnichannel.app.billing;
 
 import java.util.List;
 import me.nageshk.omnichannel.common.api.NotFoundException;
+import me.nageshk.omnichannel.common.api.ReadOnlySafe;
 import me.nageshk.omnichannel.db.billing.CreditNote;
 import me.nageshk.omnichannel.db.billing.Invoice;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
+import me.nageshk.omnichannel.service.billing.BillingProfileService;
 import me.nageshk.omnichannel.service.billing.SubscriptionService;
+import me.nageshk.omnichannel.service.billing.SubscriptionViews.ProfileRequest;
+import me.nageshk.omnichannel.service.billing.SubscriptionViews.ProfileView;
 import me.nageshk.omnichannel.service.billing.document.BillingDocumentFiles;
 import me.nageshk.omnichannel.service.billing.document.CreditNoteService;
 import me.nageshk.omnichannel.service.billing.document.DocumentViews.CreditNoteView;
@@ -19,6 +23,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,9 +38,11 @@ public class MyBillingController {
     private final CreditNoteService creditNotes;
     private final RefundService refunds;
     private final BillingDocumentFiles files;
+    private final BillingProfileService profiles;
 
     public MyBillingController(SubscriptionService service, InvoiceService invoices, CreditNoteService creditNotes,
-            RefundService refunds, BillingDocumentFiles files) {
+            RefundService refunds, BillingDocumentFiles files, BillingProfileService profiles) {
+        this.profiles = profiles;
         this.service = service;
         this.invoices = invoices;
         this.creditNotes = creditNotes;
@@ -46,6 +54,20 @@ public class MyBillingController {
     @PreAuthorize("hasAuthority('billing:view')")
     public SubscriptionView subscription(@AuthenticationPrincipal AuthenticatedUser me) {
         return service.view(customerOf(me));
+    }
+
+    @GetMapping("/profile")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public ProfileView profile(@AuthenticationPrincipal AuthenticatedUser me) {
+        return profiles.get(customerOf(me));
+    }
+
+    /** Allowed while read-only: a customer must be able to put its details right before it renews. */
+    @PutMapping("/profile")
+    @PreAuthorize("hasAuthority('billing:request')")
+    @ReadOnlySafe
+    public ProfileView putProfile(@AuthenticationPrincipal AuthenticatedUser me, @RequestBody ProfileRequest req) {
+        return profiles.putOwn(customerOf(me), req, me.userId());
     }
 
     @GetMapping("/invoices")
