@@ -77,7 +77,8 @@ class AutomationPlanIT extends AutomationTestBase {
             clock.advance(Duration.ofDays(45));
             ResponseEntity<JsonNode> refused = call(HttpMethod.POST, messages(chat), agent, Map.of("text", "Hi again"));
             assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.PAYMENT_REQUIRED);
-            assertThat(refused.getBody().get("code").asString()).isEqualTo("SUBSCRIPTION_INACTIVE");
+            // read-only mode answers before the send is tried
+            assertThat(refused.getBody().get("code").asString()).isEqualTo("SUBSCRIPTION_EXPIRED");
             assertThat(d.requests("sendMessage")).hasSize(1);
 
             incoming(n1, VEENU, "chat", "are you there?", "Veenu");
