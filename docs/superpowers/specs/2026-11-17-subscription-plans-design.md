@@ -126,7 +126,7 @@ Seeded built-in groups (my call; staff may edit names, authorities and category,
 | `templates` | DEFAULT | `template:*` (the inbox, automations and chatbots all send templates) |
 | `campaigns` | PAID | `campaign:*` |
 | `automations` | PAID | `automation:*` |
-| `chatbots` | PAID | `chatbot:view`, `chatbot:manage` |
+| `chatbots` | PAID, requires `automations` (a chatbot is started by an automation rule) | `chatbot:view`, `chatbot:manage` |
 | `ai` | PAID, requires `chatbots` | `ai:*` |
 | `crm` | PAID | every BRAND-level `crm:*` |
 

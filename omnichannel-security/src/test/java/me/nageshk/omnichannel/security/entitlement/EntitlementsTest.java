@@ -177,6 +177,62 @@ class EntitlementsTest {
         assertThat(unknown.readOnly()).isTrue();
     }
 
+    @Test
+    void aReadThatOverlapsAnEvictionIsNotKept() {
+        // the read sees the plan without the CRM, and while it is still loading the plan is changed and evicted
+        Subscription before = subscription(Set.of(), Map.of());
+        Subscription after = subscription(Set.of("crm"), Map.of());
+        java.util.concurrent.atomic.AtomicBoolean changed = new java.util.concurrent.atomic.AtomicBoolean();
+        when(subscriptions.findByCustomerId("c1")).thenAnswer(i -> {
+            if (changed.compareAndSet(false, true)) {
+                entitlements.evict("c1");
+                return Optional.of(before);
+            }
+            return Optional.of(after);
+        });
+
+        entitlements.of("c1");
+
+        assertThat(entitlements.of("c1").allows("crm:view")).isTrue();
+    }
+
+    @Test
+    void aGroupReadThatOverlapsAnEvictionIsNotKept() {
+        has(subscription(Set.of("crm"), Map.of()));
+        java.util.concurrent.atomic.AtomicBoolean changed = new java.util.concurrent.atomic.AtomicBoolean();
+        when(groups.findAll()).thenAnswer(i -> {
+            if (changed.compareAndSet(false, true)) {
+                entitlements.evictAll();
+                return List.of(group("crm", GroupCategory.PAID, "crm:view", "crm:export"));
+            }
+            return List.of(group("crm", GroupCategory.PAID, "crm:view"));
+        });
+
+        entitlements.of("c1");
+
+        assertThat(entitlements.of("c1").allows("crm:export")).isFalse();
+    }
+
+    @Test
+    void aSettingsReadThatOverlapsAnEvictionIsNotKept() {
+        BillingSettingsStore store = new BillingSettingsStore(settingsRepo);
+        BillingSettings old = new BillingSettings();
+        BillingSettings saved = new BillingSettings();
+        saved.setCustomersWithoutPlan(WithoutPlan.READ_ONLY);
+        java.util.concurrent.atomic.AtomicBoolean changed = new java.util.concurrent.atomic.AtomicBoolean();
+        when(settingsRepo.findById(BillingSettings.ID)).thenAnswer(i -> {
+            if (changed.compareAndSet(false, true)) {
+                store.evict();
+                return Optional.of(old);
+            }
+            return Optional.of(saved);
+        });
+
+        store.get();
+
+        assertThat(store.get().getCustomersWithoutPlan()).isEqualTo(WithoutPlan.READ_ONLY);
+    }
+
     private void has(Subscription s) {
         when(subscriptions.findByCustomerId("c1")).thenAnswer(i -> Optional.of(s));
     }

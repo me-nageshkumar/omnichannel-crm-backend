@@ -37,9 +37,11 @@ class SeedGroupsTest {
     }
 
     @Test
-    void onlyAiRequiresAnotherGroup() {
+    void aGroupRequiresWhatItCannotRunWithout() {
         for (SeedGroups.Seed s : SeedGroups.all()) {
+            // an AI node lives in a chatbot, and a chatbot is started by an automation rule
             if (s.code().equals("ai")) assertThat(s.requires()).containsExactly("chatbots");
+            else if (s.code().equals("chatbots")) assertThat(s.requires()).containsExactly("automations");
             else assertThat(s.requires()).as(s.code()).isEmpty();
         }
     }

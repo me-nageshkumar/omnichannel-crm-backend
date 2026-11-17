@@ -75,9 +75,12 @@ class PlansApiIT extends BillingApiTestBase {
         POST(PLANS, superToken, planBody("gold-monthly")).andExpect(status().isCreated());
         refused(planBody("gold-monthly"), "code");
 
+        // chatbots are started by automation rules
+        refused(with("items", List.of(Map.of("groupCode", "chatbots", "price", 10))), "items");
         // AI is fine once chatbots is there, included or offered
         Map<String, Object> ok = planBody("with-ai");
-        ok.put("items", List.of(Map.of("groupCode", "chatbots", "price", 500)));
+        ok.put("items", List.of(Map.of("groupCode", "automations", "price", 300),
+                Map.of("groupCode", "chatbots", "price", 500)));
         ok.put("addOns", List.of(Map.of("groupCode", "ai", "price", 200)));
         POST(PLANS, superToken, ok).andExpect(status().isCreated());
     }

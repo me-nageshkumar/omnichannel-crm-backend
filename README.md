@@ -708,7 +708,8 @@ below says otherwise). Design: `docs/superpowers/specs/2026-11-17-subscription-p
 - **Feature group** (`featureGroups`): authorities sold together (CRM, Chatbots, …). An authority is in at most one
   group; one in no group is unavailable to every customer on a plan. `DEFAULT` groups are in every plan; `PAID` ones
   are included in a plan or held as an add-on. Nine built-in groups are seeded at startup (Core, Inbox, Contacts,
-  Templates as default; Campaigns, Automations, Chatbots, AI, CRM as paid); Core always keeps the authorities a
+  Templates as default; Campaigns, Automations, Chatbots, AI, CRM as paid; Chatbots requires Automations, which start them, and AI requires
+  Chatbots); Core always keeps the authorities a
   Customer Admin needs to manage users and see billing.
 - **Plan** (`plans`): a period (monthly, quarterly, half-yearly, yearly), a rank, the paid groups it includes with a
   price each, the groups it offers as add-ons, limits, extra-unit prices, a discount % and usage rates. The API returns

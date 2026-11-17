@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import me.nageshk.omnichannel.common.billing.LimitKey;
 import me.nageshk.omnichannel.common.billing.SubscriptionState;
 import me.nageshk.omnichannel.db.billing.AddOnKind;
@@ -54,6 +55,8 @@ public class Entitlements {
     /** A workspace never moves to another customer, so this is kept for good. */
     private final Map<String, String> customerOfWorkspace = new ConcurrentHashMap<>();
     private volatile CachedGroups cachedGroups;
+    /** Counts evictions: a load that began before one is used once but never kept, so it cannot outlive the change. */
+    private final AtomicLong generation = new AtomicLong();
 
     public Entitlements(SubscriptionRepository subscriptions, FeatureGroupRepository groups,
             BillingSettingsStore settings, WorkspaceRepository workspaces, Clock clock) {
@@ -104,12 +107,14 @@ public class Entitlements {
     }
 
     /** After a change to this customer's subscription. */
-    public void evict(String customerId) {
+    public synchronized void evict(String customerId) {
+        generation.incrementAndGet();
         if (customerId != null) byCustomer.remove(customerId);
     }
 
     /** After a change to a feature group or to the billing settings. */
-    public void evictAll() {
+    public synchronized void evictAll() {
+        generation.incrementAndGet();
         byCustomer.clear();
         cachedGroups = null;
         settings.evict();
@@ -118,9 +123,12 @@ public class Entitlements {
     private Optional<Subscription> subscription(String customerId, Instant now) {
         CachedSubscription cached = byCustomer.get(customerId);
         if (cached == null || !now.isBefore(cached.loadedAt().plus(TTL)) || now.isBefore(cached.loadedAt())) {
+            long loadedAt = generation.get();
             cached = new CachedSubscription(subscriptions.findByCustomerId(customerId)
                     .filter(s -> s.getCurrent() != null), now);
-            byCustomer.put(customerId, cached);
+            synchronized (this) {
+                if (generation.get() == loadedAt) byCustomer.put(customerId, cached);
+            }
         }
         return cached.subscription();
     }
@@ -128,8 +136,11 @@ public class Entitlements {
     private List<FeatureGroup> groups(Instant now) {
         CachedGroups cached = cachedGroups;
         if (cached == null || !now.isBefore(cached.loadedAt().plus(TTL)) || now.isBefore(cached.loadedAt())) {
+            long loadedAt = generation.get();
             cached = new CachedGroups(List.copyOf(groups.findAll()), now);
-            cachedGroups = cached;
+            synchronized (this) {
+                if (generation.get() == loadedAt) cachedGroups = cached;
+            }
         }
         return cached.groups();
     }

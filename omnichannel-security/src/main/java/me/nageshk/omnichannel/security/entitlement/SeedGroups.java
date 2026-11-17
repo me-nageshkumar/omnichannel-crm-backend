@@ -34,7 +34,8 @@ public final class SeedGroups {
                     "campaign"),
             seed("automations", "Automations", "Rules that act on events", GroupCategory.PAID, Set.of(), 60,
                     "automation"),
-            seed("chatbots", "Chatbots", "Chatbot flows", GroupCategory.PAID, Set.of(), 70, "chatbot"),
+            // a chatbot is started by an automation rule, so it is of no use without automations
+            seed("chatbots", "Chatbots", "Chatbot flows", GroupCategory.PAID, Set.of("automations"), 70, "chatbot"),
             seed("ai", "AI", "AI connections, profiles and the AI node", GroupCategory.PAID, Set.of("chatbots"), 80,
                     "ai"),
             seed("crm", "CRM", "Deals, pipelines, companies and tasks", GroupCategory.PAID, Set.of(), 90, "crm"));
