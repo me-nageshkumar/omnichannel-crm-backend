@@ -475,6 +475,26 @@ class PhoneNumberMoveIT {
     }
 
     @Test
+    void cancelOnceTheRepointHasBegunIsRefused() {
+        // step 3 stops inside the re-point: the step is still RUNS_ENDED, but records already sit on the archive
+        AtomicBoolean thrown = new AtomicBoolean();
+        doAnswer(inv -> {
+            inv.callRealMethod();
+            if (thrown.compareAndSet(false, true)) throw new IllegalStateException("stopped in the repoint");
+            return null;
+        }).when(records).repoint(eq(main.getId()), any());
+        PhoneNumberMove stopped = service.move(main.getId(), brandB.getId(), me);
+        assertThat(stopped.getStep()).isEqualTo(PhoneNumberMove.Step.RUNS_ENDED);
+        assertThat(stopped.getSourceArchiveId()).isNotNull();
+
+        assertCode(() -> service.cancel(main.getId(), me), "number_move_too_far", 409);
+
+        assertThat(numbers.findById(main.getId()).orElseThrow().getMovingSince()).isNotNull();
+        assertThat(service.retry(main.getId(), me).getStep()).isEqualTo(PhoneNumberMove.Step.DONE);
+        assertMovedOnce(service.last(main.getId()).orElseThrow());
+    }
+
+    @Test
     void cancelWithoutAnUnfinishedMoveIsRefused() {
         assertCode(() -> service.cancel(main.getId(), me), "number_move_nothing_to_cancel", 409);
     }

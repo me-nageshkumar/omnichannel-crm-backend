@@ -164,7 +164,7 @@ public class PhoneNumberMoveService {
 
     /**
      * Gives up the number's unfinished move while nothing has been re-pointed yet (step STARTED, OFFLINE or
-     * RUNS_ENDED): the number stays in its brand and its device may connect again. Chatbot runs and history imports
+     * RUNS_ENDED, and step 3 has not named its archive): the number stays in its brand and its device may connect again. Chatbot runs and history imports
      * the move already ended stay ended. The move is kept, finished, with the error "Cancelled".
      *
      * @throws CodedException 409 {@code number_move_nothing_to_cancel} when no move of the number is unfinished,
@@ -174,11 +174,13 @@ public class PhoneNumberMoveService {
         PhoneNumberMove m = moves.findByUnfinishedOf(phoneNumberId).orElseThrow(
                 () -> new CodedException(HttpStatus.CONFLICT, "number_move_nothing_to_cancel", null,
                         "This number has no unfinished move."));
-        if (!CANCELLABLE.contains(m.getStep())) throw tooFar();
-        // by update, guarded on the step, so a Retry that recorded a later step meanwhile wins
+        // step 3 names its archive before it re-points, so a move stopped inside it is still RUNS_ENDED
+        if (!CANCELLABLE.contains(m.getStep()) || m.getSourceArchiveId() != null) throw tooFar();
+        // by update, guarded on the step and on no archive, so a Retry that went further meanwhile wins
         Instant now = clock.instant();
         long cancelled = mongo.updateFirst(new Query(Criteria.where("_id").is(m.getId()).and("unfinishedOf")
-                        .is(phoneNumberId).and("step").in(CANCELLABLE.stream().map(Step::name).toList())),
+                        .is(phoneNumberId).and("step").in(CANCELLABLE.stream().map(Step::name).toList())
+                        .and("sourceArchiveId").is(null)),
                 new Update().unset("unfinishedOf").set("finishedAt", now).set("error", CANCELLED).inc("version", 1),
                 PhoneNumberMove.class).getModifiedCount();
         if (cancelled == 0) throw tooFar();

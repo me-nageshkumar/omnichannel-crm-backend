@@ -319,9 +319,12 @@ While a move is unfinished the number has `movingSince` set and its device is re
 retrying). The move's record is in `phoneNumberMoves` (`unfinishedOf` = the number id, `step` = the last step done,
 `error` = why it stopped). What points where, per recorded step:
 
-- **STARTED, OFFLINE, RUNS_ENDED**: nothing re-pointed. Chatbot runs on the number are stopped ("number moved") and
-  history imports cancelled; they stay so. Use **Cancel** (`POST /api/phone-numbers/{id}/move/cancel`): the number stays
-  in its brand and its device connects again. Later steps answer 409 `number_move_too_far`.
+- **STARTED, OFFLINE, RUNS_ENDED with no `sourceArchiveId`**: nothing re-pointed. Chatbot runs on the number are stopped
+  ("number moved") and history imports cancelled; they stay so. Use **Cancel**
+  (`POST /api/phone-numbers/{id}/move/cancel`): the number stays in its brand and its device connects again. Anything
+  else answers 409 `number_move_too_far`.
+- **RUNS_ENDED with `sourceArchiveId` set**: step 3 stopped inside: the archive may exist and some records may be on it.
+  Retry finishes it; to undo, do as at ARCHIVED (the archive row may be missing: then skip deleting it).
 - **ARCHIVED**: the archive `sourceArchiveId` (a `phoneNumbers` row with `archiveOf` = the number id, workspace = the
   source brand) holds the old brand's records; the number is still in the source brand and moving. Retry runs steps 4
   and 5.
