@@ -88,6 +88,17 @@ public class TestBilling {
         return saved;
     }
 
+    /** Makes the customer's current term charge this much a WhatsApp message. */
+    public void messageRate(String customerId, String rate) {
+        Subscription s = subscriptions.findByCustomerId(customerId).orElseThrow();
+        PlanTerms t = s.getCurrent().getTerms();
+        s.getCurrent().setTerms(new PlanTerms(t.planName(), t.period(), t.rank(), t.discountPercent(), t.items(), t.addOns(),
+                t.limitAddOns(), t.limits(), Map.of(me.nageshk.omnichannel.common.billing.UsageMeter.WHATSAPP_MESSAGE,
+                        new java.math.BigDecimal(rate))));
+        subscriptions.save(s);
+        entitlements.evict(customerId);
+    }
+
     /** Gives the customer a wallet holding this much, written straight into the database. */
     public me.nageshk.omnichannel.db.billing.Wallet wallet(String customerId, String balance) {
         mongo.remove(new Query(org.springframework.data.mongodb.core.query.Criteria.where("customerId").is(customerId)), "wallets");
