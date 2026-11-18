@@ -788,7 +788,7 @@ messages from a prepaid wallet; a plan without a rate, and a customer without a 
   into the wallet. A top-up never draws on account credit, never goes stale and is not superseded by plan changes;
   it needs a plan in force.
 - **What is charged**: every message the server sends to WhatsApp for the customer (console, campaign, automation,
-  chatbot, the API), at the rate of the term as it was sold. The charge is taken before the message goes to the
+  chatbot), at the rate of the term as it was sold. The charge is taken before the message goes to the
   phone. It is given back (`REVERSAL`) only when the phone answered that it did not send; a send whose outcome is
   unknown (no answer, a dropped connection) stays charged. Incoming messages, and messages typed on the phone
   itself, cost nothing. A stored message names the entry that paid for it (`usageEntryId`).

@@ -244,6 +244,8 @@ and 3 (the usage wallet and per-message charges, 2026-11-18) are built.
 - A top-up's GST is invoiced when it is paid, not as the balance is used. Confirm this treatment of an advance with
   an accountant before going live.
 - The wallet survives a cancelled or expired plan; the balance waits, and a top-up needs a plan in force.
+- The raw bridge calls for a super admin (`/api/phone-numbers/{id}/bridge/messages`, `/rpc`) do not go through
+  the plan or the wallet: what staff send with them is not charged.
 - Usage totals are by day in the billing zone, for at most 90 days back.
 - A campaign paused for an empty wallet is not resumed by a top-up; a person resumes it.
 - The low-wallet flag is read on `GET /api/users/me`; there is no e-mail or message when the wallet runs low.
