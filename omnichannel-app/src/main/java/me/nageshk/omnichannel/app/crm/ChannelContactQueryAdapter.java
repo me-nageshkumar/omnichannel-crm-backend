@@ -93,8 +93,8 @@ class ChannelContactQueryAdapter implements ChannelContactQuery {
     }
 
     static ChannelAccount account(PhoneNumber n) {
-        String label = n.getLabel() == null || n.getLabel().isBlank() ? n.getNumber() : n.getLabel();
-        return new ChannelAccount(n.getId(), kindOf(n.getConnectionType()), label, n.getNumber());
+        String label = n.getLabel() == null || n.getLabel().isBlank() ? n.shownNumber() : n.getLabel();
+        return new ChannelAccount(n.getId(), kindOf(n.getConnectionType()), label, n.shownNumber());
     }
 
     /** A number without a recorded connection type predates the field and is a WhatsApp Web number. */

@@ -247,7 +247,7 @@ public class PhoneNumberService {
 
     private PhoneNumberView view(PhoneNumber n, Workspace w, Customer c, Team t) {
         PhoneNumberStatus s = PhoneNumberStatus.of(n, w, c, live.stateOf(n.getId()));
-        return new PhoneNumberView(n.getId(), n.getNumber(), n.getLabel(), n.getConnectionType(), n.getCustomerId(),
+        return new PhoneNumberView(n.getId(), n.shownNumber(), n.getLabel(), n.getConnectionType(), n.getCustomerId(),
                 c == null ? null : c.getName(), n.getWorkspaceId(), w == null ? null : w.getName(),
                 s.status(), n.getDisabled(), s.disabledBecause(), n.getLastConnectedAt(), n.getLastSeenAt(),
                 n.getLastWrongNumber(), n.getLastWrongNumberAt(), n.getDeviceKeyHash() != null, n.getCreationTime(),

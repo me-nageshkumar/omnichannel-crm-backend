@@ -63,6 +63,6 @@ public class TeamController {
     private static TeamView view(TeamWithMembers t) {
         return new TeamView(t.team().getId(), t.team().getName(),
                 t.members().stream().map(u -> new Member(u.getId(), u.getName(), u.getUsername())).toList(),
-                t.phoneNumbers().stream().map(n -> new NumberRef(n.getId(), n.getNumber(), n.getLabel())).toList());
+                t.phoneNumbers().stream().map(n -> new NumberRef(n.getId(), n.shownNumber(), n.getLabel())).toList());
     }
 }

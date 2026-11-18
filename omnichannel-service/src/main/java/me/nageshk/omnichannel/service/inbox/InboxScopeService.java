@@ -101,7 +101,7 @@ public class InboxScopeService {
             if (scope.ownedNumberIds().contains(n.getId())) visible.add(new VisibleNumber(n, false));
             else if (guests.contains(n.getId())) visible.add(new VisibleNumber(n, true));
         }
-        visible.sort(Comparator.comparing(v -> String.valueOf(v.number().getNumber())));
+        visible.sort(Comparator.comparing(v -> String.valueOf(v.number().shownNumber())));
         return visible;
     }
 

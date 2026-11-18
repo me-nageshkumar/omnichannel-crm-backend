@@ -46,7 +46,7 @@ public class RunVariables {
         Map<String, Object> numberBranch = new LinkedHashMap<>();
         if (number != null) {
             numberBranch.put("label", number.getLabel());
-            numberBranch.put("phone", number.getNumber());
+            numberBranch.put("phone", number.shownNumber());
         }
         v.put("number", numberBranch);
         v.put("event", event == null ? new LinkedHashMap<>() : eventBranch(event));

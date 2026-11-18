@@ -70,7 +70,7 @@ public class CampaignQueryService {
         Map<String, String> names = new HashMap<>();
         for (Contact c : contacts.findAllById(contactIds)) names.put(c.getId(), c.getName());
         Map<String, String> numbers = new HashMap<>();
-        for (PhoneNumber n : phoneNumbers.findAllById(senderIds)) numbers.put(n.getId(), n.getNumber());
+        for (PhoneNumber n : phoneNumbers.findAllById(senderIds)) numbers.put(n.getId(), n.shownNumber());
         List<RecipientView> items = rows.stream().map(r -> new RecipientView(r.getId(),
                 r.getPhone() != null ? r.getPhone() : r.getRawPhone(), r.getContactId(), names.get(r.getContactId()),
                 r.getStatus(), r.getSkipReason(), r.getSenderId(), numbers.get(r.getSenderId()), r.getTemplateId(),

@@ -48,6 +48,12 @@ public class PhoneNumber {
     /** When the number last arrived in its current brand by a move. */
     private Instant movedInAt;
 
+    /** The digits of the number an archive keeps; {@code number} stays null so the partial unique index holds. */
+    private String archivedNumber;
+
+    /** The digits to show: the number, or for an archive the number it archives. Lookups by number use {@code number}. */
+    public String shownNumber() { return number != null ? number : archivedNumber; }
+
     public boolean isArchive() { return archiveOf != null; }
 
     @Indexed(sparse = true)

@@ -237,7 +237,7 @@ public class CampaignSenderService {
             boolean paused = s.getPausedUntil() != null && s.getPausedUntil().isAfter(now);
             int age = SenderPolicy.ageDay(s.getSendingDays(), s.getLastSendingDay(),
                     SenderPolicy.today(settings, now));
-            return new SenderView(n.getId(), n.getNumber(), n.getLabel(), s.getState(), age,
+            return new SenderView(n.getId(), n.shownNumber(), n.getLabel(), s.getState(), age,
                     capToday(s, settings, now), usedToday(n.getId(), settings, now), hourlyUsed(n.getId(), now),
                     statuses.get(n.getId()), devices.isReady(workspaceId, n.getId()),
                     paused ? s.getPausedUntil() : null, paused ? s.getPauseReason() : null, s.getHalfPaceUntil(),

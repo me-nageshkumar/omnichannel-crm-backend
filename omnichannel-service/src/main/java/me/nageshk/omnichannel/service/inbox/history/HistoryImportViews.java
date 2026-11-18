@@ -37,7 +37,7 @@ public class HistoryImportViews {
 
     private static HistoryImportView view(WaWebHistoryImport i, PhoneNumber n) {
         HistoryImportView.NumberRef ref = new HistoryImportView.NumberRef(i.getPhoneNumberId(),
-                n == null ? null : n.getNumber(), n == null ? null : n.getLabel());
+                n == null ? null : n.shownNumber(), n == null ? null : n.getLabel());
         WaWebHistoryImport.Scope s = i.getScope();
         WaWebHistoryImport.Counts c = i.getCounts() == null ? WaWebHistoryImport.Counts.ZERO : i.getCounts();
         Integer progress = c.chatsTotal() == 0 ? null

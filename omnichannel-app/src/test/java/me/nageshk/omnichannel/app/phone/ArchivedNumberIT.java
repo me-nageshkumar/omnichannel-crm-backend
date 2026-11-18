@@ -84,6 +84,7 @@ class ArchivedNumberIT {
         a.setCustomerId(acme.getId());
         a.setWorkspaceId(brand.getId());
         a.setArchiveOf(archiveOf);
+        a.setArchivedNumber(archiveOf);
         a.setArchivedAt(Instant.parse("2026-11-18T10:00:00Z"));
         return numbers.save(a);
     }
@@ -132,6 +133,7 @@ class ArchivedNumberIT {
         JsonNode view = res.getBody().get(0);
         assertThat(view.get("id").asString()).isEqualTo(a.getId());
         assertThat(view.get("status").asString()).isEqualTo("ARCHIVED");
+        assertThat(view.get("number").asString()).isEqualTo("919800000001");
         assertThat(view.get("archiveOf").asString()).isEqualTo("919800000001");
         assertThat(view.get("archivedAt").isNull()).isFalse();
     }
