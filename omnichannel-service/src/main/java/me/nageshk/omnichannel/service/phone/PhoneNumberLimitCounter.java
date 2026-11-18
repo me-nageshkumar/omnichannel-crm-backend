@@ -9,7 +9,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 
-/** The customer's WhatsApp numbers across its brands, disabled ones included. */
+/** The customer's WhatsApp numbers across its brands, disabled ones included; archives of moved numbers are not counted. */
 @Component
 public class PhoneNumberLimitCounter implements LimitCounter {
 
@@ -26,6 +26,6 @@ public class PhoneNumberLimitCounter implements LimitCounter {
 
     @Override
     public long count(String customerId) {
-        return mongo.count(new Query(where("customerId").is(customerId)), PhoneNumber.class);
+        return mongo.count(new Query(where("customerId").is(customerId).and("archiveOf").exists(false)), PhoneNumber.class);
     }
 }

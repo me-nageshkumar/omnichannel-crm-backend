@@ -5,6 +5,7 @@ public class NoDeviceException extends RuntimeException {
 
     public static final String NO_DEVICE = "NO_DEVICE";
     public static final String WHATSAPP_NOT_READY = "WHATSAPP_NOT_READY";
+    public static final String NUMBER_ARCHIVED = "NUMBER_ARCHIVED";
 
     private final String code;
 

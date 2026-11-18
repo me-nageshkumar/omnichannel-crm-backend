@@ -1,5 +1,8 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +28,8 @@ public class InboxDevices {
 
     private static final Logger log = LoggerFactory.getLogger(InboxDevices.class);
 
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
     private final PhoneNumberRepository numbers;
     private final AccessService access;
     private final DeviceRegistry registry;
@@ -44,6 +49,12 @@ public class InboxDevices {
         PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("phone number not found"));
         remember(number);
+        if (number.getArchiveOf() != null) {
+            String on = number.getArchivedAt() == null ? "" : " on "
+                    + DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH).format(number.getArchivedAt().atZone(IST));
+            throw new NoDeviceException(NoDeviceException.NUMBER_ARCHIVED,
+                    "This number moved to another brand" + on + ".");
+        }
         if (number.getDisabled() != null || !access.isWorkspaceUsable(workspaceId)) {
             throw new NoDeviceException(NoDeviceException.NO_DEVICE, "the number is disabled");
         }

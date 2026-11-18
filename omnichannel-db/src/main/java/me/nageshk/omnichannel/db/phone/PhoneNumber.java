@@ -20,7 +20,10 @@ public class PhoneNumber {
     @Id
     private String id;
 
-    @Indexed(unique = true)
+    /**
+     * Null on an archive. Uniqueness is the partial index {@code number_unique} owned by
+     * {@link PhoneNumberIndexMigration}, not an annotation, so archives (no number) may coexist.
+     */
     private String number;
     @Indexed
     private String customerId;
@@ -32,6 +35,20 @@ public class PhoneNumber {
     private String teamId;
     private ConnectionType connectionType;
     private Disabled disabled;
+
+    /**
+     * Set on the archive a move leaves behind: the digits of the number that moved away. The archive keeps the
+     * old brand's chats; it has no {@code number}, never connects and does not count toward the number limit.
+     */
+    @Indexed(sparse = true)
+    private String archiveOf;
+    private Instant archivedAt;
+    /** Set while the number is being moved to another brand; its device is refused until the move finishes. */
+    private Instant movingSince;
+    /** When the number last arrived in its current brand by a move. */
+    private Instant movedInAt;
+
+    public boolean isArchive() { return archiveOf != null; }
 
     @Indexed(sparse = true)
     private String deviceKeyHash;
