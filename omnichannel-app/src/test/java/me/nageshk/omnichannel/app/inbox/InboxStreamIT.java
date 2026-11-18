@@ -179,6 +179,8 @@ class InboxStreamIT extends InboxApiTestBase {
         broker.push(brand.getId(), queue, view(queue));
 
         assertThat(sent(agentStream)).contains("\"visible\":false");
+        // the agent's console can say why the chat left: a chatbot has it now
+        assertThat(sent(agentStream)).contains("\"status\":\"BOT\"");
         assertThat(sent(managerStream)).contains("\"visible\":true").doesNotContain("\"visible\":false");
     }
 }

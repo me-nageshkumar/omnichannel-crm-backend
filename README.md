@@ -667,6 +667,8 @@ ticker. A brand without such a rule is routed during ingestion, as before.
 - Chat status `BOT` ("With chatbot"): an open chat nobody holds becomes `BOT` when a chatbot run starts on it (its team
   is cleared). A chat an agent holds stays `OPEN` with the chatbot chip. A chatbot that writes first into a closed
   chat leaves it closed; the customer's answer makes it `BOT`.
+- A chat that leaves a viewer's scope reaches their stream as `{chat: {id, phoneNumberId, status}, visible: false}`;
+  `status` lets the console tell "a chatbot has it now" from "someone else has it".
 - Who sees them: `inbox:view-bot` (Customer admin and Workspace manager by default), on the numbers the user may open,
   through the list `GET /inbox/chats?scope=BOT` (its `status` parameter is ignored). The other lists never return
   `BOT` chats; an agent without the authority gets 404 on one.
