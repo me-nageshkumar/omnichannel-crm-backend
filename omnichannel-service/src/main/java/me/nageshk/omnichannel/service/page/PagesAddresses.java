@@ -52,10 +52,12 @@ public class PagesAddresses {
     private final OmnichannelProperties props;
     private final Clock clock;
     private final boolean allowInsecure;
+    private final PagesAddressChecker checker;
 
     public PagesAddresses(PagesAddressRepository addresses, PagesSettingsRepository settings,
             WorkspaceRepository workspaces, MongoTemplate mongo, OmnichannelProperties props, Clock clock,
-            @Value("${omnichannel.pages.allow-insecure:false}") boolean allowInsecure) {
+            @Value("${omnichannel.pages.allow-insecure:false}") boolean allowInsecure, PagesAddressChecker checker) {
+        this.checker = checker;
         this.addresses = addresses;
         this.settings = settings;
         this.workspaces = workspaces;
@@ -156,7 +158,10 @@ public class PagesAddresses {
         a.setCheckNonce(null);
         a.setSetAt(now);
         a.setSetBy(byUserId);
-        return addresses.save(a);
+        PagesAddress saved = addresses.save(a);
+        // checked at once; its one result decides (spec §5.4)
+        PagesAddress checked = checker.check(saved.getWorkspaceId());
+        return checked != null ? checked : saved;
     }
 
     /** Takes the brand's address away; its links use the platform's, and its host stays known for the pages' lifetime. */
@@ -200,7 +205,8 @@ public class PagesAddresses {
         s.setUpdatedAt(now);
         s.setUpdatedBy(byUserId);
         settings.save(s);
-        return platformView();
+        String warning = s.getBaseUrl() == null ? null : checker.checkPlatform(s.getBaseUrl());
+        return platformView(warning);
     }
 
     // ---- helpers ----

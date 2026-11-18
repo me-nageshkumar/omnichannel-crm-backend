@@ -49,6 +49,8 @@ class PagesAddressesIT {
     @Autowired TestUsers testUsers;
     @Autowired MutableClock clock;
     @Autowired MongoTemplate mongo;
+    // addresses here point nowhere; the check is PagesAddressCheckIT's
+    @org.springframework.test.context.bean.override.mockito.MockitoBean me.nageshk.omnichannel.service.page.PagesProbe probe;
 
     Customer acme;
     Customer other;
@@ -59,6 +61,9 @@ class PagesAddressesIT {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.when(probe.get(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(new me.nageshk.omnichannel.service.page.PagesProbe.Result(0, null,
+                        me.nageshk.omnichannel.service.page.PagesProbe.NO_ANSWER));
         clean();
         start = clock.instant();
         acme = testUsers.customer("Acme");
