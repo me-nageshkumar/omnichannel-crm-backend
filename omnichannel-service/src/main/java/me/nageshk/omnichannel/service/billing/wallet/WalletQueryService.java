@@ -164,7 +164,10 @@ public class WalletQueryService {
         Date from = Date.from(clock.instant().atZone(zone).toLocalDate().minusDays(days - 1L).atStartOfDay(zone).toInstant());
         List<Document> pipeline = List.of(
                 new Document("$match", new Document("customerId", customerId)
-                        .append("type", new Document("$in", List.of(WalletEntryType.USAGE.name(), WalletEntryType.REVERSAL.name())))),
+                        .append("type", new Document("$in", List.of(WalletEntryType.USAGE.name(), WalletEntryType.REVERSAL.name())))
+                        // an entry is never older than the charge it gives back, so this narrows by the index
+                        // without leaving out anything the next stage would keep
+                        .append("at", new Document("$gte", from))),
                 // a charge given back counts against the day it was charged, not the day it came back
                 new Document("$set", new Document("when", new Document("$ifNull", List.of("$usageAt", "$at")))),
                 new Document("$match", new Document("when", new Document("$gte", from))),

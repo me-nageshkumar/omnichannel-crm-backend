@@ -68,7 +68,9 @@ public class UsageCharger {
         draft.setWorkspaceId(workspaceId);
         draft.setRef(actor.campaignId());
         draft.setBy(actor.userId());
+        // the charge's own time, kept so that giving it back takes it off the very day it went on
         java.time.Instant at = java.time.Instant.now(clock);
+        draft.setAt(at);
         String entryId = wallets.debit(customerId, rate, draft);
         return new Charge(customerId, entryId, rate, source, workspaceId, actor.campaignId(), at);
     }

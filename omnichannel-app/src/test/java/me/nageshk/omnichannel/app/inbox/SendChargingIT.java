@@ -263,6 +263,7 @@ class SendChargingIT extends InboxApiTestBase {
         WalletEntry back = ledger().stream().filter(e -> e.getType() == WalletEntryType.REVERSAL).findFirst().orElseThrow();
         WalletEntry charge = ledger().stream().filter(e -> e.getType() == WalletEntryType.USAGE).findFirst().orElseThrow();
         assertThat(back.getUsageAt()).isNotNull();
-        assertThat(java.time.Duration.between(back.getUsageAt(), charge.getAt()).abs()).isLessThan(java.time.Duration.ofSeconds(5));
+        // to the instant: a charge taken at midnight and given back must come off the same day it went on
+        assertThat(back.getUsageAt()).isEqualTo(charge.getAt());
     }
 }

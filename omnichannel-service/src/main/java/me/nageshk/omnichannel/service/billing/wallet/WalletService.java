@@ -183,7 +183,8 @@ public class WalletService {
                 .append("ref", literal(draft.getRef()))
                 .append("note", literal(draft.getNote()))
                 .append("by", literal(draft.getBy()))
-                .append("at", Date.from(clock.instant()));
+                // a caller that must know the entry's time to the instant (a charge) names it
+                .append("at", Date.from(draft.getAt() != null ? draft.getAt() : clock.instant()));
         if (draft.getUsageAt() != null) entry.append("usageAt", Date.from(draft.getUsageAt()));
         Document second = new Document("pending",
                 new Document("$concatArrays", List.of(new Document("$ifNull", List.of("$pending", new ArrayList<>())), List.of(entry))))
