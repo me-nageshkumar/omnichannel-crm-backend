@@ -218,21 +218,67 @@ class AiKnowledgeWorkerIT extends AiTestBase {
     }
 
     @Test
-    void transientErrorRetriesThenFails() throws Exception {
+    void transientErrorRetriesWithBackoffThenFails() throws Exception {
         String id = note("Pitch", "text");
-        for (int i = 0; i < 3; i++) OPENAI.enqueue(503, "{\"error\":{\"message\":\"Server busy\"}}");
+        for (int i = 0; i < 3; i++) OPENAI.enqueue(429, "{\"error\":{\"message\":\"Rate limit reached\"}}");
 
         tick();
         assertThat(row(id).getState()).isEqualTo(SourceState.QUEUED);
         assertThat(row(id).getAttempts()).isEqualTo(1);
+        assertThat(row(id).getLeaseUntil()).isEqualTo(clock.instant().plusSeconds(5));
+        tick();
+        assertThat(OPENAI.requests()).hasSize(1);
+
+        clock.advance(Duration.ofSeconds(6));
         tick();
         assertThat(row(id).getState()).isEqualTo(SourceState.QUEUED);
+        assertThat(row(id).getLeaseUntil()).isEqualTo(clock.instant().plusSeconds(10));
+        clock.advance(Duration.ofSeconds(9));
         tick();
+        assertThat(OPENAI.requests()).hasSize(2);
 
+        clock.advance(Duration.ofSeconds(2));
+        tick();
         KnowledgeSource s = row(id);
         assertThat(s.getState()).isEqualTo(SourceState.FAILED);
-        assertThat(s.getError()).contains("Server busy");
+        assertThat(s.getError()).contains("Rate limit reached");
         assertThat(OPENAI.requests()).hasSize(3);
+    }
+
+    @Test
+    void aRateLimitWithRetryAfterIsNotTriedBeforeIt() throws Exception {
+        String id = note("Pitch", "text");
+        OPENAI.enqueue(429, "{\"error\":{\"message\":\"Slow down\"}}", Map.of("Retry-After", "20"));
+
+        tick();
+        assertThat(row(id).getLeaseUntil()).isEqualTo(clock.instant().plusSeconds(20));
+        clock.advance(Duration.ofSeconds(19));
+        tick();
+        assertThat(OPENAI.requests()).hasSize(1);
+
+        clock.advance(Duration.ofSeconds(2));
+        uploaded(id);
+    }
+
+    @Test
+    void aBusyProviderWhileIndexingBacksOff() throws Exception {
+        String id = note("Pitch", "text");
+        uploaded(id);
+        clock.advance(Duration.ofSeconds(2));
+        OPENAI.enqueue(503, "{\"error\":{\"message\":\"Server busy\"}}");
+
+        tick();
+        KnowledgeSource s = row(id);
+        assertThat(s.getState()).isEqualTo(SourceState.INDEXING);
+        assertThat(s.getLeaseUntil()).isEqualTo(clock.instant().plusSeconds(5));
+        clock.advance(Duration.ofSeconds(4));
+        tick();
+        assertThat(OPENAI.requests()).hasSize(3);
+
+        clock.advance(Duration.ofSeconds(2));
+        OPENAI.enqueue(200, "{\"status\":\"completed\"}");
+        tick();
+        assertThat(row(id).getState()).isEqualTo(SourceState.READY);
     }
 
     @Test
@@ -242,6 +288,7 @@ class AiKnowledgeWorkerIT extends AiTestBase {
         tick();
         assertThat(row(id).getState()).isEqualTo(SourceState.QUEUED);
 
+        clock.advance(Duration.ofSeconds(6));
         uploaded(id);
         clock.advance(Duration.ofSeconds(2));
         OPENAI.enqueue(200, "{\"status\":\"completed\"}");
@@ -388,29 +435,37 @@ class AiKnowledgeWorkerIT extends AiTestBase {
         assertThat(OPENAI.requests()).isEmpty();
     }
 
-    @Test
-    void fetchAgainReplacesTheProviderFile() throws Exception {
-        String id = webPage();
+    /** A source uploaded as file_1 and indexed. */
+    private void ready(String id) throws Exception {
         uploaded(id);
         clock.advance(Duration.ofSeconds(2));
         OPENAI.enqueue(200, "{\"status\":\"completed\"}");
         tick();
-        KnowledgeSource first = row(id);
-        assertThat(first.getState()).isEqualTo(SourceState.READY);
-        pageBody = pageBody.replace("19,999", "24,999");
+        assertThat(row(id).getState()).isEqualTo(SourceState.READY);
         OPENAI.reset();
+    }
+
+    @Test
+    void fetchAgainReplacesTheProviderFile() throws Exception {
+        String id = webPage();
+        ready(id);
+        pageBody = pageBody.replace("19,999", "24,999");
 
         knowledge.change(brand.getId(), kbId, id, new SourceChange(null, null, "FETCH_AGAIN"));
-        assertThat(calls()).containsExactly("DELETE /v1/vector_stores/vs_1/files/file_1", "DELETE /v1/files/file_1");
+        // the old file keeps answering until the new one is attached
+        assertThat(OPENAI.requests()).isEmpty();
         assertThat(row(id).getState()).isEqualTo(SourceState.QUEUED);
         assertThat(row(id).getProviderFileId()).isNull();
-        OPENAI.reset();
+        assertThat(row(id).getReplacedFileIds()).containsExactly("file_1");
         OPENAI.enqueue(200, "{\"id\":\"file_2\"}");
         OPENAI.enqueue(200, "{}");
-        OPENAI.enqueue(200, "{\"status\":\"completed\"}");
 
         tick();
+        assertThat(calls()).containsExactly("POST /v1/files", "POST /v1/vector_stores/vs_1/files",
+                "DELETE /v1/vector_stores/vs_1/files/file_1", "DELETE /v1/files/file_1");
+        assertThat(row(id).getReplacedFileIds()).isEmpty();
         clock.advance(Duration.ofSeconds(2));
+        OPENAI.enqueue(200, "{\"status\":\"completed\"}");
         tick();
 
         KnowledgeSource s = row(id);
@@ -420,6 +475,125 @@ class AiKnowledgeWorkerIT extends AiTestBase {
         assertThat(gridText(s)).doesNotContain("19,999");
         assertThat(files.find(new Query(Criteria.where("metadata.knowledgeBaseId").is(kbId)))).hasSize(1);
         assertThat(pageHits.get()).isEqualTo(2);
+    }
+
+    @Test
+    void fetchAgainWhoseFetchFailsKeepsTheOldFileAnswering() throws Exception {
+        String id = webPage();
+        ready(id);
+        pageStatus = 404;
+
+        knowledge.change(brand.getId(), kbId, id, new SourceChange(null, null, "FETCH_AGAIN"));
+        tick();
+
+        KnowledgeSource s = row(id);
+        assertThat(s.getState()).isEqualTo(SourceState.FAILED);
+        assertThat(s.getError()).isEqualTo("The page answered 404");
+        assertThat(s.getReplacedFileIds()).containsExactly("file_1");
+        assertThat(gridText(s)).contains("19,999");
+        assertThat(OPENAI.requests()).isEmpty();
+
+        // the page is back: Retry replaces the old file once the new one is attached
+        pageStatus = 200;
+        knowledge.change(brand.getId(), kbId, id, new SourceChange(null, null, "RETRY"));
+        OPENAI.enqueue(200, "{\"id\":\"file_2\"}");
+        OPENAI.enqueue(200, "{}");
+        tick();
+        assertThat(calls()).containsExactly("POST /v1/files", "POST /v1/vector_stores/vs_1/files",
+                "DELETE /v1/vector_stores/vs_1/files/file_1", "DELETE /v1/files/file_1");
+        assertThat(row(id).getProviderFileId()).isEqualTo("file_2");
+        assertThat(row(id).getReplacedFileIds()).isEmpty();
+    }
+
+    @Test
+    void noteEditWithABusyDetachOfTheOldFileDetachesItLater() throws Exception {
+        String id = note("Fees", "Online 19,999");
+        ready(id);
+
+        knowledge.change(brand.getId(), kbId, id, new SourceChange(null, "Online 24,999", null));
+        assertThat(OPENAI.requests()).isEmpty();
+        assertThat(row(id).getReplacedFileIds()).containsExactly("file_1");
+
+        OPENAI.enqueue(200, "{\"id\":\"file_2\"}");
+        OPENAI.enqueue(200, "{}");
+        OPENAI.enqueue(503, "{\"error\":{\"message\":\"Server busy\"}}");
+        tick();
+        KnowledgeSource s = row(id);
+        assertThat(s.getState()).isEqualTo(SourceState.INDEXING);
+        assertThat(s.getProviderFileId()).isEqualTo("file_2");
+        assertThat(s.getReplacedFileIds()).containsExactly("file_1");
+
+        // indexed, and the provider is still busy: the old file waits with a backoff, never forgotten
+        clock.advance(Duration.ofSeconds(2));
+        OPENAI.enqueue(200, "{\"status\":\"completed\"}");
+        OPENAI.enqueue(503, "{\"error\":{\"message\":\"Server busy\"}}");
+        tick();
+        s = row(id);
+        assertThat(s.getState()).isEqualTo(SourceState.READY);
+        assertThat(s.getReplacedFileIds()).containsExactly("file_1");
+        assertThat(s.getNextCheckAt()).isEqualTo(clock.instant().plusSeconds(2));
+        tick();
+        assertThat(OPENAI.requests()).hasSize(5);
+
+        clock.advance(Duration.ofSeconds(2));
+        OPENAI.enqueue(503, "{\"error\":{\"message\":\"Server busy\"}}");
+        tick();
+        assertThat(row(id).getNextCheckAt()).isEqualTo(clock.instant().plusSeconds(4));
+
+        clock.advance(Duration.ofSeconds(4));
+        tick();
+        s = row(id);
+        assertThat(s.getState()).isEqualTo(SourceState.READY);
+        assertThat(s.getProviderFileId()).isEqualTo("file_2");
+        assertThat(s.getReplacedFileIds()).isEmpty();
+        assertThat(s.getNextCheckAt()).isNull();
+        assertThat(calls()).containsExactly("POST /v1/files", "POST /v1/vector_stores/vs_1/files",
+                "DELETE /v1/vector_stores/vs_1/files/file_1", "GET /v1/vector_stores/vs_1/files/file_2",
+                "DELETE /v1/vector_stores/vs_1/files/file_1", "DELETE /v1/vector_stores/vs_1/files/file_1",
+                "DELETE /v1/vector_stores/vs_1/files/file_1", "DELETE /v1/files/file_1");
+    }
+
+    @Test
+    void removingASourceWithAReplacedFileStillPendingDetachesBoth() throws Exception {
+        String id = note("Fees", "Online 19,999");
+        ready(id);
+        knowledge.change(brand.getId(), kbId, id, new SourceChange(null, "Online 24,999", null));
+        OPENAI.enqueue(200, "{\"id\":\"file_2\"}");
+        OPENAI.enqueue(200, "{}");
+        OPENAI.enqueue(503, "{\"error\":{\"message\":\"Server busy\"}}");
+        tick();
+        assertThat(row(id).getReplacedFileIds()).containsExactly("file_1");
+
+        knowledge.remove(brand.getId(), kbId, id);
+        OPENAI.reset();
+        tick();
+
+        assertThat(calls()).containsExactly("DELETE /v1/vector_stores/vs_1/files/file_2", "DELETE /v1/files/file_2",
+                "DELETE /v1/vector_stores/vs_1/files/file_1", "DELETE /v1/files/file_1");
+        assertThat(row(id)).isNull();
+    }
+
+    @Test
+    void anUnexpectedErrorWhileRemovingBacksOff() throws Exception {
+        KnowledgeSource broken = new KnowledgeSource();
+        broken.setWorkspaceId(brand.getId());
+        broken.setKind(SourceKind.NOTE);
+        broken.setState(SourceState.REMOVING);
+        broken.setAddedAt(clock.instant());
+        String id = mongo.insert(broken).getId(); // no knowledge base id: reading its base throws
+
+        tick();
+        KnowledgeSource s = row(id);
+        assertThat(s.getState()).isEqualTo(SourceState.REMOVING);
+        assertThat(s.getLeaseUntil()).isNull();
+        assertThat(s.getNextCheckAt()).isEqualTo(clock.instant().plusSeconds(2));
+        tick();
+        assertThat(row(id).getAttempts()).isEqualTo(1);
+
+        clock.advance(Duration.ofSeconds(2));
+        tick();
+        assertThat(row(id).getAttempts()).isEqualTo(2);
+        assertThat(row(id).getNextCheckAt()).isEqualTo(clock.instant().plusSeconds(4));
     }
 
     @Test

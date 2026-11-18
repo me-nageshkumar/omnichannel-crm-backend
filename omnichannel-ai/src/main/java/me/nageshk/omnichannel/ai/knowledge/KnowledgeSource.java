@@ -1,6 +1,8 @@
 package me.nageshk.omnichannel.ai.knowledge;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
@@ -27,6 +29,11 @@ public class KnowledgeSource {
     /** Our copy in GridFS (hex ObjectId); web pages have none until fetched. */
     private String gridFsId;
     private String providerFileId;
+    /**
+     * Provider files an edit or Fetch again replaced, still attached: they keep answering until the new file is
+     * attached, then the worker detaches and deletes them (and so does a removal).
+     */
+    private List<String> replacedFileIds = new ArrayList<>();
     private SourceState state = SourceState.QUEUED;
     private String error;
     private int attempts;
@@ -64,6 +71,8 @@ public class KnowledgeSource {
     public void setGridFsId(String gridFsId) { this.gridFsId = gridFsId; }
     public String getProviderFileId() { return providerFileId; }
     public void setProviderFileId(String providerFileId) { this.providerFileId = providerFileId; }
+    public List<String> getReplacedFileIds() { return replacedFileIds == null ? new ArrayList<>() : replacedFileIds; }
+    public void setReplacedFileIds(List<String> replacedFileIds) { this.replacedFileIds = replacedFileIds; }
     public SourceState getState() { return state; }
     public void setState(SourceState state) { this.state = state; }
     public String getError() { return error; }

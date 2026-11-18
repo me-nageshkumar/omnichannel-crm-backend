@@ -28,8 +28,8 @@ class KnowledgeQueue {
     }
 
     /**
-     * Takes a source that is QUEUED or UPLOADING, INDEXING and due for a check, or REMOVING, whose lease is expired or
-     * absent; sets the lease and counts the attempt.
+     * Takes a source that is QUEUED or UPLOADING, INDEXING and due for a check, REMOVING, or READY and due to detach
+     * the files it replaced, whose lease is expired or absent; sets the lease and counts the attempt.
      */
     Optional<KnowledgeSource> claim(Instant now) {
         Criteria free = new Criteria().orOperator(Criteria.where("leaseUntil").is(null),
@@ -38,7 +38,9 @@ class KnowledgeQueue {
                 Criteria.where("state").in(SourceState.QUEUED, SourceState.UPLOADING),
                 Criteria.where("state").is(SourceState.REMOVING).orOperator(Criteria.where("nextCheckAt").is(null),
                         Criteria.where("nextCheckAt").lte(now)),
-                Criteria.where("state").is(SourceState.INDEXING).and("nextCheckAt").lte(now))))
+                Criteria.where("state").is(SourceState.INDEXING).and("nextCheckAt").lte(now),
+                // READY has a check time only while files it replaced wait to be detached
+                Criteria.where("state").is(SourceState.READY).and("nextCheckAt").lte(now))))
                 .with(Sort.by(Sort.Direction.DESC, "addedAt"));
         Update u = new Update().set("leaseUntil", now.plus(props.knowledge().lease())).inc("attempts", 1);
         return Optional.ofNullable(

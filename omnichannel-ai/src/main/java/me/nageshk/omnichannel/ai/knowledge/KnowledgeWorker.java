@@ -48,6 +48,8 @@ public class KnowledgeWorker {
     private static final int LAST_CHECK_SECONDS = 30;
     private static final int MAX_REMOVE_BACKOFF_SECONDS = 300;
     private static final int RETRY_REFUSED_SECONDS = 600;
+    /** A busy provider while adding or indexing: the row waits 5 s, doubling, or as long as the provider asked. */
+    private static final int FIRST_RETRY_SECONDS = 5;
     private static final Set<Code> TRANSIENT = Set.of(Code.RATE_LIMIT, Code.UNAVAILABLE, Code.TIMEOUT);
 
     private final KnowledgeQueue queue;
@@ -116,12 +118,10 @@ public class KnowledgeWorker {
         } catch (RuntimeException e) {
             log.warn("Knowledge source {} failed unexpectedly", s.getId(), e);
             try {
-                if (s.getState() == SourceState.REMOVING) {
-                    s.setLeaseUntil(null);
-                    sources.save(s);
-                } else {
-                    retryOrFail(s, "The source could not be processed");
-                }
+                // backed off like a busy provider: never a hot loop that logs this every tick
+                if (s.getState() == SourceState.REMOVING) stillRemoving(s, null, backoff(s));
+                else if (s.getState() == SourceState.READY) replacedLeft(s, Leftover.BUSY);
+                else retryOrFail(s, "The source could not be processed", null);
             } catch (RuntimeException again) {
                 log.warn("Knowledge source {} could not be saved: {}", s.getId(), again.toString());
             }
@@ -139,6 +139,10 @@ public class KnowledgeWorker {
                 ? k : null;
         if (s.getState() == SourceState.REMOVING) {
             remove(s, base, conn, provider);
+            return;
+        }
+        if (s.getState() == SourceState.READY) {
+            dropReplacedOfReady(s, base, conn, provider);
             return;
         }
         AiCredential cred = null;
@@ -159,8 +163,8 @@ public class KnowledgeWorker {
             return;
         }
         try {
-            if (s.getState() == SourceState.INDEXING) check(s, base, provider, cred);
-            else upload(s, base, provider, cred);
+            if (s.getState() == SourceState.INDEXING) check(s, base, conn, provider, cred);
+            else upload(s, base, conn, provider, cred);
         } catch (AiProviderException e) {
             providerFailure(s, conn, e);
         } catch (WebPageReader.WebPageException e) {
@@ -168,8 +172,13 @@ public class KnowledgeWorker {
         }
     }
 
-    /** QUEUED or UPLOADING: read the page if it is one, upload our copy, attach it, then wait for indexing. */
-    private void upload(KnowledgeSource s, KnowledgeBase base, KnowledgeStoreProvider provider, AiCredential cred) {
+    /**
+     * QUEUED or UPLOADING: read the page if it is one, upload our copy, attach it, then wait for indexing. Files the
+     * row replaced are detached once the new one is attached; until then they keep answering, and a failure here
+     * leaves them so.
+     */
+    private void upload(KnowledgeSource s, KnowledgeBase base, AiConnection conn, KnowledgeStoreProvider provider,
+            AiCredential cred) {
         String newCopy = null;
         String fileId = null;
         boolean saved = false;
@@ -210,9 +219,14 @@ public class KnowledgeWorker {
             s.setIndexingSince(now);
             s.setCheckDelaySeconds(FIRST_CHECK_SECONDS);
             s.setNextCheckAt(now.plusSeconds(FIRST_CHECK_SECONDS));
-            sources.save(s);
+            s = sources.save(s);
             saved = true;
             deleteCopy(oldCopy);
+            if (!s.getReplacedFileIds().isEmpty()) {
+                // one still attached is tried again at the indexing checks
+                dropReplaced(s, base, conn, provider, cred);
+                sources.save(s);
+            }
         } finally {
             if (!saved) {
                 deleteCopy(newCopy);
@@ -221,8 +235,9 @@ public class KnowledgeWorker {
         }
     }
 
-    /** INDEXING and due: ask the provider where the file stands. */
-    private void check(KnowledgeSource s, KnowledgeBase base, KnowledgeStoreProvider provider, AiCredential cred) {
+    /** INDEXING and due: ask the provider where the file stands. Replaced files still attached are tried again. */
+    private void check(KnowledgeSource s, KnowledgeBase base, AiConnection conn, KnowledgeStoreProvider provider,
+            AiCredential cred) {
         KnowledgeFileState st = provider.fileState(cred, base.getProviderStoreId(), s.getProviderFileId());
         Instant now = clock.instant();
         switch (st.kind()) {
@@ -232,7 +247,12 @@ public class KnowledgeWorker {
                 s.setLeaseUntil(null);
                 s.setNextCheckAt(null);
                 s.setAttempts(0);
-                sources.save(s);
+                if (s.getReplacedFileIds().isEmpty()) {
+                    sources.save(s);
+                } else {
+                    s.setCheckDelaySeconds(0);
+                    replacedLeft(s, dropReplaced(s, base, conn, provider, cred));
+                }
             }
             case FAILED -> fail(s, st.error() == null || st.error().isBlank() ? "Indexing failed" : st.error());
             case INDEXING -> {
@@ -246,19 +266,20 @@ public class KnowledgeWorker {
                 s.setNextCheckAt(now.plusSeconds(delay));
                 s.setLeaseUntil(null);
                 s.setAttempts(0);
+                if (!s.getReplacedFileIds().isEmpty()) dropReplaced(s, base, conn, provider, cred);
                 sources.save(s);
             }
         }
     }
 
     /**
-     * REMOVING: the row stays until the file is detached from the store (already detached counts), however long that
-     * takes. A provider that is busy is asked again after 2 s, doubling to 5 minutes; a refused or unopenable key, or
-     * a rejected request, shows its reason on the row and is tried again every 10 minutes. Once detached, deleting the
-     * file is best effort.
+     * REMOVING: the row stays until its file, and any file it replaced, is detached from the store (already detached
+     * counts), however long that takes. A provider that is busy is asked again after 2 s, doubling to 5 minutes; a
+     * refused or unopenable key, or a rejected request, shows its reason on the row and is tried again every 10
+     * minutes. Once detached, deleting a file is best effort.
      */
     private void remove(KnowledgeSource s, KnowledgeBase base, AiConnection conn, KnowledgeStoreProvider provider) {
-        if (s.getProviderFileId() == null || conn == null || provider == null) {
+        if (s.getProviderFileId() == null && s.getReplacedFileIds().isEmpty() || conn == null || provider == null) {
             removeLocal(s);
             return;
         }
@@ -269,27 +290,24 @@ public class KnowledgeWorker {
             stillRemoving(s, AiConnectionService.UNOPENABLE, RETRY_REFUSED_SECONDS);
             return;
         }
-        try {
-            provider.detach(cred, base.getProviderStoreId(), s.getProviderFileId());
-        } catch (AiProviderException e) {
-            if (TRANSIENT.contains(e.code())) {
-                int delay = s.getCheckDelaySeconds() <= 0 ? FIRST_CHECK_SECONDS
-                        : Math.min(MAX_REMOVE_BACKOFF_SECONDS, s.getCheckDelaySeconds() * 2);
-                stillRemoving(s, null, delay);
-            } else if (e.code() == Code.AUTH) {
-                connectionService.markInvalid(s.getWorkspaceId(), conn.getId(), AiConnectionService.REFUSED);
-                stillRemoving(s, AiConnectionService.REFUSED, RETRY_REFUSED_SECONDS);
-            } else {
-                stillRemoving(s, e.getMessage(), RETRY_REFUSED_SECONDS);
+        if (s.getProviderFileId() != null) {
+            Leftover left = detachAndDelete(s, base, conn, provider, cred, s.getProviderFileId());
+            if (left != null) {
+                stillRemoving(s, left);
+                return;
             }
+            s.setProviderFileId(null);
+        }
+        Leftover left = dropReplaced(s, base, conn, provider, cred);
+        if (left != null) {
+            stillRemoving(s, left);
             return;
         }
-        try {
-            provider.deleteFile(cred, s.getProviderFileId());
-        } catch (RuntimeException e) {
-            log.warn("Could not delete provider file {}: {}", s.getProviderFileId(), e.getMessage());
-        }
         removeLocal(s);
+    }
+
+    private void stillRemoving(KnowledgeSource s, Leftover left) {
+        stillRemoving(s, left.reason(), left.reason() == null ? backoff(s) : RETRY_REFUSED_SECONDS);
     }
 
     private void stillRemoving(KnowledgeSource s, String reason, int delaySeconds) {
@@ -297,6 +315,102 @@ public class KnowledgeWorker {
         s.setLeaseUntil(null);
         s.setNextCheckAt(clock.instant().plusSeconds(delaySeconds));
         s.setCheckDelaySeconds(reason == null ? delaySeconds : 0);
+        sources.save(s);
+    }
+
+    /** The next wait of a busy provider while removing or replacing: 2 s, doubling to 5 minutes. */
+    private static int backoff(KnowledgeSource s) {
+        return s.getCheckDelaySeconds() <= 0 ? FIRST_CHECK_SECONDS
+                : Math.min(MAX_REMOVE_BACKOFF_SECONDS, s.getCheckDelaySeconds() * 2);
+    }
+
+    // ---- files a change replaced
+
+    /** Why a file is still attached: the provider was busy ({@code reason} null), or refused (the reason shown). */
+    private record Leftover(String reason) {
+        static final Leftover BUSY = new Leftover(null);
+    }
+
+    /**
+     * Detaches and deletes, oldest first, the files the row replaced; each one gone leaves the row's list (the caller
+     * saves the row). Null when none is left, else why the next one stays.
+     */
+    private Leftover dropReplaced(KnowledgeSource s, KnowledgeBase base, AiConnection conn,
+            KnowledgeStoreProvider provider, AiCredential cred) {
+        List<String> left = new ArrayList<>(s.getReplacedFileIds());
+        try {
+            while (!left.isEmpty()) {
+                Leftover stays = detachAndDelete(s, base, conn, provider, cred, left.getFirst());
+                if (stays != null) return stays;
+                left.removeFirst();
+            }
+            return null;
+        } finally {
+            s.setReplacedFileIds(left);
+        }
+    }
+
+    /** Null once the file is detached (deleting it is best effort), else why it is still attached. */
+    private Leftover detachAndDelete(KnowledgeSource s, KnowledgeBase base, AiConnection conn,
+            KnowledgeStoreProvider provider, AiCredential cred, String fileId) {
+        try {
+            provider.detach(cred, base.getProviderStoreId(), fileId);
+        } catch (AiProviderException e) {
+            if (TRANSIENT.contains(e.code())) return Leftover.BUSY;
+            if (e.code() == Code.AUTH) {
+                connectionService.markInvalid(s.getWorkspaceId(), conn.getId(), AiConnectionService.REFUSED);
+                return new Leftover(AiConnectionService.REFUSED);
+            }
+            return new Leftover(e.getMessage());
+        }
+        try {
+            provider.deleteFile(cred, fileId);
+        } catch (RuntimeException e) {
+            log.warn("Could not delete provider file {}: {}", fileId, e.getMessage());
+        }
+        return null;
+    }
+
+    /** READY with replaced files still attached, and due: try them again. */
+    private void dropReplacedOfReady(KnowledgeSource s, KnowledgeBase base, AiConnection conn,
+            KnowledgeStoreProvider provider) {
+        if (conn == null || provider == null) {
+            // the connection is gone: nothing can ever detach them
+            s.setReplacedFileIds(new ArrayList<>());
+            replacedLeft(s, null);
+            return;
+        }
+        AiCredential cred;
+        try {
+            cred = connectionService.credential(s.getWorkspaceId(), conn.getId());
+        } catch (RuntimeException e) {
+            replacedLeft(s, new Leftover(AiConnectionService.UNOPENABLE));
+            return;
+        }
+        replacedLeft(s, dropReplaced(s, base, conn, provider, cred));
+    }
+
+    /**
+     * Saves a READY row after an attempt on its replaced files: done, or asked again as a removal is (busy: 2 s
+     * doubling to 5 minutes; refused: every 10 minutes with the reason on the row).
+     */
+    private void replacedLeft(KnowledgeSource s, Leftover left) {
+        s.setLeaseUntil(null);
+        s.setAttempts(0);
+        if (left == null) {
+            s.setError(null);
+            s.setNextCheckAt(null);
+            s.setCheckDelaySeconds(0);
+        } else if (left.reason() == null) {
+            int delay = backoff(s);
+            s.setError(null);
+            s.setCheckDelaySeconds(delay);
+            s.setNextCheckAt(clock.instant().plusSeconds(delay));
+        } else {
+            s.setError(left.reason());
+            s.setCheckDelaySeconds(0);
+            s.setNextCheckAt(clock.instant().plusSeconds(RETRY_REFUSED_SECONDS));
+        }
         sources.save(s);
     }
 
@@ -312,19 +426,24 @@ public class KnowledgeWorker {
             connectionService.markInvalid(s.getWorkspaceId(), conn.getId(), AiConnectionService.REFUSED);
             fail(s, AiConnectionService.REFUSED);
         } else if (TRANSIENT.contains(e.code())) {
-            retryOrFail(s, e.getMessage());
+            retryOrFail(s, e.getMessage(), e.retryAfter());
         } else {
             fail(s, e.getMessage());
         }
     }
 
-    /** The row stays for the next claim until its attempts are used up. */
-    private void retryOrFail(KnowledgeSource s, String message) {
+    /**
+     * The row is claimed again after a wait until its attempts are used up: 5 s after the first attempt, doubling, or
+     * as long as the provider asked when that is longer. The lease holds it off meanwhile.
+     */
+    private void retryOrFail(KnowledgeSource s, String message, java.time.Duration retryAfter) {
         if (s.getAttempts() >= props.attempts()) {
             fail(s, message);
             return;
         }
-        s.setLeaseUntil(null);
+        long wait = (long) FIRST_RETRY_SECONDS << Math.min(10, Math.max(0, s.getAttempts() - 1));
+        if (retryAfter != null && retryAfter.getSeconds() > wait) wait = retryAfter.getSeconds();
+        s.setLeaseUntil(clock.instant().plusSeconds(wait));
         sources.save(s);
     }
 

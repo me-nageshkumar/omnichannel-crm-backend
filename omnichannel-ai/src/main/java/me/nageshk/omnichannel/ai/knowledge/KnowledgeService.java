@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -206,6 +207,7 @@ public class KnowledgeService {
             });
             for (KnowledgeSource s : rows) {
                 if (s.getProviderFileId() != null) deleteFileQuietly(ws, conn, provider, s.getProviderFileId());
+                for (String replaced : s.getReplacedFileIds()) deleteFileQuietly(ws, conn, provider, replaced);
             }
         }
         files.delete(new Query(Criteria.where("metadata.workspaceId").is(ws).and("metadata.knowledgeBaseId").is(id)));
@@ -268,7 +270,11 @@ public class KnowledgeService {
         return save(b, s, md, title + ".md", MARKDOWN);
     }
 
-    /** FETCH_AGAIN (web page), RETRY (failed source) or an edit of a note; each puts the source back in the queue. */
+    /**
+     * FETCH_AGAIN (web page), RETRY (failed source) or an edit of a note; each puts the source back in the queue. The
+     * provider file in use moves to {@code replacedFileIds} and keeps answering until the worker has attached the new
+     * one; if that fails, the old one stays attached.
+     */
     public SourceView change(String ws, String id, String sourceId, SourceChange in) {
         KnowledgeBase b = findBase(ws, id);
         KnowledgeSource s = findSource(id, sourceId);
@@ -298,7 +304,12 @@ public class KnowledgeService {
         } else {
             throw new ValidationException("action", "must be FETCH_AGAIN or RETRY");
         }
-        String oldFile = s.getProviderFileId();
+        // the file in use keeps answering until the worker has attached its replacement, then the worker drops it
+        if (s.getProviderFileId() != null) {
+            List<String> replaced = new ArrayList<>(s.getReplacedFileIds());
+            replaced.add(s.getProviderFileId());
+            s.setReplacedFileIds(replaced);
+        }
         s.setProviderFileId(null);
         s.setState(SourceState.QUEUED);
         s.setError(null);
@@ -313,7 +324,6 @@ public class KnowledgeService {
             throw e;
         }
         if (oldGridId != null) deleteCopy(oldGridId);
-        if (oldFile != null) dropProviderFile(ws, b, oldFile);
         wake();
         return SourceView.of(saved);
     }
@@ -404,19 +414,6 @@ public class KnowledgeService {
         } catch (RuntimeException e) {
             log.warn("Could not delete provider file {}: {}", fileId, e.getMessage());
         }
-    }
-
-    /** Best effort: detach and delete the old provider file; failures are logged (never with the key). */
-    private void dropProviderFile(String ws, KnowledgeBase b, String fileId) {
-        AiConnection conn = connections.findByIdAndWorkspaceId(b.getConnectionId(), ws).orElse(null);
-        KnowledgeStoreProvider p = conn == null ? null : storeProvider(conn.getProvider());
-        if (p == null) return;
-        try {
-            p.detach(credential(ws, conn), b.getProviderStoreId(), fileId);
-        } catch (RuntimeException e) {
-            log.warn("Could not detach provider file {}: {}", fileId, e.getMessage());
-        }
-        deleteFileQuietly(ws, conn, p, fileId);
     }
 
     private SourceView save(KnowledgeBase b, KnowledgeSource s, byte[] bytes, String fileName, String contentType) {

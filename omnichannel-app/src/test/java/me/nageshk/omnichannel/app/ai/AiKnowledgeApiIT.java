@@ -377,7 +377,7 @@ class AiKnowledgeApiIT extends AiTestBase {
     }
 
     @Test
-    void editingANoteRequeuesItAndDropsTheProviderFile() throws IOException {
+    void editingANoteRequeuesItAndKeepsTheProviderFileForTheWorker() throws IOException {
         String id = createKb("Courses", connection("Main"), "vs_1").getBody().get("id").asString();
         String sid = note(id, "A", "old").getBody().get("id").asString();
         mongo.updateFirst(Query.query(Criteria.where("_id").is(sid)), new org.springframework.data.mongodb.core.query.Update()
@@ -394,9 +394,10 @@ class AiKnowledgeApiIT extends AiTestBase {
         assertThat(gridText(sid)).isEqualTo("# A\n\nnew text");
         KnowledgeSource s = mongo.findById(sid, KnowledgeSource.class);
         assertThat(s.getProviderFileId()).isNull();
+        assertThat(s.getReplacedFileIds()).containsExactly("file_1");
         assertThat(s.getAttempts()).isZero();
-        assertThat(OPENAI.requests()).extracting(r -> r.method() + " " + r.path())
-                .containsExactly("DELETE /v1/vector_stores/vs_1/files/file_1", "DELETE /v1/files/file_1");
+        // the old file keeps answering until the worker attached the new one
+        assertThat(OPENAI.requests()).isEmpty();
         assertThat(woken.get()).isEqualTo(1);
         assertThat(files.find(new Query()).into(new ArrayList<>())).hasSize(1);
         knowledge.registerWaker(() -> {});
