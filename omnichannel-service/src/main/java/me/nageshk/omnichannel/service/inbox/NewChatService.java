@@ -137,6 +137,7 @@ public class NewChatService {
     private WaWebChat claimed(AuthenticatedUser me, String workspaceId, WaWebChat chat) {
         boolean assigned = chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null;
         if (assigned && !scopes.scopeOf(me, workspaceId).covers(chat)) throw new ChatTakenException();
+        if (chat.getStatus() == ChatStatus.BOT) return assignment.takeOver(me, chat);
         if (chat.getStatus() == ChatStatus.CLOSED) chat = assignment.reopen(me, chat);
         if (chat.getAssignedUserId() == null) chat = assignment.assign(me, chat, me.userId(), null);
         return chat;

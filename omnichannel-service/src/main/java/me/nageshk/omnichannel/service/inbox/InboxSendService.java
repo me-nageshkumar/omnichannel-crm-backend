@@ -150,14 +150,14 @@ public class InboxSendService {
      */
     public CompletableFuture<MessageView> send(SendActor actor, String workspaceId, WaWebChat chat,
             SendRequest req, String typedPhone) {
-        // a rule's message may go to a closed chat, and leaves it closed
-        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() != ChatStatus.OPEN) {
+        // a rule's message may go to a closed chat, and leaves it closed; anyone may write into a chatbot's chat
+        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() == ChatStatus.CLOSED) {
             throw new ChatClosedException();
         }
         DeviceSession device = devices.requireReady(workspaceId, chat);
         workGate.requireSend(workspaceId, actor);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
-        return charged(actor, workspaceId, () -> dispatch(actor, chat, device, out, typedPhone));
+        return charged(actor, workspaceId, () -> dispatch(actor, takenOver(actor, chat), device, out, typedPhone));
     }
 
     /**
@@ -200,14 +200,26 @@ public class InboxSendService {
      */
     public CompletableFuture<MessageView> sendCloud(SendActor actor, String workspaceId, WaWebChat chat,
             CloudMessage message, String typedPhone, boolean toIsPhone) {
-        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() != ChatStatus.OPEN) {
+        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() == ChatStatus.CLOSED) {
             throw new ChatClosedException();
         }
         DeviceSession device = devices.requireReady(workspaceId, chat);
         workGate.requireSend(workspaceId, actor);
         CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
         // charged first: a message the wallet cannot pay for prepares no page and no preview
-        return charged(actor, workspaceId, () -> dispatch(actor, chat, device, cloudOutgoing(chat, m), typedPhone));
+        return charged(actor, workspaceId, () -> {
+            WaWebChat target = takenOver(actor, chat);
+            return dispatch(actor, target, device, cloudOutgoing(target, m), typedPhone);
+        });
+    }
+
+    /**
+     * A person whose send is about to go out to a chat a chatbot holds takes the chat over (spec 2026-11-18 §5.3);
+     * done only once every check passed, so a refused send leaves the chat with the chatbot.
+     */
+    private WaWebChat takenOver(SendActor actor, WaWebChat chat) {
+        return actor instanceof UserActor user && chat.getStatus() == ChatStatus.BOT ? assignment.takeOver(user.me(), chat)
+                : chat;
     }
 
     private CompletableFuture<MessageView> dispatch(SendActor actor, WaWebChat chat, DeviceSession device,

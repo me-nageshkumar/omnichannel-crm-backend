@@ -411,7 +411,17 @@ public class InboxController {
     @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
     public ChatView close(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @PathVariable String chatId) {
-        return views.chat(assignment.close(me, query.requireVisible(me, workspaceId, chatId)));
+        WaWebChat chat = query.requireVisible(me, workspaceId, chatId);
+        boolean withChatbot = chat.getStatus() == ChatStatus.BOT;
+        WaWebChat closed = assignment.close(me, chat);
+        // closing a chat a chatbot holds ends the chatbot too; the chat stays closed (spec 2026-11-18 §5.3)
+        if (withChatbot) {
+            chatbotRuns.activeForChat(chat.getId()).ifPresent(run -> {
+                chatbotRuns.stop(run, "the chat was closed by " + me.getUsername(), me.userId());
+                closed.setChatbot(null);
+            });
+        }
+        return views.chat(closed);
     }
 
     @PostMapping("/chats/{chatId}/reopen")
