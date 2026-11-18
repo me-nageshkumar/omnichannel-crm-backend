@@ -11,6 +11,8 @@ import me.nageshk.omnichannel.ai.api.AiConnectionField;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.ProviderView;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.Save;
 import me.nageshk.omnichannel.ai.connection.AiConnectionViews.View;
+import me.nageshk.omnichannel.ai.knowledge.KnowledgeBase;
+import me.nageshk.omnichannel.ai.knowledge.KnowledgeBaseRepository;
 import me.nageshk.omnichannel.ai.profile.AiProfile;
 import me.nageshk.omnichannel.ai.profile.AiProfileRepository;
 import me.nageshk.omnichannel.ai.provider.AiCredential;
@@ -47,16 +49,18 @@ public class AiConnectionService {
     private final AiProviders providers;
     private final SecretBox secrets;
     private final AiProfileRepository profiles;
+    private final KnowledgeBaseRepository knowledgeBases;
     private final Clock clock;
     private final MongoTemplate mongo;
     private final HttpAddressGuard guard;
 
     public AiConnectionService(AiConnectionRepository repository, AiProviders providers, SecretBox secrets,
-            AiProfileRepository profiles, Clock clock, MongoTemplate mongo, HttpAddressGuard guard) {
+            AiProfileRepository profiles, KnowledgeBaseRepository knowledgeBases, Clock clock, MongoTemplate mongo, HttpAddressGuard guard) {
         this.repository = repository;
         this.providers = providers;
         this.secrets = secrets;
         this.profiles = profiles;
+        this.knowledgeBases = knowledgeBases;
         this.clock = clock;
         this.mongo = mongo;
         this.guard = guard;
@@ -158,6 +162,12 @@ public class AiConnectionService {
         if (!using.isEmpty()) {
             throw new CodedException(HttpStatus.CONFLICT, "ai_connection_in_use", null,
                     "Used by profiles: " + String.join(", ", using));
+        }
+        List<String> holding = knowledgeBases.findByWorkspaceIdAndConnectionId(workspaceId, id).stream()
+                .map(KnowledgeBase::getName).sorted().toList();
+        if (!holding.isEmpty()) {
+            throw new CodedException(HttpStatus.CONFLICT, "ai_connection_in_use", null,
+                    "Used by knowledge bases: " + String.join(", ", holding));
         }
         repository.delete(c);
     }
