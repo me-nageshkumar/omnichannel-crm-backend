@@ -24,7 +24,9 @@ import me.nageshk.omnichannel.security.auth.AccountLockedException;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.security.auth.LoginAttemptService;
 import me.nageshk.omnichannel.security.auth.TotpService;
+import me.nageshk.omnichannel.common.billing.UsageMeter;
 import me.nageshk.omnichannel.security.entitlement.BillingSettingsStore;
+import me.nageshk.omnichannel.security.entitlement.WalletReader;
 import me.nageshk.omnichannel.security.entitlement.Entitlement;
 import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import org.springframework.context.ApplicationEventPublisher;
@@ -55,9 +57,12 @@ public class UserService {
             Availability availability,
             SubscriptionSummary subscription) {}
 
-    /** Where the user's customer stands with its plan; the dates are midnights in {@code zone}. */
+    /**
+     * Where the user's customer stands with its plan; the dates are midnights in {@code zone}. {@code lowWallet}
+     * is true only for a customer whose messages are charged and whose wallet is below its warning level.
+     */
     public record SubscriptionSummary(SubscriptionState state, String planName, Instant termEnd, Instant graceEnd,
-            boolean readOnly, String zone) {}
+            boolean readOnly, String zone, boolean lowWallet) {}
 
     public record CustomerRef(String id, String name) {}
 
@@ -76,10 +81,12 @@ public class UserService {
     private final Clock clock;
     private final Entitlements entitlements;
     private final BillingSettingsStore billingSettings;
+    private final WalletReader wallets;
 
     public UserService(UserRepository users, AccessService access, RoleCache roles, CustomerRepository customers,
             TotpService totp, LoginAttemptService attempts, ApplicationEventPublisher events, Clock clock,
-            Entitlements entitlements, BillingSettingsStore billingSettings) {
+            Entitlements entitlements, BillingSettingsStore billingSettings, WalletReader wallets) {
+        this.wallets = wallets;
         this.entitlements = entitlements;
         this.billingSettings = billingSettings;
         this.events = events;
@@ -127,7 +134,8 @@ public class UserService {
         if (customerId == null) return null;
         Entitlement e = entitlements.of(customerId);
         return new SubscriptionSummary(e.state(), e.planName(), e.termEnd(), e.graceEnd(), e.readOnly(),
-                e.zone() == null ? billingSettings.get().getZone() : e.zone());
+                e.zone() == null ? billingSettings.get().getZone() : e.zone(),
+                e.rate(UsageMeter.WHATSAPP_MESSAGE) != null && wallets.low(customerId));
     }
 
     /** The user's own Available / Away switch; publishes {@link UserEvents.AvailabilityChanged} on a real change. */

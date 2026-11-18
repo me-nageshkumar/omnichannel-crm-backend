@@ -17,6 +17,8 @@ import me.nageshk.omnichannel.service.billing.order.OrderActivator;
 import me.nageshk.omnichannel.service.billing.refund.RefundService;
 import org.bson.Document;
 import org.bson.types.ObjectId;
+import me.nageshk.omnichannel.db.billing.Wallet;
+import me.nageshk.omnichannel.service.billing.wallet.WalletMover;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -41,10 +43,12 @@ public class BillingTicker {
     private final BillingLocks locks;
     private final OrderActivator activator;
     private final RefundService refunds;
+    private final WalletMover wallets;
     private final Clock clock;
 
     public BillingTicker(MongoTemplate mongo, BillingLocks locks, OrderActivator activator, RefundService refunds,
-            Clock clock) {
+            WalletMover wallets, Clock clock) {
+        this.wallets = wallets;
         this.mongo = mongo;
         this.locks = locks;
         this.activator = activator;
@@ -57,6 +61,17 @@ public class BillingTicker {
         finishAbandoned(now);
         expireOldRequests(now);
         rollRenewalsIn(now);
+        moveWalletEntries(now);
+    }
+
+    /**
+     * Ledger entries that have waited on their wallet for more than a minute: the server that made them stopped, or
+     * could not reach the database, before copying them out.
+     */
+    private void moveWalletEntries(Instant now) {
+        Query waiting = new Query(Criteria.where("pending.at").lt(now.minus(STUCK_AFTER)));
+        waiting.fields().include("customerId");
+        mongo.find(waiting, Wallet.class).forEach(w -> wallets.moveQuietly(w.getCustomerId()));
     }
 
     /** Activations and refunds that were started more than a minute ago and never completed. */
