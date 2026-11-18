@@ -56,6 +56,15 @@ public class PhoneNumber {
 
     public boolean isArchive() { return archiveOf != null; }
 
+    /**
+     * Whether a writer that holds {@code workspaceId} may add chats and messages on the number: not while it moves, and
+     * only for the brand it is in now. A frame, history page or send that read the brand before a move started is
+     * refused, so nothing of the old brand lands on the number in its new one.
+     */
+    public boolean takesWritesOf(String workspaceId) {
+        return movingSince == null && java.util.Objects.equals(this.workspaceId, workspaceId);
+    }
+
     @Indexed(sparse = true)
     private String deviceKeyHash;
     private String deviceKeyId;

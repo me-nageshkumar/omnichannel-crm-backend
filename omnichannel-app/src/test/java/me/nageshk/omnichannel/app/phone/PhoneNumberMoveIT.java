@@ -56,6 +56,9 @@ import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.security.phone.DeviceKeys;
 import me.nageshk.omnichannel.service.events.WhatsAppEvent;
 import me.nageshk.omnichannel.service.inbox.ChatMediaService;
+import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
+import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportOutcome;
+import me.nageshk.omnichannel.service.inbox.history.FetchedMessageImporter;
 import me.nageshk.omnichannel.service.phone.move.MovePreview;
 import me.nageshk.omnichannel.service.phone.move.NumberRecords;
 import me.nageshk.omnichannel.service.phone.move.PhoneNumberMove;
@@ -120,6 +123,7 @@ class PhoneNumberMoveIT {
     @Autowired ObjectMapper mapper;
     @Autowired DeviceRegistry registry;
     @Autowired MutableClock clock;
+    @Autowired FetchedMessageImporter importer;
     @MockitoSpyBean NumberRecords records;
     @MockitoSpyBean PhoneNumberMoveRepository moves;
 
@@ -356,16 +360,7 @@ class PhoneNumberMoveIT {
     @ParameterizedTest
     @EnumSource(value = PhoneNumberMove.Step.class, names = {"OFFLINE", "RUNS_ENDED", "ARCHIVED", "MERGED"})
     void retryAfterStopAtEachStepFinishesTheMove(PhoneNumberMove.Step stopAfter) {
-        AtomicBoolean thrown = new AtomicBoolean();
-        doAnswer(inv -> {
-            // the repository is a proxy with no real method to call: the template saves as it does
-            PhoneNumberMove m = inv.getArgument(0);
-            PhoneNumberMove saved = mongo.save(m);
-            if (m.getStep() == stopAfter && thrown.compareAndSet(false, true)) {
-                throw new IllegalStateException("stopped after " + stopAfter);
-            }
-            return saved;
-        }).when(moves).save(any(PhoneNumberMove.class));
+        stopOnceAfter(stopAfter);
 
         PhoneNumberMove stopped = service.move(main.getId(), brandB.getId(), me);
 
@@ -414,6 +409,74 @@ class PhoneNumberMoveIT {
         assertThat(archivesIn(brandB)).hasSize(1);
         assertThat(chats.findAll()).hasSize(3);
         assertThat(chats.findById(veenuChat.getId()).orElseThrow().getPhoneNumberId()).isEqualTo(main.getId());
+    }
+
+    /** The next save of a move that records {@code step} throws once, after the record was saved. */
+    private void stopOnceAfter(PhoneNumberMove.Step step) {
+        AtomicBoolean thrown = new AtomicBoolean();
+        doAnswer(inv -> {
+            // the repository is a proxy with no real method to call: the template saves as it does
+            PhoneNumberMove m = inv.getArgument(0);
+            PhoneNumberMove saved = mongo.save(m);
+            if (m.getStep() == step && thrown.compareAndSet(false, true)) {
+                throw new IllegalStateException("stopped after " + step);
+            }
+            return saved;
+        }).when(moves).save(any(PhoneNumberMove.class));
+    }
+
+    // --- writers that still hold the number's old brand (F1) ----------------------------------------------
+
+    @Test
+    void aLateInboundMessageOfTheOldBrandCreatesNoChatAndRetryStillFinishes() {
+        stopOnceAfter(PhoneNumberMove.Step.ARCHIVED);
+        assertThat(service.move(main.getId(), brandB.getId(), me).getStep()).isEqualTo(PhoneNumberMove.Step.ARCHIVED);
+
+        // a frame the device sent before it was closed, handled with the brand it had then
+        incoming(brandA, VEENU, "late hello");
+        incoming(brandA, "919833333333", "a new person");
+
+        assertThat(chats.findAll()).extracting(WaWebChat::getPhoneNumberId).doesNotContain(main.getId());
+        assertThat(service.retry(main.getId(), me).getStep()).isEqualTo(PhoneNumberMove.Step.DONE);
+        assertMovedOnce(service.last(main.getId()).orElseThrow());
+
+        // and after the move, a frame of the old brand still lands nowhere
+        incoming(brandA, VEENU, "later still");
+        assertThat(chats.findAll()).extracting(WaWebChat::getPhoneNumberId).doesNotContain(main.getId());
+    }
+
+    @Test
+    void anImportPageOfTheOldBrandCreatesNoChatInEitherBrand() {
+        stopOnceAfter(PhoneNumberMove.Step.ARCHIVED);
+        service.move(main.getId(), brandB.getId(), me);
+        ImportContext oldBrand = new ImportContext(acme.getId(), brandA.getId(), main.getId());
+        ImportContext newBrand = new ImportContext(acme.getId(), brandB.getId(), main.getId());
+
+        // a page fetched before the import was cancelled, and one for the new brand while the number still moves
+        assertThat(importer.importMessage(oldBrand, fetched(VEENU, "old page")).outcome())
+                .isEqualTo(ImportOutcome.SKIPPED);
+        assertThat(importer.importMessage(newBrand, fetched(RAVI, "too early")).outcome())
+                .isEqualTo(ImportOutcome.SKIPPED);
+        assertThat(chats.findAll()).extracting(WaWebChat::getPhoneNumberId).doesNotContain(main.getId());
+
+        assertThat(service.retry(main.getId(), me).getStep()).isEqualTo(PhoneNumberMove.Step.DONE);
+        assertMovedOnce(service.last(main.getId()).orElseThrow());
+        assertThat(importer.importMessage(oldBrand, fetched(VEENU, "old page again")).outcome())
+                .isEqualTo(ImportOutcome.SKIPPED);
+        assertThat(chats.findAll()).extracting(WaWebChat::getPhoneNumberId).doesNotContain(main.getId());
+    }
+
+    /** A message as a history page reads it from the phone. */
+    private ObjectNode fetched(String phone, String body) {
+        ObjectNode p = mapper.createObjectNode();
+        ObjectNode id = p.putObject("id");
+        id.put("_serialized", "false_" + phone + "@c.us_F" + UUID.randomUUID().toString().replace("-", "")
+                .substring(0, 12).toUpperCase());
+        id.put("remote", phone + "@c.us");
+        id.put("fromMe", false);
+        p.put("fromMe", false).put("body", body).put("type", "chat").put("ack", 0)
+                .put("t", clock.instant().getEpochSecond());
+        return p;
     }
 
     @Test

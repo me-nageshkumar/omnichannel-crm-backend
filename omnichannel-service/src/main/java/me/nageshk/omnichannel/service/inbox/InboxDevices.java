@@ -67,6 +67,21 @@ public class InboxDevices {
     }
 
     /**
+     * For a send the phone answered: refused when the number started moving to another brand, or is now another
+     * brand's, since the send was asked. Its message is not stored, as it would be the old brand's chat on the number
+     * in its new brand (spec §7.2). A number no longer stored is let through to the store as before.
+     *
+     * @throws NoDeviceException {@code NO_DEVICE} when the number moves or is not in the brand any more
+     */
+    void requireStillIn(String workspaceId, String phoneNumberId) {
+        PhoneNumber number = numbers.findById(phoneNumberId).orElse(null);
+        if (number != null && !number.takesWritesOf(workspaceId)) {
+            throw new NoDeviceException(NoDeviceException.NO_DEVICE,
+                    "This number is moving to another brand; the message is not kept in this brand's chat.");
+        }
+    }
+
+    /**
      * The number's digits without the {@code +}, as a webhook's {@code display_phone_number}; null when the number is
      * unknown or cannot be read now. A number seen by {@link #requireReady} is answered without a read.
      */

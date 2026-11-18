@@ -383,6 +383,26 @@ class InboxSendIT extends InboxApiTestBase {
     }
 
     @Test
+    void aReplyThatArrivesOnceTheNumberIsMovingIsNotStored() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        String serialized = "true_" + chat.getRemoteId() + "_MOVING";
+        Exchange ex = viaDevice(managerToken, chat, Map.of("text", "hello"), req -> {
+            // the move started while the send waited for the phone
+            mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("_id").is(number.getId())),
+                    new org.springframework.data.mongodb.core.query.Update().set("movingSince", Instant.now()),
+                    me.nageshk.omnichannel.db.phone.PhoneNumber.class);
+            return Envelope.response(req.id(), model(chat, serialized, "hello", "chat", 1));
+        });
+
+        assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(ex.response().getBody().get("code").asString()).isEqualTo("NO_DEVICE");
+        assertThat(messages.count()).isZero();
+        assertThat(chats.findById(chat.getId()).orElseThrow().getLastMessage().text()).isEqualTo("hello");
+        assertThat(chats.findById(chat.getId()).orElseThrow().getLastMessage().direction()).isEqualTo(MessageDirection.IN);
+    }
+
+    @Test
     void noDeviceIs409() throws Exception {
         WaWebChat chat = chatWithAarav();
 

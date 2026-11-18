@@ -184,6 +184,7 @@ public class InboxIngestService {
     }
 
     private Optional<Ingested> ingest(ChannelContext ctx, Incoming in, String field) {
+        if (!writable(ctx.channelAccountId(), ctx.workspaceId(), in.waMessageId())) return Optional.empty();
         Progress progress = new Progress();
         try {
             return publish(retrying(() -> storeMessage(ctx, in, progress)));
@@ -223,11 +224,26 @@ public class InboxIngestService {
         if (!MessageFields.isPersonChat(in.remote()) || in.waMessageId() == null || in.waMessageId().isEmpty()) {
             return SKIPPED;
         }
+        if (!writable(ctx.phoneNumberId(), ctx.workspaceId(), in.waMessageId())) return SKIPPED;
         try {
             return retrying(() -> storeImported(ctx, in));
         } catch (DataAccessException e) {
             throw new IngestionFailedException("history_import", in.waMessageId(), e);
         }
+    }
+
+    /**
+     * False, with a warning, when the number is moving or is now another brand's: the event was read with the brand
+     * the number had before a move (a frame already in hand when the device was closed, a history page already
+     * fetched), and a chat it created would be the old brand's on the number in its new one (spec §7.2). A number not
+     * stored is let through, as before.
+     */
+    private boolean writable(String phoneNumberId, String workspaceId, String waMessageId) {
+        PhoneNumber n = phoneNumberId == null ? null : numbers.findById(phoneNumberId).orElse(null);
+        if (n == null || n.takesWritesOf(workspaceId)) return true;
+        log.warn("[{}] dropping message {} of brand {}: the number is {}", phoneNumberId, waMessageId, workspaceId,
+                n.getMovingSince() != null ? "moving to another brand" : "in brand " + n.getWorkspaceId() + " now");
+        return false;
     }
 
     /**
