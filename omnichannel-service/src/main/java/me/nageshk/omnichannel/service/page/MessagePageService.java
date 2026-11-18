@@ -70,12 +70,15 @@ public class MessagePageService {
     private final Clock clock;
     private final MessagePageObserver observer;
     private final MongoTemplate mongo;
+    private final PagesAddresses addresses;
 
     public MessagePageService(MessagePageRepository pages,
             @Qualifier("messagePagePreviewsGridFs") GridFsTemplate previews, CloudMediaService media,
             MessagePageRenderer renderer, PreviewCardRenderer cards, CloudMessages cloud, InboxDevices devices,
             WaWebMessageRepository messages, WaWebChatRepository chats, OmnichannelProperties props,
-            ApplicationEventPublisher publisher, Clock clock, MessagePageObserver observer, MongoTemplate mongo) {
+            ApplicationEventPublisher publisher, Clock clock, MessagePageObserver observer, MongoTemplate mongo,
+            PagesAddresses addresses) {
+        this.addresses = addresses;
         this.pages = pages;
         this.previews = previews;
         this.media = media;
@@ -99,6 +102,8 @@ public class MessagePageService {
         Instant now = clock.instant();
         MessagePage p = new MessagePage();
         p.setWorkspaceId(chat.getWorkspaceId());
+        // the address the link goes out with, for the page's whole life (link addresses spec §5.3)
+        p.setBaseUrl(addresses.forWorkspace(chat.getWorkspaceId()));
         p.setCustomerId(chat.getCustomerId());
         p.setToken(newToken());
         p.setChatId(chat.getId());
@@ -140,7 +145,7 @@ public class MessagePageService {
     }
 
     public String link(MessagePage page) {
-        return props.baseUrl() + "/t/" + page.getToken();
+        return base(page) + "/t/" + page.getToken();
     }
 
     public void attachMessage(String pageId, String messageId) {
@@ -161,7 +166,7 @@ public class MessagePageService {
     }
 
     public String html(MessagePage p) {
-        return renderer.render(new PageModel(cloud.fromMap(p.getMessage()), p.getToken(), props.baseUrl(),
+        return renderer.render(new PageModel(cloud.fromMap(p.getMessage()), p.getToken(), base(p),
                 p.getSenderDigits(), false)).html();
     }
 
@@ -182,7 +187,13 @@ public class MessagePageService {
                 log.warn("could not inline the header image for a preview: {}", e.toString());
             }
         }
-        return renderer.render(new PageModel(m, "preview", props.baseUrl(), senderDigits, true, dataUrl)).html();
+        return renderer.render(new PageModel(m, "preview", addresses.forWorkspace(workspaceId), senderDigits, true, dataUrl))
+                .html();
+    }
+
+    /** The address the page was sent with; pages from before it was stored use the platform's. */
+    private String base(MessagePage p) {
+        return p.getBaseUrl() != null ? p.getBaseUrl() : addresses.platform();
     }
 
     public String notFoundHtml() {

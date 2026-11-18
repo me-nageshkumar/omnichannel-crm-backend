@@ -51,10 +51,13 @@ public class FormPageService implements TaskAnswerSource {
     private final ObjectMapper mapper;
     private final OmnichannelProperties props;
     private final Clock clock;
+    private final me.nageshk.omnichannel.service.page.PagesAddresses addresses;
 
     public FormPageService(ChatbotFormRepository forms, ChatbotRunRepository runs, @Lazy ChatbotRunService runService,
             FormPageRenderer renderer, me.nageshk.omnichannel.service.page.PreviewCardRenderer cards, MongoTemplate mongo,
-            ObjectMapper mapper, OmnichannelProperties props, Clock clock) {
+            ObjectMapper mapper, OmnichannelProperties props, Clock clock,
+            me.nageshk.omnichannel.service.page.PagesAddresses addresses) {
+        this.addresses = addresses;
         this.cards = cards;
         this.forms = forms;
         this.runs = runs;
@@ -75,6 +78,8 @@ public class FormPageService implements TaskAnswerSource {
     public ChatbotForm create(ChatbotRun run, FlowNode node, AskFormSettings rendered, Instant expiresAt) {
         ChatbotForm f = new ChatbotForm();
         f.setWorkspaceId(run.getWorkspaceId());
+        // the address the link goes out with, for the form's whole life (link addresses spec §5.3)
+        f.setBaseUrl(addresses.forWorkspace(run.getWorkspaceId()));
         f.setRunId(run.getId());
         f.setNodeId(node.id());
         f.setToken(newToken());
@@ -85,7 +90,7 @@ public class FormPageService implements TaskAnswerSource {
     }
 
     public String url(ChatbotForm f) {
-        return props.pages().baseUrl() + "/f/" + f.getToken();
+        return (f.getBaseUrl() != null ? f.getBaseUrl() : addresses.platform()) + "/f/" + f.getToken();
     }
 
     public Optional<ChatbotForm> byToken(String token) {
@@ -118,7 +123,7 @@ public class FormPageService implements TaskAnswerSource {
     }
 
     public String html(ChatbotForm f) {
-        return renderer.form(settings(f), "/f/" + f.getToken(), Map.of(), Map.of(), url(f));
+        return renderer.form(settings(f), url(f), Map.of(), Map.of(), url(f));
     }
 
     /**
@@ -156,10 +161,10 @@ public class FormPageService implements TaskAnswerSource {
         if (!open(f)) return new SubmitResult(SubmitState.CLOSED, Map.of(), renderer.closed());
         AskFormSettings s = settings(f);
         // the link is still being sent: the wait is not recorded yet, so the form comes back to be sent again
-        if (!waitingOn(f)) return new SubmitResult(SubmitState.INVALID, Map.of(), renderer.form(s, "/f/" + f.getToken(), values, Map.of()));
+        if (!waitingOn(f)) return new SubmitResult(SubmitState.INVALID, Map.of(), renderer.form(s, url(f), values, Map.of()));
         Map<String, String> errors = FormAnswers.validate(s, values);
         if (!errors.isEmpty()) {
-            return new SubmitResult(SubmitState.INVALID, errors, renderer.form(s, "/f/" + f.getToken(), values, errors));
+            return new SubmitResult(SubmitState.INVALID, errors, renderer.form(s, url(f), values, errors));
         }
         Map<String, Object> answers = FormAnswers.clean(s, values);
         Instant now = clock.instant();
