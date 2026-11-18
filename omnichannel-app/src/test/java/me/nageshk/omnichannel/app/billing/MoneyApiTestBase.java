@@ -168,6 +168,8 @@ abstract class MoneyApiTestBase {
         p.put("limitAddOns", List.of(Map.of("key", "USERS", "unitPrice", 100, "unit", 5)));
         p.put("discountPercent", 10);
         p.put("offered", true);
+        // a message sent for the customer costs 25 paise
+        p.put("rates", Map.of("WHATSAPP_MESSAGE", 0.25));
         return p;
     }
 
@@ -187,6 +189,12 @@ abstract class MoneyApiTestBase {
         Map<String, Object> b = new LinkedHashMap<>();
         b.put("kind", kind);
         if (planCode != null) b.put("planCode", planCode);
+        return b;
+    }
+
+    static Map<String, Object> topUp(Object amount) {
+        Map<String, Object> b = request("TOPUP", null);
+        b.put("topUpAmount", amount);
         return b;
     }
 

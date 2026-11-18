@@ -184,7 +184,9 @@ public class OrderSteps {
                 .and("quotedRevision").lt(revisionNow)
                 .and("_id").ne(new org.bson.types.ObjectId(o.getId()));
         if (o.getKind() == OrderKind.ADJUST && o.getTarget().getNewTermEnd() == null) return;
-        if (o.getKind() == OrderKind.ADDON) others = others.and("kind").in(STALE_AFTER_ADDON);
+        // a top-up is money into the wallet: no change of plan makes it stale
+        others = o.getKind() == OrderKind.ADDON ? others.and("kind").in(STALE_AFTER_ADDON)
+                : others.and("kind").ne(OrderKind.TOPUP);
         mongo.updateMulti(new Query(others), new Update().set("status", OrderStatus.SUPERSEDED).inc("version", 1),
                 BillingOrder.class);
     }

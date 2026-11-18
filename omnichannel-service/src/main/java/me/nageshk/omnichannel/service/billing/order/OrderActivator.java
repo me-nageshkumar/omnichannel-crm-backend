@@ -183,7 +183,10 @@ public class OrderActivator {
         boolean hasPlan = sub != null && sub.getCurrent() != null;
         long revision = sub == null ? 0 : sub.getRevision();
         boolean fresh;
-        if (o.getKind() == OrderKind.ADDON) {
+        if (o.getKind() == OrderKind.TOPUP) {
+            // money into the wallet does not depend on the plan it was asked under
+            fresh = true;
+        } else if (o.getKind() == OrderKind.ADDON) {
             TermSegment priced = o.getTarget().getSegmentAfter();
             fresh = hasPlan && sub.getTermRevision() == o.getQuotedTermRevision() && now.isBefore(priced.getTermEnd())
                     && !alreadyHeld(sub, priced);

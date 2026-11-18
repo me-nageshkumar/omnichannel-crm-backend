@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.billing.order;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -13,6 +14,7 @@ import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.billing.OrderKind;
 import me.nageshk.omnichannel.common.billing.SubscriptionState;
+import me.nageshk.omnichannel.common.billing.UsageMeter;
 import me.nageshk.omnichannel.db.billing.AddOnKind;
 import me.nageshk.omnichannel.db.billing.BillingSettings;
 import me.nageshk.omnichannel.db.billing.FeatureGroup;
@@ -29,6 +31,7 @@ import me.nageshk.omnichannel.db.billing.TermSegment;
 import me.nageshk.omnichannel.db.tenant.Customer;
 import me.nageshk.omnichannel.db.tenant.CustomerRepository;
 import me.nageshk.omnichannel.security.entitlement.BillingSettingsStore;
+import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import me.nageshk.omnichannel.security.entitlement.SubscriptionClock;
 import me.nageshk.omnichannel.service.billing.FeatureGroupOrder;
 import me.nageshk.omnichannel.service.billing.FeatureGroupService;
@@ -38,6 +41,7 @@ import me.nageshk.omnichannel.service.billing.order.OrderViews.OptionsView;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.PlanOption;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.QuoteRequest;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.RenewalOption;
+import me.nageshk.omnichannel.service.billing.order.OrderViews.TopUpOption;
 import me.nageshk.omnichannel.service.billing.pricing.OrderPricing;
 import org.springframework.stereotype.Component;
 
@@ -52,10 +56,12 @@ public class OrderOptions {
     private final FeatureGroupService groups;
     private final BillingSettingsStore settings;
     private final java.time.Clock clock;
+    private final Entitlements entitlements;
 
     public OrderOptions(OrderService orders, SubscriptionRepository subscriptions, PlanRepository plans,
             CustomerRepository customers, FeatureGroupService groups, BillingSettingsStore settings,
-            java.time.Clock clock) {
+            java.time.Clock clock, Entitlements entitlements) {
+        this.entitlements = entitlements;
         this.orders = orders;
         this.subscriptions = subscriptions;
         this.plans = plans;
@@ -75,7 +81,8 @@ public class OrderOptions {
         if (sub == null) {
             return new OptionsView(s.getPaymentInstructions(),
                     new RenewalOption(false, "There is no plan to renew; ask your account manager for one", null),
-                    List.of(), List.of());
+                    List.of(), List.of(),
+                    new TopUpOption(false, "Ask your account manager for a plan first", OrderPricing.TOP_UP_MIN, OrderPricing.TOP_UP_MAX), null);
         }
         TermSegment current = SubscriptionClock.segmentAt(sub, now);
         PlanTerms held = current.getTerms();
@@ -105,8 +112,12 @@ public class OrderOptions {
                         l.unit(), l.unitPrice()));
             }
         }
+        BigDecimal rate = entitlements.of(customerId).rate(UsageMeter.WHATSAPP_MESSAGE);
+        TopUpOption topUp = rate == null
+                ? new TopUpOption(false, "Messages are not charged on this plan", OrderPricing.TOP_UP_MIN, OrderPricing.TOP_UP_MAX)
+                : new TopUpOption(true, null, OrderPricing.TOP_UP_MIN, OrderPricing.TOP_UP_MAX);
         return new OptionsView(s.getPaymentInstructions(), renewal(customer, sub, state, s, zone, now, caller), upgrades,
-                addOns);
+                addOns, topUp, rate);
     }
 
     /** Asks pricing itself, so the answer here and the answer to a real request cannot differ. */
