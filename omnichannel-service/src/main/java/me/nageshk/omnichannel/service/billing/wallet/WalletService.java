@@ -191,10 +191,11 @@ public class WalletService {
             after = mongo.getCollection(mongo.getCollectionName(Wallet.class)).findOneAndUpdate(filter, pipeline,
                     new FindOneAndUpdateOptions().upsert(create).returnDocument(ReturnDocument.AFTER));
         } catch (MongoCommandException | MongoWriteException e) {
-            // an upsert that lost to the wallet that is there (its order was seen, or it was created this instant)
-            if (e.getCode() != 11000) throw e;
-            if (orderId != null) return null;
-            return change(customerId, signed, draft, null, false);
+            // An upsert that lost to the wallet that is there: either the order was seen, or the wallet was created
+            // this instant by something else. Asking again without creating tells the two apart: the order's own
+            // guard still answers null for one that was seen, and a wallet that is merely new takes the change.
+            if (e.getCode() != 11000 || !create) throw e;
+            return change(customerId, signed, draft, orderId, false);
         }
         if (after == null) return null;
         mover.moveQuietly(customerId);

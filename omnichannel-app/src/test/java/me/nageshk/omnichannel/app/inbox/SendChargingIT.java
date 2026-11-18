@@ -214,4 +214,20 @@ class SendChargingIT extends InboxApiTestBase {
         assertThat(wallets.findByCustomerId(acme.getId())).isEmpty();
         assertThat(ledger()).isEmpty();
     }
+
+    @Test
+    void anErrorInsideThePageMayHaveComeAfterTheMessageLeftSoItStaysCharged() throws Exception {
+        plan("0.25");
+        billing.wallet(acme.getId(), "1000.0000");
+        WaWebChat chat = chat("Aarav", "919812345678", 5);
+        try (FakeDevice device = device()) {
+            ResponseEntity<JsonNode> res = send(device, chat, "hello", req -> Envelope.errorResponse(req.id(), "PAGE_ERROR", "boom"));
+            assertThat(res.getStatusCode().is2xxSuccessful()).isFalse();
+            // the page was not ready: nothing was tried, so this one comes back
+            res = send(device, chat, "hello again", req -> Envelope.errorResponse(req.id(), "WHATSAPP_NOT_READY", "no"));
+            assertThat(res.getStatusCode().is2xxSuccessful()).isFalse();
+        }
+        assertThat(balance()).isEqualByComparingTo("999.75");
+        assertThat(ledger().stream().filter(e -> e.getType() == WalletEntryType.REVERSAL)).hasSize(1);
+    }
 }

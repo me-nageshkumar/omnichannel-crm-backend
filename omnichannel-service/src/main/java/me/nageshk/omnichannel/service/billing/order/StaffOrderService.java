@@ -181,6 +181,7 @@ public class StaffOrderService {
     private Quote priceWalletRefund(String customerId, WalletRefundRequest req, BillingSettings s) {
         BigDecimal balance = walletQueries.view(customerId).balance();
         return WalletRefundPricing.quote(req == null ? null : req.amount(), balance, walletQueries.topUpInvoices(customerId),
+                walletQueries.spent(customerId),
                 subscriptions.findByCustomerId(customerId).orElse(null), s);
     }
 

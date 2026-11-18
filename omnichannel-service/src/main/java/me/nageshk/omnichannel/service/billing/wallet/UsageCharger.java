@@ -88,15 +88,20 @@ public class UsageCharger {
         }
     }
 
+    /** The answers that mean the page never tried to send: it was not reachable, not ready, or had no such chat. */
+    private static final java.util.Set<String> NOT_TRIED = java.util.Set.of(RpcException.SEND_FAILED,
+            RpcException.WHATSAPP_NOT_READY, RpcException.CHAT_NOT_FOUND, RpcException.METHOD_NOT_FOUND);
+
     /**
-     * Whether a failed send definitely did not go out, so its charge is given back. The phone answering with an
-     * error is definite. A timeout, or the phone dropping off mid-send, is not: the message may have gone, and the
-     * customer may have got what it paid for.
+     * Whether a failed send definitely did not go out, so its charge is given back: only when the answer says the
+     * page never tried. A timeout, the phone dropping off mid-send, or an error inside the page (which can come
+     * after the message left) is not definite: the message may have gone, and the customer may have got what it
+     * paid for.
      */
     public static boolean definitelyNotSent(Throwable error) {
         Throwable cause = error;
         while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) cause = cause.getCause();
-        return cause instanceof RpcException rpc && !RpcException.DEVICE_DISCONNECTED.equals(rpc.code());
+        return cause instanceof RpcException rpc && NOT_TRIED.contains(rpc.code());
     }
 
     /** Notes on the stored message which wallet entry paid for it. Best effort. */

@@ -786,17 +786,18 @@ messages from a prepaid wallet; a plan without a rate, and a customer without a 
 - **Top-up**: an order of kind `TOPUP` (₹100 to ₹10,00,000, `topUpAmount` in the quote request), asked for by the
   customer or raised by staff. GST is added and invoiced when staff record the payment; the amount before tax goes
   into the wallet. A top-up never draws on account credit, never goes stale and is not superseded by plan changes;
-  it needs a plan in force.
+  it needs a subscription (one that has run out will do, so a customer can top up before it renews).
 - **What is charged**: every message the server sends to WhatsApp for the customer (console, campaign, automation,
   chatbot), at the rate of the term as it was sold. The charge is taken before the message goes to the
-  phone. It is given back (`REVERSAL`) only when the phone answered that it did not send; a send whose outcome is
-  unknown (no answer, a dropped connection) stays charged. Incoming messages, and messages typed on the phone
+  phone. It is given back (`REVERSAL`) only when nothing was tried: the phone could not be reached, WhatsApp was not
+  ready on it, or it had no such chat. A send whose outcome is unknown (no answer, a dropped connection, an error
+  inside the page) stays charged. Incoming messages, and messages typed on the phone
   itself, cost nothing. A stored message names the entry that paid for it (`usageEntryId`).
 - **An empty wallet**: the send is refused with 402 `WALLET_EMPTY` and nothing reaches the phone. A campaign is
   paused by the system with `pauseReason` `WALLET_EMPTY` and its recipients stay `PENDING` (resume it after a
   top-up); an automation's send fails with "The wallet balance is too low"; a chatbot's run ends at that message.
 - **Wallet refund**: staff (`refund:manage`) take money back out as an order of kind `WALLET_REFUND`. Only what
-  top-ups put in and usage has not spent can come back; it is credit-noted against the top-up invoices, newest
+  top-ups put in and usage has not spent can come back (messages spend top-up money before money staff added); it is credit-noted against the top-up invoices, newest
   first, with their tax, and lands in the account credit, from where a refund pays it out. Asking for more answers
   409 `NOT_ENOUGH_WALLET`.
 - **Adjustment**: staff (`subscription:manage`) add to or take from a wallet with a note; adjustments carry no tax

@@ -237,13 +237,17 @@ and 3 (the usage wallet and per-message charges, 2026-11-18) are built.
   characters. An order is not paid if the GST rate, the supplier's state or the supplier details changed since it
   was priced (409 `ORDER_STALE` or `BILLING_NOT_SET_UP`): raise it again.
 - An order whose activation keeps failing has no staff action to set it aside; it needs a look at the data.
-- The wallet: a send whose outcome is unknown (the phone did not answer, or the connection dropped after the message
-  left) stays charged, because the message may have gone; staff can give it back with an adjustment.
+- The wallet: a send whose outcome is unknown (the phone did not answer, the connection dropped after the message
+  left, or the page reported an error of its own) stays charged, because the message may have gone; staff can give it back with an adjustment.
 - The message rate is the one in the term's snapshot: a plan's new rate applies from the customer's next term.
 - Wallet adjustments carry no tax and are not refundable; only what top-ups put in and usage has not spent is.
+  Messages are taken to spend top-up money first, so goodwill added by staff is what is left last.
+- A wallet refund interrupted before its money left the wallet is cancelled, not finished, if messages have since
+  used that money; its line in the subscription's history stays.
 - A top-up's GST is invoiced when it is paid, not as the balance is used. Confirm this treatment of an advance with
   an accountant before going live.
-- The wallet survives a cancelled or expired plan; the balance waits, and a top-up needs a plan in force.
+- The wallet survives a cancelled or expired plan; the balance waits. A top-up needs only a subscription, and is
+  accepted on a plan that charges no messages if asked for through the API (the console does not offer it).
 - The raw bridge calls for a super admin (`/api/phone-numbers/{id}/bridge/messages`, `/rpc`) do not go through
   the plan or the wallet: what staff send with them is not charged.
 - Usage totals are by day in the billing zone, for at most 90 days back.

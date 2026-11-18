@@ -34,6 +34,7 @@ class WalletRefundsIT extends MoneyApiTestBase {
     @Autowired CreditNoteRepository creditNotes;
     @Autowired BillingOrderRepository orders;
     @Autowired OrderActivator activator;
+    @Autowired me.nageshk.omnichannel.service.billing.wallet.WalletService walletService;
     @MockitoSpyBean OrderSteps steps;
 
     private String path(Customer c, String tail) {
@@ -145,5 +146,53 @@ class WalletRefundsIT extends MoneyApiTestBase {
                 .andExpect(jsonPath("$.fields.amount").exists());
         POST(path(bolt, "/refunds"), superToken, Map.of("amount", 10.005, "reason", "x")).andExpect(status().isBadRequest());
         assertThat(balance(bolt)).isEqualByComparingTo("1000");
+    }
+
+    @Test
+    void moneyStaffAddedIsNotRefundableOnceTheTopUpMoneyWasSpent() throws Exception {
+        goldWithTopUp(acme, 1000);
+        POST(path(acme, "/adjustments"), amToken, Map.of("amount", 500, "note", "Goodwill")).andExpect(status().isOk());
+        me.nageshk.omnichannel.db.billing.WalletEntry usage = new me.nageshk.omnichannel.db.billing.WalletEntry();
+        usage.setType(me.nageshk.omnichannel.common.billing.WalletEntryType.USAGE);
+        usage.setMeter(me.nageshk.omnichannel.common.billing.UsageMeter.WHATSAPP_MESSAGE);
+        usage.setSource(me.nageshk.omnichannel.common.billing.UsageSource.CAMPAIGN);
+        // messages worth 300 are sent: 700 of the paid 1000 is left, and the 500 of goodwill
+        walletService.debit(acme.getId(), new BigDecimal("300"), usage);
+        GET(path(acme, ""), amToken).andExpect(jsonPath("$.balance").value(1200.0)).andExpect(jsonPath("$.refundable").value(700.0));
+        POST(path(acme, "/refunds/quote"), superToken, Map.of("amount", 701)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NOT_ENOUGH_WALLET"));
+        POST(path(acme, "/refunds/quote"), superToken, Map.of("amount", 700)).andExpect(status().isOk());
+
+        // the rest of what was paid for is spent: what is left is goodwill, which was never paid for
+        walletService.debit(acme.getId(), new BigDecimal("700"), usage);
+        GET(path(acme, ""), amToken).andExpect(jsonPath("$.balance").value(500.0)).andExpect(jsonPath("$.refundable").value(0.0));
+        POST(path(acme, "/refunds"), superToken, Map.of("amount", 100, "reason", "x")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NOT_ENOUGH_WALLET"));
+        assertThat(creditNotes.count()).isZero();
+        assertThat(balance(acme)).isEqualByComparingTo("500");
+    }
+
+    @Test
+    void aRefundTheWalletNoLongerCoversDoesNotBlockTheCustomersOtherBilling() throws Exception {
+        goldWithTopUp(acme, 1000);
+        // the server stops after the refund order is stored and before the money leaves the wallet
+        doThrow(new IllegalStateException("stopped")).when(steps).wallet(any());
+        assertThatThrownBy(() -> POST(path(acme, "/refunds"), superToken, Map.of("amount", 400, "reason", "x")))
+                .hasRootCauseMessage("stopped");
+        doCallRealMethod().when(steps).wallet(any());
+        BillingOrder stuck = orders.findAll().stream().filter(o -> o.getKind() == OrderKind.WALLET_REFUND).findFirst().orElseThrow();
+        stuck.setStatus(OrderStatus.ACTIVATING);
+        orders.save(stuck);
+        // and messages then take the wallet below what the refund wanted
+        me.nageshk.omnichannel.db.billing.WalletEntry usage = new me.nageshk.omnichannel.db.billing.WalletEntry();
+        usage.setType(me.nageshk.omnichannel.common.billing.WalletEntryType.USAGE);
+        walletService.debit(acme.getId(), new BigDecimal("950"), usage);
+
+        // a top-up is paid as usual, and the refund that can no longer happen is set aside
+        buy(acme, topUp(500));
+        assertThat(orders.findById(stuck.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(balance(acme)).isEqualByComparingTo("550");
+        assertThat(creditNotes.count()).isZero();
+        assertThat(credit(acme)).isEqualByComparingTo("0");
     }
 }

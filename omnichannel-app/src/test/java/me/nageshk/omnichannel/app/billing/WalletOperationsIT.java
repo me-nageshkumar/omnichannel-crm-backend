@@ -153,4 +153,31 @@ class WalletOperationsIT extends MoneyApiTestBase {
         mover.move(acme.getId());
         assertThat(ledger()).hasSize(20);
     }
+
+    @Test
+    void anOrdersFirstCreditIsNotLostWhenTheWalletIsCreatedAtTheSameMoment() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<String> customers = new ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            String customerId = new org.bson.types.ObjectId().toHexString();
+            customers.add(customerId);
+            CountDownLatch go = new CountDownLatch(1);
+            Future<?> threshold = pool.submit(() -> {
+                go.await();
+                service.setThreshold(customerId, new BigDecimal("50"), "u1");
+                return null;
+            });
+            Future<Boolean> credit = pool.submit(() -> {
+                go.await();
+                return service.creditOnce("order-" + customerId, customerId, new BigDecimal("100"), draft(WalletEntryType.TOPUP));
+            });
+            go.countDown();
+            threshold.get(30, TimeUnit.SECONDS);
+            credit.get(30, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+        for (String customerId : customers) {
+            assertThat(wallets.findByCustomerId(customerId).orElseThrow().getBalance()).isEqualByComparingTo("100");
+        }
+    }
 }

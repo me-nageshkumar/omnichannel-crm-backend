@@ -84,14 +84,36 @@ public class WalletQueryService {
 
     /**
      * What a wallet refund could return, before tax: no more than the wallet holds, and no more than the top-up
-     * invoices still have uncredited (money from an adjustment was never paid for, so it is not refundable).
+     * invoices still have uncredited after the messages sent are taken off them. Messages spend paid money first:
+     * what staff added by adjustment was never paid for, so it never becomes refundable, however the wallet was used.
      */
     public BigDecimal refundable(String customerId, BigDecimal balance) {
         BigDecimal left = BigDecimal.ZERO;
         for (Invoice i : topUpInvoices(customerId)) {
             left = left.add(i.getTaxable().subtract(i.getCredited() == null ? BigDecimal.ZERO : i.getCredited()).max(BigDecimal.ZERO));
         }
-        return left.min(balance).setScale(2, RoundingMode.DOWN);
+        return left.subtract(spent(customerId)).max(BigDecimal.ZERO).min(balance).setScale(2, RoundingMode.DOWN);
+    }
+
+    /** Everything the customer's messages have cost so far, charges less what was given back; never negative. */
+    public BigDecimal spent(String customerId) {
+        mover.moveQuietly(customerId);
+        List<String> usage = List.of(WalletEntryType.USAGE.name(), WalletEntryType.REVERSAL.name());
+        BigDecimal signed = BigDecimal.ZERO;
+        List<Document> pipeline = List.of(
+                new Document("$match", new Document("customerId", customerId).append("type", new Document("$in", usage))),
+                new Document("$group", new Document("_id", null).append("amount", new Document("$sum", "$amount"))));
+        for (Document d : mongo.getCollection(mongo.getCollectionName(WalletEntry.class)).aggregate(pipeline)) {
+            signed = signed.add(d.get("amount", Decimal128.class).bigDecimalValue());
+        }
+        // what the mover could not copy yet counts too, unless a copy of it is already among the kept entries
+        for (WalletEntry e : wallets.find(customerId).map(Wallet::getPending).orElse(List.of())) {
+            if (e.getType() != WalletEntryType.USAGE && e.getType() != WalletEntryType.REVERSAL) continue;
+            if (!mongo.exists(new Query(Criteria.where("_id").is(e.getId())), WalletEntry.class)) {
+                signed = signed.add(e.getAmount());
+            }
+        }
+        return signed.negate().max(BigDecimal.ZERO);
     }
 
     /** The customer's top-up invoices, newest first. */
