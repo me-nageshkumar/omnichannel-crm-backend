@@ -292,6 +292,57 @@ class AiKnowledgeWorkerIT extends AiTestBase {
     }
 
     @Test
+    void removingWithTransientErrorKeepsRetrying() throws Exception {
+        String id = note("Pitch", "text");
+        uploaded(id);
+        knowledge.remove(brand.getId(), kbId, id);
+        OPENAI.reset();
+        OPENAI.enqueue(503, "{\"error\":{\"message\":\"Server busy\"}}");
+
+        tick();
+        assertThat(row(id).getState()).isEqualTo(SourceState.REMOVING);
+        assertThat(row(id).getNextCheckAt()).isEqualTo(clock.instant().plusSeconds(2));
+        tick();
+        assertThat(OPENAI.requests()).hasSize(1);
+
+        clock.advance(Duration.ofSeconds(2));
+        OPENAI.enqueue(503, "{\"error\":{\"message\":\"Server busy\"}}");
+        tick();
+        assertThat(row(id)).isNotNull();
+        assertThat(row(id).getNextCheckAt()).isEqualTo(clock.instant().plusSeconds(4));
+
+        clock.advance(Duration.ofSeconds(4));
+        tick();
+        assertThat(row(id)).isNull();
+        assertThat(calls()).containsExactly("DELETE /v1/vector_stores/vs_1/files/file_1",
+                "DELETE /v1/vector_stores/vs_1/files/file_1", "DELETE /v1/vector_stores/vs_1/files/file_1",
+                "DELETE /v1/files/file_1");
+    }
+
+    @Test
+    void removingWithRefusedKeyStaysRemovingWithReason() throws Exception {
+        String id = note("Pitch", "text");
+        uploaded(id);
+        knowledge.remove(brand.getId(), kbId, id);
+        OPENAI.reset();
+        OPENAI.enqueue(401, "{\"error\":{\"message\":\"bad key\"}}");
+
+        tick();
+
+        KnowledgeSource s = row(id);
+        assertThat(s.getState()).isEqualTo(SourceState.REMOVING);
+        assertThat(s.getError()).isEqualTo("The provider refused the key");
+        assertThat(s.getNextCheckAt()).isEqualTo(clock.instant().plusSeconds(600));
+        clock.advance(Duration.ofMinutes(5));
+        tick();
+        assertThat(OPENAI.requests()).hasSize(1);
+
+        clock.advance(Duration.ofMinutes(5));
+        tick();
+        assertThat(row(id)).isNull();
+    }
+
+    @Test
     void expiredLeaseIsClaimedAgain() throws Exception {
         String id = note("Pitch", "text");
         mongo.updateFirst(Query.query(Criteria.where("_id").is(id)),

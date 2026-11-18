@@ -326,6 +326,7 @@ public class KnowledgeService {
             s.setState(SourceState.REMOVING);
             s.setLeaseUntil(null);
             s.setNextCheckAt(null);
+            s.setCheckDelaySeconds(0);
             s.setAttempts(0);
             s = sources.save(s);
             wake();

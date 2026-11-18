@@ -44,32 +44,43 @@ public class WebPageReader {
 
     static final int MAX_BYTES = 2 * 1024 * 1024;
     static final int MAX_REDIRECTS = 3;
-    private static final Duration TIMEOUT = Duration.ofSeconds(20);
+    private static final Duration DEADLINE = Duration.ofSeconds(10);
+    /** Closes a body stream whose deadline has passed; the JDK's request timeout stops counting once headers arrive. */
+    private static final java.util.concurrent.ScheduledExecutorService WATCHDOG =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "web-page-deadline");
+                t.setDaemon(true);
+                return t;
+            });
     private static final String DROPPED = "script, style, noscript, nav, footer, header nav, form, iframe, svg";
 
     private final HttpAddressGuard guard;
     private final boolean allowHttp;
     private final Clock clock;
+    private final Duration deadline;
     private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(10)).build();
 
     /** Plain http is accepted only where local addresses are (tests); production takes https only. */
     @Autowired
     public WebPageReader(HttpAddressGuard guard, Clock clock) {
-        this(guard, guard.allowsPrivate(), clock);
+        this(guard, guard.allowsPrivate(), clock, DEADLINE);
     }
 
-    WebPageReader(HttpAddressGuard guard, boolean allowHttp, Clock clock) {
+    /** {@code deadline} bounds the whole fetch, every hop and the body included. */
+    WebPageReader(HttpAddressGuard guard, boolean allowHttp, Clock clock, Duration deadline) {
+        this.deadline = deadline;
         this.guard = guard;
         this.allowHttp = allowHttp;
         this.clock = clock;
     }
 
     public Page read(URI url) {
+        long endsAt = System.nanoTime() + deadline.toNanos();
         URI current = url;
         for (int hop = 0; ; hop++) {
             checkAddress(current);
-            HttpResponse<InputStream> res = send(current);
+            HttpResponse<InputStream> res = send(current, endsAt);
             int status = res.statusCode();
             if (status >= 300 && status < 400 && res.headers().firstValue("Location").isPresent()) {
                 closeQuietly(res.body());
@@ -85,7 +96,7 @@ public class WebPageReader {
                 closeQuietly(res.body());
                 throw new WebPageException("The page answered " + status);
             }
-            return page(current, res);
+            return page(current, res, endsAt);
         }
     }
 
@@ -101,9 +112,11 @@ public class WebPageReader {
         }
     }
 
-    private HttpResponse<InputStream> send(URI uri) {
+    private HttpResponse<InputStream> send(URI uri, long endsAt) {
         try {
-            HttpRequest req = HttpRequest.newBuilder(uri).timeout(TIMEOUT).GET()
+            long left = endsAt - System.nanoTime();
+            if (left <= 0) throw new WebPageException("The page could not be reached");
+            HttpRequest req = HttpRequest.newBuilder(uri).timeout(Duration.ofNanos(left)).GET()
                     .header("Accept", "text/html,text/plain;q=0.9,*/*;q=0.1")
                     .header("User-Agent", "OmnichannelKnowledgeBot/1.0").build();
             return http.send(req, HttpResponse.BodyHandlers.ofInputStream());
@@ -115,7 +128,7 @@ public class WebPageReader {
         }
     }
 
-    private Page page(URI url, HttpResponse<InputStream> res) {
+    private Page page(URI url, HttpResponse<InputStream> res, long endsAt) {
         String type = res.headers().firstValue("Content-Type").orElse("text/html").toLowerCase(Locale.ROOT);
         boolean html = type.contains("html");
         if (!html && !type.startsWith("text/")) {
@@ -127,7 +140,7 @@ public class WebPageReader {
             closeQuietly(res.body());
             throw new WebPageException("The page is larger than 2 MB");
         }
-        byte[] bytes = readBody(res.body());
+        byte[] bytes = readBody(res.body(), endsAt);
         String charset = charsetName(type);
         String header = "Source: " + url + "\nFetched: " + clock.instant() + "\n\n";
         if (!html) {
@@ -152,7 +165,9 @@ public class WebPageReader {
         return new Page(title, header + markdown, url);
     }
 
-    private static byte[] readBody(InputStream in) {
+    private static byte[] readBody(InputStream in, long endsAt) {
+        var timer = WATCHDOG.schedule(() -> closeQuietly(in), Math.max(0, endsAt - System.nanoTime()),
+                java.util.concurrent.TimeUnit.NANOSECONDS);
         try (in) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];
@@ -164,6 +179,8 @@ public class WebPageReader {
             return out.toByteArray();
         } catch (IOException e) {
             throw new WebPageException("The page could not be reached");
+        } finally {
+            timer.cancel(false);
         }
     }
 

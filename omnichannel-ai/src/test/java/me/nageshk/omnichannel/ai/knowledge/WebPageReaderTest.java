@@ -51,7 +51,7 @@ class WebPageReaderTest {
     }
 
     private WebPageReader reader(HttpAddressGuard guard, boolean allowHttp) {
-        return new WebPageReader(guard, allowHttp, Clock.systemUTC());
+        return new WebPageReader(guard, allowHttp, Clock.systemUTC(), java.time.Duration.ofSeconds(10));
     }
 
     private static byte[] fixture() throws IOException {
@@ -171,5 +171,30 @@ class WebPageReaderTest {
         server.stop(0);
         assertThatThrownBy(() -> r.read(URI.create("http://127.0.0.1:" + dead + "/")))
                 .hasMessage("The page could not be reached");
+    }
+
+    @Test
+    void aBodyThatDripsIsCutOffAtTheDeadline() {
+        server.createContext("/drip", ex -> {
+            ex.getResponseHeaders().add("Content-Type", "text/plain");
+            ex.sendResponseHeaders(200, 0);
+            try {
+                for (int i = 0; i < 200; i++) {
+                    ex.getResponseBody().write('x');
+                    ex.getResponseBody().flush();
+                    Thread.sleep(100);
+                }
+            } catch (IOException | InterruptedException ignored) {
+                // the reader hung up
+            }
+            ex.close();
+        });
+        WebPageReader r = new WebPageReader(new HttpAddressGuard(true), true, Clock.systemUTC(),
+                java.time.Duration.ofSeconds(1));
+        long start = System.nanoTime();
+
+        assertThatThrownBy(() -> r.read(at("/drip")))
+                .isInstanceOf(WebPageReader.WebPageException.class).hasMessage("The page could not be reached");
+        assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofSeconds(5));
     }
 }

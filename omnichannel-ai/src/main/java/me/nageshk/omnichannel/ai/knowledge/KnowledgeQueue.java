@@ -35,7 +35,9 @@ class KnowledgeQueue {
         Criteria free = new Criteria().orOperator(Criteria.where("leaseUntil").is(null),
                 Criteria.where("leaseUntil").lt(now));
         Query q = new Query(new Criteria().andOperator(free, new Criteria().orOperator(
-                Criteria.where("state").in(SourceState.QUEUED, SourceState.UPLOADING, SourceState.REMOVING),
+                Criteria.where("state").in(SourceState.QUEUED, SourceState.UPLOADING),
+                Criteria.where("state").is(SourceState.REMOVING).orOperator(Criteria.where("nextCheckAt").is(null),
+                        Criteria.where("nextCheckAt").lte(now)),
                 Criteria.where("state").is(SourceState.INDEXING).and("nextCheckAt").lte(now))))
                 .with(Sort.by(Sort.Direction.DESC, "addedAt"));
         Update u = new Update().set("leaseUntil", now.plus(props.knowledge().lease())).inc("attempts", 1);

@@ -46,6 +46,8 @@ public class KnowledgeWorker {
     private static final Logger log = LoggerFactory.getLogger(KnowledgeWorker.class);
     private static final int FIRST_CHECK_SECONDS = 2;
     private static final int LAST_CHECK_SECONDS = 30;
+    private static final int MAX_REMOVE_BACKOFF_SECONDS = 300;
+    private static final int RETRY_REFUSED_SECONDS = 600;
     private static final Set<Code> TRANSIENT = Set.of(Code.RATE_LIMIT, Code.UNAVAILABLE, Code.TIMEOUT);
 
     private final KnowledgeQueue queue;
@@ -114,7 +116,12 @@ public class KnowledgeWorker {
         } catch (RuntimeException e) {
             log.warn("Knowledge source {} failed unexpectedly", s.getId(), e);
             try {
-                retryOrFail(s, "The source could not be processed");
+                if (s.getState() == SourceState.REMOVING) {
+                    s.setLeaseUntil(null);
+                    sources.save(s);
+                } else {
+                    retryOrFail(s, "The source could not be processed");
+                }
             } catch (RuntimeException again) {
                 log.warn("Knowledge source {} could not be saved: {}", s.getId(), again.toString());
             }
@@ -130,20 +137,18 @@ public class KnowledgeWorker {
         AiConnection conn = connections.findByIdAndWorkspaceId(base.getConnectionId(), s.getWorkspaceId()).orElse(null);
         KnowledgeStoreProvider provider = conn != null && providers.of(conn.getProvider()) instanceof KnowledgeStoreProvider k
                 ? k : null;
+        if (s.getState() == SourceState.REMOVING) {
+            remove(s, base, conn, provider);
+            return;
+        }
         AiCredential cred = null;
         if (provider != null) {
             try {
                 cred = connectionService.credential(s.getWorkspaceId(), conn.getId());
             } catch (RuntimeException e) {
-                if (s.getState() != SourceState.REMOVING) {
-                    fail(s, AiConnectionService.UNOPENABLE);
-                    return;
-                }
+                fail(s, AiConnectionService.UNOPENABLE);
+                return;
             }
-        }
-        if (s.getState() == SourceState.REMOVING) {
-            remove(s, base, conn, cred == null ? null : provider, cred);
-            return;
         }
         if (provider == null || cred == null) {
             fail(s, "The AI connection of this knowledge base is gone");
@@ -246,27 +251,53 @@ public class KnowledgeWorker {
         }
     }
 
-    /** REMOVING: detach and delete the provider file, then our copy and the row. A provider that stays out of reach is given up on. */
-    private void remove(KnowledgeSource s, KnowledgeBase base, AiConnection conn, KnowledgeStoreProvider provider,
-            AiCredential cred) {
-        if (provider != null && s.getProviderFileId() != null) {
-            try {
-                provider.detach(cred, base.getProviderStoreId(), s.getProviderFileId());
-                provider.deleteFile(cred, s.getProviderFileId());
-            } catch (AiProviderException e) {
-                if (e.code() == Code.AUTH) {
-                    connectionService.markInvalid(s.getWorkspaceId(), conn.getId(), AiConnectionService.REFUSED);
-                }
-                if (TRANSIENT.contains(e.code()) && s.getAttempts() < props.attempts()) {
-                    s.setLeaseUntil(null);
-                    sources.save(s);
-                    return;
-                }
-                log.warn("Provider file {} could not be removed ({}); removing the source anyway", s.getProviderFileId(),
-                        e.getMessage());
+    /**
+     * REMOVING: the row stays until the file is detached from the store (already detached counts), however long that
+     * takes. A provider that is busy is asked again after 2 s, doubling to 5 minutes; a refused or unopenable key, or
+     * a rejected request, shows its reason on the row and is tried again every 10 minutes. Once detached, deleting the
+     * file is best effort.
+     */
+    private void remove(KnowledgeSource s, KnowledgeBase base, AiConnection conn, KnowledgeStoreProvider provider) {
+        if (s.getProviderFileId() == null || conn == null || provider == null) {
+            removeLocal(s);
+            return;
+        }
+        AiCredential cred;
+        try {
+            cred = connectionService.credential(s.getWorkspaceId(), conn.getId());
+        } catch (RuntimeException e) {
+            stillRemoving(s, AiConnectionService.UNOPENABLE, RETRY_REFUSED_SECONDS);
+            return;
+        }
+        try {
+            provider.detach(cred, base.getProviderStoreId(), s.getProviderFileId());
+        } catch (AiProviderException e) {
+            if (TRANSIENT.contains(e.code())) {
+                int delay = s.getCheckDelaySeconds() <= 0 ? FIRST_CHECK_SECONDS
+                        : Math.min(MAX_REMOVE_BACKOFF_SECONDS, s.getCheckDelaySeconds() * 2);
+                stillRemoving(s, null, delay);
+            } else if (e.code() == Code.AUTH) {
+                connectionService.markInvalid(s.getWorkspaceId(), conn.getId(), AiConnectionService.REFUSED);
+                stillRemoving(s, AiConnectionService.REFUSED, RETRY_REFUSED_SECONDS);
+            } else {
+                stillRemoving(s, e.getMessage(), RETRY_REFUSED_SECONDS);
             }
+            return;
+        }
+        try {
+            provider.deleteFile(cred, s.getProviderFileId());
+        } catch (RuntimeException e) {
+            log.warn("Could not delete provider file {}: {}", s.getProviderFileId(), e.getMessage());
         }
         removeLocal(s);
+    }
+
+    private void stillRemoving(KnowledgeSource s, String reason, int delaySeconds) {
+        s.setError(reason);
+        s.setLeaseUntil(null);
+        s.setNextCheckAt(clock.instant().plusSeconds(delaySeconds));
+        s.setCheckDelaySeconds(reason == null ? delaySeconds : 0);
+        sources.save(s);
     }
 
     private void removeLocal(KnowledgeSource s) {
