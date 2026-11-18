@@ -98,9 +98,10 @@ WhatsApp messages: take care sharing it or a backup.
   and `-console.md`. Code in `service.chatbot` (`flow` parser and settings, `node` executors, `run` runner, ticker and
   answer sources, `form` pages), documents in `db.chatbot`, API in `app.chatbot`; the automation action is
   `service.automation.StartChatbotHandler`. Tests in `app.chatbot` extend `AutomationTestBase` through `ChatbotTestBase`.
-- **Subscription plans:** spec `specs/2026-11-17-subscription-plans-design.md` (three phases; 1 and 2 built), plans
+- **Subscription plans:** spec `specs/2026-11-17-subscription-plans-design.md` (three phases, all built), plans
   `plans/2026-11-17-subscriptions-1-entitlements-backend.md` and `-console.md`,
-  `plans/2026-11-18-subscriptions-2-money-backend.md` and `-console.md`. Enums in `common.billing`, documents
+  `plans/2026-11-18-subscriptions-2-money-backend.md` and `-console.md`,
+  `plans/2026-11-18-subscriptions-3-wallet-backend.md` and `-console.md`. Enums in `common.billing`, documents
   in `db.billing`, `Entitlements`/`Limits`/`SeedGroups` in `security.entitlement`, services in `service.billing`
   (`WorkGate` is the gate for work without a user), API in `app.billing` (`ReadOnlyInterceptor`). Money:
   `service.billing.money` (rounding, GST, proration, financial year, amount in words), `.pricing` (pure quotes:
@@ -108,7 +109,9 @@ WhatsApp messages: take care sharing it or a backup.
   repeatable `OrderSteps`, `StaffOrderService`, the per-customer `BillingLocks`), `.document` (invoices, credit
   notes, gapless `DocumentNumbers`, `DocumentPdf`, `BillingDocumentFiles`), `.refund`, and `BillingTicker`. Every
   change to a subscription's plan or balance goes through an order under the customer's lease; do not write to
-  `subscriptions` any other way. Tests: `app.support.TestBilling` puts a customer on an unpaid plan;
+  `subscriptions` any other way. The wallet is in `service.billing.wallet` (`WalletService` changes it,
+  `WalletMover` copies its ledger out, `UsageCharger` charges a send from `InboxSendService`,
+  `WalletQueryService` reads); do not write to `wallets` except through `WalletService`. Tests: `app.support.TestBilling` puts a customer on an unpaid plan;
   `MoneyApiTestBase` is the fixture of the money tests (a fixed clock at 1 Dec 2026, Gold and Platinum, two
   customers with billing profiles). A test that changes billing settings or groups must call `billing.reset()`
   when it ends.

@@ -212,8 +212,7 @@ Spec `specs/2026-11-15-ai-node-design.md` (§3, §10), plus what the reviews fou
 ## Subscription plans: known limits
 
 Phases 1 (entitlements, 2026-11-17) and 2 (orders, payments, invoices, credit notes, refunds, PDF files, 2026-11-18)
-are built. Phase 3 (the usage wallet and per-message charges) is designed in
-`specs/2026-11-17-subscription-plans-design.md` and not built.
+and 3 (the usage wallet and per-message charges, 2026-11-18) are built.
 
 - Payments are recorded by staff; there is no payment gateway. A refund is recorded after the money was paid
   outside the system.
@@ -238,6 +237,16 @@ are built. Phase 3 (the usage wallet and per-message charges) is designed in
   characters. An order is not paid if the GST rate, the supplier's state or the supplier details changed since it
   was priced (409 `ORDER_STALE` or `BILLING_NOT_SET_UP`): raise it again.
 - An order whose activation keeps failing has no staff action to set it aside; it needs a look at the data.
+- The wallet: a send whose outcome is unknown (the phone did not answer, or the connection dropped after the message
+  left) stays charged, because the message may have gone; staff can give it back with an adjustment.
+- The message rate is the one in the term's snapshot: a plan's new rate applies from the customer's next term.
+- Wallet adjustments carry no tax and are not refundable; only what top-ups put in and usage has not spent is.
+- A top-up's GST is invoiced when it is paid, not as the balance is used. Confirm this treatment of an advance with
+  an accountant before going live.
+- The wallet survives a cancelled or expired plan; the balance waits, and a top-up needs a plan in force.
+- Usage totals are by day in the billing zone, for at most 90 days back.
+- A campaign paused for an empty wallet is not resumed by a top-up; a person resumes it.
+- The low-wallet flag is read on `GET /api/users/me`; there is no e-mail or message when the wallet runs low.
 - A customer sees its staff-raised orders (adjustments, cancellations) without staff's reasons, notes or names.
 - With a paid renewal whose terms no longer offer an add-on, that add-on cannot be bought for the current term
   either. An add-on of extra units carried onto a plan with another unit size keeps its quantity.
