@@ -33,6 +33,7 @@ public class BillingOrder {
     public static final String STEP_APPLIED = "applied";
     public static final String STEP_CREDIT_NOTED = "creditNoted";
     public static final String STEP_INVOICED = "invoiced";
+    public static final String STEP_WALLET = "wallet";
 
     @Id
     private String id;

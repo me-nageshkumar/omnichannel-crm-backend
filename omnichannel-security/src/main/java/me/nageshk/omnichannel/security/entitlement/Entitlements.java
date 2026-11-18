@@ -83,7 +83,9 @@ public class Entitlements {
         return new Entitlement(state, authoritiesOf(segment, now), limitsOf(segment),
                 state == SubscriptionState.EXPIRED, segment.getTerms() == null ? null : segment.getTerms().planName(),
                 segment.getTermStart(), SubscriptionClock.lastEnd(sub),
-                SubscriptionClock.graceEnd(sub, s.getGraceDays(), zone), s.getZone());
+                SubscriptionClock.graceEnd(sub, s.getGraceDays(), zone), s.getZone(),
+                segment.getTerms() == null || segment.getTerms().rates() == null ? java.util.Map.of()
+                        : java.util.Map.copyOf(segment.getTerms().rates()));
     }
 
     /** The entitlement of the workspace's customer; a workspace that does not exist is allowed nothing. */

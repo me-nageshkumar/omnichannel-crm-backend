@@ -36,6 +36,8 @@ public class Invoice {
     @Indexed(unique = true)
     private String orderId;
     private String orderNumber;
+    /** What the order was; null on invoices issued before top-ups existed. */
+    private me.nageshk.omnichannel.common.billing.OrderKind orderKind;
     private String customerId;
     private Instant issuedAt;
     private DocumentParty supplier;
