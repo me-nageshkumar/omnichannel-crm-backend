@@ -646,6 +646,8 @@ public class InboxIngestService {
             chat = chats.findById(chat.getId()).orElse(chat);
         }
         publisher.publishEvent(new InboxEvents.MessageUpserted(chat, i.message(), i.messageInserted()));
+        // a chat waiting for its rules may have been routed by the message's own listener just now
+        if (chat.getRoutingPendingSince() != null) chat = chats.findById(chat.getId()).orElse(chat);
         publisher.publishEvent(new InboxEvents.ChatChanged(chat));
         return Optional.of(new Ingested(chat, i.message(), i.chatCreated(), i.reopened(), i.messageInserted()));
     }

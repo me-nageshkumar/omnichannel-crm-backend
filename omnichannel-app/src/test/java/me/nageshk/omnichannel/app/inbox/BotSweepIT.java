@@ -34,6 +34,12 @@ class BotSweepIT extends ChatbotTestBase {
     @Autowired ChatbotTicker ticker;
     @Autowired ChatbotRunRepository runRepo;
 
+    /** Each test starts a day later, so the sweep's once-per-wait throttle from an earlier test never holds it back. */
+    @org.junit.jupiter.api.BeforeEach
+    void laterDay() {
+        clock.set(NOW.plus(Duration.ofDays(COUNTER.incrementAndGet())));
+    }
+
     private void tick() throws Exception {
         ticker.tick().get(5, TimeUnit.SECONDS);
     }
@@ -107,6 +113,26 @@ class BotSweepIT extends ChatbotTestBase {
         assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
         assertThat(endedRoutes(c)).hasSize(1);
         assertThat(endedRoutes(c).get(0).getByName()).isEqualTo("Chatbot: Welcome");
+    }
+
+    @Test
+    void theOrphanSweepRunsAtMostOnceInTheWait() throws Exception {
+        tick();
+        WaWebChat c = botWithRun(ChatbotRunStatus.COMPLETED, Duration.ofSeconds(31));
+
+        clock.advance(Duration.ofSeconds(2));
+        tick();
+        assertThat(fresh(c).getStatus()).isEqualTo(ChatStatus.BOT);
+
+        clock.advance(Duration.ofSeconds(30));
+        tick();
+        assertThat(fresh(c).getStatus()).isEqualTo(ChatStatus.OPEN);
+    }
+
+    @Test
+    void chatStatusIsIndexedForTheSweep() {
+        assertThat(mongo.indexOps(WaWebChat.class).getIndexInfo()).anySatisfy(i ->
+                assertThat(i.getIndexFields().get(0).getKey()).isEqualTo("status"));
     }
 
     @Test

@@ -88,7 +88,7 @@ public class ChatbotTicker implements TaskAnswerSource {
         List<CompletableFuture<Void>> work = new ArrayList<>();
         // chats nobody would otherwise ever give to people (spec 2026-11-18 §5.5)
         safely("routingOverdue", () -> routingGate.settleOverdue(now));
-        safely("botOrphans", () -> botChats.releaseOrphans(now, routingGate.routingWait()));
+        safely("botOrphans", () -> orphans(now));
         safely("reminders", () -> reminders(now));
         safely("ends", () -> ends(now));
         safely("timers", () -> work.add(timers(now)));
@@ -96,6 +96,17 @@ public class ChatbotTicker implements TaskAnswerSource {
         safely("retries", () -> work.add(runner.retryDue()));
         safely("stale", () -> stale(now));
         return CompletableFuture.allOf(work.toArray(new CompletableFuture[0]));
+    }
+
+    private volatile Instant lastOrphanSweep;
+
+    /** At most once per routing wait: each pass reads every chat a chatbot holds. */
+    private void orphans(Instant now) {
+        Instant last = lastOrphanSweep;
+        // a clock set back (tests) runs it at once
+        if (last != null && !now.isBefore(last) && now.isBefore(last.plus(routingGate.routingWait()))) return;
+        lastOrphanSweep = now;
+        botChats.releaseOrphans(now, routingGate.routingWait());
     }
 
     private void reminders(Instant now) {

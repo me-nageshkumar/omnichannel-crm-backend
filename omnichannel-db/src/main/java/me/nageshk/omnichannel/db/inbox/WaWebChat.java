@@ -36,6 +36,8 @@ public class WaWebChat {
     /** WhatsApp chat id, {@code <digits>@c.us} or {@code <id>@lid}. */
     private String remoteId;
     private String contactId;
+    /** Indexed for the sweep of chats a chatbot holds (spec 2026-11-18 §5.5). */
+    @Indexed(name = "status")
     private ChatStatus status;
     private String assignedUserId;
     private String assignedTeamId;

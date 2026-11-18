@@ -186,6 +186,18 @@ class ChatbotActionsNodesIT extends ChatbotTestBase {
     }
 
     @Test
+    void aHandOverThatFailsStillSendsTheChatToTheTeam() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        Map<String, Object> f = flow(List.of(node("a", "assign_chat", "Hand", Map.of("mode", "AGENT", "userId", outsider.getId()))), List.of());
+        ChatbotRun run = start(publish(createChatbot("Bot", f)), chat);
+
+        assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.FAILED);
+        WaWebChat after = chats.findById(chat.getId()).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(me.nageshk.omnichannel.db.inbox.ChatStatus.OPEN);
+        assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
+    }
+
+    @Test
     void assignToAgentWhoCannotSeeTheNumberFails() throws Exception {
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
         Map<String, Object> f = flow(List.of(node("a", "assign_chat", "Hand", Map.of("mode", "AGENT", "userId", outsider.getId()))), List.of());

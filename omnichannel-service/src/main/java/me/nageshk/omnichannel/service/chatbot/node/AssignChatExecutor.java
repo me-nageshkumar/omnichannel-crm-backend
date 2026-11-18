@@ -66,9 +66,28 @@ public class AssignChatExecutor extends BaseExecutor {
         }
         // start from the stored chat (an earlier send changed it); a message landing in between gets one more try
         try {
-            return assign(ctx, node, runChat.fresh(ctx));
-        } catch (OptimisticLockingFailureException e) {
-            return assign(ctx, node, runChat.fresh(ctx));
+            try {
+                return assign(ctx, node, runChat.fresh(ctx));
+            } catch (OptimisticLockingFailureException e) {
+                return assign(ctx, node, runChat.fresh(ctx));
+            }
+        } catch (RuntimeException failed) {
+            // the chatbot let go already: the number's routing still gives the chat to the team (spec §5.3, FAILED)
+            toTheTeam(ctx);
+            throw failed;
+        }
+    }
+
+    private void toTheTeam(RunContext ctx) {
+        try {
+            WaWebChat chat = runChat.fresh(ctx);
+            if (chat == null || chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null) return;
+            String name = ctx.run().getChatbotName();
+            WaWebChat saved = routing.route(chat, new ChatRoutingService.RoutingOptions(null, true,
+                    me.nageshk.omnichannel.db.inbox.RoutedReason.CHATBOT_ENDED, "Chatbot: " + name, name));
+            publisher.publishEvent(new me.nageshk.omnichannel.service.inbox.InboxEvents.ChatChanged(saved));
+        } catch (RuntimeException e) {
+            // the sweep and the team's Unassigned list still have it
         }
     }
 

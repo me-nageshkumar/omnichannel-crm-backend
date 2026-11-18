@@ -96,6 +96,12 @@ public class RoutingGate {
                     if (chat == null) return false;
                 }
             }
+            // still busy: waiting again, so the sweep tries once more
+            if (routable(chat)) {
+                mongo.updateFirst(new Query(Criteria.where("_id").is(chatId).and("status").is(ChatStatus.OPEN)
+                        .and("assignedUserId").is(null).and("assignedTeamId").is(null)),
+                        new Update().set("routingPendingSince", clock.instant()).inc("version", 1), WaWebChat.class);
+            }
             return false;
         } catch (RuntimeException e) {
             log.warn("could not route chat {} after its rules", chatId, e);

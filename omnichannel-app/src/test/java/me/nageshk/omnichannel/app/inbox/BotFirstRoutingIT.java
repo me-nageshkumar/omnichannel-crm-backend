@@ -43,6 +43,26 @@ import org.springframework.http.HttpMethod;
 /** Spec 2026-11-18 §5.2: a new chat waits for its message's rules, so a chatbot gets it before any person. */
 class BotFirstRoutingIT extends ChatbotTestBase {
 
+    /** The chat rows the live streams are given, in order. */
+    static class ChatChanges {
+        final List<WaWebChat> changes = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @org.springframework.context.event.EventListener
+        void on(me.nageshk.omnichannel.service.inbox.InboxEvents.ChatChanged e) {
+            changes.add(e.chat());
+        }
+    }
+
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ChangesConfig {
+        @org.springframework.context.annotation.Bean
+        ChatChanges botFirstChatChanges() {
+            return new ChatChanges();
+        }
+    }
+
+    @Autowired ChatChanges changes;
+
     static final String VEENU = "919799750743@c.us";
 
     @Autowired AutomationWorker worker;
@@ -168,6 +188,44 @@ class BotFirstRoutingIT extends ChatbotTestBase {
         assertThat(c.getAssignedUserId()).isNotNull();
         assertThat(c.getRoutingPendingSince()).isNull();
         assertThat(queued()).isEmpty();
+    }
+
+    @Test
+    void theLastRowTheStreamsGetIsTheRoutedOne() {
+        chatbotRule(publishedChatbot(), null);
+        changes.changes.clear();
+
+        WaWebChat c = fresh(incoming(n1, VEENU, "call_log", null, "Veenu"));
+
+        WaWebChat last = changes.changes.stream().filter(x -> x.getId().equals(c.getId())).reduce((a, b) -> b).orElseThrow();
+        assertThat(c.getAssignedUserId()).isNotNull();
+        assertThat(last.getAssignedUserId()).isEqualTo(c.getAssignedUserId());
+    }
+
+    @Autowired me.nageshk.omnichannel.service.automation.AssignChatHandler assignHandler;
+
+    @Test
+    void anAssignChatRuleOnAChatbotChatOpensItForTheAgent() throws Exception {
+        String id = publishedChatbot();
+        chatbotRule(id, null);
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            WaWebChat c = fresh(incoming(n1, VEENU, "chat", "hello", "Veenu"));
+            worker.tick();
+            await(() -> fresh(c).getStatus() == ChatStatus.BOT);
+            me.nageshk.omnichannel.db.automation.EventData data = new me.nageshk.omnichannel.db.automation.EventData(
+                    new me.nageshk.omnichannel.db.automation.EventData.ChatData(c.getId(), false, ChatStatus.BOT, null,
+                            null, true), null, null, null, null, null, null, null);
+
+            assignHandler.run(new me.nageshk.omnichannel.service.automation.ActionContext(brand.getId(), acme.getId(),
+                    AutomationEventKind.MESSAGE_RECEIVED, "m-77", data, "r9", "Assign rule", false),
+                    new AutomationAction(AutomationActionType.ASSIGN_CHAT, null, null, AssignMode.AGENT, agent2.getId(),
+                            null, null, null, null, null, null, null));
+
+            WaWebChat after = fresh(c);
+            assertThat(after.getStatus()).isEqualTo(ChatStatus.OPEN);
+            assertThat(after.getAssignedUserId()).isEqualTo(agent2.getId());
+            assertThat(after.getHandedOverAt()).isNotNull();
+        }
     }
 
     @Test

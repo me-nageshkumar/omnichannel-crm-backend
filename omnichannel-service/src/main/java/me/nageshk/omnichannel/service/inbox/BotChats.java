@@ -12,6 +12,7 @@ import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -75,11 +76,22 @@ public class BotChats {
                 WaWebChat.class);
         if (opened == null) return;
         WaWebChat chat = opened;
-        try {
-            chat = routing.route(opened, new ChatRoutingService.RoutingOptions(null, true, reason,
-                    "Chatbot: " + chatbotName, chatbotName));
-        } catch (RuntimeException e) {
-            log.warn("routing chat {} after its chatbot ended failed; it stays open for the team", chatId, e);
+        ChatRoutingService.RoutingOptions options = new ChatRoutingService.RoutingOptions(null, true, reason,
+                "Chatbot: " + chatbotName, chatbotName);
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                chat = routing.route(chat, options);
+                break;
+            } catch (OptimisticLockingFailureException changed) {
+                // a customer message was saved meanwhile: route the fresh copy, unless someone has it now
+                WaWebChat now = chats.findById(chatId).orElse(null);
+                if (now == null || now.getStatus() != ChatStatus.OPEN || now.getAssignedUserId() != null
+                        || now.getAssignedTeamId() != null) return;
+                chat = now;
+            } catch (RuntimeException e) {
+                log.warn("routing chat {} after its chatbot ended failed; it stays open for the team", chatId, e);
+                break;
+            }
         }
         publisher.publishEvent(new InboxEvents.ChatChanged(chat));
     }
@@ -118,7 +130,9 @@ public class BotChats {
     public int releaseOrphans(java.time.Instant now, java.time.Duration wait) {
         java.time.Instant before = now.minus(wait);
         int released = 0;
-        for (WaWebChat chat : mongo.find(new Query(Criteria.where("status").is(ChatStatus.BOT)), WaWebChat.class)) {
+        Query bots = new Query(Criteria.where("status").is(ChatStatus.BOT));
+        bots.fields().include("_id").include("lastMessageAt");
+        for (WaWebChat chat : mongo.find(bots, WaWebChat.class)) {
             me.nageshk.omnichannel.db.chatbot.ChatbotRun newest = mongo.findOne(new Query(Criteria.where("chatId")
                     .is(chat.getId())).with(org.springframework.data.domain.Sort.by(
                             org.springframework.data.domain.Sort.Order.desc("createdAt"))).limit(1),
