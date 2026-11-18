@@ -149,17 +149,20 @@ public class OrderActivator {
 
     /** Runs the steps the order has not ticked off, then marks it activated. */
     private BillingOrder finish(BillingOrder o) {
-        if (!o.getSteps().contains(BillingOrder.STEP_APPLIED)) {
-            steps.apply(o);
-            tick(o, BillingOrder.STEP_APPLIED);
-        }
-        if (!o.getSteps().contains(BillingOrder.STEP_CREDIT_NOTED)) {
-            steps.creditNotes(o);
-            tick(o, BillingOrder.STEP_CREDIT_NOTED);
-        }
-        if (!o.getSteps().contains(BillingOrder.STEP_INVOICED)) {
-            steps.invoice(o);
-            tick(o, BillingOrder.STEP_INVOICED);
+        // A wallet refund takes the money out of the wallet before it issues its credit notes: if the wallet no
+        // longer covers it, the order fails with nothing issued. Every other order credits before it moves the wallet.
+        List<String> order = o.getKind() == OrderKind.WALLET_REFUND
+                ? List.of(BillingOrder.STEP_APPLIED, BillingOrder.STEP_WALLET, BillingOrder.STEP_CREDIT_NOTED, BillingOrder.STEP_INVOICED)
+                : List.of(BillingOrder.STEP_APPLIED, BillingOrder.STEP_CREDIT_NOTED, BillingOrder.STEP_WALLET, BillingOrder.STEP_INVOICED);
+        for (String step : order) {
+            if (o.getSteps().contains(step)) continue;
+            switch (step) {
+                case BillingOrder.STEP_APPLIED -> steps.apply(o);
+                case BillingOrder.STEP_CREDIT_NOTED -> steps.creditNotes(o);
+                case BillingOrder.STEP_WALLET -> steps.wallet(o);
+                default -> steps.invoice(o);
+            }
+            tick(o, step);
         }
         BillingOrder done = mongo.findAndModify(
                 new Query(Criteria.where("_id").is(o.getId()).and("status").is(OrderStatus.ACTIVATING)),

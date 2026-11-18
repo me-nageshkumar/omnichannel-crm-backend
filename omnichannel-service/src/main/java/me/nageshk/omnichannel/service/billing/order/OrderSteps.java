@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import me.nageshk.omnichannel.common.billing.OrderKind;
 import me.nageshk.omnichannel.common.billing.OrderStatus;
+import me.nageshk.omnichannel.common.billing.WalletEntryType;
 import me.nageshk.omnichannel.db.billing.BillingChange;
 import me.nageshk.omnichannel.db.billing.BillingOrder;
 import me.nageshk.omnichannel.db.billing.OrderCredit;
@@ -15,11 +16,13 @@ import me.nageshk.omnichannel.db.billing.Subscription;
 import me.nageshk.omnichannel.db.billing.SubscriptionAddOn;
 import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
 import me.nageshk.omnichannel.db.billing.TermSegment;
+import me.nageshk.omnichannel.db.billing.WalletEntry;
 import me.nageshk.omnichannel.security.entitlement.Entitlements;
 import me.nageshk.omnichannel.service.billing.BillingAudit;
 import me.nageshk.omnichannel.service.billing.document.CreditNoteService;
 import me.nageshk.omnichannel.service.billing.document.InvoiceService;
 import me.nageshk.omnichannel.service.billing.money.Money;
+import me.nageshk.omnichannel.service.billing.wallet.WalletService;
 import org.bson.types.Decimal128;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -45,9 +48,12 @@ public class OrderSteps {
     private final InvoiceService invoices;
     private final CreditNoteService creditNotes;
     private final Clock clock;
+    private final WalletService wallets;
 
     public OrderSteps(SubscriptionRepository subscriptions, Entitlements entitlements, BillingAudit audit,
-            MongoTemplate mongo, InvoiceService invoices, CreditNoteService creditNotes, Clock clock) {
+            MongoTemplate mongo, InvoiceService invoices, CreditNoteService creditNotes, Clock clock,
+            WalletService wallets) {
+        this.wallets = wallets;
         this.clock = clock;
         this.invoices = invoices;
         this.creditNotes = creditNotes;
@@ -63,6 +69,13 @@ public class OrderSteps {
      */
     public void apply(BillingOrder o) {
         String customerId = o.getCustomerId();
+        if (o.getKind() == OrderKind.TOPUP || o.getKind() == OrderKind.WALLET_REFUND) {
+            // wallet money: the plan is not touched and no request beside it goes out of date
+            audit.recordOnce("order:" + o.getId(), BillingChange.SUBSCRIPTION, customerId, "ORDER_ACTIVATED",
+                    "Order " + o.getNumber() + " activated: " + describe(o),
+                    o.getPayment() == null ? "system" : o.getPayment().recordedBy());
+            return;
+        }
         Subscription sub = subscriptions.findByCustomerId(customerId).orElse(null);
         if (sub == null || !sub.getAppliedOrderIds().contains(o.getId())) {
             if (sub == null) {
@@ -135,6 +148,19 @@ public class OrderSteps {
                 new Update().inc("creditBalance", new Decimal128(o.getCreditFromNotes()))
                         .addToSet("creditedOrderIds", o.getId()).inc("version", 1),
                 Subscription.class);
+    }
+
+    /**
+     * Moves the wallet for an order that is about wallet money: a top-up puts its amount (before tax) in. The wallet
+     * remembers the orders it has seen, so this happens once however often it is run.
+     */
+    public void wallet(BillingOrder o) {
+        if (o.getKind() != OrderKind.TOPUP) return;
+        WalletEntry draft = new WalletEntry();
+        draft.setType(WalletEntryType.TOPUP);
+        draft.setRef(o.getNumber());
+        draft.setBy(o.getPayment() == null ? null : o.getPayment().recordedBy());
+        wallets.creditOnce(o.getId(), o.getCustomerId(), o.getTaxable(), draft);
     }
 
     /**
