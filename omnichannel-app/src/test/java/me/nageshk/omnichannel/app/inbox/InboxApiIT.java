@@ -56,6 +56,50 @@ class InboxApiIT extends InboxApiTestBase {
         send(get(chatsUrl()).param("scope", "MINE"), agentToken, null).andExpect(status().isOk());
     }
 
+    private WaWebChat botChat(String name, String phone, long minutes) {
+        WaWebChat c = chat(name, phone, minutes);
+        c.setStatus(ChatStatus.BOT);
+        return chats.save(c);
+    }
+
+    @Test
+    void botListNeedsThePermission() throws Exception {
+        send(get(chatsUrl()).param("scope", "BOT"), agentToken, null).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void botListReturnsOnlyBotChats() throws Exception {
+        chat("Open", "911", 1, null, null);
+        botChat("Bot", "912", 2);
+        WaWebChat closed = chat("Closed", "913", 3, null, null);
+        closed.setStatus(ChatStatus.CLOSED);
+        chats.save(closed);
+
+        for (String status : List.of("OPEN", "CLOSED", "ALL")) {
+            JsonNode page = json(send(get(chatsUrl()).param("scope", "BOT").param("status", status), managerToken, null)
+                    .andExpect(status().isOk()));
+            assertThat(names(page)).as(status).containsExactly("Bot");
+            assertThat(page.get("items").get(0).get("status").asString()).isEqualTo("BOT");
+        }
+    }
+
+    @Test
+    void otherListsNeverReturnBotChats() throws Exception {
+        chat("Open", "911", 1, null, null);
+        botChat("Bot", "912", 2);
+
+        JsonNode page = json(send(get(chatsUrl()).param("scope", "ALL").param("status", "ALL"), managerToken, null)
+                .andExpect(status().isOk()));
+        assertThat(names(page)).containsExactly("Open");
+    }
+
+    @Test
+    void agentGets404OpeningABotChat() throws Exception {
+        WaWebChat bot = botChat("Bot", "912", 2);
+        send(get(inbox() + "/chats/" + bot.getId()), agentToken, null).andExpect(status().isNotFound());
+        send(get(inbox() + "/chats/" + bot.getId()), managerToken, null).andExpect(status().isOk());
+    }
+
     @Test
     void unknownScopeIsBadRequest() throws Exception {
         send(get(chatsUrl()).param("scope", "EVERYTHING"), managerToken, null).andExpect(status().isBadRequest());

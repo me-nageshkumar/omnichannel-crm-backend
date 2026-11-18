@@ -215,4 +215,53 @@ class InboxScopeServiceIT {
         assertThatThrownBy(() -> scopes.scopeOf(user, brand.getId()))
                 .isInstanceOf(NotFoundException.class).hasMessage("workspace not found");
     }
+
+    @Test
+    void agentWithoutViewBotDoesNotCoverABotChatOnOwnNumber() {
+        AuthenticatedUser agent = brandUser("agentb", BuiltInRoles.AGENT, brand);
+        PhoneNumber a = number(brand, team(brand, "Support", agent.userId()));
+        InboxScope scope = scopes.scopeOf(agent, brand.getId());
+        assertThat(scope.bots()).isFalse();
+        assertThat(scope.covers(botChat(a))).isFalse();
+    }
+
+    @Test
+    void managerCoversBotChatsOnlyOnOwnedNumbers() {
+        Role r = new Role();
+        r.setName("TEAM_BOTS");
+        r.setLevel(RoleLevel.BRAND);
+        r.setAuthorities(new java.util.HashSet<>(List.of("inbox:view", "inbox:view-team", "inbox:view-bot")));
+        roles.save(r);
+        roleCache.evictAll();
+        AuthenticatedUser lead = brandUser("lead", "TEAM_BOTS", brand);
+        PhoneNumber owned = number(brand, team(brand, "Support", lead.userId()));
+        PhoneNumber elsewhere = number(brand, team(brand, "Sales", "someone-else"));
+
+        InboxScope scope = scopes.scopeOf(lead, brand.getId());
+
+        assertThat(scope.bots()).isTrue();
+        assertThat(scope.covers(botChat(owned))).isTrue();
+        assertThat(scope.covers(botChat(elsewhere))).isFalse();
+    }
+
+    @Test
+    void visibleNumbersIgnoreBotChatsForAgents() {
+        AuthenticatedUser agent = brandUser("agentc", BuiltInRoles.AGENT, brand);
+        number(brand, team(brand, "Support", agent.userId()));
+        PhoneNumber guest = number(brand, team(brand, "Sales", "someone-else"));
+        chats.save(botChat(guest));
+
+        assertThat(scopes.visibleNumbers(agent, brand.getId())).extracting(v -> v.number().getId())
+                .doesNotContain(guest.getId());
+    }
+
+    private WaWebChat botChat(PhoneNumber n) {
+        WaWebChat c = new WaWebChat();
+        c.setCustomerId(acme.getId());
+        c.setWorkspaceId(brand.getId());
+        c.setPhoneNumberId(n.getId());
+        c.setRemoteId(java.util.UUID.randomUUID() + "@c.us");
+        c.setStatus(me.nageshk.omnichannel.db.inbox.ChatStatus.BOT);
+        return c;
+    }
 }

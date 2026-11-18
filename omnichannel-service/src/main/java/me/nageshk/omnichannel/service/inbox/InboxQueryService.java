@@ -81,7 +81,8 @@ public class InboxQueryService {
         all.add(where("workspaceId").is(workspaceId));
         all.add(where("phoneNumberId").in(List.copyOf(selected)));
         all.add(scope.criteriaFor(list));
-        if (status != null) all.add(where("status").is(status));
+        // the Chatbot list is one status already
+        if (status != null && list != ListScope.BOT) all.add(where("status").is(status));
         if (unreadOnly) all.add(where("unreadCount").gt(0));
         if (q != null && !q.isBlank()) {
             List<String> contactIds = matchingContacts(workspaceId, cut(q.strip()));
