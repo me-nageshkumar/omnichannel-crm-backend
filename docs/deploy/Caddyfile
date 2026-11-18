@@ -1,0 +1,21 @@
+# The edge in front of the app (link addresses spec 2026-11-18 §5.6): HTTPS for the platform's own host and for every
+# brand's link address, with certificates fetched on the first request and renewed by Caddy.
+#
+# - Before Caddy asks for a certificate it calls the app's host-allowed endpoint; only a host the app knows (the
+#   platform's, a brand's current one, or a former one still within the pages' 90 days) gets one. A stranger pointing
+#   a name at this server gets none.
+# - Caddy must be the only thing listening on 443 (and on 80, for the certificate challenge).
+# - Caddy keeps the original Host header when it proxies, so the app needs no omnichannel.pages.trust-forwarded-host.
+# - The app's port here is 8080; change both lines if it runs elsewhere.
+{
+	on_demand_tls {
+		ask http://localhost:8080/internal/pages/host-allowed
+	}
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	reverse_proxy localhost:8080
+}

@@ -59,6 +59,11 @@ npx tsc --noEmit && npm run lint && npm run build
 # so after a new tunnel just start once with it. Edit with mongosh and restart. The key now lives in the database and in
 # every mongodump: never share a dump, and move the key out of the database before production. Never print the key.
 # The `chat_created` index on waWebMessages is built at startup (a moment on a big collection).
+# Link addresses (2026-11-18): the platform's pages address above is the startup value. Once a super admin saves one
+# on Platform → Link address it wins until "Use the startup setting"; 8089 saves none, so a new tunnel is still
+# followed by starting once with OMNICHANNEL_PAGES_BASE_URL. Brands' own addresses need https and a public name, so
+# they are walked locally only with omnichannel.pages.allow-insecure=true. Production: Caddy in front, see
+# docs/deploy/Caddyfile.
 # Deploy on 8089: stop the old process and wait for it to exit (up to 30 s), since the build replaces its jar
 kill $(lsof -nP -iTCP:8089 -sTCP:LISTEN -t)
 (cd "$F" && npm run -s build)
