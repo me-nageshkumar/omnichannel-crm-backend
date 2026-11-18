@@ -52,7 +52,8 @@ class OpenAiProviderTest {
         server.start();
         AiProperties props = new AiProperties(true, Duration.ofSeconds(2), 8, timeout, Duration.ofSeconds(120), 2, 8,
                 Duration.ofSeconds(10), new AiProperties.OpenAi("http://127.0.0.1:" + server.getAddress().getPort() + "/v1"),
-                new AiProperties.Mcp(Duration.ofSeconds(20), 65536, Duration.ofMinutes(5)));
+                new AiProperties.Mcp(Duration.ofSeconds(20), 65536, Duration.ofMinutes(5)),
+                AiProperties.Knowledge.defaults());
         return new OpenAiProvider(props);
     }
 

@@ -35,6 +35,10 @@ public class KnowledgeSource {
     private Instant addedAt;
     private String addedBy;
     private Instant fetchedAt;
+    /** When the provider started indexing the file; the worker gives up a set time after it. */
+    private Instant indexingSince;
+    /** Seconds until the next state check; doubles from 2 to 30 while the provider is still indexing. */
+    private int checkDelaySeconds;
     @Version
     private Long version;
 
@@ -76,6 +80,10 @@ public class KnowledgeSource {
     public void setAddedBy(String addedBy) { this.addedBy = addedBy; }
     public Instant getFetchedAt() { return fetchedAt; }
     public void setFetchedAt(Instant fetchedAt) { this.fetchedAt = fetchedAt; }
+    public Instant getIndexingSince() { return indexingSince; }
+    public void setIndexingSince(Instant indexingSince) { this.indexingSince = indexingSince; }
+    public int getCheckDelaySeconds() { return checkDelaySeconds; }
+    public void setCheckDelaySeconds(int checkDelaySeconds) { this.checkDelaySeconds = checkDelaySeconds; }
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
 }

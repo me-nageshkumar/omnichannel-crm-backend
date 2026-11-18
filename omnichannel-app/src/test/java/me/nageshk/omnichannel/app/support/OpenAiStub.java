@@ -27,6 +27,7 @@ public final class OpenAiStub {
     private final HttpServer server;
     private final ConcurrentLinkedQueue<Canned> queue = new ConcurrentLinkedQueue<>();
     private final List<Recorded> recorded = new CopyOnWriteArrayList<>();
+    private volatile Runnable beforeNext;
 
     public OpenAiStub() {
         try {
@@ -45,6 +46,11 @@ public final class OpenAiStub {
                 ex.getRequestURI().getRawPath() + (query == null ? "" : "?" + query),
                 ex.getRequestHeaders().getFirst("Authorization"), body,
                 ex.getRequestHeaders().getFirst("OpenAI-Organization"), ex.getRequestHeaders().getFirst("OpenAI-Project")));
+        Runnable hook = beforeNext;
+        if (hook != null) {
+            beforeNext = null;
+            hook.run();
+        }
         Canned c = queue.poll();
         if (c == null) c = new Canned(200, "{\"data\":[]}");
         byte[] out = c.body().getBytes(StandardCharsets.UTF_8);
@@ -63,6 +69,11 @@ public final class OpenAiStub {
         queue.add(new Canned(status, body));
     }
 
+    /** Runs once, on the stub's thread, when the next request arrives and before it is answered (a change in mid-call). */
+    public void beforeNextRequest(Runnable hook) {
+        beforeNext = hook;
+    }
+
     public List<Recorded> requests() {
         return new ArrayList<>(recorded);
     }
@@ -74,6 +85,7 @@ public final class OpenAiStub {
     public void reset() {
         queue.clear();
         recorded.clear();
+        beforeNext = null;
     }
 
     public void stop() {

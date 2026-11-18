@@ -94,7 +94,8 @@ class McpClientTest {
     private static McpClient client(Duration toolTimeout, int maxResult, boolean allowPrivate) {
         AiProperties props = new AiProperties(true, Duration.ofSeconds(2), 8, Duration.ofSeconds(5), Duration.ofSeconds(120), 2, 8,
                 Duration.ofSeconds(10), new AiProperties.OpenAi("http://x"),
-                new AiProperties.Mcp(toolTimeout, maxResult, Duration.ofMinutes(5)));
+                new AiProperties.Mcp(toolTimeout, maxResult, Duration.ofMinutes(5)),
+                AiProperties.Knowledge.defaults());
         return new McpClient(props, new HttpAddressGuard(allowPrivate));
     }
 

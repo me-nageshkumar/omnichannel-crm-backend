@@ -87,7 +87,8 @@ class AiTurnWorkerTest {
                 Map.of("listener", (AiTurnListener) heard::add));
         AiProperties props = new AiProperties(false, Duration.ofSeconds(2), 1, Duration.ofSeconds(60),
                 Duration.ofSeconds(120), 2, 8, Duration.ofSeconds(10), new AiProperties.OpenAi("x"),
-                new AiProperties.Mcp(Duration.ofSeconds(20), 65536, Duration.ofMinutes(5)));
+                new AiProperties.Mcp(Duration.ofSeconds(20), 65536, Duration.ofMinutes(5)),
+                AiProperties.Knowledge.defaults());
         return new AiTurnWorker(queue, runner, beans.getBeanProvider(AiTurnListener.class), pool, props,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
