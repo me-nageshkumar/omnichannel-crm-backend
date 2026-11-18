@@ -137,7 +137,7 @@ class PhoneNumberMoveIT {
             "waWebHistoryImports", "waWebHistoryImportChats", "chatbotRuns", "messagePages", "campaignSenders",
             "campaigns", "campaignRecipients", "channelWebhookEvents", "chatMedia.files", "chatMedia.chunks",
             "crmContacts", "crmActivities", "crmNotes", "crmTasks", "crmDeals", "phoneNumberMoves", "phoneNumbers",
-            "contacts", "teams", "automationRules");
+            "contacts", "teams", "automationRules", "automationEvents");
 
     @BeforeEach
     void setUp() {
@@ -175,6 +175,7 @@ class PhoneNumberMoveIT {
                 "x".getBytes(StandardCharsets.UTF_8));
         webhookEvent();
         historyImport();
+        pendingAutomationEvent(veenuChat);
     }
 
     @AfterEach
@@ -233,6 +234,7 @@ class PhoneNumberMoveIT {
         assertThat(field("chatMedia.files", "metadata.phoneNumberId")).containsOnly(archive.getId());
         assertThat(field("channelWebhookEvents", "event.entry.changes.value.metadata.phone_number_id"))
                 .containsOnly(archive.getId());
+        assertThat(field("automationEvents", "data.number.id")).containsExactly(archive.getId());
 
         // the run ended, its chat is no longer the chatbot's, the import stopped
         ChatbotRun ended = mongo.findById(run.getId(), ChatbotRun.class);
@@ -310,6 +312,7 @@ class PhoneNumberMoveIT {
                 .extracting(WaWebMessage::getPhoneNumberId).hasSize((int) messageCount).containsOnly(main.getId());
         assertThat(field("crmContacts", "channel.phoneNumberId")).containsOnly(main.getId());
         assertThat(field("campaignSenders", "phoneNumberId")).containsOnly(main.getId());
+        assertThat(field("automationEvents", "data.number.id")).containsExactly(main.getId());
 
         PhoneNumber archiveInB = onlyArchive(brandB);
         assertThat(archiveInB.getLabel()).isEqualTo("Main line (until 25 Nov)");
@@ -662,6 +665,17 @@ class PhoneNumberMoveIT {
         h = mongo.save(h);
         mongo.insert(new Document("importId", h.getId()).append("remoteId", VEENU + "@c.us")
                 .append("phoneNumberId", main.getId()).append("status", "PENDING"), "waWebHistoryImportChats");
+    }
+
+    /** A message event of brand A still waiting for its retry, as one left by a failed rule run before the move. */
+    private void pendingAutomationEvent(WaWebChat chat) {
+        Document data = new Document("chat", new Document("id", chat.getId()))
+                .append("number", new Document("id", main.getId()).append("number", MAIN).append("label", "Main line"))
+                .append("contact", new Document("id", chat.getContactId()));
+        mongo.insert(new Document("customerId", acme.getId()).append("workspaceId", brandA.getId())
+                .append("kind", "MESSAGE_RECEIVED").append("data", data).append("status", "PENDING")
+                .append("attempts", 1).append("notBefore", Instant.parse("2027-01-01T00:00:00Z"))
+                .append("createdAt", NOW.minusSeconds(60)), "automationEvents");
     }
 
     private AutomationRule rule(String name, ConditionNode conditions) {

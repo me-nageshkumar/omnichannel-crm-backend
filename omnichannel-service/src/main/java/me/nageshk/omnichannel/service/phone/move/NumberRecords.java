@@ -29,6 +29,7 @@ public class NumberRecords {
             "waWebHistoryImports", "phoneNumberId",
             "waWebHistoryImportChats", "phoneNumberId",
             "chatbotRuns", "phoneNumberId",
+            "automationEvents", "data.number.id (queued events: a done one moves to automationEventHistory)",
             "messagePages", "phoneNumberId",
             "campaignSenders", "phoneNumberId",
             "campaigns", "senderIds (an element)",
@@ -48,7 +49,9 @@ public class NumberRecords {
             "waNumberLookups", "per brand: each brand keeps its own lookups of WhatsApp ids",
             "inboxSettings", "legacy field, read only by its migration",
             "waWebChatActions", "keyed by chat id, no number field: they follow their chats",
-            "phoneNumberMoves", "the move history names the real number on purpose");
+            "phoneNumberMoves", "the move history names the real number on purpose",
+            "automationEventHistory", "history: what the rules saw when the event ran, kept as it was",
+            "automationTests", "rule test records: what a test ran on, kept as it was");
 
     private final MongoTemplate mongo;
     private final CrmNumberRecords crm;
@@ -68,6 +71,9 @@ public class NumberRecords {
         set("waWebHistoryImports", "phoneNumberId", from, to, true);
         set("waWebHistoryImportChats", "phoneNumberId", from, to, false);
         set("chatbotRuns", "phoneNumberId", from, to, true);
+        // a queued event of the old brand then names the archive: its actions stay with the archived chat (a send is
+        // refused) instead of reaching the number in its new brand
+        set("automationEvents", "data.number.id", from, to, false);
         set("messagePages", "phoneNumberId", from, to, false);
         set("campaignSenders", "phoneNumberId", from, to, true);
         mongo.updateMulti(new Query(Criteria.where("senderIds").is(from)),
