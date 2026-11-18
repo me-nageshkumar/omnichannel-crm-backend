@@ -145,6 +145,7 @@ public class AutomationViews {
                 case AGENT -> "Assign to " + l.agent(a.userId());
                 case TEAM_QUEUE -> "Queue in " + l.team(a.teamId());
                 case TEAM_ROUND_ROBIN -> "Round robin in " + l.team(a.teamId());
+                case NUMBER_ROUTING -> "Assign by the number's routing";
             };
             case ADD_TO_CRM -> "Add to CRM (" + l.pipeline(a.pipelineId(), a.stageId()) + ")";
             case START_CHATBOT -> "Start “" + l.chatbot(a.chatbotId()) + "”";

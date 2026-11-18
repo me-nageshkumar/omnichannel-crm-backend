@@ -114,6 +114,14 @@ class InboxIndexesIT {
     }
 
     @Test
+    void routingPendingSinceHasASparseIndex() {
+        IndexInfo index = mongo.indexOps(WaWebChat.class).getIndexInfo().stream()
+                .filter(i -> i.getIndexFields().stream().anyMatch(f -> f.getKey().equals("routingPendingSince")))
+                .findFirst().orElseThrow();
+        assertThat(index.isSparse()).isTrue();
+    }
+
+    @Test
     void indexesAreNamedAsDesigned() {
         assertThat(names(WaWebChat.class)).contains("phone_remote_unique", "phone_last_message",
                 "phone_user_last_message", "phone_team_last_message", "phone_contact", "workspace_contact");

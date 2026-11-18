@@ -12,7 +12,8 @@ import me.nageshk.omnichannel.db.chatbot.ChatbotSettingsLayer;
 public final class SettingsLayers {
 
     public static final List<String> FIELDS = List.of("reminderOn", "reminderAfterMinutes", "reminderMessage",
-            "endAfterMinutes", "endMessage", "invalidReplyRetries", "retryMessage", "giveUpMessage", "stopOnAgentReply");
+            "endAfterMinutes", "endMessage", "invalidReplyRetries", "retryMessage", "giveUpMessage", "stopOnAgentReply",
+            "whenCompleted", "whenAbandoned");
 
     private static final int MAX_TEXT = 1024;
 
@@ -32,6 +33,8 @@ public final class SettingsLayers {
         m.put("retryMessage", ChatbotSettingsLayer::retryMessage);
         m.put("giveUpMessage", ChatbotSettingsLayer::giveUpMessage);
         m.put("stopOnAgentReply", ChatbotSettingsLayer::stopOnAgentReply);
+        m.put("whenCompleted", ChatbotSettingsLayer::whenCompleted);
+        m.put("whenAbandoned", ChatbotSettingsLayer::whenAbandoned);
         return m;
     }
 
@@ -51,7 +54,8 @@ public final class SettingsLayers {
                 pick(t.reminderAfterMinutes(), b.reminderAfterMinutes()), pick(t.reminderMessage(), b.reminderMessage()),
                 pick(t.endAfterMinutes(), b.endAfterMinutes()), pick(t.endMessage(), b.endMessage()),
                 pick(t.invalidReplyRetries(), b.invalidReplyRetries()), pick(t.retryMessage(), b.retryMessage()),
-                pick(t.giveUpMessage(), b.giveUpMessage()), pick(t.stopOnAgentReply(), b.stopOnAgentReply()));
+                pick(t.giveUpMessage(), b.giveUpMessage()), pick(t.stopOnAgentReply(), b.stopOnAgentReply()),
+                pick(t.whenCompleted(), b.whenCompleted()), pick(t.whenAbandoned(), b.whenAbandoned()));
     }
 
     /** The settings a run uses, from a complete layer; a blank optional message becomes {@code null} (none). */
@@ -64,7 +68,7 @@ public final class SettingsLayers {
         }
         return new ChatbotSettings(c.reminderOn(), c.reminderAfterMinutes(), c.reminderMessage(), c.endAfterMinutes(),
                 none(c.endMessage()), c.invalidReplyRetries(), c.retryMessage(), none(c.giveUpMessage()),
-                c.stopOnAgentReply());
+                c.stopOnAgentReply(), c.whenCompleted(), c.whenAbandoned());
     }
 
     private static String none(String s) {
@@ -111,7 +115,7 @@ public final class SettingsLayers {
         if (!errors.isEmpty()) throw new ValidationException(errors);
         return new ChatbotSettingsLayer(l.reminderOn(), l.reminderAfterMinutes(), l.reminderMessage(),
                 l.endAfterMinutes(), endMessage, l.invalidReplyRetries(), l.retryMessage(), giveUpMessage,
-                l.stopOnAgentReply());
+                l.stopOnAgentReply(), l.whenCompleted(), l.whenAbandoned());
     }
 
     private static void range(Map<String, String> errors, String prefix, String field, Integer v, int lo, int hi,

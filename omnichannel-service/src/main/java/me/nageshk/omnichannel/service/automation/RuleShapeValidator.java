@@ -151,6 +151,10 @@ public final class RuleShapeValidator {
             if (a.type() == AutomationActionType.ASSIGN_CHAT && a.mode() == null) {
                 errors.put(at + ".mode", "is required");
             }
+            // the number's own routing exists for the chatbot hand-over node only (spec 2026-11-18 §5.1)
+            if (a.type() == AutomationActionType.ASSIGN_CHAT && a.mode() == me.nageshk.omnichannel.db.automation.AssignMode.NUMBER_ROUTING) {
+                errors.put(at + ".mode", "not available for a rule");
+            }
             if (a.type() == AutomationActionType.START_CHATBOT && (a.chatbotId() == null || a.chatbotId().isBlank())) {
                 errors.put(at + ".chatbotId", "is required");
             }

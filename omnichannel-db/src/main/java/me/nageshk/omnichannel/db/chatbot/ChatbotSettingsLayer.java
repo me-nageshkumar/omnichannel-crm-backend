@@ -6,9 +6,9 @@ package me.nageshk.omnichannel.db.chatbot;
  */
 public record ChatbotSettingsLayer(Boolean reminderOn, Integer reminderAfterMinutes, String reminderMessage,
         Integer endAfterMinutes, String endMessage, Integer invalidReplyRetries, String retryMessage,
-        String giveUpMessage, Boolean stopOnAgentReply) {
+        String giveUpMessage, Boolean stopOnAgentReply, AfterChatbot whenCompleted, AfterChatbot whenAbandoned) {
 
     public static ChatbotSettingsLayer empty() {
-        return new ChatbotSettingsLayer(null, null, null, null, null, null, null, null, null);
+        return new ChatbotSettingsLayer(null, null, null, null, null, null, null, null, null, null, null);
     }
 }

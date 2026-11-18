@@ -63,6 +63,8 @@ public class AssignChatHandler implements ActionHandler {
                         : ActionResult.done("Assigned to " + nameOf(saved, ctx) + " (round robin in "
                                 + team.getName() + ")");
             }
+            // refused when a rule is saved; only the chatbot hand-over node uses the number's routing
+            case NUMBER_ROUTING -> ActionResult.failed("No assignment mode");
         };
     }
 

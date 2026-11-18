@@ -1,6 +1,6 @@
 package me.nageshk.omnichannel.db.inbox;
 
-/** Whether a chat is being worked on or has been closed. */
+/** Whether a chat is being worked on by people, held by a chatbot (no person holds it), or closed. */
 public enum ChatStatus {
-    OPEN, CLOSED
+    OPEN, BOT, CLOSED
 }

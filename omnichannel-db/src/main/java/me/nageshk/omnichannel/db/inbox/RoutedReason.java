@@ -13,5 +13,9 @@ public enum RoutedReason {
     /** A history fetch created the chat and found it waiting on us. */
     FETCHED,
     /** An automation rule assigned the chat; the action's {@code reasonDetail} is the rule's name. */
-    AUTOMATION
+    AUTOMATION,
+    /** A chatbot's hand-over node used the number's routing; {@code reasonDetail} is the chatbot's name. */
+    CHATBOT_HANDOVER,
+    /** A chatbot ended and the chat went to the team; {@code reasonDetail} is the chatbot's name. */
+    CHATBOT_ENDED
 }

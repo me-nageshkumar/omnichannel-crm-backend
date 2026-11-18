@@ -54,7 +54,8 @@ class ChatbotSettingsRunIT extends ChatbotTestBase {
         return new ChatbotSettingsLayer((Boolean) v.get("reminderOn"), (Integer) v.get("reminderAfterMinutes"),
                 (String) v.get("reminderMessage"), (Integer) v.get("endAfterMinutes"), (String) v.get("endMessage"),
                 (Integer) v.get("invalidReplyRetries"), (String) v.get("retryMessage"), (String) v.get("giveUpMessage"),
-                (Boolean) v.get("stopOnAgentReply"));
+                (Boolean) v.get("stopOnAgentReply"), (me.nageshk.omnichannel.db.chatbot.AfterChatbot) v.get("whenCompleted"),
+                (me.nageshk.omnichannel.db.chatbot.AfterChatbot) v.get("whenAbandoned"));
     }
 
     private void brandSets(Map<String, Object> own) {

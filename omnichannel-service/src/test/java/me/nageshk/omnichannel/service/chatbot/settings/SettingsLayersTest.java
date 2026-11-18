@@ -18,7 +18,9 @@ class SettingsLayersTest {
                 (String) values.get("reminderMessage"), (Integer) values.get("endAfterMinutes"),
                 (String) values.get("endMessage"), (Integer) values.get("invalidReplyRetries"),
                 (String) values.get("retryMessage"), (String) values.get("giveUpMessage"),
-                (Boolean) values.get("stopOnAgentReply"));
+                (Boolean) values.get("stopOnAgentReply"),
+                (me.nageshk.omnichannel.db.chatbot.AfterChatbot) values.get("whenCompleted"),
+                (me.nageshk.omnichannel.db.chatbot.AfterChatbot) values.get("whenAbandoned"));
     }
 
     private static ChatbotSettings resolve(ChatbotSettingsLayer chatbot, ChatbotSettingsLayer brand,
@@ -49,7 +51,7 @@ class SettingsLayersTest {
         assertThat(sources.get("endAfterMinutes")).isEqualTo(SettingSource.CHATBOT);
         assertThat(sources.get("retryMessage")).isEqualTo(SettingSource.BRAND);
         assertThat(sources.get("invalidReplyRetries")).isEqualTo(SettingSource.PLATFORM);
-        assertThat(sources).hasSize(9);
+        assertThat(sources).hasSize(11);
     }
 
     @Test
@@ -102,7 +104,7 @@ class SettingsLayersTest {
         Map<String, String> e = errors(ChatbotSettingsLayer.empty(), "settings", true);
         assertThat(e).containsOnlyKeys("settings.reminderOn", "settings.reminderAfterMinutes",
                 "settings.reminderMessage", "settings.endAfterMinutes", "settings.invalidReplyRetries",
-                "settings.retryMessage", "settings.stopOnAgentReply");
+                "settings.retryMessage", "settings.stopOnAgentReply", "settings.whenCompleted", "settings.whenAbandoned");
         assertThat(errors(PLATFORM, "settings", true)).isEmpty();
     }
 
@@ -124,10 +126,12 @@ class SettingsLayersTest {
         assertThat(d.retryMessage()).isEqualTo("Sorry, I didn't get that. Please choose one of the options.");
         assertThat(d.giveUpMessage()).isNull();
         assertThat(d.stopOnAgentReply()).isTrue();
+        assertThat(d.whenCompleted()).isEqualTo(me.nageshk.omnichannel.db.chatbot.AfterChatbot.CLOSE);
+        assertThat(d.whenAbandoned()).isEqualTo(me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE);
         assertThat(PLATFORM.endMessage()).isEqualTo("");
         assertThat(SettingsLayers.FIELDS).containsExactly("reminderOn", "reminderAfterMinutes", "reminderMessage",
                 "endAfterMinutes", "endMessage", "invalidReplyRetries", "retryMessage", "giveUpMessage",
-                "stopOnAgentReply");
+                "stopOnAgentReply", "whenCompleted", "whenAbandoned");
     }
 
     @Test
