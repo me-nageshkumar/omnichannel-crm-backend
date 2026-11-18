@@ -287,6 +287,8 @@ public class PagesAddresses {
         String h = host.strip().toLowerCase(Locale.ROOT);
         int colon = h.lastIndexOf(':');
         if (colon > 0 && h.indexOf(']') < 0) h = h.substring(0, colon);
-        return h;
+        // "links.acme.in." is the same name: a trailing dot must not slip past the pages-only filter
+        h = h.replaceAll("\\.+$", "");
+        return h.isEmpty() ? null : h;
     }
 }

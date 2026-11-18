@@ -36,6 +36,13 @@ class PagesUrlTest {
     }
 
     @Test
+    void aTrailingDotOnTheHostIsDropped() {
+        PagesUrl u = PagesUrl.parse("https://links.acme.in./wa", false);
+        assertThat(u.host()).isEqualTo("links.acme.in");
+        assertThat(u.baseUrl()).isEqualTo("https://links.acme.in/wa");
+    }
+
+    @Test
     void blankIsRefused() {
         assertThat(refusal("  ", false)).isEqualTo("Enter an address");
         assertThat(refusal(null, false)).isEqualTo("Enter an address");

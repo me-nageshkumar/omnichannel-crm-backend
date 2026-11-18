@@ -42,7 +42,8 @@ public record PagesUrl(String baseUrl, String host, String path) {
             host = authority.substring(0, colon);
             port = authority.substring(colon + 1);
         }
-        host = host.toLowerCase(Locale.ROOT);
+        // "example.com." is the same name; browsers send the dot when it is typed
+        host = host.toLowerCase(Locale.ROOT).replaceAll("\\.+$", "");
         if (host.isEmpty()) throw refused("Enter an address");
         if (!host.chars().allMatch(c -> c < 128)) throw refused("Use the ASCII (xn--) form of the name");
         if (IPV4.matcher(host).matches()) throw refused("Use a domain name, not an IP address");

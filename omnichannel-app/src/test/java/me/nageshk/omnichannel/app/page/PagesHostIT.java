@@ -95,6 +95,18 @@ class PagesHostIT {
     }
 
     @Test
+    void aTrailingDotOnACustomerHostChangesNothing() throws Exception {
+        // browsers send the dot when it is typed; it is the same name
+        MvcResult r = on("links.acme.in.", get("/login"));
+        assertThat(r.getResponse().getStatus()).isEqualTo(404);
+        assertThat(r.getResponse().getContentAsString()).isEmpty();
+        assertThat(on("LINKS.acme.in.:443", get("/api/users/me").header("Authorization", "Bearer " + token))
+                .getResponse().getStatus()).isEqualTo(404);
+        assertThat(on("localhost", get("/internal/pages/host-allowed").param("domain", "links.acme.in.")).getResponse()
+                .getStatus()).isEqualTo(200);
+    }
+
+    @Test
     void aFormerHostInTimeBehavesAsACustomerHost() throws Exception {
         assertThat(on("old.acme.in", get("/login")).getResponse().getStatus()).isEqualTo(404);
         assertThat(on("gone.acme.in", get("/login")).getResponse().getStatus()).isEqualTo(200);
