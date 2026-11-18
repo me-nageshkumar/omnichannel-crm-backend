@@ -745,7 +745,9 @@ are built.
   are included in a plan or held as an add-on. Nine built-in groups are seeded at startup (Core, Inbox, Contacts,
   Templates as default; Campaigns, Automations, Chatbots, AI, CRM as paid; Chatbots requires Automations, which start them, and AI requires
   Chatbots); Core always keeps the authorities a
-  Customer Admin needs to manage users and see billing.
+  Customer Admin needs to manage users and see billing. A built-in authority added by a later release (by its prefix,
+  e.g. `inbox:view-bot` → Inbox) reaches the existing group once at startup; each group records what it has been given
+  (`releasedAuthorities`), so an authority the staff took out stays out.
 - **Plan** (`plans`): a period (monthly, quarterly, half-yearly, yearly), a rank, the paid groups it includes with a
   price each, the groups it offers as add-ons, limits, extra-unit prices, a discount % and usage rates. The API returns
   `actualPrice`, `discountAmount` and `discountedPrice`; clients never compute money. Status `DRAFT` → `ACTIVE` →
