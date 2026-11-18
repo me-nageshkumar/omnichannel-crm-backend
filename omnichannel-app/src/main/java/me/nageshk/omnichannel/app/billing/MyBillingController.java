@@ -18,6 +18,10 @@ import me.nageshk.omnichannel.service.billing.document.DocumentViews.CreditNoteV
 import me.nageshk.omnichannel.service.billing.document.DocumentViews.InvoiceView;
 import me.nageshk.omnichannel.service.billing.document.InvoiceService;
 import me.nageshk.omnichannel.service.billing.refund.RefundService;
+import me.nageshk.omnichannel.service.billing.wallet.WalletQueryService;
+import me.nageshk.omnichannel.service.billing.wallet.WalletViews.EntryPage;
+import me.nageshk.omnichannel.service.billing.wallet.WalletViews.UsageDay;
+import me.nageshk.omnichannel.service.billing.wallet.WalletViews.WalletView;
 import me.nageshk.omnichannel.service.billing.refund.RefundService.RefundView;
 import me.nageshk.omnichannel.service.billing.SubscriptionViews.SubscriptionView;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +32,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** A customer's own plan and usage, for whoever in the company may see billing. */
@@ -41,9 +46,11 @@ public class MyBillingController {
     private final RefundService refunds;
     private final BillingDocumentFiles files;
     private final BillingProfileService profiles;
+    private final WalletQueryService wallet;
 
     public MyBillingController(SubscriptionService service, InvoiceService invoices, CreditNoteService creditNotes,
-            RefundService refunds, BillingDocumentFiles files, BillingProfileService profiles) {
+            RefundService refunds, BillingDocumentFiles files, BillingProfileService profiles, WalletQueryService wallet) {
+        this.wallet = wallet;
         this.profiles = profiles;
         this.service = service;
         this.invoices = invoices;
@@ -115,6 +122,24 @@ public class MyBillingController {
     public ResponseEntity<byte[]> creditNotePdf(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
         CreditNote note = creditNotes.requireFor(customerOf(me), id);
         return InvoiceController.download(note.getNumber(), files.pdfOf(note));
+    }
+
+    @GetMapping("/wallet")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public WalletView wallet(@AuthenticationPrincipal AuthenticatedUser me) {
+        return wallet.view(customerOf(me));
+    }
+
+    @GetMapping("/wallet/entries")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public EntryPage walletEntries(@AuthenticationPrincipal AuthenticatedUser me, @RequestParam(defaultValue = "0") int page) {
+        return wallet.entries(customerOf(me), page, false);
+    }
+
+    @GetMapping("/wallet/usage")
+    @PreAuthorize("hasAuthority('billing:view')")
+    public List<UsageDay> walletUsage(@AuthenticationPrincipal AuthenticatedUser me, @RequestParam(defaultValue = "30") int days) {
+        return wallet.usage(customerOf(me), days);
     }
 
     @GetMapping("/refunds")

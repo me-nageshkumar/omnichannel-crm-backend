@@ -12,6 +12,7 @@ import java.util.Map;
 import me.nageshk.omnichannel.common.api.CodedException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.common.api.WalletEmptyException;
 import me.nageshk.omnichannel.common.billing.OrderKind;
 import me.nageshk.omnichannel.db.billing.BillingOrder;
 import me.nageshk.omnichannel.db.billing.BillingSettings;
@@ -29,8 +30,11 @@ import me.nageshk.omnichannel.service.billing.order.OrderViews.AdjustRequest;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.CancelRequest;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.OrderView;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.QuoteView;
+import me.nageshk.omnichannel.service.billing.order.OrderViews.WalletRefundRequest;
 import me.nageshk.omnichannel.service.billing.pricing.CancellationPricing;
 import me.nageshk.omnichannel.service.billing.pricing.Quote;
+import me.nageshk.omnichannel.service.billing.pricing.WalletRefundPricing;
+import me.nageshk.omnichannel.service.billing.wallet.WalletQueryService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -52,11 +56,13 @@ public class StaffOrderService {
     private final OrderActivator activator;
     private final Clock clock;
     private final FeatureGroupService groups;
+    private final WalletQueryService walletQueries;
 
     public StaffOrderService(SubscriptionRepository subscriptions, CustomerRepository customers,
             InvoiceRepository invoices, BillingSettingsStore settings, BillingNumbers numbers, OrderActivator activator,
-            Clock clock, FeatureGroupService groups) {
+            Clock clock, FeatureGroupService groups, WalletQueryService walletQueries) {
         this.groups = groups;
+        this.walletQueries = walletQueries;
         this.subscriptions = subscriptions;
         this.customers = customers;
         this.invoices = invoices;
@@ -141,6 +147,42 @@ public class StaffOrderService {
             Subscription sub = subscriptions.findByCustomerId(customerId).orElse(null);
             return order(customerId, price(sub, req, s), sub, reason, by, s);
         });
+    }
+
+    /** What a wallet refund of this amount would credit. Nothing is stored. */
+    public QuoteView walletRefundQuote(String customerId, WalletRefundRequest req) {
+        requireCustomer(customerId);
+        return OrderService.quoteView(priceWalletRefund(customerId, req, settings.get()), clock.instant());
+    }
+
+    /**
+     * Takes the amount out of the wallet and credits it, with the GST paid on it, to the account credit, from where
+     * the money is paid back and recorded as a refund.
+     *
+     * @throws CodedException 409 NOT_ENOUGH_WALLET when the wallet or its top-up money does not cover the amount
+     */
+    public OrderView walletRefund(String customerId, WalletRefundRequest req, String by) {
+        requireCustomer(customerId);
+        Map<String, String> errors = new LinkedHashMap<>();
+        String reason = reason(req == null ? null : req.reason(), errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        try {
+            return activator.activateNow(customerId, by, () -> {
+                BillingSettings s = settings.get();
+                return order(customerId, priceWalletRefund(customerId, req, s),
+                        subscriptions.findByCustomerId(customerId).orElseThrow(), reason, by, s);
+            });
+        } catch (WalletEmptyException spent) {
+            // the wallet was drawn on between the quote and the debit
+            throw new CodedException(HttpStatus.CONFLICT, "NOT_ENOUGH_WALLET", null, "The wallet holds less than that");
+        }
+    }
+
+    private Quote priceWalletRefund(String customerId, WalletRefundRequest req, BillingSettings s) {
+        BigDecimal balance = walletQueries.view(customerId).balance();
+        return WalletRefundPricing.quote(req == null ? null : req.amount(), balance, walletQueries.topUpInvoices(customerId),
+                walletQueries.spent(customerId),
+                subscriptions.findByCustomerId(customerId).orElse(null), s);
     }
 
     private Quote price(Subscription sub, CancelRequest req, BillingSettings s) {

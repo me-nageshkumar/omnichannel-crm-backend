@@ -57,6 +57,7 @@ public final class OrderPricing {
             case ADDON -> addOn(in);
             case UPGRADE -> change(in, true);
             case CHANGE -> change(in, false);
+            case TOPUP -> topUp(in);
             default -> throw new ValidationException("kind", "cannot be priced");
         };
     }
@@ -80,6 +81,36 @@ public final class OrderPricing {
         draft.planLine();
         for (Wanted w : wantedAddOns(in, plan, in.addOns())) draft.addOnLine(w, null);
         return draft.finish(OrderTarget.CURRENT, anchor, List.of());
+    }
+
+    // --- a wallet top-up ---------------------------------------------------------------------------------------
+
+    public static final BigDecimal TOP_UP_MIN = new BigDecimal("100.00");
+    public static final BigDecimal TOP_UP_MAX = new BigDecimal("1000000.00");
+
+    /**
+     * Money into the wallet: the amount goes in whole, GST is charged on it, and it is paid in full. Account credit
+     * is never set against it (credit is for plans and add-ons), and there is no discount on money.
+     */
+    private static Quote topUp(QuoteInput in) {
+        Subscription sub = in.subscription();
+        if (sub == null || sub.getCurrent() == null) throw new ValidationException("kind", "The customer has no plan");
+        if (in.extraDiscountPercent() != null && in.extraDiscountPercent().signum() != 0) {
+            throw new ValidationException("extraDiscountPercent", "A top-up has no discount");
+        }
+        BigDecimal amount = in.topUpAmount();
+        if (amount == null) throw new ValidationException("topUpAmount", "is required");
+        if (amount.stripTrailingZeros().scale() > 2) throw new ValidationException("topUpAmount", "at most 2 decimals");
+        if (amount.compareTo(TOP_UP_MIN) < 0 || amount.compareTo(TOP_UP_MAX) > 0) {
+            throw new ValidationException("topUpAmount", "must be between 100 and 10,00,000");
+        }
+        BigDecimal value = Money.round(amount);
+        List<OrderLine> lines = List.of(new OrderLine(OrderLine.TOPUP, "Wallet top-up", null, null, 0, value, value));
+        OrderTarget target = new OrderTarget();
+        target.setSegmentAfter(SubscriptionClock.segmentAt(sub, instant(in, in.today())));
+        Quote q = totals(in, lines, BigDecimal.ZERO, List.of(), target, null);
+        return new Quote(q.kind(), q.lines(), q.extraDiscountPercent(), q.taxable(), q.tax(), q.total(), q.credits(),
+                q.creditFromNotes(), q.accountCredit(), Money.ZERO, q.total(), q.target(), null);
     }
 
     // --- a renewal ----------------------------------------------------------------------------------------------

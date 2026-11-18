@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.service.campaign;
 
 import me.nageshk.omnichannel.common.api.SubscriptionInactiveException;
+import me.nageshk.omnichannel.common.api.WalletEmptyException;
 import me.nageshk.omnichannel.service.billing.WorkGate;
 import java.time.Clock;
 import java.time.Duration;
@@ -75,6 +76,7 @@ public class CampaignRunner {
 
     static final int FREE_SKIPS = 20;
     static final String SEND_REFUSED = "SEND_REFUSED";
+    static final String WALLET_EMPTY = "WALLET_EMPTY";
 
     private static final Logger log = LoggerFactory.getLogger(CampaignRunner.class);
     private static final Duration STUCK_MARGIN = Duration.ofMinutes(2);
@@ -390,6 +392,12 @@ public class CampaignRunner {
             // nothing left the server: the recipient waits for the number, or for the plan to cover campaigns again
             release(claim);
             return;
+        } catch (WalletEmptyException e) {
+            // nothing left the server and nobody failed: the campaign waits for money and for a person to resume it
+            log.info("the wallet cannot pay for campaign {}; pausing it", c.getId());
+            release(claim);
+            pause(c.getId(), WALLET_EMPTY);
+            return;
         } catch (RuntimeException e) {
             sendRefused(claim, e);
             return;
@@ -440,11 +448,14 @@ public class CampaignRunner {
         log.warn("send to recipient {} of campaign {} was refused; pausing the campaign", claim.recipient().getId(),
                 claim.campaign().getId(), e);
         release(claim);
-        Instant now = clock.instant();
-        mongo.updateFirst(new Query(Criteria.where("_id").is(claim.campaign().getId())
-                        .and("status").is(CampaignStatus.RUNNING)),
+        pause(claim.campaign().getId(), SEND_REFUSED);
+    }
+
+    /** Pauses a campaign that is still running, in the system's name. */
+    private void pause(String campaignId, String reason) {
+        mongo.updateFirst(new Query(Criteria.where("_id").is(campaignId).and("status").is(CampaignStatus.RUNNING)),
                 new Update().set("status", CampaignStatus.PAUSED).set("pausedBy", PausedBy.SYSTEM)
-                        .set("pauseReason", SEND_REFUSED).set("lastUpdateTime", now).inc("version", 1),
+                        .set("pauseReason", reason).set("lastUpdateTime", clock.instant()).inc("version", 1),
                 Campaign.class);
     }
 

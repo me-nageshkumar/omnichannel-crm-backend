@@ -6,6 +6,7 @@ import me.nageshk.omnichannel.service.billing.order.OrderViews.AdjustRequest;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.CancelRequest;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.OrderView;
 import me.nageshk.omnichannel.service.billing.order.OrderViews.QuoteView;
+import me.nageshk.omnichannel.service.billing.order.OrderViews.WalletRefundRequest;
 import me.nageshk.omnichannel.service.billing.order.StaffOrderService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -43,6 +44,19 @@ public class StaffOrderController {
     @PreAuthorize(REFUND)
     public QuoteView cancellationQuote(@PathVariable String customerId, @RequestBody CancelRequest req) {
         return service.cancellationQuote(customerId, req);
+    }
+
+    @PostMapping("/wallet/refunds/quote")
+    @PreAuthorize(REFUND)
+    public QuoteView walletRefundQuote(@PathVariable String customerId, @RequestBody WalletRefundRequest req) {
+        return service.walletRefundQuote(customerId, req);
+    }
+
+    @PostMapping("/wallet/refunds")
+    @PreAuthorize(REFUND)
+    public OrderView walletRefund(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String customerId,
+            @RequestBody WalletRefundRequest req) {
+        return service.walletRefund(customerId, req, me.userId());
     }
 
     @PostMapping("/cancellations")

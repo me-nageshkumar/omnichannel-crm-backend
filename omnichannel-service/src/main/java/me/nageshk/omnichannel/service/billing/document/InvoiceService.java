@@ -71,6 +71,7 @@ public class InvoiceService {
             inv.setNumber(DocumentNumbers.number(s.getInvoicePrefix(), year, sequence));
             inv.setOrderId(o.getId());
             inv.setOrderNumber(o.getNumber());
+            inv.setOrderKind(o.getKind());
             inv.setCustomerId(o.getCustomerId());
             inv.setIssuedAt(now);
             inv.setSupplier(party(s.getSupplierLegalName(), s.getSupplierAddress(), s.getSupplierStateCode(),

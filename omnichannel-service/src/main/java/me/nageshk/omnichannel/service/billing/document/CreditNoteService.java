@@ -102,6 +102,7 @@ public class CreditNoteService {
             case CHANGE -> "Unused time on plan change";
             case CANCEL_ADDON -> "Add-on cancelled";
             case CANCEL_PLAN -> "Plan cancelled";
+            case WALLET_REFUND -> "Wallet refunded";
             default -> o.getReason() == null || o.getReason().isBlank() ? "Adjustment" : o.getReason();
         };
     }

@@ -8,7 +8,7 @@ import me.nageshk.omnichannel.common.billing.LimitKey;
 /**
  * One charge of an order.
  *
- * @param type PLAN, ADDON or LIMIT_ADDON
+ * @param type PLAN, ADDON, LIMIT_ADDON or TOPUP
  * @param listAmount the price before the plan's discount and any extra discount
  * @param amount what is charged, before tax
  */
@@ -18,4 +18,5 @@ public record OrderLine(String type, String description, String groupCode, Limit
     public static final String PLAN = "PLAN";
     public static final String ADDON = "ADDON";
     public static final String LIMIT_ADDON = "LIMIT_ADDON";
+    public static final String TOPUP = "TOPUP";
 }

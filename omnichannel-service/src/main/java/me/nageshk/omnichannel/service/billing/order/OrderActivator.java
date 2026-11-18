@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import me.nageshk.omnichannel.common.api.CodedException;
 import me.nageshk.omnichannel.common.api.ValidationException;
+import me.nageshk.omnichannel.common.api.WalletEmptyException;
 import me.nageshk.omnichannel.common.billing.OrderKind;
 import me.nageshk.omnichannel.common.billing.OrderStatus;
 import me.nageshk.omnichannel.common.billing.SubscriptionState;
@@ -24,6 +25,7 @@ import me.nageshk.omnichannel.db.billing.Subscription;
 import me.nageshk.omnichannel.db.billing.SubscriptionAddOn;
 import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
 import me.nageshk.omnichannel.db.billing.TermSegment;
+import me.nageshk.omnichannel.db.billing.WalletRepository;
 import me.nageshk.omnichannel.db.tenant.Customer;
 import me.nageshk.omnichannel.db.tenant.CustomerRepository;
 import me.nageshk.omnichannel.security.entitlement.BillingSettingsStore;
@@ -48,6 +50,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class OrderActivator {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OrderActivator.class);
+
     private static final Set<String> METHODS = Set.of("BANK_TRANSFER", "UPI", "CHEQUE", "CASH", "OTHER");
 
     private final BillingOrderRepository orders;
@@ -59,11 +63,13 @@ public class OrderActivator {
     private final MongoTemplate mongo;
     private final Clock clock;
     private final CustomerRepository customers;
+    private final WalletRepository wallets;
 
     public OrderActivator(BillingOrderRepository orders, SubscriptionRepository subscriptions, OrderService service,
             OrderSteps steps, BillingLocks locks, BillingSettingsStore settings, MongoTemplate mongo, Clock clock,
-            CustomerRepository customers) {
+            CustomerRepository customers, WalletRepository wallets) {
         this.customers = customers;
+        this.wallets = wallets;
         this.orders = orders;
         this.subscriptions = subscriptions;
         this.service = service;
@@ -127,7 +133,8 @@ public class OrderActivator {
             } catch (RuntimeException e) {
                 // staff will try again: an order that changed nothing must not be finished later as a second one
                 boolean applied = subscriptions.findByCustomerId(customerId)
-                        .map(sub -> sub.getAppliedOrderIds().contains(saved.getId())).orElse(false);
+                        .map(sub -> sub.getAppliedOrderIds().contains(saved.getId())).orElse(false)
+                        || wallets.findByCustomerId(customerId).map(w -> w.getOrderIds().contains(saved.getId())).orElse(false);
                 if (!applied) {
                     mongo.updateFirst(
                             new Query(Criteria.where("_id").is(saved.getId()).and("status").is(OrderStatus.ACTIVATING)),
@@ -142,24 +149,44 @@ public class OrderActivator {
     public void finishPending(String customerId) {
         locks.withCustomer(customerId, () -> {
             orders.findByCustomerIdAndStatusOrderByRaisedAtAscIdAsc(customerId, OrderStatus.ACTIVATING)
-                    .forEach(this::finish);
+                    .forEach(this::finishOrSetAside);
             return null;
         });
     }
 
+    /**
+     * Finishes an interrupted order. A wallet refund whose money the wallet no longer holds (messages used it while
+     * the order waited) can never finish: it took nothing and issued nothing, so it is cancelled rather than left
+     * to refuse every later billing change of the customer.
+     */
+    private void finishOrSetAside(BillingOrder o) {
+        try {
+            finish(o);
+        } catch (WalletEmptyException e) {
+            if (o.getKind() != OrderKind.WALLET_REFUND) throw e;
+            log.warn("wallet refund {} of customer {} can no longer be covered by the wallet; cancelling it",
+                    o.getNumber(), o.getCustomerId());
+            mongo.updateFirst(new Query(Criteria.where("_id").is(o.getId()).and("status").is(OrderStatus.ACTIVATING)),
+                    new Update().set("status", OrderStatus.CANCELLED).inc("version", 1), BillingOrder.class);
+        }
+    }
+
     /** Runs the steps the order has not ticked off, then marks it activated. */
     private BillingOrder finish(BillingOrder o) {
-        if (!o.getSteps().contains(BillingOrder.STEP_APPLIED)) {
-            steps.apply(o);
-            tick(o, BillingOrder.STEP_APPLIED);
-        }
-        if (!o.getSteps().contains(BillingOrder.STEP_CREDIT_NOTED)) {
-            steps.creditNotes(o);
-            tick(o, BillingOrder.STEP_CREDIT_NOTED);
-        }
-        if (!o.getSteps().contains(BillingOrder.STEP_INVOICED)) {
-            steps.invoice(o);
-            tick(o, BillingOrder.STEP_INVOICED);
+        // A wallet refund takes the money out of the wallet before it issues its credit notes: if the wallet no
+        // longer covers it, the order fails with nothing issued. Every other order credits before it moves the wallet.
+        List<String> order = o.getKind() == OrderKind.WALLET_REFUND
+                ? List.of(BillingOrder.STEP_APPLIED, BillingOrder.STEP_WALLET, BillingOrder.STEP_CREDIT_NOTED, BillingOrder.STEP_INVOICED)
+                : List.of(BillingOrder.STEP_APPLIED, BillingOrder.STEP_CREDIT_NOTED, BillingOrder.STEP_WALLET, BillingOrder.STEP_INVOICED);
+        for (String step : order) {
+            if (o.getSteps().contains(step)) continue;
+            switch (step) {
+                case BillingOrder.STEP_APPLIED -> steps.apply(o);
+                case BillingOrder.STEP_CREDIT_NOTED -> steps.creditNotes(o);
+                case BillingOrder.STEP_WALLET -> steps.wallet(o);
+                default -> steps.invoice(o);
+            }
+            tick(o, step);
         }
         BillingOrder done = mongo.findAndModify(
                 new Query(Criteria.where("_id").is(o.getId()).and("status").is(OrderStatus.ACTIVATING)),
@@ -183,7 +210,10 @@ public class OrderActivator {
         boolean hasPlan = sub != null && sub.getCurrent() != null;
         long revision = sub == null ? 0 : sub.getRevision();
         boolean fresh;
-        if (o.getKind() == OrderKind.ADDON) {
+        if (o.getKind() == OrderKind.TOPUP) {
+            // money into the wallet does not depend on the plan it was asked under
+            fresh = true;
+        } else if (o.getKind() == OrderKind.ADDON) {
             TermSegment priced = o.getTarget().getSegmentAfter();
             fresh = hasPlan && sub.getTermRevision() == o.getQuotedTermRevision() && now.isBefore(priced.getTermEnd())
                     && !alreadyHeld(sub, priced);

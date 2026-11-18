@@ -55,7 +55,7 @@ public class TestBilling {
         groups.deleteAll();
         mongo.remove(new Query(), "plans");
         for (String c : List.of("billingChanges", "billingOrders", "invoices", "creditNotes", "refunds", "billingLocks",
-                "billingCounters")) {
+                "billingCounters", "wallets", "walletEntries")) {
             mongo.remove(new Query(), c);
         }
         seeder.seed();
@@ -86,6 +86,26 @@ public class TestBilling {
         Subscription saved = subscriptions.save(s);
         entitlements.evict(customerId);
         return saved;
+    }
+
+    /** Makes the customer's current term charge this much a WhatsApp message. */
+    public void messageRate(String customerId, String rate) {
+        Subscription s = subscriptions.findByCustomerId(customerId).orElseThrow();
+        PlanTerms t = s.getCurrent().getTerms();
+        s.getCurrent().setTerms(new PlanTerms(t.planName(), t.period(), t.rank(), t.discountPercent(), t.items(), t.addOns(),
+                t.limitAddOns(), t.limits(), Map.of(me.nageshk.omnichannel.common.billing.UsageMeter.WHATSAPP_MESSAGE,
+                        new java.math.BigDecimal(rate))));
+        subscriptions.save(s);
+        entitlements.evict(customerId);
+    }
+
+    /** Gives the customer a wallet holding this much, written straight into the database. */
+    public me.nageshk.omnichannel.db.billing.Wallet wallet(String customerId, String balance) {
+        mongo.remove(new Query(org.springframework.data.mongodb.core.query.Criteria.where("customerId").is(customerId)), "wallets");
+        me.nageshk.omnichannel.db.billing.Wallet w = new me.nageshk.omnichannel.db.billing.Wallet();
+        w.setCustomerId(customerId);
+        w.setBalance(new java.math.BigDecimal(balance));
+        return mongo.save(w);
     }
 
     public void remove(String customerId) {

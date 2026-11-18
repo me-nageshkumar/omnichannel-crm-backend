@@ -27,8 +27,19 @@ import me.nageshk.omnichannel.service.billing.SubscriptionViews.AddOnRequest;
  * @param addOn ADDON: the one being bought
  * @param staff whether platform staff ask (they may discount, renew a retired plan, change to any plan)
  * @param invoices an invoice by its id, for the credit on what it billed
+ * @param topUpAmount TOPUP: the rupees to add to the wallet, before tax
  */
 public record QuoteInput(OrderKind kind, Subscription subscription, SubscriptionState state, Plan plan,
         Map<String, FeatureGroup> groups, BillingSettings settings, BillingProfile customer, ZoneId zone,
         LocalDate today, LocalDate startDate, List<AddOnRequest> addOns, List<String> keepAddOnIds, AddOnRequest addOn,
-        BigDecimal extraDiscountPercent, boolean staff, Function<String, Invoice> invoices) {}
+        BigDecimal extraDiscountPercent, boolean staff, Function<String, Invoice> invoices, BigDecimal topUpAmount) {
+
+    /** A request that tops nothing up. */
+    public QuoteInput(OrderKind kind, Subscription subscription, SubscriptionState state, Plan plan,
+            Map<String, FeatureGroup> groups, BillingSettings settings, BillingProfile customer, ZoneId zone,
+            LocalDate today, LocalDate startDate, List<AddOnRequest> addOns, List<String> keepAddOnIds, AddOnRequest addOn,
+            BigDecimal extraDiscountPercent, boolean staff, Function<String, Invoice> invoices) {
+        this(kind, subscription, state, plan, groups, settings, customer, zone, today, startDate, addOns, keepAddOnIds,
+                addOn, extraDiscountPercent, staff, invoices, null);
+    }
+}

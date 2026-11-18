@@ -23,9 +23,17 @@ public final class OrderViews {
      * @param addOns NEW and CHANGE: the add-ons wanted
      * @param keepAddOnIds RENEWAL: the held add-ons to keep; null keeps all
      * @param addOn ADDON: the one being bought
+     * @param topUpAmount TOPUP: the rupees to add to the wallet, before tax
      */
     public record QuoteRequest(OrderKind kind, String planCode, LocalDate startDate, List<AddOnRequest> addOns,
-            List<String> keepAddOnIds, AddOnRequest addOn, BigDecimal extraDiscountPercent, String extraDiscountReason) {}
+            List<String> keepAddOnIds, AddOnRequest addOn, BigDecimal extraDiscountPercent, String extraDiscountReason,
+            BigDecimal topUpAmount) {
+
+        public QuoteRequest(OrderKind kind, String planCode, LocalDate startDate, List<AddOnRequest> addOns,
+                List<String> keepAddOnIds, AddOnRequest addOn, BigDecimal extraDiscountPercent, String extraDiscountReason) {
+            this(kind, planCode, startDate, addOns, keepAddOnIds, addOn, extraDiscountPercent, extraDiscountReason, null);
+        }
+    }
 
     /** The dates are midnights in the billing zone; {@code termEnd} is the first moment after the last day. */
     public record QuoteView(OrderKind kind, List<OrderLine> lines, BigDecimal extraDiscountPercent, BigDecimal taxable,
@@ -69,6 +77,9 @@ public final class OrderViews {
      */
     public record CancelRequest(String addOnId, BigDecimal creditTaxable, String reason) {}
 
+    /** Takes {@code amount} (before tax) out of the wallet and credits it, with its GST, to the account. */
+    public record WalletRefundRequest(BigDecimal amount, String reason) {}
+
     public record PayRequest(String method, String reference, LocalDate receivedOn, String note) {}
 
     /** {@code from}: the first day a renewal can be asked for, when it is not allowed yet. */
@@ -80,6 +91,10 @@ public final class OrderViews {
     public record AddOnOption(AddOnKind kind, String groupCode, String name, LimitKey limitKey, String label, int unit,
             BigDecimal unitPrice) {}
 
+    /** Whether the wallet can be topped up now, and between which amounts (before tax). */
+    public record TopUpOption(boolean allowed, String reason, BigDecimal min, BigDecimal max) {}
+
+    /** {@code messageRate}: rupees per message on the term in force; null when messages are not charged. */
     public record OptionsView(String paymentInstructions, RenewalOption renewal, List<PlanOption> upgrades,
-            List<AddOnOption> addOns) {}
+            List<AddOnOption> addOns, TopUpOption topUp, BigDecimal messageRate) {}
 }

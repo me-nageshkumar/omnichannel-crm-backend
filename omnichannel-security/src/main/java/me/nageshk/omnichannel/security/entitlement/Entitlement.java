@@ -1,11 +1,13 @@
 package me.nageshk.omnichannel.security.entitlement;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import me.nageshk.omnichannel.common.billing.LimitKey;
 import me.nageshk.omnichannel.common.billing.SubscriptionState;
+import me.nageshk.omnichannel.common.billing.UsageMeter;
 
 /**
  * What a customer may use right now.
@@ -16,7 +18,14 @@ import me.nageshk.omnichannel.common.billing.SubscriptionState;
  * @param zone the billing zone the dates are midnights in
  */
 public record Entitlement(SubscriptionState state, Set<String> authorities, Map<LimitKey, Integer> limits,
-        boolean readOnly, String planName, Instant termStart, Instant termEnd, Instant graceEnd, String zone) {
+        boolean readOnly, String planName, Instant termStart, Instant termEnd, Instant graceEnd, String zone,
+        Map<UsageMeter, BigDecimal> rates) {
+
+    /** An entitlement that charges for nothing. */
+    public Entitlement(SubscriptionState state, Set<String> authorities, Map<LimitKey, Integer> limits, boolean readOnly,
+            String planName, Instant termStart, Instant termEnd, Instant graceEnd, String zone) {
+        this(state, authorities, limits, readOnly, planName, termStart, termEnd, graceEnd, zone, Map.of());
+    }
 
     /** A customer without a plan while the platform leaves such customers alone. */
     public static final Entitlement UNRESTRICTED =
@@ -32,6 +41,12 @@ public record Entitlement(SubscriptionState state, Set<String> authorities, Map<
 
     public boolean allows(String code) {
         return authorities == null || authorities.contains(code);
+    }
+
+    /** What one unit of the meter costs this customer, in rupees; null when it is not charged. */
+    public BigDecimal rate(UsageMeter meter) {
+        BigDecimal rate = rates == null ? null : rates.get(meter);
+        return rate == null || rate.signum() <= 0 ? null : rate;
     }
 
     public Optional<Integer> limit(LimitKey key) {

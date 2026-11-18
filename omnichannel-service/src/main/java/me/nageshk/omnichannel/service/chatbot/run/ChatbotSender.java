@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.service.chatbot.run;
 
 import me.nageshk.omnichannel.common.api.SubscriptionInactiveException;
+import me.nageshk.omnichannel.common.api.WalletEmptyException;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -41,7 +42,7 @@ public class ChatbotSender {
         guard(ctx);
         try {
             return await(inbox.sendCloud(actor(ctx), ctx.workspaceId(), chat, message.withTo(toOf(chat, ctx.contact())), null, false));
-        } catch (NoDeviceException | RpcException | ValidationException | SubscriptionInactiveException e) {
+        } catch (NoDeviceException | RpcException | ValidationException | SubscriptionInactiveException | WalletEmptyException e) {
             throw map(e);
         }
     }
@@ -51,7 +52,7 @@ public class ChatbotSender {
         guard(ctx);
         try {
             return await(inbox.send(actor(ctx), ctx.workspaceId(), chat, new SendRequest(null, templateId, values), null));
-        } catch (NoDeviceException | RpcException | ValidationException | SubscriptionInactiveException e) {
+        } catch (NoDeviceException | RpcException | ValidationException | SubscriptionInactiveException | WalletEmptyException e) {
             throw map(e);
         }
     }
@@ -83,6 +84,7 @@ public class ChatbotSender {
     static RuntimeException map(Throwable cause) {
         // the plan stopped covering chatbots, or the subscription ended: the run ends here rather than retrying
         if (cause instanceof SubscriptionInactiveException) return new NodeFailed("the plan does not allow this");
+        if (cause instanceof WalletEmptyException) return new NodeFailed("the wallet balance is too low");
         if (cause instanceof NoDeviceException n) {
             return new RetryLater(NoDeviceException.WHATSAPP_NOT_READY.equals(n.code())
                     ? "WhatsApp Web is not ready on the number" : "the number's extension is offline or the number is disabled");

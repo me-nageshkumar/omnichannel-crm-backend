@@ -703,8 +703,8 @@ field). OpenAI enforces a JSON reply schema (`strict`) only when every object is
 
 A customer on a plan can use only what the plan allows; a customer with no plan behaves as before (until the setting
 below says otherwise). Design: `docs/superpowers/specs/2026-11-17-subscription-plans-design.md`. Phase 1
-(entitlements) and phase 2 (money: orders, invoices, credit notes, refunds, PDF files) are built; phase 3 (the usage
-wallet) is not.
+(entitlements), phase 2 (money: orders, invoices, credit notes, refunds, PDF files) and phase 3 (the usage wallet)
+are built.
 
 - **Feature group** (`featureGroups`): authorities sold together (CRM, Chatbots, …). An authority is in at most one
   group; one in no group is unavailable to every customer on a plan. `DEFAULT` groups are in every plan; `PAID` ones
@@ -722,7 +722,7 @@ wallet) is not.
 - **The ceiling.** `AccessService` limits every customer user's authorities to the customer's entitled set (default
   groups + the plan's groups + add-on groups), so a plan change reaches all of its users on their next request, and
   `AssignmentPolicy` compares roles inside that set. `GET /api/users/me` returns the limited authorities and a
-  `subscription` summary (`state`, `planName`, `termEnd`, `graceEnd`, `readOnly`, `zone`).
+  `subscription` summary (`state`, `planName`, `termEnd`, `graceEnd`, `readOnly`, `zone`, `lowWallet`).
 - **Limits** (`LimitKey`): users, brands, WhatsApp numbers, automation rules, chatbots, AI profiles (counted across
   the customer), nodes and AI nodes per chatbot, CRM pipelines and custom fields per brand. Creating over a limit
   answers 409 `LIMIT_REACHED` with `key`, `limit`, `used`; a chatbot over its node limit can be saved but not
@@ -767,12 +767,50 @@ Amounts are in INR with GST, computed on the server and stored as `Decimal128`; 
 - **PDF files**: an invoice or credit note is drawn on its first download (Apache PDFBox, the bundled DejaVu Sans
   font) and kept in the GridFS bucket `billingDocuments`, so every later download is the same file.
 - **The ticker** (`BillingTicker`, every `omnichannel.billing.tick`, 30 s): finishes activations and refunds
-  abandoned for more than a minute, marks old requests `EXPIRED`, and moves a renewal that has begun into `current`.
+  abandoned for more than a minute, marks old requests `EXPIRED`, moves a renewal that has begun into `current`, and
+  copies wallet ledger entries left on their wallet for more than a minute.
   No entitlement depends on it.
 - Before the first order the supplier details (billing settings) and the customer's billing profile must be
   complete: 409 `BILLING_NOT_SET_UP` with `missing`.
 
-Error codes: `ORDER_PENDING` (another open order already changes the plan; or a profile edit while an order waits),
+### The usage wallet
+
+A plan may set a rate for each WhatsApp message (`rates.WHATSAPP_MESSAGE`). A customer on such a plan pays for its
+messages from a prepaid wallet; a plan without a rate, and a customer without a plan, send freely and need no wallet.
+
+- **Wallet** (`wallets`, one per customer): a balance in rupees with four decimals that never goes below zero, and
+  an optional warning level (`lowBalanceAt`). Every change is one update of the wallet document that moves the
+  balance and appends its ledger entry, so the two cannot disagree; the entry is then copied to `walletEntries`
+  (`TOPUP`, `USAGE`, `REVERSAL`, `ADJUSTMENT`, `REFUND`), by the request itself or, if that server stopped, by the
+  ticker a minute later. `WalletService` is the only code that changes a wallet.
+- **Top-up**: an order of kind `TOPUP` (₹100 to ₹10,00,000, `topUpAmount` in the quote request), asked for by the
+  customer or raised by staff. GST is added and invoiced when staff record the payment; the amount before tax goes
+  into the wallet. A top-up never draws on account credit, never goes stale and is not superseded by plan changes;
+  it needs a subscription (one that has run out will do, so a customer can top up before it renews).
+- **What is charged**: every message the server sends to WhatsApp for the customer (console, campaign, automation,
+  chatbot), at the rate of the term as it was sold. The charge is taken before the message goes to the
+  phone. It is given back (`REVERSAL`) only when nothing was tried: the phone could not be reached, WhatsApp was not
+  ready on it, or it had no such chat. A send whose outcome is unknown (no answer, a dropped connection, an error
+  inside the page) stays charged. Incoming messages, and messages typed on the phone
+  itself, cost nothing. A stored message names the entry that paid for it (`usageEntryId`).
+- **An empty wallet**: the send is refused with 402 `WALLET_EMPTY` and nothing reaches the phone. A campaign is
+  paused by the system with `pauseReason` `WALLET_EMPTY` and its recipients stay `PENDING` (resume it after a
+  top-up); an automation's send fails with "The wallet balance is too low"; a chatbot's run ends at that message.
+- **Wallet refund**: staff (`refund:manage`) take money back out as an order of kind `WALLET_REFUND`. Only what
+  top-ups put in and usage has not spent can come back (messages spend top-up money before money staff added); it is credit-noted against the top-up invoices, newest
+  first, with their tax, and lands in the account credit, from where a refund pays it out. Asking for more answers
+  409 `NOT_ENOUGH_WALLET`.
+- **Adjustment**: staff (`subscription:manage`) add to or take from a wallet with a note; adjustments carry no tax
+  and are not refundable.
+
+Wallet API: staff `GET /api/billing/customers/{id}/wallet` (balance, warning level, `low`, the message rate, what is
+refundable), `GET …/wallet/entries?page=` (50 a page, newest first), `GET …/wallet/usage?days=` (1 to 90; messages
+and amount by day in the billing zone), `POST …/wallet/adjustments`, `PUT …/wallet/threshold`,
+`POST /api/billing/customers/{id}/wallet/refunds/quote` and `…/wallet/refunds`. A Customer Admin reads its own
+under `/api/my/billing`: `GET wallet`, `wallet/entries`, `wallet/usage`; `GET options` carries `topUp` (allowed,
+reason, min, max) and `messageRate`.
+
+Error codes: `WALLET_EMPTY` (402), `NOT_ENOUGH_WALLET` (409), `ORDER_PENDING` (another open order already changes the plan; or a profile edit while an order waits),
 `ORDER_NOT_OPEN`, `ORDER_EXPIRED`, `ORDER_STALE`, `NOT_ENOUGH_CREDIT`, `BILLING_NOT_SET_UP` (all 409).
 
 Staff API under `/api/billing` (reads need `subscription:view` or `plan:manage`):

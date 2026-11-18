@@ -29,6 +29,7 @@ class BillingTickerIT extends MoneyApiTestBase {
     @Autowired BillingOrderRepository orders;
     @Autowired SubscriptionRepository subscriptions;
     @Autowired MongoTemplate mongo;
+    @Autowired me.nageshk.omnichannel.service.billing.wallet.WalletService walletService;
 
     /** An order whose payment was recorded and whose server then stopped. */
     private String interrupted() throws Exception {
@@ -136,5 +137,36 @@ class BillingTickerIT extends MoneyApiTestBase {
         assertThat(quote.at("/credits/0/invoiceNumber").asString()).isEqualTo("INV/26-27/000002");
         // 900 for 31 days, 27 unused
         assertThat(quote.at("/credits/0/taxable").decimalValue()).isEqualByComparingTo("783.87");
+    }
+
+    private org.bson.Document walletDoc() {
+        return mongo.getCollection("wallets").find(new org.bson.Document("customerId", acme.getId())).first();
+    }
+
+    /** A wallet whose one ledger entry was never copied out, as a server that stopped mid-way leaves it. */
+    private void walletWithAPendingEntry() {
+        walletService.credit(acme.getId(), new java.math.BigDecimal("1000"), new me.nageshk.omnichannel.db.billing.WalletEntry() {{
+            setType(me.nageshk.omnichannel.common.billing.WalletEntryType.ADJUSTMENT);
+        }});
+        org.bson.Document entry = mongo.getCollection("walletEntries").find().first();
+        mongo.getCollection("walletEntries").deleteMany(new org.bson.Document());
+        mongo.getCollection("wallets").updateOne(new org.bson.Document("customerId", acme.getId()),
+                new org.bson.Document("$push", new org.bson.Document("pending", entry)));
+        assertThat(walletDoc().getList("pending", org.bson.Document.class)).hasSize(1);
+    }
+
+    @Test
+    void aLedgerEntryLeftOnTheWalletIsMovedAfterAMinute() {
+        walletWithAPendingEntry();
+        clock.advance(Duration.ofSeconds(30));
+        ticker.tick();
+        assertThat(walletDoc().getList("pending", org.bson.Document.class)).hasSize(1);
+        assertThat(mongo.getCollection("walletEntries").countDocuments()).isZero();
+
+        clock.advance(Duration.ofSeconds(31));
+        ticker.tick();
+        assertThat(walletDoc().getList("pending", org.bson.Document.class)).isEmpty();
+        assertThat(mongo.getCollection("walletEntries").countDocuments()).isEqualTo(1);
+        assertThat(walletDoc().get("balance").toString()).isEqualTo("1000.0000");
     }
 }

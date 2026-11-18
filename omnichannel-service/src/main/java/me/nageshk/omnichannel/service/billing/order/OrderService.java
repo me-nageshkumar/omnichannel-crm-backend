@@ -69,8 +69,9 @@ public class OrderService {
 
     static final int PAGE_SIZE = 50;
     private static final Set<OrderKind> PRICED = EnumSet.of(OrderKind.NEW, OrderKind.RENEWAL, OrderKind.UPGRADE,
-            OrderKind.CHANGE, OrderKind.ADDON);
-    private static final Set<OrderKind> CUSTOMER_MAY = EnumSet.of(OrderKind.RENEWAL, OrderKind.UPGRADE, OrderKind.ADDON);
+            OrderKind.CHANGE, OrderKind.ADDON, OrderKind.TOPUP);
+    private static final Set<OrderKind> CUSTOMER_MAY = EnumSet.of(OrderKind.RENEWAL, OrderKind.UPGRADE, OrderKind.ADDON,
+            OrderKind.TOPUP);
 
     private final BillingOrderRepository orders;
     private final SubscriptionRepository subscriptions;
@@ -286,7 +287,7 @@ public class OrderService {
         Plan plan;
         if (req.kind() == OrderKind.RENEWAL) {
             plan = sub == null ? null : plans.findById(sub.getCurrent().getPlanCode()).orElse(null);
-        } else if (req.kind() == OrderKind.ADDON) {
+        } else if (req.kind() == OrderKind.ADDON || req.kind() == OrderKind.TOPUP) {
             plan = null;
         } else {
             if (req.planCode() == null || req.planCode().isBlank()) throw new ValidationException("planCode", "is required");
@@ -294,7 +295,7 @@ public class OrderService {
         }
         return new QuoteInput(req.kind(), sub, state, plan, groups.byCode(), s, profile, zone,
                 now.atZone(zone).toLocalDate(), req.startDate(), req.addOns(), req.keepAddOnIds(), req.addOn(), extra,
-                caller.staff(), id -> id == null ? null : invoices.findById(id).orElse(null));
+                caller.staff(), id -> id == null ? null : invoices.findById(id).orElse(null), req.topUpAmount());
     }
 
     /** The feature group an add-on order adds (pricing puts the new add-on last); null for extra units. */
