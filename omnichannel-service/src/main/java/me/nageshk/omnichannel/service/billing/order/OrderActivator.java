@@ -24,6 +24,7 @@ import me.nageshk.omnichannel.db.billing.Subscription;
 import me.nageshk.omnichannel.db.billing.SubscriptionAddOn;
 import me.nageshk.omnichannel.db.billing.SubscriptionRepository;
 import me.nageshk.omnichannel.db.billing.TermSegment;
+import me.nageshk.omnichannel.db.billing.WalletRepository;
 import me.nageshk.omnichannel.db.tenant.Customer;
 import me.nageshk.omnichannel.db.tenant.CustomerRepository;
 import me.nageshk.omnichannel.security.entitlement.BillingSettingsStore;
@@ -59,11 +60,13 @@ public class OrderActivator {
     private final MongoTemplate mongo;
     private final Clock clock;
     private final CustomerRepository customers;
+    private final WalletRepository wallets;
 
     public OrderActivator(BillingOrderRepository orders, SubscriptionRepository subscriptions, OrderService service,
             OrderSteps steps, BillingLocks locks, BillingSettingsStore settings, MongoTemplate mongo, Clock clock,
-            CustomerRepository customers) {
+            CustomerRepository customers, WalletRepository wallets) {
         this.customers = customers;
+        this.wallets = wallets;
         this.orders = orders;
         this.subscriptions = subscriptions;
         this.service = service;
@@ -127,7 +130,8 @@ public class OrderActivator {
             } catch (RuntimeException e) {
                 // staff will try again: an order that changed nothing must not be finished later as a second one
                 boolean applied = subscriptions.findByCustomerId(customerId)
-                        .map(sub -> sub.getAppliedOrderIds().contains(saved.getId())).orElse(false);
+                        .map(sub -> sub.getAppliedOrderIds().contains(saved.getId())).orElse(false)
+                        || wallets.findByCustomerId(customerId).map(w -> w.getOrderIds().contains(saved.getId())).orElse(false);
                 if (!applied) {
                     mongo.updateFirst(
                             new Query(Criteria.where("_id").is(saved.getId()).and("status").is(OrderStatus.ACTIVATING)),

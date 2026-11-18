@@ -77,6 +77,9 @@ public final class OrderViews {
      */
     public record CancelRequest(String addOnId, BigDecimal creditTaxable, String reason) {}
 
+    /** Takes {@code amount} (before tax) out of the wallet and credits it, with its GST, to the account. */
+    public record WalletRefundRequest(BigDecimal amount, String reason) {}
+
     public record PayRequest(String method, String reference, LocalDate receivedOn, String note) {}
 
     /** {@code from}: the first day a renewal can be asked for, when it is not allowed yet. */

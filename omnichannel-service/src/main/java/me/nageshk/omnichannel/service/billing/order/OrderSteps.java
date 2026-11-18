@@ -155,6 +155,16 @@ public class OrderSteps {
      * remembers the orders it has seen, so this happens once however often it is run.
      */
     public void wallet(BillingOrder o) {
+        if (o.getKind() == OrderKind.WALLET_REFUND) {
+            WalletEntry out = new WalletEntry();
+            out.setType(WalletEntryType.REFUND);
+            out.setRef(o.getNumber());
+            out.setNote(o.getReason());
+            out.setBy(o.getRaisedBy());
+            // throws when the wallet no longer covers it: nothing has been issued yet
+            wallets.debitOnce(o.getId(), o.getCustomerId(), o.getTarget().getWalletAmount(), out);
+            return;
+        }
         if (o.getKind() != OrderKind.TOPUP) return;
         WalletEntry draft = new WalletEntry();
         draft.setType(WalletEntryType.TOPUP);
@@ -223,6 +233,7 @@ public class OrderSteps {
             String what = switch (o.getKind()) {
                 case CANCEL_ADDON -> "add-on cancelled";
                 case CANCEL_PLAN -> "plan cancelled";
+                case WALLET_REFUND -> "wallet refund of " + Money.round(t.getWalletAmount()).toPlainString();
                 case ADJUST -> t.getNewTermEnd() != null ? "end of the term moved"
                         : "account credit " + (t.getCreditPosting().signum() > 0 ? "+" : "")
                                 + Money.round(t.getCreditPosting()).toPlainString();

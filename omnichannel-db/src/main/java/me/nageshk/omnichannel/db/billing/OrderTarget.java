@@ -29,6 +29,9 @@ public class OrderTarget {
     /** ADJUST: an amount added to (or, when negative, taken from) the account credit. */
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal creditPosting;
+    /** WALLET_REFUND: the rupees, before tax, taken out of the wallet. */
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal walletAmount;
     /** CANCEL_PLAN: the plan ends today and the customer turns read-only at once. */
     private boolean cancelPlan;
 }
