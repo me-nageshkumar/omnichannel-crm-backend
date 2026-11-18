@@ -24,6 +24,11 @@ public class FeatureGroup {
     private Set<String> authorities = new HashSet<>();
     /** Codes of the groups that must be present together with this one. */
     private Set<String> requires = new HashSet<>();
+    /**
+     * The built-in authorities this group has been given so far (null on a group stored before this was recorded): a
+     * later release adds only the ones not in here, so what the staff removed stays removed.
+     */
+    private Set<String> releasedAuthorities;
     private boolean builtIn;
     private int sortOrder;
     private Instant createdAt;
