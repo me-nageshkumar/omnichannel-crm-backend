@@ -50,6 +50,19 @@ public abstract class ChatbotTestBase extends AutomationTestBase {
         return e;
     }
 
+    /** {@link #node}, {@link #edge} and {@link #flow} for tests that do not extend this base. */
+    public static Map<String, Object> nodeOf(String id, String type, String name, Map<String, Object> settings) {
+        return node(id, type, name, settings);
+    }
+
+    public static Map<String, Object> edgeOf(String source, String output, String target) {
+        return edge(source, output, target);
+    }
+
+    public static Map<String, Object> flowOf(List<Map<String, Object>> nodes, List<Map<String, Object>> edges) {
+        return flow(nodes, edges);
+    }
+
     protected static Map<String, Object> flow(List<Map<String, Object>> nodes, List<Map<String, Object>> edges) {
         Map<String, Object> f = new LinkedHashMap<>();
         f.put("nodes", nodes);

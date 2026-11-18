@@ -111,10 +111,17 @@ public class InboxStreamBroker {
             } else {
                 s.forget(chat.getId());
             }
-            send(workspaceId, s, "chat", Map.of("chat",
-                    visible ? view : Map.of("id", chat.getId(), "phoneNumberId", chat.getPhoneNumberId()),
-                    "visible", visible));
+            send(workspaceId, s, "chat", Map.of("chat", visible ? view : gone(chat), "visible", visible));
         });
+    }
+
+    /** What a viewer who no longer sees the chat is told: which chat, and its status, so a console can say why. */
+    private static Map<String, Object> gone(WaWebChat chat) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("id", chat.getId());
+        m.put("phoneNumberId", chat.getPhoneNumberId());
+        if (chat.getStatus() != null) m.put("status", chat.getStatus().name());
+        return m;
     }
 
     public void pushMessage(String workspaceId, WaWebChat chat, MessageView view) {

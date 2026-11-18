@@ -103,6 +103,45 @@ class ChatbotSettingsApiIT extends ChatbotTestBase {
     }
 
     @Test
+    void newFieldsDefaultToCloseAndRoute() {
+        JsonNode s = platform(HttpMethod.GET, root, null).getBody().get("settings");
+        assertThat(s.get("whenCompleted").asString()).isEqualTo("CLOSE");
+        assertThat(s.get("whenAbandoned").asString()).isEqualTo("ROUTE");
+        assertThat(settingsService.resolve(brand.getId(), null).whenCompleted())
+                .isEqualTo(me.nageshk.omnichannel.db.chatbot.AfterChatbot.CLOSE);
+        assertThat(settingsService.resolve(brand.getId(), null).whenAbandoned())
+                .isEqualTo(me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE);
+    }
+
+    @Test
+    void brandLayerOverridesWhenAbandoned() {
+        assertThat(saveBrand(brand.getId(), manager, Map.of("whenAbandoned", "CLOSE")).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(settingsService.resolve(brand.getId(), null).whenAbandoned())
+                .isEqualTo(me.nageshk.omnichannel.db.chatbot.AfterChatbot.CLOSE);
+        Map<String, Object> own = new LinkedHashMap<>();
+        own.put("whenAbandoned", "ROUTE");
+        me.nageshk.omnichannel.db.chatbot.ChatbotSettingsLayer chatbotLayer = mapper.convertValue(own,
+                me.nageshk.omnichannel.db.chatbot.ChatbotSettingsLayer.class);
+        assertThat(settingsService.resolve(brand.getId(), chatbotLayer).whenAbandoned())
+                .isEqualTo(me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE);
+    }
+
+    @Test
+    void storedLayerWithoutNewFieldsInherits() {
+        assertThat(saveBrand(brand.getId(), manager, Map.of("retryMessage", "Brand retry")).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+        // a brand layer saved before the fields existed has no keys for them
+        mongo.getCollection(mongo.getCollectionName(ChatbotSettingsDocument.class)).updateMany(new org.bson.Document(),
+                new org.bson.Document("$unset", new org.bson.Document("layer.whenCompleted", "").append("layer.whenAbandoned", "")
+                        .append("settings.whenCompleted", "").append("settings.whenAbandoned", "")));
+        me.nageshk.omnichannel.db.chatbot.ChatbotSettings s = settingsService.resolve(brand.getId(), null);
+        assertThat(s.retryMessage()).isEqualTo("Brand retry");
+        assertThat(s.whenCompleted()).isEqualTo(me.nageshk.omnichannel.db.chatbot.AfterChatbot.CLOSE);
+        assertThat(s.whenAbandoned()).isEqualTo(me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE);
+    }
+
+    @Test
     void platformSaveIsStoredAndValidated() {
         assertThat(savePlatform(Map.of("endAfterMinutes", 90)).getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(platform(HttpMethod.GET, root, null).getBody().at("/settings/endAfterMinutes").asInt()).isEqualTo(90);
@@ -126,7 +165,7 @@ class ChatbotSettingsApiIT extends ChatbotTestBase {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         res.getBody().get("own").properties().forEach(e -> assertThat(e.getValue().isNull()).as(e.getKey()).isTrue());
-        assertThat(res.getBody().get("own").size()).isEqualTo(9);
+        assertThat(res.getBody().get("own").size()).isEqualTo(11);
         assertThat(res.getBody().at("/inherited/endAfterMinutes").asInt()).isEqualTo(120);
     }
 

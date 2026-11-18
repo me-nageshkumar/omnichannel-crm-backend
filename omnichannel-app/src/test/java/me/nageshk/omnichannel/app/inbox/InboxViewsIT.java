@@ -91,6 +91,14 @@ class InboxViewsIT {
     }
 
     @Test
+    void chatViewCarriesBotStatus() {
+        WaWebChat c = chat("c9", contact("Veenu", "919900000009"), null, null);
+        c.setStatus(ChatStatus.BOT);
+
+        assertThat(views.chats(List.of(c)).get(0).status()).isEqualTo(ChatStatus.BOT);
+    }
+
+    @Test
     void chatsResolvesContactUserAndTeamInBatch() {
         Contact withPhone = contact("Asha", "919900000001");
         Contact hidden = contact("Lid Person", null);

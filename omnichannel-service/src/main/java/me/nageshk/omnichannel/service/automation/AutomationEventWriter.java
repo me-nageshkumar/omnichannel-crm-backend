@@ -56,13 +56,19 @@ public class AutomationEventWriter {
         this.clock = clock;
     }
 
-    /** Queues a MESSAGE_RECEIVED event for the stored incoming message, unless nobody wants it. */
-    public void messageReceived(WaWebChat chat, WaWebMessage message) {
+    /**
+     * Queues a MESSAGE_RECEIVED event for the stored incoming message, unless nobody wants it.
+     *
+     * @return true when an event for it is queued (now or before); false when none will run
+     */
+    public boolean messageReceived(WaWebChat chat, WaWebMessage message) {
         Contact contact = chat.getContactId() == null ? null : contacts.findById(chat.getContactId()).orElse(null);
         String phone = contact == null ? null : contact.getPhone();
-        if (!gate.wants(chat.getWorkspaceId(), AutomationEventKind.MESSAGE_RECEIVED, chat.getContactId(), phone)) return;
+        if (!gate.wants(chat.getWorkspaceId(), AutomationEventKind.MESSAGE_RECEIVED, chat.getContactId(), phone)) {
+            return false;
+        }
         String id = "m-" + message.getId();
-        if (history.existsById(id)) return;
+        if (history.existsById(id)) return false;
         // new means new for the person on this number: all their chats count, not only this one
         java.util.List<String> chatIds = chat.getContactId() == null ? java.util.List.of(chat.getId())
                 : chats.findAllByPhoneNumberIdAndContactId(chat.getPhoneNumberId(), chat.getContactId()).stream()
@@ -100,8 +106,9 @@ public class AutomationEventWriter {
         try {
             events.insert(e);
         } catch (DuplicateKeyException ignored) {
-            // the same message was handled before
+            // the same message is queued already
         }
+        return true;
     }
 
     /** The facts of a deal that moved to another lane; the service's own type, the CRM's is mapped to it. */

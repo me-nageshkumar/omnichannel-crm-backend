@@ -75,6 +75,10 @@ public class StartChatbotHandler implements ActionHandler {
         if (contact.getDoNotContact() != null || (contact.getPhone() != null && skips.isDoNotContact(ctx.workspaceId(), contact.getPhone()))) {
             return ActionResult.skipped("Contact is marked do-not-contact");
         }
+        // people have this conversation now; closing the chat lets the chatbot greet the next one (spec 2026-11-18 §5.3)
+        if (!ctx.test() && chat != null && chat.getHandedOverAt() != null) {
+            return ActionResult.skipped("The chat was handed over to the team");
+        }
         IfRunning ifRunning = action.ifRunning() == null ? IfRunning.SKIP : action.ifRunning();
         if (ctx.test()) return startForTest(ctx, chatbot, contact, chat, ifRunning);
         if (chatbot.getStatus() != ChatbotStatus.PUBLISHED) {
@@ -114,9 +118,9 @@ public class StartChatbotHandler implements ActionHandler {
             ChatbotRun other = active.get();
             boolean ownTest = other.isTest() && chatbot.getId().equals(other.getChatbotId());
             if (ownTest) {
-                runService.stop(other, "replaced by a new test", ctx.userId());
+                runService.stopForReplacement(other, "replaced by a new test", ctx.userId());
             } else if (ifRunning == IfRunning.REPLACE) {
-                runService.stop(other, "stopped for a rule test of " + chatbot.getName(), ctx.userId());
+                runService.stopForReplacement(other, "stopped for a rule test of " + chatbot.getName(), ctx.userId());
                 stopped = other.getChatbotName();
             } else {
                 return ActionResult.skipped("Chatbot “" + other.getChatbotName() + "” is running");

@@ -36,6 +36,8 @@ public class WaWebChat {
     /** WhatsApp chat id, {@code <digits>@c.us} or {@code <id>@lid}. */
     private String remoteId;
     private String contactId;
+    /** Indexed for the sweep of chats a chatbot holds (spec 2026-11-18 §5.5). */
+    @Indexed(name = "status")
     private ChatStatus status;
     private String assignedUserId;
     private String assignedTeamId;
@@ -57,6 +59,11 @@ public class WaWebChat {
 
     /** The chatbot run active on this chat, else null; a convenience for the inbox, never how the engine finds a run. */
     private ActiveChatbot chatbot;
+    /** When the chat started waiting for the message's rules before routing (spec 2026-11-18 §5.2); null otherwise. */
+    @Indexed(sparse = true)
+    private Instant routingPendingSince;
+    /** When a chatbot gave the chat to people; a rule starts no chatbot on it until it is closed (§5.3). */
+    private Instant handedOverAt;
     /** The history import item that created this chat, if one did; sparse-indexed, absent on every other chat. */
     @Indexed(sparse = true)
     private String createdByHistoryChatId;

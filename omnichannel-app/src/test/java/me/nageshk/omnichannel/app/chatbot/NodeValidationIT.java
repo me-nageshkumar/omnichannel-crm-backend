@@ -79,6 +79,24 @@ class NodeValidationIT {
     }
 
     @Test
+    void numberRoutingNeedsNoTarget() {
+        assertThat(one("assign_chat", Map.of("mode", "NUMBER_ROUTING"))).isEmpty();
+    }
+
+    @Test
+    void edgeAfterAHandOverIsAWarning() {
+        Map<String, Object> f = ChatbotTestBase.flowOf(List.of(
+                ChatbotTestBase.nodeOf("a", "assign_chat", "Hand", Map.of("mode", "NUMBER_ROUTING")),
+                ChatbotTestBase.nodeOf("s", "send_message", "After", Map.of("message", Map.of("type", "text",
+                        "text", Map.of("body", "x"))))),
+                List.of(ChatbotTestBase.edgeOf("a", "next", "s")));
+        List<Problem> all = validator.validate(parser.parse(f), new ValidationContext(brand.getId(), "bot-1", false));
+        assertThat(all).filteredOn(x -> x.severity() == Severity.ERROR).isEmpty();
+        assertThat(all).filteredOn(x -> x.severity() == Severity.WARNING).extracting(Problem::message)
+                .contains("Nothing runs after a hand-over");
+    }
+
+    @Test
     void sendMessageWarnsWhenNoButtonConnected() {
         Map<String, Object> data = new HashMap<>();
         data.put("name", "Node1");

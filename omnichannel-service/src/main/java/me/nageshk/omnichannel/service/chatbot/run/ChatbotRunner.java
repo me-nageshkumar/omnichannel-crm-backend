@@ -66,12 +66,15 @@ public class ChatbotRunner {
     private final OmnichannelProperties props;
     private final Clock clock;
     private final ChatbotSettingsService settingsService;
+    private final me.nageshk.omnichannel.service.inbox.BotChats botChats;
 
     public ChatbotRunner(ChatbotRepository chatbots, ChatbotVersionRepository versions, ChatbotRunRepository runs,
             WaWebChatRepository chats, ContactRepository contacts, FlowParser parser, NodeExecutors executors,
             ChatbotSender sender, ChatPointer pointer, RunClaims claims, @Lazy ChatbotRunService service,
             @Lazy ThreadPoolTaskExecutor chatbotExecutor, ApplicationEventPublisher publisher,
-            OmnichannelProperties props, Clock clock, ChatbotSettingsService settingsService) {
+            OmnichannelProperties props, Clock clock, ChatbotSettingsService settingsService,
+            me.nageshk.omnichannel.service.inbox.BotChats botChats) {
+        this.botChats = botChats;
         this.settingsService = settingsService;
         this.chatbots = chatbots;
         this.versions = versions;
@@ -204,6 +207,11 @@ public class ChatbotRunner {
                     completeStep(run, node, startedAt, result);
                     return jump(run, result.jumpToChatbotId(), ctx);
                 }
+                case HAND_OVER -> {
+                    completeStep(run, node, startedAt, result);
+                    if (result.result() != null && node.name() != null) run.getVariables().put(node.name(), result.result());
+                    return finish(run, ChatbotRunStatus.HANDED_OVER, result.summary());
+                }
                 case FAIL -> {
                     recordFailed(run, node, startedAt, result.error());
                     return finish(run, ChatbotRunStatus.FAILED, result.error());
@@ -229,6 +237,8 @@ public class ChatbotRunner {
                 run.getInboxMark());
         if (!next.started()) {
             log.warn("jump from run {} to {} did not start: {}", run.getId(), chatbotId, next.reason());
+            // nothing holds the chat now: the team gets it, as after a failed run
+            release(ended, ChatbotRunStatus.FAILED);
         }
         return ended;
     }
@@ -267,10 +277,58 @@ public class ChatbotRunner {
         return saved;
     }
 
-    /** After a run reached a final status: clears the chat pointer and announces the change. */
+    /** After a run reached a final status: gives the chat back, clears the chat pointer and announces the change. */
     public void ended(ChatbotRun saved) {
+        ended(saved, false);
+    }
+
+    /**
+     * As {@link #ended(ChatbotRun)}; a run {@code replaced} by another run of the same chat keeps the chat for that
+     * run (spec 2026-11-18 §5.3).
+     */
+    public void ended(ChatbotRun saved, boolean replaced) {
+        if (!replaced) release(saved, saved.getStatus());
         pointer.clear(saved.getChatId(), saved.getId());
         publisher.publishEvent(new InboxEvents.ChatbotRunChanged(saved));
+    }
+
+    /**
+     * The chat a run held, once the run is over (spec 2026-11-18 §5.3): closed or routed by the chatbot's settings
+     * when it finished or the customer went silent, routed when it failed or a person stopped it, left alone after a
+     * hand-over or a jump. Only a chat still in {@code BOT} under this run is touched; a failure is logged.
+     */
+    private void release(ChatbotRun run, ChatbotRunStatus status) {
+        if (run.getChatId() == null || status == null) return;
+        try {
+            Chatbot chatbot = chatbots.findById(run.getChatbotId()).orElse(null);
+            String name = run.getChatbotName() != null ? run.getChatbotName()
+                    : chatbot != null ? chatbot.getName() : "chatbot";
+            me.nageshk.omnichannel.db.chatbot.AfterChatbot after = switch (status) {
+                case COMPLETED -> settingOf(chatbot).whenCompleted();
+                case ENDED -> settingOf(chatbot).whenAbandoned();
+                case FAILED, STOPPED -> me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE;
+                default -> null;
+            };
+            if (after == me.nageshk.omnichannel.db.chatbot.AfterChatbot.CLOSE) {
+                botChats.close(run.getChatId(), run.getId(), name);
+            } else if (after == me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE) {
+                botChats.toPeople(run.getChatId(), run.getId(), me.nageshk.omnichannel.db.inbox.RoutedReason.CHATBOT_ENDED,
+                        name);
+            }
+        } catch (RuntimeException e) {
+            log.warn("could not give back chat {} after run {} ended", run.getChatId(), run.getId(), e);
+        }
+    }
+
+    /** The chatbot's settings; a chatbot that no longer exists sends the chat to the team either way. */
+    private ChatbotSettings settingOf(Chatbot chatbot) {
+        if (chatbot == null) {
+            ChatbotSettings d = ChatbotSettings.codeDefaults();
+            return new ChatbotSettings(d.reminderOn(), d.reminderAfterMinutes(), d.reminderMessage(), d.endAfterMinutes(),
+                    d.endMessage(), d.invalidReplyRetries(), d.retryMessage(), d.giveUpMessage(), d.stopOnAgentReply(),
+                    me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE, me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE);
+        }
+        return settingsService.resolve(chatbot.getWorkspaceId(), chatbot.getSettings());
     }
 
     private ChatbotRun save(ChatbotRun run) {

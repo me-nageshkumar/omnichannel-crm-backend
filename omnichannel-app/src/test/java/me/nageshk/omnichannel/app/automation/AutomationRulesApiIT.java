@@ -122,6 +122,21 @@ class AutomationRulesApiIT extends AutomationTestBase {
     }
 
     @Test
+    void assignActionRefusesNumberRouting() {
+        ResponseEntity<JsonNode> res = api(HttpMethod.POST, "/rules", manager,
+                request("Route", all(leaf("message.text", "contains", "hi")), assign("NUMBER_ROUTING", null, null)));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody().get("fields").get("actions[0].mode").asString()).isEqualTo("not available for a rule");
+    }
+
+    @Test
+    void existingAssignActionStillSaves() {
+        ResponseEntity<JsonNode> res = api(HttpMethod.POST, "/rules", manager,
+                request("Queue", all(leaf("message.text", "contains", "hi")), assign("TEAM_QUEUE", null, support.getId())));
+        assertThat(res.getStatusCode().is2xxSuccessful()).isTrue();
+    }
+
+    @Test
     void publishedRuleCannotBeEdited() {
         String id = create(request("R", null, send(template("Welcome", "Hi")))).get("id").asString();
         assertThat(publishRule(id).getStatusCode()).isEqualTo(HttpStatus.OK);

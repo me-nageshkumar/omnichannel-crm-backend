@@ -78,6 +78,8 @@ public enum Authority {
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     INBOX_VIEW_ALL("inbox:view-all", RoleLevel.BRAND, "See every chat on the number",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER),
+    INBOX_VIEW_BOT("inbox:view-bot", RoleLevel.BRAND, "See the chats a chatbot is handling",
+            CUSTOMER_ADMIN, WORKSPACE_MANAGER),
     INBOX_SEND("inbox:send", RoleLevel.BRAND, "Reply from the console, close and reopen visible chats",
             CUSTOMER_ADMIN, WORKSPACE_MANAGER, AGENT),
     INBOX_ASSIGN("inbox:assign", RoleLevel.BRAND, "Assign, reassign, unassign visible chats",

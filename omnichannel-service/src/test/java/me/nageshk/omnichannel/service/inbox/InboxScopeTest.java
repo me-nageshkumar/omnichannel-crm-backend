@@ -20,7 +20,23 @@ class InboxScopeTest {
         return c;
     }
 
+    private static WaWebChat bot(String phoneNumberId) {
+        WaWebChat c = chat(null, null, phoneNumberId);
+        c.setStatus(me.nageshk.omnichannel.db.inbox.ChatStatus.BOT);
+        return c;
+    }
+
+    /** People's lists never show a chat a chatbot holds (spec 2026-11-18 §5.6). */
+    private static Document people(Document d) {
+        return new Document("$and", List.of(d, NOT_BOT));
+    }
+
+    private static final Document NOT_BOT = new Document("status", new Document("$ne", "BOT"));
+    private static final Document BOT_ON_OWNED = new Document("$and", List.of(new Document("status", "BOT"),
+            new Document("phoneNumberId", new Document("$in", List.of("p1")))));
+
     private static final Set<String> OWNED = Set.of("p1");
+    private final InboxScope queueWithBots = new InboxScope(Level.QUEUE, "u1", Set.of("t1"), OWNED, true);
     private final InboxScope mine = new InboxScope(Level.MINE, "u1", Set.of("t1"), OWNED);
     private final InboxScope queue = new InboxScope(Level.QUEUE, "u1", Set.of("t1"), OWNED);
     private final InboxScope team = new InboxScope(Level.TEAM, "u1", Set.of("t1"), OWNED);
@@ -35,7 +51,7 @@ class InboxScopeTest {
 
     @Test
     void mineCriteriaMatchesOnlyAssignedUser() {
-        assertThat(mine.criteria().getCriteriaObject()).isEqualTo(new Document("assignedUserId", "u1"));
+        assertThat(mine.criteria().getCriteriaObject()).isEqualTo(people(new Document("assignedUserId", "u1")));
         assertThat(mine.covers(chat("u1", null, "p1"))).isTrue();
         assertThat(mine.covers(chat("u2", null, "p1"))).isFalse();
         assertThat(mine.covers(chat(null, null, "p1"))).isFalse();
@@ -65,7 +81,7 @@ class InboxScopeTest {
                         new Document("assignedUserId", (Object) null),
                         new Document("assignedTeamId", new Document("$in", List.of("t1"))))),
                 unassignedOnOwned()));
-        assertThat(queue.criteria().getCriteriaObject()).isEqualTo(expected);
+        assertThat(queue.criteria().getCriteriaObject()).isEqualTo(people(expected));
     }
 
     @Test
@@ -85,14 +101,14 @@ class InboxScopeTest {
                 new Document("assignedUserId", "u1"),
                 new Document("assignedTeamId", new Document("$in", List.of("t1"))),
                 unassignedOnOwned()));
-        assertThat(team.criteria().getCriteriaObject()).isEqualTo(expected);
+        assertThat(team.criteria().getCriteriaObject()).isEqualTo(people(expected));
     }
 
     @Test
     void allAllowsEverything() {
-        assertThat(all.criteria().getCriteriaObject()).isEqualTo(new Document());
+        assertThat(all.criteria().getCriteriaObject()).isEqualTo(NOT_BOT);
         assertThat(all.covers(chat("u2", "t9", "p9"))).isTrue();
-        for (ListScope s : ListScope.values()) assertThat(all.allows(s)).isTrue();
+        for (ListScope s : ListScope.values()) assertThat(all.allows(s)).isEqualTo(s != ListScope.BOT);
     }
 
     @Test
@@ -128,19 +144,43 @@ class InboxScopeTest {
                         new Document("$and", List.of(
                                 new Document("assignedTeamId", (Object) null),
                                 new Document("phoneNumberId", new Document("$in", List.of("p1")))))))));
-        assertThat(team.criteriaFor(ListScope.MINE).getCriteriaObject()).isEqualTo(new Document("assignedUserId", "u1"));
-        assertThat(team.criteriaFor(ListScope.UNASSIGNED).getCriteriaObject()).isEqualTo(unassigned);
-        assertThat(queue.criteriaFor(ListScope.UNASSIGNED).getCriteriaObject()).isEqualTo(unassigned);
-        assertThat(team.criteriaFor(ListScope.TEAM).getCriteriaObject()).isEqualTo(new Document("$or", List.of(
-                new Document("assignedTeamId", new Document("$in", List.of("t1"))), unassignedOnOwned())));
-        assertThat(all.criteriaFor(ListScope.ALL).getCriteriaObject()).isEqualTo(new Document());
+        assertThat(team.criteriaFor(ListScope.MINE).getCriteriaObject()).isEqualTo(people(new Document("assignedUserId", "u1")));
+        assertThat(team.criteriaFor(ListScope.UNASSIGNED).getCriteriaObject()).isEqualTo(people(unassigned));
+        assertThat(queue.criteriaFor(ListScope.UNASSIGNED).getCriteriaObject()).isEqualTo(people(unassigned));
+        assertThat(team.criteriaFor(ListScope.TEAM).getCriteriaObject()).isEqualTo(people(new Document("$or", List.of(
+                new Document("assignedTeamId", new Document("$in", List.of("t1"))), unassignedOnOwned()))));
+        assertThat(all.criteriaFor(ListScope.ALL).getCriteriaObject()).isEqualTo(NOT_BOT);
     }
 
     @Test
     void allLevelTeamScopeUsesEveryWorkspaceTeam() {
-        Document in = (Document) ((List<?>) all.criteriaFor(ListScope.TEAM).getCriteriaObject().get("$or")).stream()
+        Document team = (Document) ((List<?>) all.criteriaFor(ListScope.TEAM).getCriteriaObject().get("$and")).get(0);
+        Document in = (Document) ((List<?>) team.get("$or")).stream()
                 .map(Document.class::cast).filter(d -> d.containsKey("assignedTeamId")).findFirst().orElseThrow()
                 .get("assignedTeamId");
         assertThat(Set.copyOf((java.util.Collection<?>) in.get("$in"))).isEqualTo(Set.of("t1", "t2"));
+    }
+
+    @Test
+    void aBotChatIsCoveredOnlyWithThePermissionAndOnAnOwnedNumber() {
+        assertThat(queue.covers(bot("p1"))).isFalse();
+        assertThat(all.covers(bot("p1"))).isFalse();
+        assertThat(queueWithBots.covers(bot("p1"))).isTrue();
+        assertThat(queueWithBots.covers(bot("p9"))).isFalse();
+        // the permission adds chatbot chats, nothing else
+        assertThat(queueWithBots.covers(chat(null, null, "p9"))).isFalse();
+    }
+
+    @Test
+    void theChatbotListNeedsThePermission() {
+        assertThat(queue.allows(ListScope.BOT)).isFalse();
+        assertThat(queueWithBots.allows(ListScope.BOT)).isTrue();
+        assertThat(queueWithBots.criteriaFor(ListScope.BOT).getCriteriaObject()).isEqualTo(BOT_ON_OWNED);
+    }
+
+    @Test
+    void criteriaWithThePermissionAddsChatbotChatsOnOwnedNumbers() {
+        assertThat(queueWithBots.criteria().getCriteriaObject()).isEqualTo(new Document("$or", List.of(
+                queue.criteria().getCriteriaObject(), BOT_ON_OWNED)));
     }
 }

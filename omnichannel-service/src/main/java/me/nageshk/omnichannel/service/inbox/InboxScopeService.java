@@ -57,10 +57,11 @@ public class InboxScopeService {
     public InboxScope scopeOf(AuthenticatedUser me, String workspaceId) {
         Set<String> authorities = access.inWorkspace(me, workspaceId);
         if (!authorities.contains(Authority.INBOX_VIEW.code())) throw new NotFoundException("workspace not found");
+        boolean bots = authorities.contains(Authority.INBOX_VIEW_BOT.code());
         if (authorities.contains(Authority.INBOX_VIEW_ALL.code())) {
             Set<String> every = phoneNumbers.findByWorkspaceIdOrderByNumber(workspaceId).stream()
                     .map(PhoneNumber::getId).collect(Collectors.toUnmodifiableSet());
-            return new InboxScope(Level.ALL, me.userId(), teamIds(workspaceId, null), every);
+            return new InboxScope(Level.ALL, me.userId(), teamIds(workspaceId, null), every, bots);
         }
         Level level = authorities.contains(Authority.INBOX_VIEW_TEAM.code()) ? Level.TEAM
                 : authorities.contains(Authority.INBOX_VIEW_QUEUE.code()) ? Level.QUEUE : Level.MINE;
@@ -68,7 +69,7 @@ public class InboxScopeService {
         Set<String> owned = own.isEmpty() ? Set.of()
                 : phoneNumbers.findByWorkspaceIdAndTeamIdIn(workspaceId, own).stream().map(PhoneNumber::getId)
                         .collect(Collectors.toUnmodifiableSet());
-        return new InboxScope(level, me.userId(), own, owned);
+        return new InboxScope(level, me.userId(), own, owned, bots);
     }
 
     /** The widest list the scope allows; QUEUE opens on Mine, the queue being a tab the agent chooses. */

@@ -79,8 +79,9 @@ class ChatbotActionsNodesIT extends ChatbotTestBase {
         Map<String, Object> f = flow(List.of(node("a", "assign_chat", "Hand", Map.of("mode", "TEAM_QUEUE", "teamId", support.getId()))), List.of());
         String id = publish(createChatbot("Bot", f));
         ChatbotRun run = start(id, chat);
-        assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.COMPLETED);
+        assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.HANDED_OVER);
         WaWebChat after = chats.findById(chat.getId()).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(me.nageshk.omnichannel.db.inbox.ChatStatus.OPEN);
         assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
         assertThat(after.getAssignedUserId()).isNull();
         assertThat(((Map<?, ?>) run.getSteps().get(0).result().get("assignedTo")).get("teamId")).isEqualTo(support.getId());
@@ -101,7 +102,7 @@ class ChatbotActionsNodesIT extends ChatbotTestBase {
             ChatbotRun run = start(id, chat);
             await(() -> !run(run.getId()).getStatus().active());
             ChatbotRun done = run(run.getId());
-            assertThat(done.getStatus()).as(done.getEndReason()).isEqualTo(ChatbotRunStatus.COMPLETED);
+            assertThat(done.getStatus()).as(done.getEndReason()).isEqualTo(ChatbotRunStatus.HANDED_OVER);
             WaWebChat after = chats.findById(chat.getId()).orElseThrow();
             assertThat(after.getAssignedUserId()).isIn(agent.getId(), agent2.getId());
             assertThat(after.getLastMessageAt()).isNotNull();
@@ -117,6 +118,83 @@ class ChatbotActionsNodesIT extends ChatbotTestBase {
         WaWebChat after = chats.findById(chat.getId()).orElseThrow();
         assertThat(after.getAssignedUserId()).isIn(agent.getId(), agent2.getId());
         assertThat(((Map<?, ?>) run.getSteps().get(0).result().get("assignedTo")).get("userId")).isEqualTo(after.getAssignedUserId());
+    }
+
+    private static Map<String, Object> handOver() {
+        return flow(List.of(node("a", "assign_chat", "Hand", Map.of("mode", "NUMBER_ROUTING"))), List.of());
+    }
+
+    @Test
+    void handOverByNumberRoutingEndsTheRunAndRoutes() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        ChatbotRun run = start(publish(createChatbot("Bot", handOver())), chat);
+
+        assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.HANDED_OVER);
+        WaWebChat after = chats.findById(chat.getId()).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(me.nageshk.omnichannel.db.inbox.ChatStatus.OPEN);
+        assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
+        assertThat(after.getHandedOverAt()).isNotNull();
+        List<WaWebChatAction> actions = mongo.find(new Query(Criteria.where("chatId").is(chat.getId())), WaWebChatAction.class);
+        assertThat(actions).anySatisfy(a -> {
+            assertThat(a.getReason()).isEqualTo(me.nageshk.omnichannel.db.inbox.RoutedReason.CHATBOT_HANDOVER);
+            assertThat(a.getByName()).isEqualTo("Chatbot: Bot");
+        });
+    }
+
+    @Test
+    void handOverKeepsAnAgentWhoHoldsTheChat() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        WaWebChat held = chats.findById(chat.getId()).orElseThrow();
+        held.setAssignedUserId(agent.getId());
+        chats.save(held);
+
+        ChatbotRun run = start(publish(createChatbot("Bot", handOver())), chat);
+
+        assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.HANDED_OVER);
+        assertThat(run.getSteps().get(0).summary()).startsWith("Stays with ");
+        assertThat(chats.findById(chat.getId()).orElseThrow().getAssignedUserId()).isEqualTo(agent.getId());
+    }
+
+    @Test
+    void handOverWithNoTeamLeavesItOpen() throws Exception {
+        WaWebChat chat = incoming(n2, VEENU, "chat", "hello", "Veenu");
+
+        ChatbotRun run = start(publish(createChatbot("Bot", handOver())), chat);
+
+        assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.HANDED_OVER);
+        assertThat(run.getSteps().get(0).summary()).isEqualTo("Open, waiting for the team");
+        WaWebChat after = chats.findById(chat.getId()).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(me.nageshk.omnichannel.db.inbox.ChatStatus.OPEN);
+        assertThat(after.getAssignedUserId()).isNull();
+    }
+
+    @Test
+    void nothingRunsAfterAHandOver() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        // a flow saved before the node ended the chatbot: the edge is still there, and it still publishes
+        Map<String, Object> f = flow(List.of(
+                node("a", "assign_chat", "Hand", Map.of("mode", "TEAM_QUEUE", "teamId", support.getId())),
+                node("s", "send_message", "After", textMessage("Nobody should get this"))),
+                List.of(edge("a", "next", "s")));
+        String id = publish(createChatbot("Bot", f));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.HANDED_OVER);
+            Thread.sleep(200);
+            assertThat(d.requests("sendMessage")).isEmpty();
+        }
+    }
+
+    @Test
+    void aHandOverThatFailsStillSendsTheChatToTheTeam() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        Map<String, Object> f = flow(List.of(node("a", "assign_chat", "Hand", Map.of("mode", "AGENT", "userId", outsider.getId()))), List.of());
+        ChatbotRun run = start(publish(createChatbot("Bot", f)), chat);
+
+        assertThat(run.getStatus()).isEqualTo(ChatbotRunStatus.FAILED);
+        WaWebChat after = chats.findById(chat.getId()).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(me.nageshk.omnichannel.db.inbox.ChatStatus.OPEN);
+        assertThat(after.getAssignedTeamId()).isEqualTo(support.getId());
     }
 
     @Test

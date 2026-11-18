@@ -68,7 +68,7 @@ class RoleSeederIT {
                         "phone-number:manage", "team:manage", "contact:view", "contact:annotate", "contact:edit",
                         "contact:import", "contact:export", "contact:bulk", "contact:delete", "contact-field:manage",
                         "template:view", "template:manage", "inbox:view", "inbox:view-queue", "inbox:view-team",
-                        "inbox:view-all", "inbox:send", "inbox:assign", "inbox:settings", "inbox:import-history", "campaign:view",
+                        "inbox:view-all", "inbox:view-bot", "inbox:send", "inbox:assign", "inbox:settings", "inbox:import-history", "campaign:view",
                         "campaign:manage", "campaign:settings", "crm:view", "crm:view-all", "crm:edit", "crm:delete",
                         "crm:settings", "crm:export", "crm:segments", "automation:view", "automation:manage", "chatbot:view",
                         "chatbot:manage", "ai:view", "ai:manage");
@@ -86,6 +86,13 @@ class RoleSeederIT {
                 .doesNotContain("inbox:view-team", "inbox:view-all", "inbox:assign", "inbox:settings");
         assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities())
                 .contains("inbox:view-team", "inbox:view-all", "inbox:assign", "inbox:settings");
+    }
+
+    @Test
+    void managerAndAdminGetViewBotAgentDoesNot() {
+        assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities()).contains("inbox:view-bot");
+        assertThat(role(BuiltInRoles.CUSTOMER_ADMIN).getAuthorities()).contains("inbox:view-bot");
+        assertThat(role(BuiltInRoles.AGENT).getAuthorities()).doesNotContain("inbox:view-bot");
     }
 
     @Test
@@ -117,7 +124,7 @@ class RoleSeederIT {
     void freshDatabaseCreatesDocumentsAndGivesDefaults() {
         clearAll();
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(59)
+        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(60)
                 .allMatch(AuthorityDefinition::isBuiltIn)
                 .allMatch(d -> "system".equals(d.getCreatedBy()));
         AuthorityDefinition cv = authorities.findById("customer:view").orElseThrow();
@@ -136,7 +143,7 @@ class RoleSeederIT {
         mongo.insert(new org.bson.Document("_id", KNOWN).append("codes",
                 Arrays.stream(Authority.values()).map(Authority::code).toList()), "system_state");
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(59);
+        assertThat(authorities.findAll()).hasSize(60);
         assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities()).doesNotContain("user:view");
         assertThat(mongo.findById(KNOWN, org.bson.Document.class, "system_state")).isNull();
     }

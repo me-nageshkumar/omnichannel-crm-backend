@@ -33,7 +33,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
 /**
- * The timers (spec §5.6): reminders, inactivity ends, Wait timers (it is the TIMER answer source), AI turns that
+ * The timers (spec §5.6): chats left waiting for their rules or in a chatbot's hands with no run (spec 2026-11-18
+ * §5.5), reminders, inactivity ends, Wait timers (it is the TIMER answer source), AI turns that
  * never came back (answered as a failed turn, AI node spec §5.5), send retries and stale runs. Each part runs in its
  * own try/catch; tests call {@link #tick()} by hand.
  */
@@ -53,11 +54,16 @@ public class ChatbotTicker implements TaskAnswerSource {
     private final ThreadPoolTaskExecutor pool;
     private final Clock clock;
     private final ChatbotSettingsService settingsService;
+    private final me.nageshk.omnichannel.service.inbox.RoutingGate routingGate;
+    private final me.nageshk.omnichannel.service.inbox.BotChats botChats;
 
     public ChatbotTicker(MongoTemplate mongo, ChatbotRepository chatbots, WaWebChatRepository chats,
             ContactRepository contacts, @Lazy ChatbotRunService runs, @Lazy ChatbotRunner runner, ChatbotSender sender,
             RunClaims claims, ThreadPoolTaskExecutor chatbotExecutor, Clock clock,
-            ChatbotSettingsService settingsService) {
+            ChatbotSettingsService settingsService, me.nageshk.omnichannel.service.inbox.RoutingGate routingGate,
+            me.nageshk.omnichannel.service.inbox.BotChats botChats) {
+        this.routingGate = routingGate;
+        this.botChats = botChats;
         this.settingsService = settingsService;
         this.mongo = mongo;
         this.chatbots = chatbots;
@@ -80,6 +86,9 @@ public class ChatbotTicker implements TaskAnswerSource {
     public CompletableFuture<Void> tick() {
         Instant now = clock.instant();
         List<CompletableFuture<Void>> work = new ArrayList<>();
+        // chats nobody would otherwise ever give to people (spec 2026-11-18 §5.5)
+        safely("routingOverdue", () -> routingGate.settleOverdue(now));
+        safely("botOrphans", () -> orphans(now));
         safely("reminders", () -> reminders(now));
         safely("ends", () -> ends(now));
         safely("timers", () -> work.add(timers(now)));
@@ -87,6 +96,17 @@ public class ChatbotTicker implements TaskAnswerSource {
         safely("retries", () -> work.add(runner.retryDue()));
         safely("stale", () -> stale(now));
         return CompletableFuture.allOf(work.toArray(new CompletableFuture[0]));
+    }
+
+    private volatile Instant lastOrphanSweep;
+
+    /** At most once per routing wait: each pass reads every chat a chatbot holds. */
+    private void orphans(Instant now) {
+        Instant last = lastOrphanSweep;
+        // a clock set back (tests) runs it at once
+        if (last != null && !now.isBefore(last) && now.isBefore(last.plus(routingGate.routingWait()))) return;
+        lastOrphanSweep = now;
+        botChats.releaseOrphans(now, routingGate.routingWait());
     }
 
     private void reminders(Instant now) {

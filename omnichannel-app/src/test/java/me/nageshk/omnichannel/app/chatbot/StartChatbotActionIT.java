@@ -47,6 +47,8 @@ class StartChatbotActionIT extends ChatbotTestBase {
     @Autowired StartChatbotHandler handler;
     @Autowired ChatbotRunRepository runRepo;
     @Autowired ContactRepository contacts;
+    @Autowired me.nageshk.omnichannel.service.inbox.ChatAssignmentService assignment;
+    @Autowired me.nageshk.omnichannel.security.access.AccessService access;
 
     private Map<String, Object> askFlow() {
         return flow(List.of(
@@ -186,6 +188,36 @@ class StartChatbotActionIT extends ChatbotTestBase {
             assertThat(last.getSteps().get(0).reason()).contains("is not published");
             assertThat(runs()).hasSize(1);
         }
+    }
+
+    @Test
+    void skipsAChatThatWasHandedOver() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        chat = chats.findById(chat.getId()).orElseThrow();
+        chat.setHandedOverAt(Instant.now());
+        chats.save(chat);
+        String id = publish(createChatbot("Lead qualifier", askFlow()));
+
+        ActionResult r = handler.run(ctx(chat, contactOf(chat), "m-91"), startAction(id, null));
+
+        assertThat(r.outcome()).isEqualTo(StepOutcome.SKIPPED);
+        assertThat(r.reason()).isEqualTo("The chat was handed over to the team");
+        assertThat(runRepo.count()).isZero();
+    }
+
+    @Test
+    void startsAgainAfterTheChatWasClosed() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        chat = chats.findById(chat.getId()).orElseThrow();
+        chat.setHandedOverAt(Instant.now());
+        chat = chats.save(chat);
+        chat = assignment.close(access.load(manager), chat);
+        String id = publish(createChatbot("Lead qualifier", askFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ActionResult r = handler.run(ctx(chat, contactOf(chat), "m-92"), startAction(id, null));
+            assertThat(r.outcome()).isEqualTo(StepOutcome.DONE);
+        }
+        assertThat(runRepo.count()).isEqualTo(1);
     }
 
     @Test

@@ -25,9 +25,12 @@ public class AssignChatHandler implements ActionHandler {
     private final UserAdminService userAdmin;
     private final ChatAssignmentService assignment;
     private final ChatRoutingService routing;
+    private final me.nageshk.omnichannel.service.inbox.BotChats botChats;
 
     public AssignChatHandler(WaWebChatRepository chats, TeamRepository teams, UserAdminService userAdmin,
-            ChatAssignmentService assignment, ChatRoutingService routing) {
+            ChatAssignmentService assignment, ChatRoutingService routing,
+            me.nageshk.omnichannel.service.inbox.BotChats botChats) {
+        this.botChats = botChats;
         this.chats = chats;
         this.teams = teams;
         this.userAdmin = userAdmin;
@@ -46,6 +49,10 @@ public class AssignChatHandler implements ActionHandler {
         WaWebChat chat = chatId == null ? null : chats.findById(chatId).orElse(null);
         if (chat == null) return ActionResult.failed("No chat with this contact");
         if (action.mode() == null) return ActionResult.failed("No assignment mode");
+        // a person is meant to have the chat: a chatbot holding it lets go first (spec 2026-11-18 §5.1)
+        if (chat.getStatus() == me.nageshk.omnichannel.db.inbox.ChatStatus.BOT) {
+            chat = botChats.open(chat.getId()).orElse(chat);
+        }
         return switch (action.mode()) {
             case AGENT -> agent(ctx, action, chat);
             case TEAM_QUEUE -> {
@@ -63,6 +70,8 @@ public class AssignChatHandler implements ActionHandler {
                         : ActionResult.done("Assigned to " + nameOf(saved, ctx) + " (round robin in "
                                 + team.getName() + ")");
             }
+            // refused when a rule is saved; only the chatbot hand-over node uses the number's routing
+            case NUMBER_ROUTING -> ActionResult.failed("No assignment mode");
         };
     }
 

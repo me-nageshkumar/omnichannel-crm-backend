@@ -40,10 +40,15 @@ public class ChatRoutingService {
 
     /**
      * How one routing run differs from the default: a member to skip (a hand-back), whether the sticky rule may
-     * apply, and the reason to record on the action.
+     * apply, the reason to record on the action, and who asked ({@code byName}, {@code reasonDetail}: a chatbot).
      */
-    public record RoutingOptions(String excludeUserId, boolean sticky, RoutedReason reason) {
+    public record RoutingOptions(String excludeUserId, boolean sticky, RoutedReason reason, String byName,
+            String reasonDetail) {
         public static final RoutingOptions DEFAULT = new RoutingOptions(null, true, null);
+
+        public RoutingOptions(String excludeUserId, boolean sticky, RoutedReason reason) {
+            this(excludeUserId, sticky, reason, null, null);
+        }
     }
 
     private final InboxSettingService settings;
@@ -83,6 +88,12 @@ public class ChatRoutingService {
         return team == null ? chat : route(chat, team, RoutingOptions.DEFAULT);
     }
 
+    /** Routes under the owning team of the chat's number with {@code options}; no owning team: untouched. */
+    public WaWebChat route(WaWebChat chat, RoutingOptions options) {
+        Team team = owningTeam(chat);
+        return team == null ? chat : route(chat, team, options);
+    }
+
     /** As {@link #route(WaWebChat)}, recording {@code reason} on the action. */
     public WaWebChat route(WaWebChat chat, RoutedReason reason) {
         Team team = owningTeam(chat);
@@ -97,18 +108,21 @@ public class ChatRoutingService {
         Map<String, User> reachable = reachable(chat);
         User sticky = options.sticky() ? stickyAgent(chat, setting, team, reachable, options.excludeUserId()) : null;
         if (sticky != null) {
-            return routed(chat, sticky, team, RoutedReason.STICKY, options.excludeUserId(), null, null);
+            return routed(chat, sticky, team, RoutedReason.STICKY, options.excludeUserId(), options.byName(),
+                    options.reasonDetail());
         }
         switch (routing.mode()) {
             case TEAM -> {
-                return routed(chat, null, team, options.reason(), options.excludeUserId(), null, null);
+                return routed(chat, null, team, options.reason(), options.excludeUserId(), options.byName(),
+                        options.reasonDetail());
             }
             case USER -> {
                 User user = routing.userId() == null ? null : reachable.get(routing.userId());
                 boolean ok = user != null && eligible(user, team, chat.getWorkspaceId())
                         && !user.getId().equals(options.excludeUserId());
                 // the configured member can no longer take chats: the team queue
-                return routed(chat, ok ? user : null, team, options.reason(), options.excludeUserId(), null, null);
+                return routed(chat, ok ? user : null, team, options.reason(), options.excludeUserId(), options.byName(),
+                        options.reasonDetail());
             }
             case ROUND_ROBIN -> {
                 // the cursor is read fresh: a caller re-routing many chats holds a Team loaded before the first move
@@ -116,7 +130,8 @@ public class ChatRoutingService {
                 User next = nextMember(current, reachable, chat.getWorkspaceId(), options.excludeUserId());
                 // the turn moves once the chat is saved: a save that fails (a newer version) and is retried
                 // must not skip the member whose turn it was
-                WaWebChat saved = routed(chat, next, team, options.reason(), options.excludeUserId(), null, null);
+                WaWebChat saved = routed(chat, next, team, options.reason(), options.excludeUserId(), options.byName(),
+                        options.reasonDetail());
                 if (next != null) {
                     // only the cursor: saving the whole team could revert an edit made since it was read
                     mongo.updateFirst(new Query(Criteria.where("_id").is(team.getId())),

@@ -164,4 +164,23 @@ class InboxStreamIT extends InboxApiTestBase {
                 .andExpect(status().isNotFound());
         assertThat(broker.subscribers(brand.getId())).isZero();
     }
+
+    @Test
+    void chatTurningBotLeavesTheAgentsStream() throws Exception {
+        WaWebChat queue = chat("Asha", "919800000002", 1, null, null);
+        MvcResult agentStream = open(agentToken);
+        broker.push(brand.getId(), queue, view(queue));
+        assertThat(sent(agentStream)).contains("\"visible\":true");
+        MvcResult managerStream = send(get(inbox() + "/stream"), managerToken, null)
+                .andExpect(request().asyncStarted()).andReturn();
+
+        queue.setStatus(ChatStatus.BOT);
+        queue = chats.save(queue);
+        broker.push(brand.getId(), queue, view(queue));
+
+        assertThat(sent(agentStream)).contains("\"visible\":false");
+        // the agent's console can say why the chat left: a chatbot has it now
+        assertThat(sent(agentStream)).contains("\"status\":\"BOT\"");
+        assertThat(sent(managerStream)).contains("\"visible\":true").doesNotContain("\"visible\":false");
+    }
 }

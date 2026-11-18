@@ -77,6 +77,7 @@ public class ChatAssignmentService {
         boolean noUser = userId == null || userId.isBlank();
         boolean noTeam = teamId == null || teamId.isBlank();
         if (noUser && noTeam) throw new ValidationException("userId", "userId or teamId required");
+        fromBot(chat);
         User user = noUser ? null : userWithAccess(chat, userId);
         if (user != null && !canSeeNumber(user, chat)) throw new AssigneeCannotSeeNumberException();
         Team team = noTeam ? null : teams.findByIdAndWorkspaceId(teamId, chat.getWorkspaceId())
@@ -102,6 +103,8 @@ public class ChatAssignmentService {
     }
 
     public WaWebChat unassign(AuthenticatedUser me, WaWebChat chat) {
+        // a chat the chatbot holds has nobody to take it from
+        if (chat.getStatus() == ChatStatus.BOT) return chat;
         chat.setAssignedUserId(null);
         chat.setAssignedTeamId(null);
         return commit(chat, action(me, chat, ActionType.UNASSIGNED), true);
@@ -111,6 +114,8 @@ public class ChatAssignmentService {
     public WaWebChat close(AuthenticatedUser me, WaWebChat chat) {
         if (chat.getStatus() == ChatStatus.CLOSED) return chat;
         chat.setStatus(ChatStatus.CLOSED);
+        // the next conversation may start with a chatbot again
+        chat.setHandedOverAt(null);
         boolean cleared = false;
         if (!settings.effectiveFor(chat).isKeepAssignmentOnClose()) {
             cleared = chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null;
@@ -120,16 +125,16 @@ public class ChatAssignmentService {
         return commit(chat, action(me, chat, ActionType.CLOSED), cleared);
     }
 
-    /** Reopens by hand, keeping the assignment; reopening an open chat does nothing. */
+    /** Reopens by hand, keeping the assignment; only a closed chat is reopened. */
     public WaWebChat reopen(AuthenticatedUser me, WaWebChat chat) {
-        if (chat.getStatus() == ChatStatus.OPEN) return chat;
+        if (chat.getStatus() != ChatStatus.CLOSED) return chat;
         chat.setStatus(ChatStatus.OPEN);
         return commit(chat, action(me, chat, ActionType.REOPENED), false);
     }
 
     /** Like {@link #reopen(AuthenticatedUser, WaWebChat)} for a send that reopens the chat, a campaign's included. */
     public WaWebChat reopen(SendActor actor, WaWebChat chat) {
-        if (chat.getStatus() == ChatStatus.OPEN) return chat;
+        if (chat.getStatus() != ChatStatus.CLOSED) return chat;
         chat.setStatus(ChatStatus.OPEN);
         return commit(chat, action(actor.userId(), actor.displayName(), chat, ActionType.REOPENED), false);
     }
@@ -159,6 +164,7 @@ public class ChatAssignmentService {
      * @throws ChatTakenException when someone has it already, including a concurrent claim that saved first
      */
     public WaWebChat claim(AuthenticatedUser me, WaWebChat chat) {
+        if (chat.getStatus() == ChatStatus.BOT) return takeOver(me, chat);
         if (chat.getAssignedUserId() != null) throw new ChatTakenException();
         chat.setAssignedUserId(me.userId());
         lastAgent(chat, me.userId());
@@ -186,6 +192,7 @@ public class ChatAssignmentService {
     public WaWebChat handoff(AuthenticatedUser me, WaWebChat chat, HandoffRequest req, boolean manager) {
         if (req == null || req.kind() == null) throw new ValidationException("kind", "required");
         if (!manager && !me.userId().equals(chat.getAssignedUserId())) throw new NotFoundException("chat not found");
+        fromBot(chat);
         Team current = chat.getAssignedTeamId() == null ? owningTeam(chat)
                 : teams.findByIdAndWorkspaceId(chat.getAssignedTeamId(), chat.getWorkspaceId()).orElse(null);
         switch (req.kind()) {
@@ -218,6 +225,29 @@ public class ChatAssignmentService {
             }
             default -> throw new ValidationException("kind", "unknown kind");
         }
+    }
+
+    /**
+     * The caller takes a chat a chatbot holds (spec 2026-11-18 §5.3): it is open and theirs, whatever the number's
+     * claim-on-reply says, and no chatbot starts on it from a rule until it is closed. Any other chat is returned as
+     * it is.
+     */
+    public WaWebChat takeOver(AuthenticatedUser me, WaWebChat chat) {
+        if (chat.getStatus() != ChatStatus.BOT) return chat;
+        fromBot(chat);
+        chat.setAssignedUserId(me.userId());
+        lastAgent(chat, me.userId());
+        WaWebChatAction action = action(me, chat, ActionType.ASSIGNED);
+        action.setToUserId(me.userId());
+        action.setToUserName(action.getByName());
+        return commit(chat, action, true);
+    }
+
+    /** A chat a chatbot held is open again, with people, before a person's change is applied to it. */
+    private void fromBot(WaWebChat chat) {
+        if (chat.getStatus() != ChatStatus.BOT) return;
+        chat.setStatus(ChatStatus.OPEN);
+        chat.setHandedOverAt(clock.instant());
     }
 
     private WaWebChat handBack(AuthenticatedUser me, WaWebChat chat, Team team) {

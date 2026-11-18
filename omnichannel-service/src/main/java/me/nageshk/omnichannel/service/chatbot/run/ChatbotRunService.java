@@ -51,11 +51,13 @@ public class ChatbotRunService {
     private final Clock clock;
     private final InboxMarks marks;
     private final WorkGate workGate;
+    private final me.nageshk.omnichannel.service.inbox.BotChats botChats;
 
     public ChatbotRunService(ChatbotRepository chatbots, ChatbotRunRepository runs, ContactAttributeRepository attributes,
             ContactLabelRepository labels, PhoneNumberRepository numbers, RunVariables variables, RunClaims claims,
             ChatPointer pointer, ChatbotRunner runner, ThreadPoolTaskExecutor chatbotExecutor, Clock clock,
-            InboxMarks marks, WorkGate workGate) {
+            InboxMarks marks, WorkGate workGate, me.nageshk.omnichannel.service.inbox.BotChats botChats) {
+        this.botChats = botChats;
         this.workGate = workGate;
         this.marks = marks;
         this.chatbots = chatbots;
@@ -130,7 +132,7 @@ public class ChatbotRunService {
             if (ifRunning != IfRunning.REPLACE || other.isEmpty()) {
                 return new StartResult(other.orElse(null), false, "Chatbot “" + otherName + "” is running", null);
             }
-            stop(other.get(), "replaced by " + chatbot.getName(), null);
+            stopForReplacement(other.get(), "replaced by " + chatbot.getName(), null);
             try {
                 inserted = runs.insert(run);
             } catch (DuplicateKeyException again) {
@@ -138,6 +140,8 @@ public class ChatbotRunService {
             }
         }
         pointer.set(inserted.getChatId(), inserted);
+        // a chat nobody holds is the chatbot's now: out of the people's lists (spec 2026-11-18 §5.3)
+        if (inserted.getChatId() != null) botChats.take(inserted.getChatId());
         ChatbotRun handle = inserted;
         CompletableFuture<ChatbotRun> settled = CompletableFuture.supplyAsync(() -> runner.proceed(handle, null), pool);
         return new StartResult(inserted, true, null, settled);
@@ -163,6 +167,14 @@ public class ChatbotRunService {
     /** Stops the run if it is still active; a run already final is returned as it is. */
     public ChatbotRun stop(ChatbotRun run, String reason, String byUserId) {
         return end(run, ChatbotRunStatus.STOPPED, reason, byUserId);
+    }
+
+    /** Stops the run because another run of the same chat replaces it: the chat stays with the chatbot. */
+    public ChatbotRun stopForReplacement(ChatbotRun run, String reason, String byUserId) {
+        Optional<ChatbotRun> ended = claims.finish(run.getId(), ChatbotRunStatus.STOPPED, reason, byUserId);
+        if (ended.isEmpty()) return runs.findById(run.getId()).orElse(run);
+        runner.ended(ended.get(), true);
+        return ended.get();
     }
 
     public ChatbotRun handOver(ChatbotRun run, String byUserId) {

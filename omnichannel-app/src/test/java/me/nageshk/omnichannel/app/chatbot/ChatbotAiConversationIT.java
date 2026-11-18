@@ -582,6 +582,10 @@ class ChatbotAiConversationIT extends AiTestBase {
     void agentReplyHandsOver() throws Exception {
         scripted.reply(text("A reply nobody should get"));
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        // the agent holds the chat, so it stays in their inbox while the chatbot runs (spec 2026-11-18 §5.3)
+        WaWebChat held = chats.findById(chat.getId()).orElseThrow();
+        held.setAssignedUserId(agent.getId());
+        chats.save(held);
         String id = publish(flow(List.of(node("ai", "ai", "Sales", conv(Map.of("exitWords", List.of("stop"))))),
                 List.of()));
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
