@@ -18,6 +18,8 @@ figures to check against AWS's current pricing, not quotes.
 
 ## What to set up on that server
 
+The exact steps, with Caddy's installation and customers' link addresses: `docs/deploy/production-runbook.md`.
+
 - **A domain and HTTPS.** The console and the extension's WebSocket (`wss://`) need a certificate. Caddy or Nginx with
   Let's Encrypt on the server is free; put it in front of the app's port.
 - **Firewall (security group):** open 443 (and 80 for the certificate) to the world, SSH only from your own address,

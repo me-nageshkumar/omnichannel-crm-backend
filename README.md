@@ -653,6 +653,8 @@ brand's domain, for example `https://user-task.bimalinstitute.com` or `https://b
 - **Certificates:** `GET /internal/pages/host-allowed?domain=` answers 200 for a known host, for a direct caller on
   loopback only (anything with `X-Forwarded-For`, `Forwarded`, `Via` or `X-Forwarded-Host` gets 404). Caddy's
   on-demand TLS asks it before fetching a certificate: `docs/deploy/Caddyfile`.
+- **Setting one up, step by step** (both ways, Caddy's installation, what to tell the customer):
+  `docs/deploy/production-runbook.md`.
 - **What the customer does:** for a subdomain, a CNAME record pointing at the platform's host; for a bare domain (or
   one that already has a website), forward `https://<domain>/<folder>/t/` and `…/<folder>/f/` to the platform's
   address with `/<folder>` removed.
