@@ -10,7 +10,6 @@ import me.nageshk.omnichannel.db.tenant.TeamRepository;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.security.user.UserAdminService;
 import me.nageshk.omnichannel.service.automation.AssignTargets;
-import me.nageshk.omnichannel.service.chatbot.flow.Outputs;
 import me.nageshk.omnichannel.service.chatbot.run.NodeFailed;
 import me.nageshk.omnichannel.service.chatbot.run.RunChat;
 import me.nageshk.omnichannel.service.inbox.ChatAssignmentService;
@@ -23,7 +22,10 @@ import me.nageshk.omnichannel.service.chatbot.flow.settings.AssignChatSettings;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
-/** Assign chat (spec §4.2): exactly the automation action's choices. */
+/**
+ * Hand over to agent (spec 2026-11-18 §5.4; type code {@code assign_chat}): gives the chat to people, by the number's
+ * own routing or the automation action's choices, and ends the run. Nothing runs after it.
+ */
 @Component
 public class AssignChatExecutor extends BaseExecutor {
 
@@ -33,10 +35,16 @@ public class AssignChatExecutor extends BaseExecutor {
     private final ChatAssignmentService assignment;
     private final ChatRoutingService routing;
     private final RunChat runChat;
+    private final me.nageshk.omnichannel.service.inbox.BotChats botChats;
+    private final org.springframework.context.ApplicationEventPublisher publisher;
 
     public AssignChatExecutor(FlowParser parser, AssignTargets targets, TeamRepository teams, UserAdminService userAdmin,
-            ChatAssignmentService assignment, ChatRoutingService routing, RunChat runChat) {
+            ChatAssignmentService assignment, ChatRoutingService routing, RunChat runChat,
+            me.nageshk.omnichannel.service.inbox.BotChats botChats,
+            org.springframework.context.ApplicationEventPublisher publisher) {
         super(parser);
+        this.botChats = botChats;
+        this.publisher = publisher;
         this.targets = targets;
         this.teams = teams;
         this.userAdmin = userAdmin;
@@ -46,7 +54,16 @@ public class AssignChatExecutor extends BaseExecutor {
     }
 
     @Override
+    public List<String> outputs(FlowNode node, me.nageshk.omnichannel.service.chatbot.node.ValidationContext ctx) {
+        return List.of();
+    }
+
+    @Override
     public StepResult run(RunContext ctx, FlowNode node) {
+        if (ctx.chat() != null) {
+            // out of the chatbot's hands first, so the assignment below lands on an open chat
+            if (botChats.open(ctx.chat().getId()).isEmpty()) botChats.markHandedOver(ctx.chat().getId());
+        }
         // start from the stored chat (an earlier send changed it); a message landing in between gets one more try
         try {
             return assign(ctx, node, runChat.fresh(ctx));
@@ -60,6 +77,26 @@ public class AssignChatExecutor extends BaseExecutor {
         String name = ctx.run().getChatbotName();
         if (s.mode() == null) throw new NodeFailed("no assignment mode");
         switch (s.mode()) {
+            case NUMBER_ROUTING -> {
+                if (chat.getAssignedUserId() != null) {
+                    String holder = userAdmin.withAccessTo(ctx.run().getCustomerId(), ctx.workspaceId()).stream()
+                            .filter(u -> u.getId().equals(chat.getAssignedUserId())).map(User::getName).findFirst()
+                            .orElse("the agent");
+                    return StepResult.handOver(assigned(null, null), "Stays with " + holder);
+                }
+                WaWebChat saved = routing.route(chat, new ChatRoutingService.RoutingOptions(null, true,
+                        me.nageshk.omnichannel.db.inbox.RoutedReason.CHATBOT_HANDOVER, "Chatbot: " + name, name));
+                ctx.chat(saved);
+                publisher.publishEvent(new me.nageshk.omnichannel.service.inbox.InboxEvents.ChatChanged(saved));
+                Team team = saved.getAssignedTeamId() == null ? null
+                        : teams.findByIdAndWorkspaceId(saved.getAssignedTeamId(), ctx.workspaceId()).orElse(null);
+                User picked = saved.getAssignedUserId() == null ? null
+                        : userAdmin.withAccessTo(ctx.run().getCustomerId(), ctx.workspaceId()).stream()
+                                .filter(u -> u.getId().equals(saved.getAssignedUserId())).findFirst().orElse(null);
+                String summary = picked != null ? "Assigned to " + picked.getName()
+                        : team != null ? "Waiting in " + team.getName() + "'s queue" : "Open, waiting for the team";
+                return StepResult.handOver(assigned(picked, team), summary);
+            }
             case AGENT -> {
                 User user = s.userId() == null ? null : userAdmin.withAccessTo(ctx.run().getCustomerId(), ctx.workspaceId())
                         .stream().filter(u -> u.getId().equals(s.userId())).findFirst().orElse(null);
@@ -73,18 +110,18 @@ public class AssignChatExecutor extends BaseExecutor {
                         && owning != null) {
                     WaWebChat saved = routing.assignByChatbot(chat, null, owning, name);
                     ctx.chat(saved);
-                    return StepResult.next(Outputs.NEXT, assigned(null, owning), user.getName() + " is away; waiting in " + owning.getName() + "'s queue");
+                    return StepResult.handOver(assigned(null, owning), user.getName() + " is away; waiting in " + owning.getName() + "'s queue");
                 }
                 boolean member = owning != null && owning.getMemberIds().contains(user.getId());
                 WaWebChat saved = routing.assignByChatbot(chat, user, member ? owning : null, name);
                 ctx.chat(saved);
-                return StepResult.next(Outputs.NEXT, assigned(user, member ? owning : null), "Assigned to " + user.getName());
+                return StepResult.handOver(assigned(user, member ? owning : null), "Assigned to " + user.getName());
             }
             case TEAM_QUEUE -> {
                 Team team = team(s, ctx);
                 WaWebChat saved = routing.assignByChatbot(chat, null, team, name);
                 ctx.chat(saved);
-                return StepResult.next(Outputs.NEXT, assigned(null, team), "Waiting in " + team.getName() + "'s queue");
+                return StepResult.handOver(assigned(null, team), "Waiting in " + team.getName() + "'s queue");
             }
             default -> {
                 Team team = team(s, ctx);
@@ -92,7 +129,7 @@ public class AssignChatExecutor extends BaseExecutor {
                 ctx.chat(saved);
                 User picked = saved.getAssignedUserId() == null ? null : userAdmin.withAccessTo(ctx.run().getCustomerId(), ctx.workspaceId())
                         .stream().filter(u -> u.getId().equals(saved.getAssignedUserId())).findFirst().orElse(null);
-                return StepResult.next(Outputs.NEXT, assigned(picked, team), picked == null
+                return StepResult.handOver(assigned(picked, team), picked == null
                         ? "Nobody in " + team.getName() + " is available; waiting in its queue"
                         : "Assigned to " + picked.getName() + " (round robin in " + team.getName() + ")");
             }

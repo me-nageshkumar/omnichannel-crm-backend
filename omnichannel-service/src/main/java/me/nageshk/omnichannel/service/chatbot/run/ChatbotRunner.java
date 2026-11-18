@@ -207,6 +207,11 @@ public class ChatbotRunner {
                     completeStep(run, node, startedAt, result);
                     return jump(run, result.jumpToChatbotId(), ctx);
                 }
+                case HAND_OVER -> {
+                    completeStep(run, node, startedAt, result);
+                    if (result.result() != null && node.name() != null) run.getVariables().put(node.name(), result.result());
+                    return finish(run, ChatbotRunStatus.HANDED_OVER, result.summary());
+                }
                 case FAIL -> {
                     recordFailed(run, node, startedAt, result.error());
                     return finish(run, ChatbotRunStatus.FAILED, result.error());

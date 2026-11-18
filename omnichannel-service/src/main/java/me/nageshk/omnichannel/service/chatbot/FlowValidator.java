@@ -118,7 +118,10 @@ public class FlowValidator {
         for (FlowEdge e : flow.edges()) {
             FlowNode source = flow.node(e.source()).orElseThrow();
             String edgeField = "edges." + (e.id() == null ? e.source() + ">" + e.target() : e.id());
-            if (!outputs.get(source.id()).contains(e.output())) {
+            if (source.type() == me.nageshk.omnichannel.service.chatbot.flow.NodeType.ASSIGN_CHAT) {
+                // flows saved before the node ended the chatbot keep their edge; it is never followed (spec 2026-11-18 §5.4)
+                out.add(Problem.warning(source, edgeField, "Nothing runs after a hand-over"));
+            } else if (!outputs.get(source.id()).contains(e.output())) {
                 out.add(Problem.error(source, edgeField, "leaves an output the node does not have (" + e.output() + ")"));
             } else if (!used.add(source.id() + "\u0000" + e.output())) {
                 out.add(Problem.error(source, edgeField, "a second edge leaves the output " + e.output()));
