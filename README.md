@@ -786,7 +786,8 @@ messages from a prepaid wallet; a plan without a rate, and a customer without a 
 - **Top-up**: an order of kind `TOPUP` (₹100 to ₹10,00,000, `topUpAmount` in the quote request), asked for by the
   customer or raised by staff. GST is added and invoiced when staff record the payment; the amount before tax goes
   into the wallet. A top-up never draws on account credit, never goes stale and is not superseded by plan changes;
-  it needs a subscription (one that has run out will do, so a customer can top up before it renews).
+  it needs a subscription whose term charges messages (one that has run out will do, so a customer can top up
+  before it renews).
 - **What is charged**: every message the server sends to WhatsApp for the customer (console, campaign, automation,
   chatbot), at the rate of the term as it was sold. The charge is taken before the message goes to the
   phone. It is given back (`REVERSAL`) only when nothing was tried: the phone could not be reached, WhatsApp was not

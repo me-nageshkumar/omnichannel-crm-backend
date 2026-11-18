@@ -151,4 +151,24 @@ class WalletApiIT extends MoneyApiTestBase {
         GET("/api/my/billing/wallet/entries", manager).andExpect(status().isForbidden());
         GET("/api/my/billing/wallet", amToken).andExpect(status().isForbidden());
     }
+
+    @Test
+    void aChargeGivenBackOnALaterDayIsTakenOffTheDayItWasCharged() throws Exception {
+        wallets.credit(acme.getId(), new BigDecimal("1000"), usageless(WalletEntryType.TOPUP));
+        java.time.Instant charged = clock.instant();
+        wallets.debit(acme.getId(), new BigDecimal("0.25"), usage(ws.getId()));
+        wallets.debit(acme.getId(), new BigDecimal("0.25"), usage(ws.getId()));
+        clock.advance(java.time.Duration.ofDays(1));
+        WalletEntry back = usage(ws.getId());
+        back.setType(WalletEntryType.REVERSAL);
+        back.setUsageAt(charged);
+        wallets.credit(acme.getId(), new BigDecimal("0.25"), back);
+        tokens();
+
+        JsonNode days = json(GET(staff("/usage?days=7"), amToken).andExpect(status().isOk()));
+        assertThat(days).hasSize(1);
+        assertThat(days.at("/0/day").asString()).isEqualTo("2026-12-01");
+        assertThat(days.at("/0/messages").asInt()).isEqualTo(1);
+        assertThat(days.at("/0/amount").decimalValue()).isEqualByComparingTo("0.25");
+    }
 }

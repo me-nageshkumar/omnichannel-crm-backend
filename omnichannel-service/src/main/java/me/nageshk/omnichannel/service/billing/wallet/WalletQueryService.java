@@ -133,10 +133,11 @@ public class WalletQueryService {
         int at = Math.max(page, 0);
         Query mine = new Query(Criteria.where("customerId").is(customerId));
         long total = mongo.count(mine, WalletEntry.class);
+        // What the mover could not copy yet is still part of the ledger. It is read before the kept entries: one that
+        // is copied between the two reads is then seen in both and shown once, never in neither.
+        List<WalletEntry> waiting = new ArrayList<>(wallets.find(customerId).map(Wallet::getPending).orElse(List.of()));
         List<WalletEntry> kept = mongo.find(mine.with(Sort.by(Sort.Order.desc("at"), Sort.Order.desc("_id")))
                 .skip((long) at * PAGE_SIZE).limit(PAGE_SIZE), WalletEntry.class);
-        // what the mover could not copy yet is still part of the ledger
-        List<WalletEntry> waiting = new ArrayList<>(wallets.find(customerId).map(Wallet::getPending).orElse(List.of()));
         Set<String> keptIds = new HashSet<>();
         kept.forEach(e -> keptIds.add(e.getId()));
         waiting.removeIf(e -> keptIds.contains(e.getId()) || mongo.exists(new Query(Criteria.where("_id").is(e.getId())), WalletEntry.class));
@@ -164,9 +165,14 @@ public class WalletQueryService {
         List<Document> pipeline = List.of(
                 new Document("$match", new Document("customerId", customerId)
                         .append("type", new Document("$in", List.of(WalletEntryType.USAGE.name(), WalletEntryType.REVERSAL.name())))
+                        // an entry is never older than the charge it gives back, so this narrows by the index
+                        // without leaving out anything the next stage would keep
                         .append("at", new Document("$gte", from))),
+                // a charge given back counts against the day it was charged, not the day it came back
+                new Document("$set", new Document("when", new Document("$ifNull", List.of("$usageAt", "$at")))),
+                new Document("$match", new Document("when", new Document("$gte", from))),
                 new Document("$group", new Document("_id", new Document("day",
-                        new Document("$dateToString", new Document("format", "%Y-%m-%d").append("date", "$at").append("timezone", zone.getId())))
+                        new Document("$dateToString", new Document("format", "%Y-%m-%d").append("date", "$when").append("timezone", zone.getId())))
                         .append("source", "$source"))
                         .append("messages", new Document("$sum", new Document("$cond",
                                 List.of(new Document("$eq", List.of("$type", WalletEntryType.USAGE.name())), 1, -1))))
@@ -178,6 +184,8 @@ public class WalletQueryService {
             String source = key.getString("source");
             // entries are signed (a charge is negative): what the day cost is the sum turned round
             BigDecimal cost = d.get("amount", Decimal128.class).bigDecimalValue().negate();
+            // every message of the day from this source was given back: there is nothing to show
+            if (((Number) d.get("messages")).longValue() == 0 && cost.signum() == 0) continue;
             out.add(new UsageDay(key.getString("day"), source == null ? null : UsageSource.valueOf(source),
                     ((Number) d.get("messages")).longValue(), WalletService.scaled(cost)));
         }

@@ -32,15 +32,17 @@ public class UsageCharger {
 
     /** A charge that was taken, so it can be given back or noted on the message. */
     public record Charge(String customerId, String entryId, BigDecimal amount, UsageSource source, String workspaceId,
-            String ref) {}
+            String ref, java.time.Instant at) {}
 
     private final Entitlements entitlements;
     private final WorkspaceRepository workspaces;
     private final WalletService wallets;
     private final MongoTemplate mongo;
+    private final java.time.Clock clock;
 
     public UsageCharger(Entitlements entitlements, WorkspaceRepository workspaces, WalletService wallets,
-            MongoTemplate mongo) {
+            MongoTemplate mongo, java.time.Clock clock) {
+        this.clock = clock;
         this.entitlements = entitlements;
         this.workspaces = workspaces;
         this.wallets = wallets;
@@ -66,8 +68,11 @@ public class UsageCharger {
         draft.setWorkspaceId(workspaceId);
         draft.setRef(actor.campaignId());
         draft.setBy(actor.userId());
+        // the charge's own time, kept so that giving it back takes it off the very day it went on
+        java.time.Instant at = java.time.Instant.now(clock);
+        draft.setAt(at);
         String entryId = wallets.debit(customerId, rate, draft);
-        return new Charge(customerId, entryId, rate, source, workspaceId, actor.campaignId());
+        return new Charge(customerId, entryId, rate, source, workspaceId, actor.campaignId(), at);
     }
 
     /** Returns a charge for a message that was not sent. Never throws: the send's own failure is what matters. */
@@ -81,6 +86,7 @@ public class UsageCharger {
             draft.setWorkspaceId(charge.workspaceId());
             draft.setRef(charge.entryId());
             draft.setNote(why);
+            draft.setUsageAt(charge.at());
             wallets.credit(charge.customerId(), charge.amount(), draft);
         } catch (RuntimeException e) {
             log.error("could not give back charge {} of customer {} ({})", charge.entryId(), charge.customerId(),

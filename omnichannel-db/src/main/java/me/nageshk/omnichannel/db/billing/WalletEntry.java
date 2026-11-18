@@ -44,4 +44,6 @@ public class WalletEntry {
     private String note;
     private String by;
     private Instant at;
+    /** A reversal: when the charge it gives back was taken, so usage is counted on the day of the charge. */
+    private Instant usageAt;
 }

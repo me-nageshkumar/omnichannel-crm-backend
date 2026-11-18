@@ -38,6 +38,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class WalletService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(WalletService.class);
+
     public static final int SCALE = 4;
     private static final Decimal128 ZERO = new Decimal128(new BigDecimal("0.0000"));
 
@@ -126,8 +128,15 @@ public class WalletService {
                 throw notEnough("The wallet holds less than that");
             }
         }
-        audit.record(BillingChange.SUBSCRIPTION, customerId, "WALLET_ADJUSTED",
-                "Wallet adjusted by " + scaled(amount).toPlainString() + " (" + why + ")", null, null, by);
+        try {
+            audit.record(BillingChange.SUBSCRIPTION, customerId, "WALLET_ADJUSTED",
+                    "Wallet adjusted by " + scaled(amount).toPlainString() + " (" + why + ")", null, null, by);
+        } catch (RuntimeException e) {
+            // The money has moved and the ledger says so, with the note and who did it. Failing now would invite
+            // a second try and a second adjustment.
+            log.error("wallet of customer {} was adjusted by {} but its history line could not be written",
+                    customerId, scaled(amount).toPlainString(), e);
+        }
     }
 
     /** Sets, or with null removes, the balance below which the customer is warned. */
@@ -174,7 +183,9 @@ public class WalletService {
                 .append("ref", literal(draft.getRef()))
                 .append("note", literal(draft.getNote()))
                 .append("by", literal(draft.getBy()))
-                .append("at", Date.from(clock.instant()));
+                // a caller that must know the entry's time to the instant (a charge) names it
+                .append("at", Date.from(draft.getAt() != null ? draft.getAt() : clock.instant()));
+        if (draft.getUsageAt() != null) entry.append("usageAt", Date.from(draft.getUsageAt()));
         Document second = new Document("pending",
                 new Document("$concatArrays", List.of(new Document("$ifNull", List.of("$pending", new ArrayList<>())), List.of(entry))))
                 .append("version", new Document("$add", List.of(new Document("$ifNull", List.of("$version", 0L)), 1L)));

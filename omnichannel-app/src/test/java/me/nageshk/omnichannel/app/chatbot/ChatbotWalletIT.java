@@ -97,6 +97,9 @@ class ChatbotWalletIT extends ChatbotTestBase {
             r.settled().get(5, TimeUnit.SECONDS);
             assertThat(run(r.run().getId()).getStatus()).isEqualTo(ChatbotRunStatus.WAITING);
             assertThat(d.requests("sendMessage")).hasSize(1);
+            // the question the chatbot sent was paid for
+            assertThat(mongo.findAll(me.nageshk.omnichannel.db.billing.Wallet.class)).singleElement()
+                    .matches(w -> w.getBalance().signum() == 0);
 
             assertThat(runs.answer(TaskAnswer.whatsApp(chat.getId(), reply(chat, "Rahul")))).isTrue();
             await(() -> !run(r.run().getId()).getStatus().active());

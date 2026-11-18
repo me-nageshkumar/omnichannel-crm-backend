@@ -230,4 +230,40 @@ class SendChargingIT extends InboxApiTestBase {
         assertThat(balance()).isEqualByComparingTo("999.75");
         assertThat(ledger().stream().filter(e -> e.getType() == WalletEntryType.REVERSAL)).hasSize(1);
     }
+
+    @Test
+    void aPhoneThatDropsOffMidSendLeavesTheMessageCharged() throws Exception {
+        plan("0.25");
+        billing.wallet(acme.getId(), "1000.0000");
+        WaWebChat chat = chat("Aarav", "919812345678", 5);
+        FakeDevice device = device();
+        CompletableFuture<ResponseEntity<JsonNode>> http = CompletableFuture.supplyAsync(() -> {
+            try {
+                return post(chat, Map.of("text", "hello"));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        device.next();
+        // the message had left the server; whether the phone sent it before it dropped is not known
+        device.close();
+        assertThat(http.get(10, TimeUnit.SECONDS).getStatusCode().is2xxSuccessful()).isFalse();
+        assertThat(balance()).isEqualByComparingTo("999.75");
+        assertThat(ledger()).singleElement().matches(e -> e.getType() == WalletEntryType.USAGE);
+    }
+
+    @Test
+    void aChargeGivenBackRemembersWhenItWasCharged() throws Exception {
+        plan("0.25");
+        billing.wallet(acme.getId(), "1000.0000");
+        WaWebChat chat = chat("Aarav", "919812345678", 5);
+        try (FakeDevice device = device()) {
+            send(device, chat, "hello", req -> Envelope.errorResponse(req.id(), "SEND_FAILED", "no"));
+        }
+        WalletEntry back = ledger().stream().filter(e -> e.getType() == WalletEntryType.REVERSAL).findFirst().orElseThrow();
+        WalletEntry charge = ledger().stream().filter(e -> e.getType() == WalletEntryType.USAGE).findFirst().orElseThrow();
+        assertThat(back.getUsageAt()).isNotNull();
+        // to the instant: a charge taken at midnight and given back must come off the same day it went on
+        assertThat(back.getUsageAt()).isEqualTo(charge.getAt());
+    }
 }

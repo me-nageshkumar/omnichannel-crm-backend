@@ -243,13 +243,16 @@ and 3 (the usage wallet and per-message charges, 2026-11-18) are built.
 - Wallet adjustments carry no tax and are not refundable; only what top-ups put in and usage has not spent is.
   Messages are taken to spend top-up money first, so goodwill added by staff is what is left last.
 - A wallet refund interrupted before its money left the wallet is cancelled, not finished, if messages have since
-  used that money; its line in the subscription's history stays.
+  used that money.
 - A top-up's GST is invoiced when it is paid, not as the balance is used. Confirm this treatment of an advance with
   an accountant before going live.
-- The wallet survives a cancelled or expired plan; the balance waits. A top-up needs only a subscription, and is
-  accepted on a plan that charges no messages if asked for through the API (the console does not offer it).
+- The wallet survives a cancelled or expired plan; the balance waits. A top-up needs a subscription whose term
+  charges messages; a plan's new rate reaches a customer only with a new term (a renewal, or a plan change to the
+  same plan).
 - The raw bridge calls for a super admin (`/api/phone-numbers/{id}/bridge/messages`, `/rpc`) do not go through
   the plan or the wallet: what staff send with them is not charged.
+- Every charge copies its ledger entry out at once (three small writes beside the debit); at high volume this is
+  the first thing to leave to the ticker.
 - Usage totals are by day in the billing zone, for at most 90 days back.
 - A campaign paused for an empty wallet is not resumed by a top-up; a person resumes it.
 - The low-wallet flag is read on `GET /api/users/me`; there is no e-mail or message when the wallet runs low.
