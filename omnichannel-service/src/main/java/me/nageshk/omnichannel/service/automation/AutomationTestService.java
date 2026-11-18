@@ -618,7 +618,7 @@ public class AutomationTestService {
     }
 
     private static TestView.NumberRef ref(PhoneNumber n) {
-        return new TestView.NumberRef(n.getId(), n.getNumber(), n.getLabel());
+        return new TestView.NumberRef(n.getId(), n.shownNumber(), n.getLabel());
     }
 
     private AutomationTest require(String workspaceId, String testId) {

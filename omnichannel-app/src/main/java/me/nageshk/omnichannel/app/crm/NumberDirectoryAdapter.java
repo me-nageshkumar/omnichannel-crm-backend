@@ -30,7 +30,7 @@ class NumberDirectoryAdapter implements NumberDirectory {
     @Override
     public List<PlatformNumber> numbers(String workspaceId) {
         return phoneNumbers.findByWorkspaceIdOrderByNumber(workspaceId).stream()
-                .map(n -> new PlatformNumber(n.getId(), n.getNumber(), n.getLabel())).toList();
+                .map(n -> new PlatformNumber(n.getId(), n.shownNumber(), n.getLabel())).toList();
     }
 
     @Override

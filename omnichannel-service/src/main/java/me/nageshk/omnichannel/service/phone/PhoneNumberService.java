@@ -9,9 +9,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import me.nageshk.omnichannel.common.api.CodedException;
 import me.nageshk.omnichannel.common.api.DeviceDisabledException;
 import me.nageshk.omnichannel.common.api.DuplicateException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
@@ -38,8 +40,11 @@ import me.nageshk.omnichannel.security.phone.DeviceAccessChanged;
 import me.nageshk.omnichannel.security.phone.Secrets;
 import me.nageshk.omnichannel.service.inbox.InboxCleanup;
 import me.nageshk.omnichannel.service.phone.PhoneNumberStatus.Status;
+import me.nageshk.omnichannel.service.phone.move.PhoneNumberMove;
+import me.nageshk.omnichannel.service.phone.move.PhoneNumberMoveRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -66,13 +71,15 @@ public class PhoneNumberService {
     private final AccessService access;
     private final InboxCleanup inboxCleanup;
     private final TeamRepository teams;
+    private final PhoneNumberMoveRepository moves;
     private final Clock clock;
     private final Limits limits;
 
     public PhoneNumberService(PhoneNumberRepository numbers, WorkspaceRepository workspaces,
             CustomerRepository customers, Enablement enablement, LiveDevices live, ApplicationEventPublisher events,
             ConnectCodeRepository codes, AccessService access, InboxCleanup inboxCleanup, TeamRepository teams,
-            Clock clock, Limits limits) {
+            Clock clock, Limits limits, PhoneNumberMoveRepository moves) {
+        this.moves = moves;
         this.limits = limits;
         this.teams = teams;
         this.codes = codes;
@@ -138,6 +145,7 @@ public class PhoneNumberService {
      * Publishes {@link PhoneNumberEvents.TeamChanged} only when the owner actually changed.
      */
     public PhoneNumber setTeam(PhoneNumber n, String teamId) {
+        refuseArchive(n);
         String wanted = teamId == null || teamId.isBlank() ? null : teamId;
         if (wanted != null && teams.findByIdAndWorkspaceId(wanted, n.getWorkspaceId()).isEmpty()) {
             throw new ValidationException("teamId", "unknown team");
@@ -150,7 +158,12 @@ public class PhoneNumberService {
         return saved;
     }
 
+    /** @throws CodedException 409 {@code number_moving} while the number moves: finish or cancel the move first */
     public void delete(PhoneNumber n) {
+        if (n.getMovingSince() != null) {
+            throw new CodedException(HttpStatus.CONFLICT, "number_moving", null,
+                    "This number is moving to another brand: finish or cancel the move first.");
+        }
         inboxCleanup.deleteForNumber(n.getId());
         codes.deleteByPhoneNumberId(n.getId());
         numbers.delete(n);
@@ -158,6 +171,7 @@ public class PhoneNumberService {
     }
 
     public PhoneNumber setEnabled(PhoneNumber n, boolean enabled, AuthenticatedUser me, EnableLevel level) {
+        if (enabled) refuseArchive(n);
         boolean before = n.getDisabled() == null;
         if (enabled) {
             if (before) return n;
@@ -180,6 +194,7 @@ public class PhoneNumberService {
      * @throws DeviceDisabledException when the number, its brand or its customer is disabled
      */
     public ConnectCodeView issueConnectCode(PhoneNumber n) {
+        refuseArchive(n);
         if (n.getDisabled() != null || !access.isWorkspaceUsable(n.getWorkspaceId())) {
             throw new DeviceDisabledException();
         }
@@ -194,6 +209,7 @@ public class PhoneNumberService {
     }
 
     public PhoneNumber revokeDevice(PhoneNumber n) {
+        refuseArchive(n);
         n.setDeviceKeyHash(null);
         n.setDeviceKeyId(null);
         n.setDeviceKeyIssuedAt(null);
@@ -206,7 +222,7 @@ public class PhoneNumberService {
         Workspace w = workspaces.findById(n.getWorkspaceId()).orElse(null);
         Customer c = customers.findById(n.getCustomerId()).orElse(null);
         Team t = n.getTeamId() == null ? null : teams.findById(n.getTeamId()).orElse(null);
-        return view(n, w, c, t);
+        return view(n, w, c, t, moves.findByUnfinishedOf(n.getId()).isPresent());
     }
 
     public List<PhoneNumberView> views(List<PhoneNumber> list) {
@@ -216,8 +232,10 @@ public class PhoneNumberService {
                 .stream().collect(Collectors.toMap(Customer::getId, Function.identity()));
         Map<String, Team> ts = teams.findAllById(list.stream().map(PhoneNumber::getTeamId).filter(Objects::nonNull)
                 .distinct().toList()).stream().collect(Collectors.toMap(Team::getId, Function.identity()));
+        Set<String> unfinished = moves.findByUnfinishedOfNotNull().stream().map(PhoneNumberMove::getPhoneNumberId)
+                .collect(Collectors.toSet());
         return list.stream().map(n -> view(n, ws.get(n.getWorkspaceId()), cs.get(n.getCustomerId()),
-                n.getTeamId() == null ? null : ts.get(n.getTeamId()))).toList();
+                n.getTeamId() == null ? null : ts.get(n.getTeamId()), unfinished.contains(n.getId()))).toList();
     }
 
     /**
@@ -229,23 +247,32 @@ public class PhoneNumberService {
         String needle = q == null ? "" : q.trim().toLowerCase(Locale.ROOT);
         List<PhoneNumberView> all = new ArrayList<>(views(numbers.findAll()));
         all.removeIf(v -> wanted != null && v.status() != wanted);
-        all.removeIf(v -> !needle.isEmpty() && !(v.number().contains(needle)
+        all.removeIf(v -> !needle.isEmpty() && !(contains(v.number(), needle)
                 || contains(v.customerName(), needle) || contains(v.workspaceName(), needle)));
         all.sort(Comparator.comparing((PhoneNumberView v) -> String.valueOf(v.customerName()), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(v -> String.valueOf(v.workspaceName()), String.CASE_INSENSITIVE_ORDER)
-                .thenComparing(PhoneNumberView::number));
+                .thenComparing(v -> String.valueOf(v.number())));
         int p = Math.max(page, 0);
         List<PhoneNumberView> items = all.stream().skip((long) p * PAGE_SIZE).limit(PAGE_SIZE).toList();
         return new PhoneNumberView.Page(items, all.size(), p);
     }
 
-    private PhoneNumberView view(PhoneNumber n, Workspace w, Customer c, Team t) {
+    private PhoneNumberView view(PhoneNumber n, Workspace w, Customer c, Team t, boolean moveUnfinished) {
         PhoneNumberStatus s = PhoneNumberStatus.of(n, w, c, live.stateOf(n.getId()));
-        return new PhoneNumberView(n.getId(), n.getNumber(), n.getLabel(), n.getConnectionType(), n.getCustomerId(),
+        return new PhoneNumberView(n.getId(), n.shownNumber(), n.getLabel(), n.getConnectionType(), n.getCustomerId(),
                 c == null ? null : c.getName(), n.getWorkspaceId(), w == null ? null : w.getName(),
                 s.status(), n.getDisabled(), s.disabledBecause(), n.getLastConnectedAt(), n.getLastSeenAt(),
                 n.getLastWrongNumber(), n.getLastWrongNumberAt(), n.getDeviceKeyHash() != null, n.getCreationTime(),
-                t == null ? null : new PhoneNumberView.TeamRef(t.getId(), t.getName()), null);
+                t == null ? null : new PhoneNumberView.TeamRef(t.getId(), t.getName()), null, n.getArchiveOf(),
+                n.getArchivedAt(), moveUnfinished);
+    }
+
+    /** An archive only keeps the old brand's chats: it cannot be enabled, connected or given a team. */
+    private static void refuseArchive(PhoneNumber n) {
+        if (n.getArchiveOf() != null) {
+            throw new CodedException(HttpStatus.CONFLICT, "number_archived", null,
+                    "This number moved to another brand; this archive only keeps the old chats.");
+        }
     }
 
     private void publish(PhoneNumber n, Reason reason) {

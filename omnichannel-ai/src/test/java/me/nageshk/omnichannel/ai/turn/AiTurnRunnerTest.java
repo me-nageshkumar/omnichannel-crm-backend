@@ -114,7 +114,8 @@ class AiTurnRunnerTest {
     private AiTurnRunner runner(int maxToolRounds) {
         AiProperties props = new AiProperties(false, Duration.ofSeconds(2), 8, Duration.ofSeconds(60),
                 Duration.ofSeconds(120), 2, maxToolRounds, Duration.ofSeconds(10), new AiProperties.OpenAi("x"),
-                new AiProperties.Mcp(Duration.ofSeconds(20), 65536, Duration.ofMinutes(5)));
+                new AiProperties.Mcp(Duration.ofSeconds(20), 65536, Duration.ofMinutes(5)),
+                AiProperties.Knowledge.defaults());
         return new AiTurnRunner(profiles, connections, mcp, conversations, calls, claims, props, clock, sleeps::add);
     }
 

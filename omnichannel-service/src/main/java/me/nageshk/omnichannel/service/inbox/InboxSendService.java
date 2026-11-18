@@ -413,6 +413,7 @@ public class InboxSendService {
 
     private MessageView afterSend(SendActor actor, WaWebChat sent, Outgoing out, JsonNode result,
             String typedPhone) {
+        devices.requireStillIn(sent.getWorkspaceId(), sent.getPhoneNumberId());
         Instant now = clock.instant();
         MessageEcho echo = echoOf(sent, result, now, typedPhone);
         String waMessageId = echo == null ? "" : echo.id();

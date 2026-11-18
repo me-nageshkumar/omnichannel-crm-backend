@@ -40,6 +40,11 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
     public static final int CLOSE_UNAUTHORIZED = 4401;
     public static final int CLOSE_REPLACED = 4409;
     public static final int CLOSE_WRONG_NUMBER = 4412;
+    /**
+     * The number is being moved to another brand. Not 4401 (two of those stop the extension for good) and not 4403
+     * (it waits five minutes): an unknown code makes the extension reconnect with backoff, which is what a move needs.
+     */
+    public static final int CLOSE_MOVING = 4503;
     /** The largest frame an authenticated device may send: 16 MB of media as base64, plus the envelope. */
     /** After this many failed attempts to store one event it is acknowledged anyway. */
     static final int MAX_INGEST_ATTEMPTS = 3;
@@ -140,7 +145,9 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         }
         Optional<DevicePrincipal> principal = keys.authenticate(frame.token());
         if (principal.isEmpty()) {
-            if (keys.isDisabledKey(frame.token())) {
+            if (keys.isMovingKey(frame.token())) {
+                closeQuietly(session, CLOSE_MOVING, "number is moving");
+            } else if (keys.isDisabledKey(frame.token())) {
                 closeQuietly(session, DeviceDisconnector.CLOSE_DISABLED, DeviceDisconnector.DISABLED_REASON);
             } else {
                 closeQuietly(session, CLOSE_UNAUTHORIZED, "invalid device key");
@@ -158,7 +165,8 @@ public class BridgeWebSocketHandler extends TextWebSocketHandler {
         });
         // a disable committed between the key check and registering was not seen by DeviceDisconnector
         if (keys.authenticate(frame.token()).isEmpty()) {
-            device.close(DeviceDisconnector.CLOSE_DISABLED, DeviceDisconnector.DISABLED_REASON);
+            if (keys.isMovingKey(frame.token())) device.close(CLOSE_MOVING, "number is moving");
+            else device.close(DeviceDisconnector.CLOSE_DISABLED, DeviceDisconnector.DISABLED_REASON);
             return;
         }
         ObjectNode ok = mapper.createObjectNode().put("ok", true)

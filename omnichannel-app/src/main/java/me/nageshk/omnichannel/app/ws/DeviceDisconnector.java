@@ -33,6 +33,7 @@ public class DeviceDisconnector {
             switch (change.reason()) {
                 case DISABLED -> d.close(CLOSE_DISABLED, DISABLED_REASON);
                 case REVOKED, DELETED -> d.close(CLOSE_REVOKED, REVOKED_REASON);
+                case MOVED -> d.close(BridgeWebSocketHandler.CLOSE_MOVING, "number is moving");
                 case REPLACED -> d.close(BridgeWebSocketHandler.CLOSE_REPLACED, "replaced by a new device");
             }
         }

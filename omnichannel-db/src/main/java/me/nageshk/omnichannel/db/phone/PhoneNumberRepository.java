@@ -14,6 +14,8 @@ public interface PhoneNumberRepository extends MongoRepository<PhoneNumber, Stri
 
     Optional<PhoneNumber> findByDeviceKeyHash(String deviceKeyHash);
 
+    List<PhoneNumber> findByArchiveOf(String archiveOf);
+
     boolean existsByNumber(String number);
     List<PhoneNumber> findByWorkspaceIdAndTeamIdIn(String workspaceId, Collection<String> teamIds);
 }

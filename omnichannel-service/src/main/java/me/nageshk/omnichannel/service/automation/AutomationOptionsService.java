@@ -51,7 +51,7 @@ public class AutomationOptionsService {
         var numberOptions = numbers.findByWorkspaceIdOrderByNumber(workspaceId).stream().map(n -> {
             AutomationRef owner = brandTeams.stream().filter(t -> t.getId().equals(n.getTeamId())).findFirst()
                     .map(t -> new AutomationRef(t.getId(), t.getName())).orElse(null);
-            return new OptionsView.NumberOption(n.getId(), n.getNumber(), n.getLabel(), owner);
+            return new OptionsView.NumberOption(n.getId(), n.shownNumber(), n.getLabel(), owner);
         }).toList();
         var agents = userAdmin.withAccessTo(w.getCustomerId(), workspaceId).stream().filter(User::isActive)
                 .map(u -> new OptionsView.AgentOption(u.getId(), u.getName(),

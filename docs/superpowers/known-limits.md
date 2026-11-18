@@ -309,3 +309,67 @@ Spec `docs/superpowers/specs/2026-11-18-link-addresses-design.md`.
   brand subdomains in a week could hit it.
 - The check fetches the address from this server; on a network that cannot reach its own public address (some NAT
   set-ups) a working address reads as failing.
+
+## Moving a number: when Retry keeps failing
+
+Spec `docs/superpowers/specs/2026-11-18-knowledge-bases-and-number-move-design.md` §7. Take a `mongodump` of the
+database before moving a real customer's number; a move that stops half way is then repaired from a known state.
+
+While a move is unfinished the number has `movingSince` set and its device is refused with 4503 (the extension keeps
+retrying). The move's record is in `phoneNumberMoves` (`unfinishedOf` = the number id, `step` = the last step done,
+`error` = why it stopped). What points where, per recorded step:
+
+- **STARTED, OFFLINE, RUNS_ENDED with no `sourceArchiveId`**: nothing re-pointed. Chatbot runs on the number are stopped
+  ("number moved") and history imports cancelled; they stay so. Use **Cancel**
+  (`POST /api/phone-numbers/{id}/move/cancel`): the number stays in its brand and its device connects again. Anything
+  else answers 409 `number_move_too_far`.
+- **RUNS_ENDED with `sourceArchiveId` set**: step 3 stopped inside: the archive may exist and some records may be on it.
+  Retry finishes it; to undo, do as at ARCHIVED (the archive row may be missing: then skip deleting it).
+- **ARCHIVED**: the archive `sourceArchiveId` (a `phoneNumbers` row with `archiveOf` = the number id, workspace = the
+  source brand) holds the old brand's records; the number is still in the source brand and moving. Retry runs steps 4
+  and 5.
+- **MERGED**: as ARCHIVED, and the target brand's old archive (`mergedArchiveId`, if any) was merged into the number and
+  deleted. Only step 5 is left: finish it rather than undo.
+- A step can stop part way through a re-point (some collections done). Re-pointing is safe to run again.
+
+By hand in mongosh (`real` = the number id, `arch` = the move's `sourceArchiveId`, `moveId` = the move's id). The
+re-point below is what the code does (`NumberRecords.repoint` and `CrmNumberRecordsAdapter`):
+
+```js
+function repoint(from, to) {
+  const bump = {$inc: {version: NumberLong(1)}};
+  for (const c of ["waWebChats", "waWebHistoryImports", "chatbotRuns", "campaignSenders"])
+    db[c].updateMany({phoneNumberId: from}, {$set: {phoneNumberId: to}, ...bump});
+  for (const c of ["waWebMessages", "waWebHistoryImportChats", "messagePages", "crmActivities", "crmNotes", "crmTasks"])
+    db[c].updateMany({phoneNumberId: from}, {$set: {phoneNumberId: to}});
+  db.automationEvents.updateMany({"data.number.id": from}, {$set: {"data.number.id": to}});
+  db.campaigns.updateMany({senderIds: from}, {$set: {"senderIds.$": to}, ...bump});
+  db.campaignRecipients.updateMany({senderId: from}, {$set: {senderId: to}});
+  db.campaignRecipients.updateMany({preferredSenderId: from}, {$set: {preferredSenderId: to}});
+  db.channelWebhookEvents.updateMany({"event.entry.changes.value.metadata.phone_number_id": from},
+    {$set: {"event.entry.$[e].changes.$[c].value.metadata.phone_number_id": to}},
+    {arrayFilters: [{"e.changes.value.metadata.phone_number_id": from}, {"c.value.metadata.phone_number_id": from}]});
+  db.getCollection("chatMedia.files").updateMany({"metadata.phoneNumberId": from}, {$set: {"metadata.phoneNumberId": to}});
+  for (const f of ["channel.phoneNumberId", "origin.phoneNumberId"])
+    db.crmContacts.updateMany({[f]: from}, {$set: {[f]: to}, ...bump});
+  for (const side of ["fromPhoneNumberId", "toPhoneNumberId"])
+    db.crmContacts.updateMany({["channelHistory." + side]: from}, {$set: {["channelHistory.$[h]." + side]: to}, ...bump},
+      {arrayFilters: [{["h." + side]: from}]});
+  db.crmDeals.updateMany({"channel.phoneNumberId": from}, {$set: {"channel.phoneNumberId": to}, ...bump});
+}
+```
+
+- **Undo at ARCHIVED** (nothing merged yet): `repoint(arch, real)`; `db.phoneNumbers.deleteOne({_id: ObjectId(arch)})`
+  (or the string id, as stored); `db.phoneNumbers.updateOne({_id: ObjectId(real)}, {$unset: {movingSince: 1},
+  $inc: {version: NumberLong(1)}})`; then mark the move finished:
+  `db.phoneNumberMoves.updateOne({_id: ObjectId(moveId)}, {$unset: {unfinishedOf: 1}, $set: {finishedAt: new Date(),
+  error: "Undone by hand"}})`.
+- **Finish at ARCHIVED**: if the target brand has an archive of the number (`archiveOf` = real, workspace = target),
+  `repoint(thatArchive, real)` and delete it; then do the MERGED finish.
+- **Finish at MERGED**: `db.phoneNumbers.updateOne({_id: ObjectId(real)}, {$set: {workspaceId: "<target brand id>",
+  movedInAt: new Date()}, $unset: {teamId: 1, movingSince: 1}, $inc: {version: NumberLong(1)}})`; then
+  `db.phoneNumberMoves.updateOne({_id: ObjectId(moveId)}, {$set: {step: "DONE", finishedAt: new Date()},
+  $unset: {unfinishedOf: 1, error: 1}})`.
+
+The device reconnects by itself once `movingSince` is gone. Chats and contacts read before the edit show on the next
+reload of the console.

@@ -91,8 +91,14 @@ public class DeviceKeys {
         return numbers.findByDeviceKeyHash(Secrets.sha256(deviceKey)).filter(n -> !usable(n)).isPresent();
     }
 
+    /** Whether a refused key belongs to a number that is being moved to another brand (try again later). */
+    public boolean isMovingKey(String deviceKey) {
+        if (deviceKey == null || !deviceKey.startsWith(Secrets.KEY_PREFIX)) return false;
+        return numbers.findByDeviceKeyHash(Secrets.sha256(deviceKey)).filter(n -> n.getMovingSince() != null).isPresent();
+    }
+
     boolean usable(PhoneNumber n) {
-        return n.getDisabled() == null && access.isWorkspaceUsable(n.getWorkspaceId());
+        return n.getDisabled() == null && n.getMovingSince() == null && n.getArchiveOf() == null && access.isWorkspaceUsable(n.getWorkspaceId());
     }
 
     private String brandName(PhoneNumber n) {

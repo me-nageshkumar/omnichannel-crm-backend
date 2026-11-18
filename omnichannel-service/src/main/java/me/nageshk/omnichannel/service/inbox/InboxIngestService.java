@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 import me.nageshk.omnichannel.common.channel.ChannelContext;
+import me.nageshk.omnichannel.db.phone.PhoneNumber;
+import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.MessageEcho;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.PollVote;
@@ -61,13 +63,19 @@ public class InboxIngestService {
     /** The number a history import stores messages for. */
     /**
      * {@code historyChatId}, the history import item doing the import, is noted on a chat this creates, so the import
-     * can tell which chat it created even when a crash lost its own note.
+     * can tell which chat it created even when a crash lost its own note. {@code notBefore}, when set, is the instant the
+     * number moved to this brand: older messages belong to the brand it left and are not imported.
      */
     public record ImportContext(String customerId, String workspaceId, String phoneNumberId, String chatName,
-            String historyChatId) {
+            String historyChatId, Instant notBefore) {
+
+        public ImportContext(String customerId, String workspaceId, String phoneNumberId, String chatName,
+                String historyChatId) {
+            this(customerId, workspaceId, phoneNumberId, chatName, historyChatId, null);
+        }
 
         public ImportContext(String customerId, String workspaceId, String phoneNumberId) {
-            this(customerId, workspaceId, phoneNumberId, null, null);
+            this(customerId, workspaceId, phoneNumberId, null, null, null);
         }
     }
 
@@ -92,12 +100,15 @@ public class InboxIngestService {
     private final WaWebChatRepository chats;
     private final WaWebMessageRepository messages;
     private final WaWebChatActionRepository actions;
+    private final PhoneNumberRepository numbers;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
 
     public InboxIngestService(ContactService contacts, WaWebChatRepository chats, WaWebMessageRepository messages,
-            WaWebChatActionRepository actions, ApplicationEventPublisher publisher, Clock clock) {
+            WaWebChatActionRepository actions, PhoneNumberRepository numbers, ApplicationEventPublisher publisher,
+            Clock clock) {
         this.contacts = contacts;
+        this.numbers = numbers;
         this.chats = chats;
         this.messages = messages;
         this.actions = actions;
@@ -173,6 +184,7 @@ public class InboxIngestService {
     }
 
     private Optional<Ingested> ingest(ChannelContext ctx, Incoming in, String field) {
+        if (!writable(ctx.channelAccountId(), ctx.workspaceId(), in.waMessageId())) return Optional.empty();
         Progress progress = new Progress();
         try {
             return publish(retrying(() -> storeMessage(ctx, in, progress)));
@@ -212,11 +224,26 @@ public class InboxIngestService {
         if (!MessageFields.isPersonChat(in.remote()) || in.waMessageId() == null || in.waMessageId().isEmpty()) {
             return SKIPPED;
         }
+        if (!writable(ctx.phoneNumberId(), ctx.workspaceId(), in.waMessageId())) return SKIPPED;
         try {
             return retrying(() -> storeImported(ctx, in));
         } catch (DataAccessException e) {
             throw new IngestionFailedException("history_import", in.waMessageId(), e);
         }
+    }
+
+    /**
+     * False, with a warning, when the number is moving or is now another brand's: the event was read with the brand
+     * the number had before a move (a frame already in hand when the device was closed, a history page already
+     * fetched), and a chat it created would be the old brand's on the number in its new one (spec §7.2). A number not
+     * stored is let through, as before.
+     */
+    private boolean writable(String phoneNumberId, String workspaceId, String waMessageId) {
+        PhoneNumber n = phoneNumberId == null ? null : numbers.findById(phoneNumberId).orElse(null);
+        if (n == null || n.takesWritesOf(workspaceId)) return true;
+        log.warn("[{}] dropping message {} of brand {}: the number is {}", phoneNumberId, waMessageId, workspaceId,
+                n.getMovingSince() != null ? "moving to another brand" : "in brand " + n.getWorkspaceId() + " now");
+        return false;
     }
 
     /**
@@ -473,9 +500,20 @@ public class InboxIngestService {
         chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
     }
 
+    /**
+     * The message on the number; when it has none, the one on an archive of the number: a message sent before the number
+     * moved to another brand still gets its acks and votes (spec §7.2).
+     */
+    private WaWebMessage findMessage(String phoneNumberId, String waMessageId) {
+        Optional<WaWebMessage> own = messages.findByPhoneNumberIdAndWaMessageId(phoneNumberId, waMessageId);
+        if (own.isPresent()) return own.get();
+        List<String> archives = numbers.findByArchiveOf(phoneNumberId).stream().map(PhoneNumber::getId).toList();
+        return archives.isEmpty() ? null
+                : messages.findFirstByPhoneNumberIdInAndWaMessageId(archives, waMessageId).orElse(null);
+    }
+
     private Optional<Stored> storeStatus(ChannelContext ctx, Status status) {
-        WaWebMessage message = messages.findByPhoneNumberIdAndWaMessageId(ctx.channelAccountId(), status.id())
-                .orElse(null);
+        WaWebMessage message = findMessage(ctx.channelAccountId(), status.id());
         WaWebChat chat = message == null ? null : chats.findById(message.getChatId()).orElse(null);
         if (chat == null) {
             log.debug("dropping status for unknown message {} of {}", status.id(), ctx.channelAccountId());
@@ -499,7 +537,7 @@ public class InboxIngestService {
 
     private Optional<Ingested> storeVote(ChannelContext ctx, String chatId, String pollId,
             WaWebMessage.PollVote vote) {
-        WaWebMessage poll = messages.findByPhoneNumberIdAndWaMessageId(ctx.channelAccountId(), pollId).orElse(null);
+        WaWebMessage poll = findMessage(ctx.channelAccountId(), pollId);
         WaWebChat chat = poll == null ? null : chats.findById(poll.getChatId()).orElse(null);
         if (chat == null) {
             log.debug("dropping vote on unknown poll {} in {} of {}", pollId, chatId, ctx.channelAccountId());

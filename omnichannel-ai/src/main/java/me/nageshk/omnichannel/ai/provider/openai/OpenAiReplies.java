@@ -58,7 +58,12 @@ public final class OpenAiReplies {
         Map<String, Object> state = id == null ? Map.of() : Map.of(OpenAiRequests.STATE_KEY, id);
         String incomplete = "incomplete".equals(status)
                 ? root.path("incomplete_details").path("reason").asString("unknown") : null;
-        return new ProviderReply(text.toString(), calls, state, usage, id, usedHosted, incomplete, refused);
+        return new ProviderReply(stripCitations(text.toString()), calls, state, usage, id, usedHosted, incomplete, refused);
+    }
+
+    /** File-search replies carry markers like 【4:0†fees.md】 that mean nothing to a customer. */
+    private static String stripCitations(String s) {
+        return s.replaceAll("【[^】]*】", "");
     }
 
     /** Only the code goes into the message: the provider's wording stays out of the run. */

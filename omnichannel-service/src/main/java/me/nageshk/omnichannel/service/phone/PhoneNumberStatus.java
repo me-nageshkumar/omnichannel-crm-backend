@@ -9,11 +9,12 @@ import me.nageshk.omnichannel.service.phone.LiveDevices.LiveState;
 /** The status a number shows, computed from its record, its brand, its customer and the live connection. */
 public record PhoneNumberStatus(Status status, DisabledBecause disabledBecause) {
 
-    public enum Status { DISABLED, NOT_CONNECTED_YET, WAITING_FOR_LOGIN, CONNECTED, WRONG_NUMBER, DISCONNECTED }
+    public enum Status { ARCHIVED, DISABLED, NOT_CONNECTED_YET, WAITING_FOR_LOGIN, CONNECTED, WRONG_NUMBER, DISCONNECTED }
 
     public enum DisabledBecause { NUMBER, BRAND, CUSTOMER }
 
     public static PhoneNumberStatus of(PhoneNumber n, Workspace brand, Customer customer, Optional<LiveState> live) {
+        if (n.getArchiveOf() != null) return new PhoneNumberStatus(Status.ARCHIVED, null);
         if (customer == null || !customer.isActive()) return disabled(DisabledBecause.CUSTOMER);
         if (brand == null || brand.getDisabled() != null) return disabled(DisabledBecause.BRAND);
         if (n.getDisabled() != null) return disabled(DisabledBecause.NUMBER);

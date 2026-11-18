@@ -9,6 +9,10 @@ public interface WaWebMessageRepository extends MongoRepository<WaWebMessage, St
 
     Optional<WaWebMessage> findByPhoneNumberIdAndWaMessageId(String phoneNumberId, String waMessageId);
 
+    /** A message by its WhatsApp id on any of these numbers: a number and the archives its old records moved to. */
+    Optional<WaWebMessage> findFirstByPhoneNumberIdInAndWaMessageId(java.util.Collection<String> phoneNumberIds,
+            String waMessageId);
+
     Optional<WaWebMessage> findByIdAndChatId(String id, String chatId);
 
     Optional<WaWebMessage> findFirstByChatIdOrderByTimestampDescIdDesc(String chatId);

@@ -26,14 +26,17 @@ public record PhoneNumberView(
         boolean hasDevice,
         Instant creationTime,
         TeamRef team,
-        Boolean guest) {
+        Boolean guest,
+        String archiveOf,
+        Instant archivedAt,
+        Boolean moveUnfinished) {
     public record TeamRef(String id, String name) {}
 
     /** The same view flagged as a guest number (or not) for the inbox's number list; null elsewhere. */
     public PhoneNumberView asGuest(boolean guest) {
         return new PhoneNumberView(id, number, label, connectionType, customerId, customerName, workspaceId,
                 workspaceName, status, disabled, disabledBecause, lastConnectedAt, lastSeenAt, wrongNumber, wrongNumberAt,
-                hasDevice, creationTime, team, guest);
+                hasDevice, creationTime, team, guest, archiveOf, archivedAt, moveUnfinished);
     }
 
     public record Page(java.util.List<PhoneNumberView> items, long total, int page) {}

@@ -9,6 +9,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -22,11 +23,12 @@ public final class OpenAiStub {
     public record Recorded(String method, String path, String authorization, String body, String organization,
             String project) {}
 
-    private record Canned(int status, String body) {}
+    private record Canned(int status, String body, Map<String, String> headers) {}
 
     private final HttpServer server;
     private final ConcurrentLinkedQueue<Canned> queue = new ConcurrentLinkedQueue<>();
     private final List<Recorded> recorded = new CopyOnWriteArrayList<>();
+    private volatile Runnable beforeNext;
 
     public OpenAiStub() {
         try {
@@ -45,10 +47,16 @@ public final class OpenAiStub {
                 ex.getRequestURI().getRawPath() + (query == null ? "" : "?" + query),
                 ex.getRequestHeaders().getFirst("Authorization"), body,
                 ex.getRequestHeaders().getFirst("OpenAI-Organization"), ex.getRequestHeaders().getFirst("OpenAI-Project")));
+        Runnable hook = beforeNext;
+        if (hook != null) {
+            beforeNext = null;
+            hook.run();
+        }
         Canned c = queue.poll();
-        if (c == null) c = new Canned(200, "{\"data\":[]}");
+        if (c == null) c = new Canned(200, "{\"data\":[]}", Map.of());
         byte[] out = c.body().getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().add("Content-Type", "application/json");
+        c.headers().forEach(ex.getResponseHeaders()::add);
         ex.sendResponseHeaders(c.status(), out.length == 0 ? -1 : out.length);
         if (out.length > 0) ex.getResponseBody().write(out);
         ex.close();
@@ -60,7 +68,17 @@ public final class OpenAiStub {
     }
 
     public void enqueue(int status, String body) {
-        queue.add(new Canned(status, body));
+        enqueue(status, body, Map.of());
+    }
+
+    /** An answer with extra response headers (such as {@code Retry-After}). */
+    public void enqueue(int status, String body, Map<String, String> headers) {
+        queue.add(new Canned(status, body, headers));
+    }
+
+    /** Runs once, on the stub's thread, when the next request arrives and before it is answered (a change in mid-call). */
+    public void beforeNextRequest(Runnable hook) {
+        beforeNext = hook;
     }
 
     public List<Recorded> requests() {
@@ -74,6 +92,7 @@ public final class OpenAiStub {
     public void reset() {
         queue.clear();
         recorded.clear();
+        beforeNext = null;
     }
 
     public void stop() {

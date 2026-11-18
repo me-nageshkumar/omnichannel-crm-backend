@@ -13,4 +13,6 @@ public interface AiProfileRepository extends MongoRepository<AiProfile, String> 
     Optional<AiProfile> findByWorkspaceIdAndName(String workspaceId, String name);
 
     List<AiProfile> findByWorkspaceIdAndConnectionId(String workspaceId, String connectionId);
+
+    List<AiProfile> findByWorkspaceIdAndVectorStoreIdsContaining(String workspaceId, String vectorStoreId);
 }

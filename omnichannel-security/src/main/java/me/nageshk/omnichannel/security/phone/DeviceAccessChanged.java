@@ -6,5 +6,5 @@ package me.nageshk.omnichannel.security.phone;
  */
 public record DeviceAccessChanged(String phoneNumberId, String customerId, String workspaceId, Reason reason) {
 
-    public enum Reason { DISABLED, REVOKED, REPLACED, DELETED }
+    public enum Reason { DISABLED, REVOKED, REPLACED, DELETED, MOVED }
 }
