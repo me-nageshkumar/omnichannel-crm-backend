@@ -655,6 +655,38 @@ typed task: a WhatsApp reply on a chat, a submitted form, or a timer.
 - Authorities `chatbot:view`, `chatbot:manage`; collections `chatbots`, `chatbotVersions`, `chatbotRuns`, `chatbotForms`;
   config `omnichannel.chatbot.*` (`application.yml`).
 
+### Chatbot first
+
+Spec `docs/superpowers/specs/2026-11-18-bot-first-routing-design.md`. Where a brand has a published message rule with a
+Start chatbot action (and its plan allows chatbots), a new or reopened chat is **not routed** while its message is
+stored: it waits (`routingPendingSince`) for the message's rules. If a chatbot starts on it, the chatbot takes it; if
+not, the rule worker routes it as soon as the rules are through (or wait for a retry). A message that queues no rule
+event is routed at once; a chat still waiting after `omnichannel.inbox.routing-wait` (30 s) is routed by the chatbot
+ticker. A brand without such a rule is routed during ingestion, as before.
+
+- Chat status `BOT` ("With chatbot"): an open chat nobody holds becomes `BOT` when a chatbot run starts on it (its team
+  is cleared). A chat an agent holds stays `OPEN` with the chatbot chip. A chatbot that writes first into a closed
+  chat leaves it closed; the customer's answer makes it `BOT`.
+- Who sees them: `inbox:view-bot` (Customer admin and Workspace manager by default), on the numbers the user may open,
+  through the list `GET /inbox/chats?scope=BOT` (its `status` parameter is ignored). The other lists never return
+  `BOT` chats; an agent without the authority gets 404 on one.
+- When the run ends, the chat is released: finished → chatbot setting `whenCompleted` (`CLOSE` by default, or
+  `ROUTE`); the customer stopped answering → `whenAbandoned` (`ROUTE` by default, or `CLOSE`); failed or stopped by a
+  person → routed; handed over, jumped, or replaced by another run → nothing (the next run keeps it). Routing records
+  `ROUTED` with reason `CHATBOT_ENDED` (a returning customer's agent: `STICKY`) and `byName` "Chatbot: <name>"; a close
+  records `CLOSED` by "Chatbot: <name>". The ticker routes a `BOT` chat left with no run for longer than the wait.
+- A person's reply, claim or new-chat start on a `BOT` chat takes it over (open, assigned to them, whatever
+  claim-on-reply says) and the reply ends the run when `stopOnAgentReply` is on. Assign and hand-off open it with the
+  chosen assignment; close closes it and stops the run; Stop chatbot routes it.
+- The `assign_chat` node is **Hand over to agent**: mode `NUMBER_ROUTING` (the number's own routing, the default in
+  the editor; an agent who already holds the chat keeps it) or `AGENT` / `TEAM_QUEUE` / `TEAM_ROUND_ROBIN`. It opens
+  the chat, records `CHATBOT_HANDOVER`, and ends the run as `HANDED_OVER`; it has no outputs (an old edge after it is
+  a WARNING and is never followed).
+- After any hand-over (`handedOverAt`), a rule starts no chatbot on the chat until it is closed. Manual and test starts
+  still may.
+- The rule action Assign chat is no longer offered in the console (rules that have it still run; `NUMBER_ROUTING` is
+  refused on it).
+
 ## AI connections, profiles and the AI node
 
 Spec `docs/superpowers/specs/2026-11-15-ai-node-design.md`. A brand keeps its own provider **connections** (an API key)

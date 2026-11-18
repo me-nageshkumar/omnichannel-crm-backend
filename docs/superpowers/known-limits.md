@@ -280,3 +280,19 @@ and 3 (the usage wallet and per-message charges, 2026-11-18) are built.
   assigned in.
 - Built-in feature groups cannot be deleted (they would be seeded again); they can be renamed, emptied or, except
   Core, moved between default and paid while no plan lists them.
+
+## Chatbot first: known limits
+
+Spec `docs/superpowers/specs/2026-11-18-bot-first-routing-design.md`.
+
+- In brands with a chatbot rule a person is assigned up to one rule-worker tick (2 s) later than before, and up to
+  30 s later when the worker is down (the ticker's sweep).
+- With `whenCompleted = CLOSE` (the default) a chat a chatbot finished is seen by nobody unless they look in the
+  Chatbot or Closed list; brands that want a follow-up end the flow with Hand over to agent or set "Send to the team".
+- Test runs move real chats into `BOT` (when no agent holds them) and release them by the same settings, so a tester's
+  abandoned test reaches the team's queue. A rule test runs its actions after the chat was routed, so under round
+  robin the chat stays with its agent and shows the chip instead.
+- After a hand-over the chatbot does not start again from a rule until the chat is closed; a brand whose agents never
+  close chats gets the chatbot once per customer.
+- A chat an agent holds with a chatbot running on it is not in the Chatbot list (it is in the agent's lists with the
+  chip). An `OPEN` chat may have a running chatbot and nobody assigned (a person unassigned it or gave it to a team).

@@ -31,6 +31,9 @@ where things are, and traps already hit. Read sections 1 and 2 before any git, d
 - Test first. A fresh reviewer on the whole branch, then one fix pass; re-grade findings by effect on users.
 - While fixing run only the tests that matter; the full `./mvnw -q verify` once, before a merge. Tests in 4 processes
   (`forkCount`, not Failsafe); a run peaks near 6 GB.
+- Assign chat is hidden from the rule actions since 2026-11-18: chats reach people through the number's routing or a
+  chatbot's hand-over node. The code (`ASSIGN_CHAT`, `AssignChatHandler`) stays and existing rules keep working; do not
+  delete it without asking.
 - Commit trailer: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (or as the session's reminder says).
 
 ## 2. Running things
