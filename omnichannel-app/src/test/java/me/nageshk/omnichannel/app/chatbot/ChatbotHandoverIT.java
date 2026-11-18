@@ -99,13 +99,20 @@ class ChatbotHandoverIT extends ChatbotTestBase {
         return runRepo.findById(id).orElseThrow();
     }
 
+    /** The agent holds the chat, so it stays in their inbox while a chatbot runs on it (spec 2026-11-18 §5.3). */
+    private WaWebChat heldByAgent(WaWebChat chat) {
+        WaWebChat c = chats.findById(chat.getId()).orElseThrow();
+        c.setAssignedUserId(agent.getId());
+        return chats.save(c);
+    }
+
     private String inboxChat(WaWebChat chat) {
         return "/api/workspaces/" + brand.getId() + "/inbox/chats/" + chat.getId();
     }
 
     @Test
     void consoleReplyHandsOver() throws Exception {
-        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        WaWebChat chat = heldByAgent(incoming(n1, VEENU, "chat", "hello", "Veenu"));
         String id = publish(createChatbot("Lead qualifier", askFlow()));
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
             ChatbotRun run = start(id, chat);
@@ -141,7 +148,7 @@ class ChatbotHandoverIT extends ChatbotTestBase {
 
     @Test
     void settingOffKeepsRunning() throws Exception {
-        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        WaWebChat chat = heldByAgent(incoming(n1, VEENU, "chat", "hello", "Veenu"));
         String id = publish(withSettings(createChatbot("Lead qualifier", askFlow()), Map.of("stopOnAgentReply", false)));
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
             ChatbotRun run = start(id, chat);
@@ -153,7 +160,7 @@ class ChatbotHandoverIT extends ChatbotTestBase {
 
     @Test
     void chatViewShowsRunningChatbot() throws Exception {
-        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        WaWebChat chat = heldByAgent(incoming(n1, VEENU, "chat", "hello", "Veenu"));
         String id = publish(createChatbot("Lead qualifier", askFlow()));
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
             ChatbotRun run = start(id, chat);
@@ -167,7 +174,7 @@ class ChatbotHandoverIT extends ChatbotTestBase {
 
     @Test
     void stopFromInbox() throws Exception {
-        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        WaWebChat chat = heldByAgent(incoming(n1, VEENU, "chat", "hello", "Veenu"));
         String id = publish(createChatbot("Lead qualifier", askFlow()));
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
             ChatbotRun run = start(id, chat);

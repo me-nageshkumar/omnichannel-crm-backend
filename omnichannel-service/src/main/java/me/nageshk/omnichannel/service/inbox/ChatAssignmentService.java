@@ -111,6 +111,8 @@ public class ChatAssignmentService {
     public WaWebChat close(AuthenticatedUser me, WaWebChat chat) {
         if (chat.getStatus() == ChatStatus.CLOSED) return chat;
         chat.setStatus(ChatStatus.CLOSED);
+        // the next conversation may start with a chatbot again
+        chat.setHandedOverAt(null);
         boolean cleared = false;
         if (!settings.effectiveFor(chat).isKeepAssignmentOnClose()) {
             cleared = chat.getAssignedUserId() != null || chat.getAssignedTeamId() != null;
