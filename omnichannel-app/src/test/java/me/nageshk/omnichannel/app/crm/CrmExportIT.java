@@ -26,6 +26,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 
+/*
+ * MockMvc's default result printing reads the response headers right after perform(), while the export is still
+ * writing them on its own thread: a race that fails now and then with a NullPointerException or a
+ * ConcurrentModificationException in PrintingResultHandler. These tests never read that output, so it is off.
+ */
+@org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc(
+        print = org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint.NONE)
 class CrmExportIT extends CrmTestBase {
 
     @Autowired RoleRepository roles;
