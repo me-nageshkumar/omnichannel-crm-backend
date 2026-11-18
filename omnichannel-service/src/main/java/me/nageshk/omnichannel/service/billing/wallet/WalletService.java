@@ -9,16 +9,24 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import me.nageshk.omnichannel.common.api.CodedException;
+import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.api.WalletEmptyException;
+import me.nageshk.omnichannel.common.billing.WalletEntryType;
+import me.nageshk.omnichannel.db.billing.BillingChange;
 import me.nageshk.omnichannel.db.billing.Wallet;
 import me.nageshk.omnichannel.db.billing.WalletEntry;
 import me.nageshk.omnichannel.db.billing.WalletRepository;
 import org.bson.Document;
 import org.bson.types.Decimal128;
 import org.bson.types.ObjectId;
+import me.nageshk.omnichannel.service.billing.BillingAudit;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -37,8 +45,11 @@ public class WalletService {
     private final WalletMover mover;
     private final MongoTemplate mongo;
     private final Clock clock;
+    private final BillingAudit audit;
+    private static final BigDecimal MOST = new BigDecimal("10000000");
 
-    public WalletService(WalletRepository wallets, WalletMover mover, MongoTemplate mongo, Clock clock) {
+    public WalletService(WalletRepository wallets, WalletMover mover, MongoTemplate mongo, Clock clock, BillingAudit audit) {
+        this.audit = audit;
         this.wallets = wallets;
         this.mover = mover;
         this.mongo = mongo;
@@ -86,6 +97,56 @@ public class WalletService {
         boolean seen = wallets.findByCustomerId(customerId).map(w -> w.getOrderIds().contains(orderId)).orElse(false);
         if (!seen) throw new WalletEmptyException(customerId);
         return false;
+    }
+
+    /**
+     * A staff correction: adds to the wallet, or with a negative amount takes from it, with a note saying why.
+     *
+     * @throws CodedException 409 NOT_ENOUGH_WALLET when it would take more than the wallet holds
+     */
+    public void adjust(String customerId, BigDecimal amount, String note, String by) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        String why = note == null ? "" : note.trim();
+        if (amount == null || amount.signum() == 0) errors.put("amount", "cannot be 0");
+        else if (amount.stripTrailingZeros().scale() > SCALE) errors.put("amount", "at most 4 decimals");
+        else if (amount.abs().compareTo(MOST) > 0) errors.put("amount", "at most 1,00,00,000 at a time");
+        if (why.isEmpty()) errors.put("note", "Say why");
+        else if (why.length() > 300) errors.put("note", "at most 300 characters");
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        WalletEntry draft = new WalletEntry();
+        draft.setType(WalletEntryType.ADJUSTMENT);
+        draft.setNote(why);
+        draft.setBy(by);
+        if (amount.signum() > 0) {
+            credit(customerId, amount, draft);
+        } else {
+            try {
+                debit(customerId, amount.negate(), draft);
+            } catch (WalletEmptyException e) {
+                throw notEnough("The wallet holds less than that");
+            }
+        }
+        audit.record(BillingChange.SUBSCRIPTION, customerId, "WALLET_ADJUSTED",
+                "Wallet adjusted by " + scaled(amount).toPlainString() + " (" + why + ")", null, null, by);
+    }
+
+    /** Sets, or with null removes, the balance below which the customer is warned. */
+    public void setThreshold(String customerId, BigDecimal lowBalanceAt, String by) {
+        if (lowBalanceAt != null && (lowBalanceAt.signum() < 0 || lowBalanceAt.stripTrailingZeros().scale() > 2)) {
+            throw new ValidationException("lowBalanceAt", "an amount of 0 or more, with at most 2 decimals");
+        }
+        Document change = new Document("$setOnInsert", new Document("balance", ZERO)).append("$inc", new Document("version", 1L));
+        if (lowBalanceAt == null) change.append("$unset", new Document("lowBalanceAt", ""));
+        else change.append("$set", new Document("lowBalanceAt", new Decimal128(lowBalanceAt.setScale(2, RoundingMode.HALF_UP))));
+        mongo.getCollection(mongo.getCollectionName(Wallet.class)).updateOne(new Document("customerId", customerId), change,
+                new com.mongodb.client.model.UpdateOptions().upsert(true));
+        audit.record(BillingChange.SUBSCRIPTION, customerId, "WALLET_THRESHOLD",
+                lowBalanceAt == null ? "Low-wallet warning removed" : "Low-wallet warning set at " + lowBalanceAt.toPlainString(),
+                null, null, by);
+    }
+
+    public static CodedException notEnough(String message) {
+        return new CodedException(HttpStatus.CONFLICT, "NOT_ENOUGH_WALLET", null, message);
     }
 
     /**
