@@ -630,6 +630,38 @@ on the message (`MessageView.messagePage`) and on the CRM contact's timeline.
 - Config `omnichannel.pages`: `base-url` (env `OMNICHANNEL_PAGES_BASE_URL`, else `appConfig.pagesBaseUrl`; must be the
   public HTTPS origin for link previews), `ttl-days` (90), `reply-window` (48h).
 
+
+## Link addresses
+
+Spec `docs/superpowers/specs/2026-11-18-link-addresses-design.md`. A brand may have its own **link address**: its
+message-page (`/t/…`) and form (`/f/…`) links, preview cards and everything those pages load then live under the
+brand's domain, for example `https://user-task.bimalinstitute.com` or `https://bimalinstitute.com/wa`.
+
+- An address is `https://<host>[/<folder>]` (up to 3 folder parts of letters, digits, `-`, `_`); no IP, port, query
+  or non-ASCII name. A host another customer's brand uses (now, or as a former host within 90 days) is refused
+  (`409 PAGES_HOST_TAKEN`); brands of one customer may share one.
+- **Which address a link uses:** the brand's while its status is `WORKING`, else the platform's. A page or form keeps
+  the address it was sent with (`baseUrl` on `MessagePage` and `ChatbotForm`; rows from before were stamped once
+  with the platform's address, marker `pagesBaseUrl` in `dataMigrations`).
+- **The check:** saving an address (or Check) fetches `<address>/t/-/check/<nonce>` (20 s, no redirects) and expects
+  `omnichannel-pages <nonce>`: `WORKING`, or `FAILING` with the reason. A daily pass (04:15) checks every address;
+  three failures in a row make a working one `FAILING`.
+- **Old links:** a changed or removed host stays known for 90 days (`formerHosts`); the customer must keep its DNS
+  record or forwarding that long. The same holds for a changed platform address.
+- **A customer's domain serves pages only:** on it only `GET|POST|HEAD /t/**` and `/f/**` are answered; the console,
+  the API and everything else are 404 with no body.
+- **Certificates:** `GET /internal/pages/host-allowed?domain=` answers 200 for a known host, for a direct caller on
+  loopback only (anything with `X-Forwarded-For`, `Forwarded`, `Via` or `X-Forwarded-Host` gets 404). Caddy's
+  on-demand TLS asks it before fetching a certificate: `docs/deploy/Caddyfile`.
+- **What the customer does:** for a subdomain, a CNAME record pointing at the platform's host; for a bare domain (or
+  one that already has a website), forward `https://<domain>/<folder>/t/` and `…/<folder>/f/` to the platform's
+  address with `/<folder>` removed.
+- **API** (`pages-address:manage`, the super admin only): `GET|PUT /api/platform/pages-address` (`{baseUrl | null,
+  version}`; null goes back to the startup value; the answer carries `source` SAVED/STARTUP and the check's
+  `warning`), `GET /api/customers/{id}/pages-addresses` (with `keepDays`, how long an earlier address stays known), `PUT /api/customers/{id}/workspaces/{ws}/pages-address`
+  (`{baseUrl | null, version}`), `POST …/pages-address/check` (`404 NO_PAGES_ADDRESS` without one).
+- Collections `pagesAddresses` (one per brand that has or had an address) and `pagesSettings` (the platform's saved
+  address). Settings `omnichannel.pages.allow-insecure`, `check-timeout`, `trust-forwarded-host`, `ask-from`.
 ## Chatbots
 
 A chatbot is a flow of nodes run per contact (spec `docs/superpowers/specs/2026-11-13-advanced-chatbot-design.md`).

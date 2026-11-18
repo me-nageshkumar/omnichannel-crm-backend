@@ -42,6 +42,8 @@ public class MessagePage {
     /** 22 url-safe characters of 16 random bytes; the whole secret of the link. */
     @Indexed(unique = true)
     private String token;
+    /** The link address the page was sent with (null on pages from before: the platform's). */
+    private String baseUrl;
     private String chatId;
     private String contactId;
     private String phoneNumberId;

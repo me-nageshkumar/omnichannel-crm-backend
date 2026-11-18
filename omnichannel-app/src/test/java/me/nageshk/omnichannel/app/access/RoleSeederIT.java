@@ -96,6 +96,11 @@ class RoleSeederIT {
     }
 
     @Test
+    void noBuiltInRoleHoldsPagesAddressManage() {
+        for (Role r : roles.findAll()) assertThat(r.getAuthorities()).as(r.getName()).doesNotContain("pages-address:manage");
+    }
+
+    @Test
     void seedIsIdempotent() {
         Map<String, String> before = roles.findAll().stream().collect(Collectors.toMap(Role::getName, Role::getId));
         seeder.seed();
@@ -124,7 +129,7 @@ class RoleSeederIT {
     void freshDatabaseCreatesDocumentsAndGivesDefaults() {
         clearAll();
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(60)
+        assertThat(authorities.findAll()).hasSize(Authority.values().length).hasSize(61)
                 .allMatch(AuthorityDefinition::isBuiltIn)
                 .allMatch(d -> "system".equals(d.getCreatedBy()));
         AuthorityDefinition cv = authorities.findById("customer:view").orElseThrow();
@@ -143,7 +148,7 @@ class RoleSeederIT {
         mongo.insert(new org.bson.Document("_id", KNOWN).append("codes",
                 Arrays.stream(Authority.values()).map(Authority::code).toList()), "system_state");
         seeder.seed();
-        assertThat(authorities.findAll()).hasSize(60);
+        assertThat(authorities.findAll()).hasSize(61);
         assertThat(role(BuiltInRoles.WORKSPACE_MANAGER).getAuthorities()).doesNotContain("user:view");
         assertThat(mongo.findById(KNOWN, org.bson.Document.class, "system_state")).isNull();
     }

@@ -5,7 +5,6 @@ import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMediaInfo;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMediaUploadResponse;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.MessagingProduct;
-import me.nageshk.omnichannel.common.config.OmnichannelProperties;
 import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.cloud.CloudMediaService;
@@ -33,12 +32,13 @@ public class CloudMediaController {
 
     private final CloudMediaService media;
     private final PhoneNumberRepository numbers;
-    private final OmnichannelProperties.Pages pages;
+    private final me.nageshk.omnichannel.service.page.PagesAddresses addresses;
 
-    public CloudMediaController(CloudMediaService media, PhoneNumberRepository numbers, OmnichannelProperties props) {
+    public CloudMediaController(CloudMediaService media, PhoneNumberRepository numbers,
+            me.nageshk.omnichannel.service.page.PagesAddresses addresses) {
         this.media = media;
         this.numbers = numbers;
-        this.pages = props.pages();
+        this.addresses = addresses;
     }
 
     @PostMapping
@@ -60,7 +60,7 @@ public class CloudMediaController {
     public CloudMediaInfo info(@PathVariable String workspaceId, @PathVariable String phoneNumberId,
             @PathVariable String mediaId) {
         requireNumber(workspaceId, phoneNumberId);
-        String url = pages.baseUrl() + "/api/workspaces/" + workspaceId + "/channel-accounts/" + phoneNumberId
+        String url = addresses.platform() + "/api/workspaces/" + workspaceId + "/channel-accounts/" + phoneNumberId
                 + "/media/" + mediaId + "/file";
         return media.info(workspaceId, mediaId, url);
     }

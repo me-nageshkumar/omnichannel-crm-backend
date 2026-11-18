@@ -31,6 +31,14 @@ omnichannel:
     base-url: ${OMNICHANNEL_PAGES_BASE_URL:http://localhost:8080}
     ttl-days: 90
     reply-window: 48h
+    # Link addresses (spec 2026-11-18): http, ports and local names as addresses, for tests and local runs only
+    allow-insecure: false
+    # how long the check waits for an address to answer (a new subdomain's first request also fetches its certificate)
+    check-timeout: 20s
+    # use X-Forwarded-Host as the request's host (only behind a proxy that rewrites Host; Caddy keeps it)
+    trust-forwarded-host: false
+    # caller addresses besides loopback that may ask /internal/pages/host-allowed (comma-separated)
+    ask-from: ""
   # Provider-neutral AI: the turn worker, provider calls and the app-side MCP client.
   ai:
     auto-tick: true

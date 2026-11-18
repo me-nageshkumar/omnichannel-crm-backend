@@ -18,6 +18,8 @@ omnichannel:
     password: ""
   pages:
     base-url: http://pages.test
+    # http, ports and localhost as link addresses, and the check may call loopback (link addresses spec §5.1)
+    allow-insecure: true
   # tests drive the AI turn worker themselves
   ai:
     auto-tick: false

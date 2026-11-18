@@ -21,6 +21,8 @@ public class ChatbotForm {
     private String nodeId;
     @Indexed(unique = true)
     private String token;
+    /** The link address the form was sent with (null on forms from before: the platform's). */
+    private String baseUrl;
     private Map<String, Object> definition;
     private Map<String, Object> answers;
     private Instant submittedAt;

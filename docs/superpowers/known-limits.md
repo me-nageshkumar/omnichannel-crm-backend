@@ -296,3 +296,16 @@ Spec `docs/superpowers/specs/2026-11-18-bot-first-routing-design.md`.
   close chats gets the chatbot once per customer.
 - A chat an agent holds with a chatbot running on it is not in the Chatbot list (it is in the agent's lists with the
   chip). An `OPEN` chat may have a running chatbot and nobody assigned (a person unassigned it or gave it to a team).
+
+## Link addresses: known limits
+
+Spec `docs/superpowers/specs/2026-11-18-link-addresses-design.md`.
+
+- The customer must keep the old DNS record or forwarding for 90 days after changing a brand's address, or links
+  already sent stop opening; the app can only say so.
+- A brand's domain that breaks is caught by the daily check after three days; until then its new links do not
+  open. A manual Check marks it at once.
+- Let's Encrypt allows about 50 new certificates per registered domain per week; one customer setting up dozens of
+  brand subdomains in a week could hit it.
+- The check fetches the address from this server; on a network that cannot reach its own public address (some NAT
+  set-ups) a working address reads as failing.

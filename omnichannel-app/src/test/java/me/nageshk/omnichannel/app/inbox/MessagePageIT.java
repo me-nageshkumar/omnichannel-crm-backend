@@ -105,6 +105,74 @@ class MessagePageIT extends InboxApiTestBase {
         return views.message(messages.findById(p.getMessageId()).orElseThrow());
     }
 
+    @Autowired me.nageshk.omnichannel.db.page.PagesAddressRepository pagesAddresses;
+
+    @org.junit.jupiter.api.AfterEach
+    void noAddresses() {
+        pagesAddresses.deleteAll();
+    }
+
+    /** The brand's link address, stored as a check would leave it. */
+    private void brandAddress(String baseUrl, me.nageshk.omnichannel.db.page.PagesAddressStatus status) {
+        me.nageshk.omnichannel.db.page.PagesAddress a = pagesAddresses.findByWorkspaceId(brand.getId())
+                .orElseGet(me.nageshk.omnichannel.db.page.PagesAddress::new);
+        a.setWorkspaceId(brand.getId());
+        a.setCustomerId(acme.getId());
+        a.setBaseUrl(baseUrl);
+        a.setHost(java.net.URI.create(baseUrl).getHost());
+        a.setStatus(status);
+        pagesAddresses.save(a);
+    }
+
+    @Test
+    void aBrandWithAWorkingAddressSendsLinksUnderIt() throws Exception {
+        brandAddress("https://acme.in/wa", me.nageshk.omnichannel.db.page.PagesAddressStatus.WORKING);
+        MessagePage p = seeded(withImageHeader());
+        String base = "https://acme.in/wa/t/" + p.getToken();
+        assertThat(pages.link(p)).isEqualTo(base);
+        mvc.perform(get("/t/" + p.getToken())).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("content=\"" + base + "/og.png\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("content=\"" + base + "\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(base + "/e")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(base + "/m")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("pages.test"))));
+    }
+
+    @Test
+    void withoutAWorkingAddressLinksUseThePlatform() throws Exception {
+        assertThat(pages.link(seeded(BUTTON))).startsWith("http://pages.test/t/");
+        brandAddress("https://acme.in", me.nageshk.omnichannel.db.page.PagesAddressStatus.UNCHECKED);
+        assertThat(pages.link(seeded(BUTTON))).startsWith("http://pages.test/t/");
+        brandAddress("https://acme.in", me.nageshk.omnichannel.db.page.PagesAddressStatus.FAILING);
+        assertThat(pages.link(seeded(BUTTON))).startsWith("http://pages.test/t/");
+    }
+
+    @Test
+    void aPageKeepsItsAddressAfterTheBrandChangesIt() throws Exception {
+        brandAddress("https://old.acme.in", me.nageshk.omnichannel.db.page.PagesAddressStatus.WORKING);
+        MessagePage p = seeded(BUTTON);
+        brandAddress("https://new.acme.in", me.nageshk.omnichannel.db.page.PagesAddressStatus.WORKING);
+        assertThat(pages.link(reload(p))).startsWith("https://old.acme.in/t/");
+        assertThat(pages.html(reload(p))).contains("https://old.acme.in/t/" + p.getToken() + "/e")
+                .doesNotContain("new.acme.in");
+    }
+
+    @Test
+    void aRowWithoutABaseUsesThePlatform() throws Exception {
+        MessagePage p = seeded(BUTTON);
+        mongo.updateFirst(new org.springframework.data.mongodb.core.query.Query(
+                org.springframework.data.mongodb.core.query.Criteria.where("_id").is(p.getId())),
+                new org.springframework.data.mongodb.core.query.Update().unset("baseUrl"), MessagePage.class);
+        assertThat(pages.link(reload(p))).isEqualTo("http://pages.test/t/" + p.getToken());
+    }
+
+    @Test
+    void thePreviewUsesTheBrandsAddress() throws Exception {
+        brandAddress("https://acme.in/wa", me.nageshk.omnichannel.db.page.PagesAddressStatus.WORKING);
+        assertThat(pages.previewHtml(brand.getId(), parse(BUTTON), "919900000001")).contains("https://acme.in/wa/t/preview")
+                .doesNotContain("pages.test");
+    }
+
     @Test
     void servesTheHtmlPageWithoutAuth() throws Exception {
         MessagePage p = seeded(BUTTON);

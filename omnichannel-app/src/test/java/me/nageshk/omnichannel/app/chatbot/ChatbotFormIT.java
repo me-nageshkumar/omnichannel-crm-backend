@@ -174,6 +174,54 @@ class ChatbotFormIT extends ChatbotTestBase {
         }
     }
 
+    @Autowired me.nageshk.omnichannel.db.page.PagesAddressRepository pagesAddresses;
+
+    @org.junit.jupiter.api.AfterEach
+    void noAddresses() {
+        pagesAddresses.deleteAll();
+    }
+
+    private void brandAddress(String baseUrl) {
+        me.nageshk.omnichannel.db.page.PagesAddress a = pagesAddresses.findByWorkspaceId(brand.getId())
+                .orElseGet(me.nageshk.omnichannel.db.page.PagesAddress::new);
+        a.setWorkspaceId(brand.getId());
+        a.setCustomerId(acme.getId());
+        a.setBaseUrl(baseUrl);
+        a.setHost(java.net.URI.create(baseUrl).getHost());
+        a.setStatus(me.nageshk.omnichannel.db.page.PagesAddressStatus.WORKING);
+        pagesAddresses.save(a);
+    }
+
+    @Test
+    void aFormLinkAndItsActionUseTheBrandsAddress() throws Exception {
+        brandAddress("https://acme.in/wa");
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", formFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            String token = run.getWaiting().key();
+            assertThat(d.requests("sendMessage").get(0).params().get("content").asString())
+                    .contains("https://acme.in/wa/f/" + token);
+            String action = "action=\"https://acme.in/wa/f/" + token + "\"";
+            assertThat(getForm(token).getBody()).contains(action)
+                    .contains("<meta property=\"og:url\" content=\"https://acme.in/wa/f/" + token + "\">")
+                    .doesNotContain("pages.test");
+            assertThat(submit(token, Map.of("city", " ", "budget", "abc")).getBody()).contains(action);
+        }
+    }
+
+    @Test
+    void aFormKeepsItsAddress() throws Exception {
+        brandAddress("https://old.acme.in");
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(createChatbot("Bot", formFlow()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            String token = start(id, chat).getWaiting().key();
+            brandAddress("https://new.acme.in");
+            assertThat(getForm(token).getBody()).contains("https://old.acme.in/f/" + token).doesNotContain("new.acme.in");
+        }
+    }
+
     @Test
     void submitAnswersAndContinues() throws Exception {
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
