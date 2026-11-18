@@ -29,10 +29,11 @@ public final class AiConnectionViews {
     }
 
     public record ProviderView(String id, String label, AiCapabilities capabilities,
-            List<AiConnectionField> connectionFields) {
+            List<AiConnectionField> connectionFields, boolean knowledgeBases) {
 
         static ProviderView of(AiProvider p) {
-            return new ProviderView(p.id(), p.label(), p.capabilities(), p.connectionFields());
+            return new ProviderView(p.id(), p.label(), p.capabilities(), p.connectionFields(),
+                    p instanceof me.nageshk.omnichannel.ai.provider.KnowledgeStoreProvider);
         }
     }
 }

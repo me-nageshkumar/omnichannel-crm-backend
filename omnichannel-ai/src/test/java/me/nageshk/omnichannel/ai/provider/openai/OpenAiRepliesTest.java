@@ -95,4 +95,11 @@ class OpenAiRepliesTest {
         assertThatThrownBy(() -> parse("reply-approval.json")).isInstanceOfSatisfying(AiProviderException.class,
                 e -> assertThat(e.code()).isEqualTo(AiProviderException.Code.APPROVAL_REQUIRED));
     }
+
+    @Test
+    void citationMarkersAreStripped() throws IOException {
+        var root = mapper.readTree("{\"id\":\"r\",\"status\":\"completed\",\"output\":[{\"type\":\"message\","
+                + "\"content\":[{\"type\":\"output_text\",\"text\":\"Fees are \u20b919,999\u30104:0\u2020fees.md\u3011.\"}]}]}");
+        assertThat(OpenAiReplies.parse(root).text()).isEqualTo("Fees are \u20b919,999.");
+    }
 }
