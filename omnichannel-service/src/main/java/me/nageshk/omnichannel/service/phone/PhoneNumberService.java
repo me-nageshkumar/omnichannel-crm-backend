@@ -158,7 +158,12 @@ public class PhoneNumberService {
         return saved;
     }
 
+    /** @throws CodedException 409 {@code number_moving} while the number moves: finish or cancel the move first */
     public void delete(PhoneNumber n) {
+        if (n.getMovingSince() != null) {
+            throw new CodedException(HttpStatus.CONFLICT, "number_moving", null,
+                    "This number is moving to another brand: finish or cancel the move first.");
+        }
         inboxCleanup.deleteForNumber(n.getId());
         codes.deleteByPhoneNumberId(n.getId());
         numbers.delete(n);

@@ -4,10 +4,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import me.nageshk.omnichannel.common.api.CodedException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
@@ -15,6 +17,8 @@ import me.nageshk.omnichannel.common.enablement.EnableLevel;
 import me.nageshk.omnichannel.db.automation.AutomationRule;
 import me.nageshk.omnichannel.db.automation.AutomationRuleRepository;
 import me.nageshk.omnichannel.db.automation.ConditionNode;
+import me.nageshk.omnichannel.db.campaign.Campaign;
+import me.nageshk.omnichannel.db.campaign.CampaignStatus;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
 import me.nageshk.omnichannel.db.enablement.Disabled;
@@ -64,6 +68,11 @@ public class PhoneNumberMoveService {
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
     private static final List<String> ACTIVE_RUNS = List.of(ChatbotRunStatus.RUNNING.name(),
             ChatbotRunStatus.WAITING.name());
+    private static final Set<Step> CANCELLABLE = EnumSet.of(Step.STARTED, Step.OFFLINE, Step.RUNS_ENDED);
+    private static final String CANCELLED = "Cancelled";
+    /** A campaign in these states still sends from its numbers; DRAFT has not started, COMPLETED and TERMINATED are over. */
+    private static final List<String> ACTIVE_CAMPAIGNS = List.of(CampaignStatus.RUNNING.name(),
+            CampaignStatus.PAUSED.name());
     private static final List<String> ACTIVE_IMPORTS = List.of(HistoryImportStatus.QUEUED.name(),
             HistoryImportStatus.RUNNING.name(), HistoryImportStatus.PAUSED.name());
 
@@ -103,7 +112,8 @@ public class PhoneNumberMoveService {
      * thrown) and the number still moving, for {@link #retry}.
      *
      * @throws CodedException 409 {@code number_archived} for an archive, 409 {@code number_move_unfinished} while
-     *     another move of the number is unfinished, 400 {@code number_move_other_customer} or
+     *     another move of the number is unfinished, 409 {@code number_move_campaign_active} while a running or
+     *     paused campaign of the brand sends from the number, 400 {@code number_move_other_customer} or
      *     {@code number_move_same_brand} for a wrong target
      */
     public PhoneNumberMove move(String phoneNumberId, String toWorkspaceId, AuthenticatedUser me) {
@@ -111,6 +121,13 @@ public class PhoneNumberMoveService {
         refuseArchive(n);
         if (moves.findByUnfinishedOf(n.getId()).isPresent()) throw unfinished();
         target(n, toWorkspaceId);
+        List<String> campaigns = activeCampaigns(n);
+        if (!campaigns.isEmpty()) {
+            // their sender would become the archive, and every recipient still to send to would fail
+            throw new CodedException(HttpStatus.CONFLICT, "number_move_campaign_active", null,
+                    "Campaigns still sending from this number: " + String.join(", ", campaigns)
+                            + ". Let them finish or end them first.");
+        }
         PhoneNumberMove m = new PhoneNumberMove();
         m.setCustomerId(n.getCustomerId());
         m.setPhoneNumberId(n.getId());
@@ -145,6 +162,32 @@ public class PhoneNumberMoveService {
         return run(moves.save(m));
     }
 
+    /**
+     * Gives up the number's unfinished move while nothing has been re-pointed yet (step STARTED, OFFLINE or
+     * RUNS_ENDED): the number stays in its brand and its device may connect again. Chatbot runs and history imports
+     * the move already ended stay ended. The move is kept, finished, with the error "Cancelled".
+     *
+     * @throws CodedException 409 {@code number_move_nothing_to_cancel} when no move of the number is unfinished,
+     *     409 {@code number_move_too_far} once the move re-pointed records (Retry finishes it)
+     */
+    public PhoneNumberMove cancel(String phoneNumberId, AuthenticatedUser me) {
+        PhoneNumberMove m = moves.findByUnfinishedOf(phoneNumberId).orElseThrow(
+                () -> new CodedException(HttpStatus.CONFLICT, "number_move_nothing_to_cancel", null,
+                        "This number has no unfinished move."));
+        if (!CANCELLABLE.contains(m.getStep())) throw tooFar();
+        // by update, guarded on the step, so a Retry that recorded a later step meanwhile wins
+        Instant now = clock.instant();
+        long cancelled = mongo.updateFirst(new Query(Criteria.where("_id").is(m.getId()).and("unfinishedOf")
+                        .is(phoneNumberId).and("step").in(CANCELLABLE.stream().map(Step::name).toList())),
+                new Update().unset("unfinishedOf").set("finishedAt", now).set("error", CANCELLED).inc("version", 1),
+                PhoneNumberMove.class).getModifiedCount();
+        if (cancelled == 0) throw tooFar();
+        mongo.updateFirst(new Query(Criteria.where("_id").is(phoneNumberId).and("movingSince").ne(null)),
+                new Update().unset("movingSince").inc("version", 1), PhoneNumber.class);
+        log.info("[{}] move {} cancelled after {} by {}", phoneNumberId, m.getId(), m.getStep(), me.userId());
+        return moves.findById(m.getId()).orElseThrow();
+    }
+
     /** The number's newest move, finished or not. */
     public Optional<PhoneNumberMove> last(String phoneNumberId) {
         return moves.findFirstByPhoneNumberIdOrderByIdDesc(phoneNumberId);
@@ -175,7 +218,7 @@ public class PhoneNumberMoveService {
                 .filter(r -> names(r.getConditions(), n.getId())).map(AutomationRule::getName).toList();
         return new MovePreview(fromName, target.getName(), mongo.count(on(n.getId()), WaWebChat.class),
                 mongo.count(activeRuns(n.getId()), ChatbotRun.class), teamName, archiveLabel(n, clock.instant()),
-                back.isPresent(), returning, naming);
+                back.isPresent(), returning, naming, activeCampaigns(n));
     }
 
     // --- the steps ---------------------------------------------------------------------------------------
@@ -307,6 +350,12 @@ public class PhoneNumberMoveService {
         return label + " (until " + DAY.format(until.atZone(IST)) + ")";
     }
 
+    /** The names of the brand's running or paused campaigns that send from the number. */
+    private List<String> activeCampaigns(PhoneNumber n) {
+        return mongo.find(new Query(Criteria.where("workspaceId").is(n.getWorkspaceId()).and("senderIds").is(n.getId())
+                .and("status").in(ACTIVE_CAMPAIGNS)), Campaign.class).stream().map(Campaign::getName).toList();
+    }
+
     private Optional<PhoneNumber> archiveIn(String phoneNumberId, String workspaceId) {
         return numbers.findByArchiveOf(phoneNumberId).stream()
                 .filter(a -> Objects.equals(a.getWorkspaceId(), workspaceId)).findFirst();
@@ -331,6 +380,11 @@ public class PhoneNumberMoveService {
             throw new CodedException(HttpStatus.CONFLICT, "number_archived", null,
                     "This number moved to another brand; this archive only keeps the old chats.");
         }
+    }
+
+    private static CodedException tooFar() {
+        return new CodedException(HttpStatus.CONFLICT, "number_move_too_far", null,
+                "This move has already moved records: retry to finish this move.");
     }
 
     private static CodedException unfinished() {

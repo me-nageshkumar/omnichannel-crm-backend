@@ -28,6 +28,7 @@ import me.nageshk.omnichannel.db.automation.AutomationRuleRepository;
 import me.nageshk.omnichannel.db.automation.ConditionNode;
 import me.nageshk.omnichannel.db.automation.RuleStatus;
 import me.nageshk.omnichannel.db.campaign.Campaign;
+import me.nageshk.omnichannel.db.campaign.CampaignStatus;
 import me.nageshk.omnichannel.db.campaign.CampaignRecipient;
 import me.nageshk.omnichannel.db.campaign.CampaignSender;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
@@ -59,6 +60,7 @@ import me.nageshk.omnichannel.service.inbox.ChatMediaService;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportOutcome;
 import me.nageshk.omnichannel.service.inbox.history.FetchedMessageImporter;
+import me.nageshk.omnichannel.service.phone.PhoneNumberService;
 import me.nageshk.omnichannel.service.phone.move.MovePreview;
 import me.nageshk.omnichannel.service.phone.move.NumberRecords;
 import me.nageshk.omnichannel.service.phone.move.PhoneNumberMove;
@@ -124,6 +126,7 @@ class PhoneNumberMoveIT {
     @Autowired DeviceRegistry registry;
     @Autowired MutableClock clock;
     @Autowired FetchedMessageImporter importer;
+    @Autowired PhoneNumberService phoneNumberService;
     @MockitoSpyBean NumberRecords records;
     @MockitoSpyBean PhoneNumberMoveRepository moves;
 
@@ -423,6 +426,92 @@ class PhoneNumberMoveIT {
             }
             return saved;
         }).when(moves).save(any(PhoneNumberMove.class));
+    }
+
+    // --- cancel, campaigns, delete ------------------------------------------------------------------------
+
+    @Test
+    void cancelBeforeAnythingMovedGivesTheNumberBack() throws Exception {
+        stopOnceAfter(PhoneNumberMove.Step.OFFLINE);
+        PhoneNumberMove stopped = service.move(main.getId(), brandB.getId(), me);
+        assertThat(stopped.getStep()).isEqualTo(PhoneNumberMove.Step.OFFLINE);
+
+        PhoneNumberMove cancelled = service.cancel(main.getId(), me);
+
+        assertThat(cancelled.getId()).isEqualTo(stopped.getId());
+        assertThat(cancelled.getStep()).isEqualTo(PhoneNumberMove.Step.OFFLINE);
+        assertThat(cancelled.getError()).isEqualTo("Cancelled");
+        assertThat(cancelled.getFinishedAt()).isEqualTo(NOW);
+        assertThat(cancelled.getUnfinishedOf()).isNull();
+        PhoneNumber back = numbers.findById(main.getId()).orElseThrow();
+        assertThat(back.getMovingSince()).isNull();
+        assertThat(back.getWorkspaceId()).isEqualTo(brandA.getId());
+        assertThat(back.getTeamId()).isEqualTo(sales.getId());
+        assertThat(numbers.findByArchiveOf(main.getId())).isEmpty();
+        assertThat(chats.findAll()).extracting(WaWebChat::getPhoneNumberId).containsOnly(main.getId());
+        assertCode(() -> service.retry(main.getId(), me), "number_move_nothing_to_retry", 409);
+
+        // the device is let in again, into brand A
+        DeviceKeys.Connected key = testDevices.redeem(numbers.findById(main.getId()).orElseThrow());
+        try (FakeDevice device = FakeDevice.connectAndAuth(port, key.deviceKey())) {
+            testDevices.awaitConnected(main);
+            assertThat(registry.find(main.getId()).orElseThrow().principal().workspaceId()).isEqualTo(brandA.getId());
+            assertThat(device.isOpen()).isTrue();
+        }
+        // and a later move starts afresh
+        assertThat(service.move(main.getId(), brandB.getId(), me).getStep()).isEqualTo(PhoneNumberMove.Step.DONE);
+    }
+
+    @Test
+    void cancelOnceRecordsMovedIsRefused() {
+        stopOnceAfter(PhoneNumberMove.Step.ARCHIVED);
+        service.move(main.getId(), brandB.getId(), me);
+
+        assertCode(() -> service.cancel(main.getId(), me), "number_move_too_far", 409);
+
+        assertThat(numbers.findById(main.getId()).orElseThrow().getMovingSince()).isNotNull();
+        assertThat(service.retry(main.getId(), me).getStep()).isEqualTo(PhoneNumberMove.Step.DONE);
+        assertMovedOnce(service.last(main.getId()).orElseThrow());
+    }
+
+    @Test
+    void cancelWithoutAnUnfinishedMoveIsRefused() {
+        assertCode(() -> service.cancel(main.getId(), me), "number_move_nothing_to_cancel", 409);
+    }
+
+    @Test
+    void aRunningOrPausedCampaignOnTheNumberBlocksTheMove() {
+        for (CampaignStatus active : List.of(CampaignStatus.RUNNING, CampaignStatus.PAUSED)) {
+            campaignStatus(active);
+            assertThat(service.preview(main.getId(), brandB.getId()).activeCampaigns()).containsExactly("Diwali");
+            assertThatThrownBy(() -> service.move(main.getId(), brandB.getId(), me))
+                    .isInstanceOfSatisfying(CodedException.class, e -> {
+                        assertThat(e.code()).isEqualTo("number_move_campaign_active");
+                        assertThat(e.status().value()).isEqualTo(409);
+                        assertThat(e.getMessage()).contains("Diwali");
+                    });
+            assertThat(service.last(main.getId())).isEmpty();
+            assertThat(numbers.findById(main.getId()).orElseThrow().getMovingSince()).isNull();
+        }
+
+        campaignStatus(CampaignStatus.COMPLETED);
+        assertThat(service.preview(main.getId(), brandB.getId()).activeCampaigns()).isEmpty();
+        assertThat(service.move(main.getId(), brandB.getId(), me).getStep()).isEqualTo(PhoneNumberMove.Step.DONE);
+    }
+
+    private void campaignStatus(CampaignStatus status) {
+        mongo.updateMulti(new Query(), new org.springframework.data.mongodb.core.query.Update().set("status", status),
+                Campaign.class);
+    }
+
+    @Test
+    void aMovingNumberCannotBeDeleted() {
+        stopOnceAfter(PhoneNumberMove.Step.OFFLINE);
+        service.move(main.getId(), brandB.getId(), me);
+
+        assertCode(() -> phoneNumberService.delete(numbers.findById(main.getId()).orElseThrow()), "number_moving",
+                409);
+        assertThat(numbers.existsById(main.getId())).isTrue();
     }
 
     // --- writers that still hold the number's old brand (F1) ----------------------------------------------

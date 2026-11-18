@@ -67,6 +67,13 @@ public class PlatformPhoneNumberController {
         return moves.view(moves.retry(id, me));
     }
 
+    /** Gives up an unfinished move that has not re-pointed anything yet; the number stays in its brand. */
+    @PostMapping("/{id}/move/cancel")
+    @PreAuthorize("hasAuthority('phone-number:manage-all')")
+    public PhoneNumberMoveView cancelMove(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String id) {
+        return moves.view(moves.cancel(id, me));
+    }
+
     public record MoveRequest(@NotBlank String workspaceId) {
     }
 

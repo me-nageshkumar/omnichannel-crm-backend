@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.app.phone;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -30,7 +31,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -146,6 +149,37 @@ class PhoneNumberMoveApiIT {
         send(post(base() + "/retry"), amToken, null).andExpect(status().isForbidden());
         send(get(base() + "/preview").param("workspaceId", brandA.getId()), amToken, null)
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void cancelIsForPlatformStaffWhoManageNumbers() throws Exception {
+        mongo.updateFirst(Query.query(Criteria.where("_id").is(number.getId())),
+                new Update().set("movingSince", Instant.now()), PhoneNumber.class);
+        PhoneNumberMove m = new PhoneNumberMove();
+        m.setCustomerId(number.getCustomerId());
+        m.setPhoneNumberId(number.getId());
+        m.setUnfinishedOf(number.getId());
+        m.setFromWorkspaceId(brandA.getId());
+        m.setToWorkspaceId(brandB.getId());
+        m.setStep(PhoneNumberMove.Step.OFFLINE);
+        m.setStartedAt(Instant.now());
+        moves.insert(m);
+
+        send(post(base() + "/cancel"), wmToken, null).andExpect(status().isForbidden());
+        send(post(base() + "/cancel"), amToken, null).andExpect(status().isForbidden());
+        send(delete("/api/phone-numbers/" + number.getId()), rootToken, null)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("number_moving"));
+
+        send(post(base() + "/cancel"), rootToken, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.step").value("OFFLINE"))
+                .andExpect(jsonPath("$.done").value(true))
+                .andExpect(jsonPath("$.error").value("Cancelled"));
+        assertThat(mongo.findById(number.getId(), PhoneNumber.class).getMovingSince()).isNull();
+        send(post(base() + "/cancel"), rootToken, null)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("number_move_nothing_to_cancel"));
     }
 
     @Test
