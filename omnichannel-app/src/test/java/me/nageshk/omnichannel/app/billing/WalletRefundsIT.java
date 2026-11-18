@@ -195,4 +195,28 @@ class WalletRefundsIT extends MoneyApiTestBase {
         assertThat(creditNotes.count()).isZero();
         assertThat(credit(acme)).isEqualByComparingTo("0");
     }
+
+    @Test
+    void aRefundThatLosesToUsageLeavesNoLineInTheHistory() throws Exception {
+        goldWithTopUp(acme, 1000);
+        me.nageshk.omnichannel.db.billing.WalletEntry usage = new me.nageshk.omnichannel.db.billing.WalletEntry();
+        usage.setType(me.nageshk.omnichannel.common.billing.WalletEntryType.USAGE);
+        // messages take the money in the moment between the price and the debit
+        org.mockito.Mockito.doAnswer(call -> {
+            walletService.debit(acme.getId(), new BigDecimal("950"), usage);
+            return call.callRealMethod();
+        }).when(steps).wallet(any());
+        POST(path(acme, "/refunds"), superToken, Map.of("amount", 400, "reason", "x")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NOT_ENOUGH_WALLET"));
+        doCallRealMethod().when(steps).wallet(any());
+        JsonNode events = json(GET("/api/billing/customers/" + acme.getId() + "/subscription/events", amToken));
+        for (JsonNode e : events) assertThat(e.get("summary").asString()).doesNotContain("wallet refund");
+
+        // one that goes through is in the history, once
+        POST(path(acme, "/refunds"), superToken, Map.of("amount", 40, "reason", "x")).andExpect(status().isOk());
+        events = json(GET("/api/billing/customers/" + acme.getId() + "/subscription/events", amToken));
+        int rows = 0;
+        for (JsonNode e : events) if (e.get("summary").asString().contains("wallet refund of 40.00")) rows++;
+        assertThat(rows).isEqualTo(1);
+    }
 }

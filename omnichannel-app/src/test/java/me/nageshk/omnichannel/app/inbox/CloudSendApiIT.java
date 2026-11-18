@@ -40,6 +40,8 @@ class CloudSendApiIT extends InboxApiTestBase {
     @LocalServerPort int port;
     @Autowired TestRestTemplate rest;
     @Autowired MessagePageRepository pages;
+    @Autowired me.nageshk.omnichannel.app.support.TestBilling billing;
+    @Autowired me.nageshk.omnichannel.db.billing.WalletRepository walletRepo;
     @Autowired CloudMediaService media;
     @Autowired AccessService access;
 
@@ -294,5 +296,31 @@ class CloudSendApiIT extends InboxApiTestBase {
         WaWebMessage stored = only(chat);
         assertThat(stored.getLocation().latitude()).isEqualTo(12.9716);
         assertThat(stored.getRequest()).containsEntry("type", "location");
+    }
+
+    @Test
+    void anInteractiveMessageIsChargedAndOneTheWalletCannotPayForLeavesNoPage() throws Exception {
+        WaWebChat chat = chatWithAarav();
+        try {
+            billing.assign(acme.getId(), java.util.Set.of(), Map.of());
+            billing.messageRate(acme.getId(), "0.25");
+            billing.wallet(acme.getId(), "0.2500");
+            Exchange ex = sendOk(managerToken, numberUrl(), button("919812345678", null), chat.getRemoteId());
+            assertThat(ex.response().getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(walletRepo.findByCustomerId(acme.getId()).orElseThrow().getBalance()).isEqualByComparingTo("0");
+            assertThat(pages.count()).isEqualTo(1);
+
+            try (FakeDevice device = FakeDevice.connectAndAuth(port, testDevices.redeem(number).deviceKey())) {
+                device.send(Envelope.event("ready", ready()));
+                testDevices.awaitReady(number);
+                ResponseEntity<JsonNode> refused = post(managerToken, chatUrl(chat), button(null, null));
+                assertThat(refused.getStatusCode().value()).isEqualTo(402);
+                assertThat(refused.getBody().get("code").asString()).isEqualTo("WALLET_EMPTY");
+            }
+            // nothing was prepared for a message that was never going to be sent
+            assertThat(pages.count()).isEqualTo(1);
+        } finally {
+            billing.reset();
+        }
     }
 }

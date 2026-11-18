@@ -70,7 +70,9 @@ public class OrderSteps {
     public void apply(BillingOrder o) {
         String customerId = o.getCustomerId();
         if (o.getKind() == OrderKind.TOPUP || o.getKind() == OrderKind.WALLET_REFUND) {
-            // wallet money: the plan is not touched and no request beside it goes out of date
+            // wallet money: the plan is not touched and no request beside it goes out of date. A refund's line is
+            // written when its money has left the wallet, since it may yet be refused there.
+            if (o.getKind() == OrderKind.WALLET_REFUND) return;
             audit.recordOnce("order:" + o.getId(), BillingChange.SUBSCRIPTION, customerId, "ORDER_ACTIVATED",
                     "Order " + o.getNumber() + " activated: " + describe(o),
                     o.getPayment() == null ? "system" : o.getPayment().recordedBy());
@@ -163,6 +165,9 @@ public class OrderSteps {
             out.setBy(o.getRaisedBy());
             // throws when the wallet no longer covers it: nothing has been issued yet
             wallets.debitOnce(o.getId(), o.getCustomerId(), o.getTarget().getWalletAmount(), out);
+            audit.recordOnce("order:" + o.getId(), BillingChange.SUBSCRIPTION, o.getCustomerId(), "ORDER_ACTIVATED",
+                    "Order " + o.getNumber() + " activated: " + describe(o),
+                    o.getPayment() == null ? "system" : o.getPayment().recordedBy());
             return;
         }
         if (o.getKind() != OrderKind.TOPUP) return;

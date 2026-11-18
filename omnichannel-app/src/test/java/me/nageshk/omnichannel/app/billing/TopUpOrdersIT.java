@@ -102,4 +102,12 @@ class TopUpOrdersIT extends MoneyApiTestBase {
         assertThat(platinum.at("/topUp/allowed").asBoolean()).isFalse();
         assertThat(platinum.at("/topUp/reason").asString()).isEqualTo("Messages are not charged on this plan");
     }
+
+    @Test
+    void aPlanThatChargesNothingTakesNoTopUp() throws Exception {
+        buy(acme, request("NEW", "platinum-monthly"));
+        POST(quotesPath(acme), amToken, topUp(1000)).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.topUpAmount").value("Messages are not charged on this plan"));
+        POST(ordersPath(acme), amToken, topUp(1000)).andExpect(status().isBadRequest());
+    }
 }

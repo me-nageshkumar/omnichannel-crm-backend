@@ -30,6 +30,7 @@ import me.nageshk.omnichannel.db.billing.PlanTerms;
 import me.nageshk.omnichannel.db.billing.Subscription;
 import me.nageshk.omnichannel.db.billing.SubscriptionAddOn;
 import me.nageshk.omnichannel.db.billing.TaxAmounts;
+import me.nageshk.omnichannel.common.billing.UsageMeter;
 import me.nageshk.omnichannel.db.billing.TermSegment;
 import me.nageshk.omnichannel.security.entitlement.SubscriptionClock;
 import me.nageshk.omnichannel.service.billing.PlanPricing;
@@ -103,6 +104,12 @@ public final class OrderPricing {
         if (amount.stripTrailingZeros().scale() > 2) throw new ValidationException("topUpAmount", "at most 2 decimals");
         if (amount.compareTo(TOP_UP_MIN) < 0 || amount.compareTo(TOP_UP_MAX) > 0) {
             throw new ValidationException("topUpAmount", "must be between 100 and 10,00,000");
+        }
+        TermSegment inForce = SubscriptionClock.segmentAt(sub, instant(in, in.today()));
+        if (inForce == null || inForce.getTerms() == null
+                || inForce.getTerms().rates().get(UsageMeter.WHATSAPP_MESSAGE) == null) {
+            // the money would sit in the wallet with nothing to spend it on
+            throw new ValidationException("topUpAmount", "Messages are not charged on this plan");
         }
         BigDecimal value = Money.round(amount);
         List<OrderLine> lines = List.of(new OrderLine(OrderLine.TOPUP, "Wallet top-up", null, null, 0, value, value));

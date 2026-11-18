@@ -206,8 +206,8 @@ public class InboxSendService {
         DeviceSession device = devices.requireReady(workspaceId, chat);
         workGate.requireSend(workspaceId, actor);
         CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
-        Outgoing out = cloudOutgoing(chat, m);
-        return charged(actor, workspaceId, () -> dispatch(actor, chat, device, out, typedPhone));
+        // charged first: a message the wallet cannot pay for prepares no page and no preview
+        return charged(actor, workspaceId, () -> dispatch(actor, chat, device, cloudOutgoing(chat, m), typedPhone));
     }
 
     private CompletableFuture<MessageView> dispatch(SendActor actor, WaWebChat chat, DeviceSession device,
