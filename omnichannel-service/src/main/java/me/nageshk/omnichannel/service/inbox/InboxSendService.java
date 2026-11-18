@@ -1,6 +1,7 @@
 package me.nageshk.omnichannel.service.inbox;
 
 import me.nageshk.omnichannel.service.billing.WorkGate;
+import me.nageshk.omnichannel.service.billing.wallet.UsageCharger;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -11,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import me.nageshk.omnichannel.common.api.NoDeviceException;
 import me.nageshk.omnichannel.common.api.ValidationException;
@@ -115,6 +117,7 @@ public class InboxSendService {
     private final CloudMessageValidator validator;
     private final CloudMediaService cloudMedia;
     private final CloudMessages cloud;
+    private final UsageCharger usage;
 
     /** Sends to a chat the console did not address by a typed phone. */
     public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
@@ -154,7 +157,29 @@ public class InboxSendService {
         DeviceSession device = devices.requireReady(workspaceId, chat);
         workGate.requireSend(workspaceId, actor);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
-        return dispatch(actor, chat, device, out, typedPhone);
+        return charged(actor, workspaceId, () -> dispatch(actor, chat, device, out, typedPhone));
+    }
+
+    /**
+     * Sends with the message charged to the customer's wallet first. An empty wallet stops the send before anything
+     * reaches the phone ({@code WalletEmptyException}, 402). The charge is given back when the send could not be
+     * started or the phone refused it, and kept when the outcome is unknown.
+     */
+    private CompletableFuture<MessageView> charged(SendActor actor, String workspaceId,
+            Supplier<CompletableFuture<MessageView>> send) {
+        UsageCharger.Charge charge = usage.charge(workspaceId, actor);
+        if (charge == null) return send.get();
+        CompletableFuture<MessageView> sent;
+        try {
+            sent = send.get();
+        } catch (RuntimeException e) {
+            usage.giveBack(charge, "not sent");
+            throw e;
+        }
+        return sent.whenComplete((view, error) -> {
+            if (error == null) usage.stamp(view == null ? null : view.id(), charge);
+            else if (UsageCharger.definitelyNotSent(error)) usage.giveBack(charge, "the phone refused it");
+        });
     }
 
     /** Sends a Cloud API message as the console user {@code me}; see {@link #sendCloud(SendActor, String, WaWebChat, CloudMessage, String, boolean)}. */
@@ -182,7 +207,7 @@ public class InboxSendService {
         workGate.requireSend(workspaceId, actor);
         CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
         Outgoing out = cloudOutgoing(chat, m);
-        return dispatch(actor, chat, device, out, typedPhone);
+        return charged(actor, workspaceId, () -> dispatch(actor, chat, device, out, typedPhone));
     }
 
     private CompletableFuture<MessageView> dispatch(SendActor actor, WaWebChat chat, DeviceSession device,

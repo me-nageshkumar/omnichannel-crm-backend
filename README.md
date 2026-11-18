@@ -772,6 +772,8 @@ Amounts are in INR with GST, computed on the server and stored as `Decimal128`; 
 - Before the first order the supplier details (billing settings) and the customer's billing profile must be
   complete: 409 `BILLING_NOT_SET_UP` with `missing`.
 
+A send refused because the wallet does not cover it answers 402 `WALLET_EMPTY`; nothing reaches the phone.
+
 Error codes: `ORDER_PENDING` (another open order already changes the plan; or a profile edit while an order waits),
 `ORDER_NOT_OPEN`, `ORDER_EXPIRED`, `ORDER_STALE`, `NOT_ENOUGH_CREDIT`, `BILLING_NOT_SET_UP` (all 409).
 

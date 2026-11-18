@@ -59,6 +59,8 @@ public class WaWebMessage {
     private String templateId;
     /** The campaign that sent the message, else null. */
     private String campaignId;
+    /** The wallet entry that paid for this message; null when it was not charged. */
+    private String usageEntryId;
     /** The ad this message came from, else null; set when the message was stored. */
     private AdClick adClick;
     /** The message page a Cloud interactive message was sent as (the body is its link), else null. */
