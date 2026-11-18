@@ -50,10 +50,13 @@ public class AutomationWorker {
     private final AutomationTestService tests;
     private final OmnichannelProperties props;
     private final Clock clock;
+    private final me.nageshk.omnichannel.service.inbox.RoutingGate routingGate;
     private final AtomicBoolean ticking = new AtomicBoolean();
 
     AutomationWorker(MongoTemplate mongo, AutomationRuleRepository rules, AutomationRunRepository runs,
-            RuleRunner ruleRunner, AutomationTestService tests, OmnichannelProperties props, Clock clock) {
+            RuleRunner ruleRunner, AutomationTestService tests, OmnichannelProperties props, Clock clock,
+            me.nageshk.omnichannel.service.inbox.RoutingGate routingGate) {
+        this.routingGate = routingGate;
         this.mongo = mongo;
         this.rules = rules;
         this.runs = runs;
@@ -125,11 +128,13 @@ public class AutomationWorker {
                 RuleRunner.RuleOutcome outcome = ruleRunner.run(e, rule);
                 if (outcome.retryLater()) {
                     retryLater(e, retryReason(outcome));
+                    settleChat(e);
                     return;
                 }
             }
             // the published rules have run; a test waiting for this contact takes the event too
             finish(e, EventOutcome.DONE, null, tests.capture(e));
+            settleChat(e);
         } catch (RuntimeException ex) {
             String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             log.warn("automation event {} failed on attempt {}: {}", e.getId(), e.getAttempts(), message, ex);
@@ -137,8 +142,20 @@ public class AutomationWorker {
                 release(e, new Update().set("lastError", message));
             } else {
                 finish(e, EventOutcome.FAILED, message, List.of());
+                settleChat(e);
             }
         }
+    }
+
+    /**
+     * The message's rules are through (or wait for a retry): its chat, if it still waits, goes to people unless a
+     * chatbot took it (spec 2026-11-18 §5.2). An event that will be tried again keeps the chat waiting; the sweep
+     * catches it if it never comes back.
+     */
+    private void settleChat(AutomationEvent e) {
+        if (e.getKind() != me.nageshk.omnichannel.db.automation.AutomationEventKind.MESSAGE_RECEIVED || e.getData() == null || e.getData().chat() == null
+                || e.getData().chat().id() == null) return;
+        routingGate.settle(e.getData().chat().id());
     }
 
     private void retryLater(AutomationEvent e, String reason) {
