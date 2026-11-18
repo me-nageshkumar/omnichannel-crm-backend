@@ -108,6 +108,35 @@ public class BotChats {
                 new Update().set("handedOverAt", clock.instant()).inc("version", 1), WaWebChat.class);
     }
 
+    /**
+     * Gives the team every chat left in {@code BOT} with no run behind it (spec 2026-11-18 §5.5): none of its runs is
+     * active and the newest ended (or, with no run at all, its last message came) longer than {@code wait} ago, which
+     * leaves alone the moment between a jump's two runs.
+     *
+     * @return how many chats it gave back
+     */
+    public int releaseOrphans(java.time.Instant now, java.time.Duration wait) {
+        java.time.Instant before = now.minus(wait);
+        int released = 0;
+        for (WaWebChat chat : mongo.find(new Query(Criteria.where("status").is(ChatStatus.BOT)), WaWebChat.class)) {
+            me.nageshk.omnichannel.db.chatbot.ChatbotRun newest = mongo.findOne(new Query(Criteria.where("chatId")
+                    .is(chat.getId())).with(org.springframework.data.domain.Sort.by(
+                            org.springframework.data.domain.Sort.Order.desc("createdAt"))).limit(1),
+                    me.nageshk.omnichannel.db.chatbot.ChatbotRun.class);
+            boolean active = mongo.exists(new Query(Criteria.where("chatId").is(chat.getId()).and("status")
+                    .in(me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus.RUNNING.name(),
+                            me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus.WAITING.name())),
+                    me.nageshk.omnichannel.db.chatbot.ChatbotRun.class);
+            if (active) continue;
+            java.time.Instant last = newest != null ? newest.getFinishedAt() : chat.getLastMessageAt();
+            if (last != null && !last.isBefore(before)) continue;
+            String name = newest != null && newest.getChatbotName() != null ? newest.getChatbotName() : "chatbot";
+            toPeople(chat.getId(), null, RoutedReason.CHATBOT_ENDED, name);
+            released++;
+        }
+        return released;
+    }
+
     private static Query heldBy(String chatId, String runId) {
         Criteria c = Criteria.where("_id").is(chatId).and("status").is(ChatStatus.BOT);
         if (runId != null) {
