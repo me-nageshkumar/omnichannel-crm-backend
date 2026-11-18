@@ -116,7 +116,7 @@ public class PagesAddresses {
         for (Workspace w : workspaces.findByCustomerIdOrderByName(customerId)) {
             rows.add(row(w, byWorkspace.get(w.getId())));
         }
-        return new CustomerView(platform(), rows);
+        return new CustomerView(platform(), rows, props.pages().ttlDays());
     }
 
     public BrandRow row(String customerId, String workspaceId) {

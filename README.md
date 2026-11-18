@@ -658,7 +658,7 @@ brand's domain, for example `https://user-task.bimalinstitute.com` or `https://b
   address with `/<folder>` removed.
 - **API** (`pages-address:manage`, the super admin only): `GET|PUT /api/platform/pages-address` (`{baseUrl | null,
   version}`; null goes back to the startup value; the answer carries `source` SAVED/STARTUP and the check's
-  `warning`), `GET /api/customers/{id}/pages-addresses`, `PUT /api/customers/{id}/workspaces/{ws}/pages-address`
+  `warning`), `GET /api/customers/{id}/pages-addresses` (with `keepDays`, how long an earlier address stays known), `PUT /api/customers/{id}/workspaces/{ws}/pages-address`
   (`{baseUrl | null, version}`), `POST …/pages-address/check` (`404 NO_PAGES_ADDRESS` without one).
 - Collections `pagesAddresses` (one per brand that has or had an address) and `pagesSettings` (the platform's saved
   address). Settings `omnichannel.pages.allow-insecure`, `check-timeout`, `trust-forwarded-host`, `ask-from`.

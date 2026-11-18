@@ -22,6 +22,7 @@ public final class PagesAddressViews {
             List<FormerHostView> formerHosts, Long version) {
     }
 
-    public record CustomerView(String platformBaseUrl, List<BrandRow> brands) {
+    /** {@code keepDays}: how long an earlier address stays known (the pages' lifetime), for the screen's warning. */
+    public record CustomerView(String platformBaseUrl, List<BrandRow> brands, int keepDays) {
     }
 }

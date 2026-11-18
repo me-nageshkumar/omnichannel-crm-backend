@@ -112,6 +112,8 @@ class PagesAddressApiIT {
         call(HttpMethod.PUT, brandPath(a), root, body(self(), null));
         JsonNode v = call(HttpMethod.GET, "/api/customers/" + acme.getId() + "/pages-addresses", root, null).getBody();
         assertThat(v.get("platformBaseUrl").asString()).isEqualTo("http://pages.test");
+        // how long an earlier address must keep working, for the screen's warning
+        assertThat(v.get("keepDays").asInt()).isEqualTo(90);
         assertThat(v.get("brands")).hasSize(2);
         assertThat(v.at("/brands/0/workspaceName").asString()).isEqualTo("Brand A");
         assertThat(v.at("/brands/0/address/baseUrl").asString()).isEqualTo(self());
