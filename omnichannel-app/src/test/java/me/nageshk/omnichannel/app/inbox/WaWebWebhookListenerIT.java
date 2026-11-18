@@ -883,7 +883,7 @@ class WaWebWebhookListenerIT {
         // save #1 creates the chat, save #2 is the summary update that conflicts once
         WaWebChatRepository flaky = failingSave(WaWebChatRepository.class, chats, 2, null,
                 new org.springframework.dao.OptimisticLockingFailureException("stale"));
-        InboxIngestService svc = new InboxIngestService(service, flaky, messages, actions, capturing, clock);
+        InboxIngestService svc = new InboxIngestService(service, flaky, messages, actions, phoneNumbers, capturing, clock);
 
         listenerWith(svc).on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919911111111@c.us", false, T), null, null));
@@ -908,7 +908,7 @@ class WaWebWebhookListenerIT {
         List<Object> seen = captureEvents(capturing);
         WaWebChatRepository flaky = failingSave(WaWebChatRepository.class, chats, 1, null,
                 new org.springframework.dao.OptimisticLockingFailureException("stale"));
-        InboxIngestService svc = new InboxIngestService(service, flaky, messages, actions, capturing, clock);
+        InboxIngestService svc = new InboxIngestService(service, flaky, messages, actions, phoneNumbers, capturing, clock);
 
         listenerWith(svc).on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919911111111@c.us", false, T + 60), null, null));
@@ -928,7 +928,7 @@ class WaWebWebhookListenerIT {
         WaWebMessageRepository racing = failingSave(WaWebMessageRepository.class, messages, 1,
                 m -> messages.save(copyOf((WaWebMessage) m)),
                 new org.springframework.dao.DuplicateKeyException("dup"));
-        InboxIngestService svc = new InboxIngestService(service, chats, racing, actions, capturing, clock);
+        InboxIngestService svc = new InboxIngestService(service, chats, racing, actions, phoneNumbers, capturing, clock);
 
         listenerWith(svc).on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create", payload, null, null));
 
@@ -1165,7 +1165,7 @@ class WaWebWebhookListenerIT {
     void listenerSwallowsErrors() {
         // a null payload never reaches the bus (LoggingEventListener would fail on it), so call the listener directly
         WaWebWebhookListener real = listenerWith(
-                new InboxIngestService(service, chats, messages, actions, publisher, clock));
+                new InboxIngestService(service, chats, messages, actions, phoneNumbers, publisher, clock));
         assertThatCode(() -> real.on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create", null, null, null)))
                 .doesNotThrowAnyException();
         assertThatCode(() -> real.on(new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_ack", null, null, null)))
@@ -1180,7 +1180,7 @@ class WaWebWebhookListenerIT {
         doThrow(new IllegalStateException("db down")).when(failing)
                 .upsertFromChat(any(), any(), any(), any(), any(), any());
         WaWebWebhookListener listener = listenerWith(
-                new InboxIngestService(failing, chats, messages, actions, publisher, clock));
+                new InboxIngestService(failing, chats, messages, actions, phoneNumbers, publisher, clock));
         WhatsAppEvent event = new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919812345678@c.us", false, T), null, null);
         assertThatCode(() -> listener.on(event)).doesNotThrowAnyException();
@@ -1193,7 +1193,7 @@ class WaWebWebhookListenerIT {
         doThrow(new org.springframework.dao.DataAccessResourceFailureException("db down")).when(failing)
                 .upsertFromChat(any(), any(), any(), any(), any(), any());
         WaWebWebhookListener listener = listenerWith(
-                new InboxIngestService(failing, chats, messages, actions, publisher, clock));
+                new InboxIngestService(failing, chats, messages, actions, phoneNumbers, publisher, clock));
         WhatsAppEvent event = new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919812345678@c.us", false, T), null, null);
 
@@ -1207,7 +1207,7 @@ class WaWebWebhookListenerIT {
         ApplicationEventPublisher boom = mock(ApplicationEventPublisher.class);
         doThrow(new IllegalStateException("subscriber failed")).when(boom).publishEvent(any(Object.class));
         WaWebWebhookListener listener = listenerWith(
-                new InboxIngestService(service, chats, messages, actions, boom, clock));
+                new InboxIngestService(service, chats, messages, actions, phoneNumbers, boom, clock));
         WhatsAppEvent event = new WhatsAppEvent(this, "pn-1", WS, CUSTOMER, "message_create",
                 message("919812345678@c.us", false, T), null, null);
         assertThatCode(() -> listener.on(event)).doesNotThrowAnyException();

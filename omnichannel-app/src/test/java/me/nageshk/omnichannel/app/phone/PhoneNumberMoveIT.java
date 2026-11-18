@@ -39,6 +39,7 @@ import me.nageshk.omnichannel.db.inbox.ChatStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryImportStatus;
 import me.nageshk.omnichannel.db.inbox.MessageDirection;
 import me.nageshk.omnichannel.db.inbox.MessageSource;
+import me.nageshk.omnichannel.db.inbox.MessageStatus;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebHistoryImport;
@@ -492,6 +493,30 @@ class PhoneNumberMoveIT {
         assertThat(moved.getWorkspaceId()).isEqualTo(brandB.getId());
         assertThat(moved.getMovingSince()).isNull();
         assertThat(mongo.findById(run.getId(), ChatbotRun.class).getStatus()).isEqualTo(ChatbotRunStatus.STOPPED);
+    }
+
+    @Test
+    void ackForMessageSentBeforeMoveUpdatesArchivedMessage() {
+        WaWebMessage sent = message(veenuChat, "our offer");
+        String waId = "true_" + VEENU + "@c.us_ACKMOVE1";
+        sent.setWaMessageId(waId);
+        sent.setDirection(MessageDirection.OUT);
+        sent.setSource(MessageSource.CONSOLE);
+        sent.setStatus(MessageStatus.SENT);
+        messages.save(sent);
+        service.move(main.getId(), brandB.getId(), me);
+
+        ObjectNode p = mapper.createObjectNode();
+        String[] key = waId.split("_", 3);
+        p.putObject("message").putObject("id").put("fromMe", true).put("remote", key[1]).put("id", key[2])
+                .put("_serialized", waId);
+        p.put("ack", 3);
+        publisher.publishEvent(new WhatsAppEvent(this, main.getId(), brandB.getId(), acme.getId(), "message_ack", p,
+                null, null));
+
+        WaWebMessage after = messages.findById(sent.getId()).orElseThrow();
+        assertThat(after.getPhoneNumberId()).isEqualTo(onlyArchive(brandA).getId());
+        assertThat(after.getStatus()).isEqualTo(MessageStatus.READ);
     }
 
     private static void assertCode(Runnable call, String code, int status) {

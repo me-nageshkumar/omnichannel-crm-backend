@@ -24,6 +24,8 @@ import me.nageshk.omnichannel.db.inbox.HistoryChatStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryImportStatus;
 import me.nageshk.omnichannel.db.inbox.HistoryScopeKind;
 import me.nageshk.omnichannel.db.inbox.HistorySkipReason;
+import me.nageshk.omnichannel.db.phone.PhoneNumber;
+import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.db.inbox.HistoryWaiting;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
@@ -86,6 +88,7 @@ public class HistoryImportRunner {
     private final Executor executor;
     private final OmnichannelProperties.History settings;
     private final FetchedChatOpener opener;
+    private final PhoneNumberRepository numbers;
     /** Numbers whose import of an earlier tick is still running. */
     private final Set<String> busy = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean ticking = new AtomicBoolean();
@@ -94,7 +97,9 @@ public class HistoryImportRunner {
             WaWebHistoryImportChatRepository items, WaWebChatRepository chats, InboxDevices devices,
             HistoryDeviceClient client, FetchedMessageImporter importer, HistoryImportCounter counter,
             ApplicationEventPublisher events, Clock clock, @Qualifier("historyImportScheduler") Executor executor,
-            OmnichannelProperties props, FetchedChatOpener opener) {
+            OmnichannelProperties props, FetchedChatOpener opener,
+            PhoneNumberRepository numbers) {
+        this.numbers = numbers;
         this.mongo = mongo;
         this.imports = imports;
         this.items = items;
@@ -303,10 +308,15 @@ public class HistoryImportRunner {
 
     /** Imports one claimed chat page by page. */
     ChatRun importChat(WaWebHistoryImport imp, WaWebHistoryImportChat item, DeviceSession device) {
+        // a number that moved to this brand imports from the move on: what came before is the old brand's
+        Instant notBefore = numbers.findById(imp.getPhoneNumberId()).map(PhoneNumber::getMovedInAt).orElse(null);
         ImportContext ctx = new ImportContext(imp.getCustomerId(), imp.getWorkspaceId(), imp.getPhoneNumberId(),
-                personName(item.getChatName()), item.getId());
+                personName(item.getChatName()), item.getId(), notBefore);
         WaWebHistoryImport.Range range = imp.getRange();
         Long from = range == null || range.from() == null ? null : range.from().getEpochSecond();
+        if (notBefore != null && (from == null || from < notBefore.getEpochSecond())) {
+            from = notBefore.getEpochSecond();
+        }
         Long to = until(imp);
         WaWebHistoryImportChat.Cursor cursor = item.getCursor();
         WaWebHistoryImportChat.Counts start = item.getCounts() == null ? WaWebHistoryImportChat.Counts.ZERO
@@ -321,6 +331,8 @@ public class HistoryImportRunner {
         int timeouts = item.getTimeouts();
         String createdChatId = item.getCreatedChatId();
         WaWebChat chat = null;
+        // some message of the chat is in range of the move: none left makes the chat SKIPPED
+        boolean anyInRange = false;
         // something was stored that the open consoles have not been told about
         boolean unannounced = false;
         // WhatsApp was asked for older messages, or a page timed out and may still be asking: the pause is for this
@@ -339,6 +351,7 @@ public class HistoryImportRunner {
                     List<WaWebMessage> receiptsWanted = new ArrayList<>();
                     for (JsonNode m : page.messages()) {
                         ImportResult r = importer.importMessage(ctx, m);
+                        anyInRange |= r.outcome() != ImportOutcome.SKIPPED;
                         if (r.receiptsWanted()) receiptsWanted.add(r.message());
                         seen++;
                         if (r.outcome() == ImportOutcome.INSERTED) inserted++;
@@ -373,6 +386,12 @@ public class HistoryImportRunner {
                     unannounced = false;
                 }
                 if (!page.hasMore()) {
+                    if (notBefore != null && !anyInRange && inserted + updated == 0) {
+                        finish(item, new Update().set("status", HistoryChatStatus.SKIPPED)
+                                .set("skipReason", HistorySkipReason.NOTHING_AFTER_MOVE));
+                        counter.refresh(imp.getId());
+                        return new ChatRun(true, paced);
+                    }
                     done(imp, item, new Update());
                     return new ChatRun(true, paced);
                 }

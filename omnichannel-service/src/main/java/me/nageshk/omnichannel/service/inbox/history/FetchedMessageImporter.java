@@ -33,6 +33,7 @@ import me.nageshk.omnichannel.service.inbox.InboxDevices;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportContext;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportOutcome;
+import me.nageshk.omnichannel.service.inbox.MessageFields;
 import me.nageshk.omnichannel.service.inbox.InboxIngestService.ImportResult;
 import me.nageshk.omnichannel.service.inbox.history.HistoryDeviceClient.Receipt;
 import me.nageshk.omnichannel.service.ws.DeviceSession;
@@ -104,6 +105,8 @@ public class FetchedMessageImporter {
                     ctx.phoneNumberId(), e.toString());
             return SKIPPED;
         }
+        String sentAt = inbound.isPresent() ? inbound.get().timestamp() : echo.map(MessageEcho::timestamp).orElse(null);
+        if (beforeTheMove(ctx, sentAt, now)) return SKIPPED;
         if (inbound.isPresent()) {
             Message m = inbound.get();
             Contact contact = converter.contactOf(m, raw);
@@ -116,6 +119,11 @@ public class FetchedMessageImporter {
         keep(channel, new Change(WaWebWebhookConverter.ECHO_FIELD,
                 Value.of(channel).withMessageEchoes(List.of(e.withWaWeb(imported(e.waWeb()))))), raw, now);
         return ingest.importEcho(ctx, e);
+    }
+
+    /** True for a message older than the move that brought the number to this brand: the old brand's, not imported. */
+    private static boolean beforeTheMove(ImportContext ctx, String timestamp, Instant now) {
+        return ctx.notBefore() != null && MessageFields.timestampOf(timestamp, now).isBefore(ctx.notBefore());
     }
 
     /**

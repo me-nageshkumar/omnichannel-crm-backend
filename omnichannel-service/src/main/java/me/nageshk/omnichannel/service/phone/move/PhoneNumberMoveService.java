@@ -150,6 +150,18 @@ public class PhoneNumberMoveService {
         return moves.findFirstByPhoneNumberIdOrderByIdDesc(phoneNumberId);
     }
 
+    /** The move as the console shows it, its brands named. */
+    public PhoneNumberMoveView view(PhoneNumberMove m) {
+        return new PhoneNumberMoveView(m.getId(), m.getPhoneNumberId(), m.getFromWorkspaceId(),
+                workspaceName(m.getFromWorkspaceId()), m.getToWorkspaceId(), workspaceName(m.getToWorkspaceId()),
+                m.getStep(), m.getFinishedAt() != null, m.getError(), m.getCounts(), m.getStartedAt(),
+                m.getFinishedAt());
+    }
+
+    private String workspaceName(String id) {
+        return id == null ? null : workspaces.findById(id).map(Workspace::getName).orElse(null);
+    }
+
     /** What moving the number to the brand would do; refused as {@link #move} refuses a wrong target. */
     public MovePreview preview(String phoneNumberId, String toWorkspaceId) {
         PhoneNumber n = phoneNumbers.require(phoneNumberId);

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -39,6 +40,8 @@ import me.nageshk.omnichannel.security.phone.DeviceAccessChanged;
 import me.nageshk.omnichannel.security.phone.Secrets;
 import me.nageshk.omnichannel.service.inbox.InboxCleanup;
 import me.nageshk.omnichannel.service.phone.PhoneNumberStatus.Status;
+import me.nageshk.omnichannel.service.phone.move.PhoneNumberMove;
+import me.nageshk.omnichannel.service.phone.move.PhoneNumberMoveRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -68,13 +71,15 @@ public class PhoneNumberService {
     private final AccessService access;
     private final InboxCleanup inboxCleanup;
     private final TeamRepository teams;
+    private final PhoneNumberMoveRepository moves;
     private final Clock clock;
     private final Limits limits;
 
     public PhoneNumberService(PhoneNumberRepository numbers, WorkspaceRepository workspaces,
             CustomerRepository customers, Enablement enablement, LiveDevices live, ApplicationEventPublisher events,
             ConnectCodeRepository codes, AccessService access, InboxCleanup inboxCleanup, TeamRepository teams,
-            Clock clock, Limits limits) {
+            Clock clock, Limits limits, PhoneNumberMoveRepository moves) {
+        this.moves = moves;
         this.limits = limits;
         this.teams = teams;
         this.codes = codes;
@@ -212,7 +217,7 @@ public class PhoneNumberService {
         Workspace w = workspaces.findById(n.getWorkspaceId()).orElse(null);
         Customer c = customers.findById(n.getCustomerId()).orElse(null);
         Team t = n.getTeamId() == null ? null : teams.findById(n.getTeamId()).orElse(null);
-        return view(n, w, c, t);
+        return view(n, w, c, t, moves.findByUnfinishedOf(n.getId()).isPresent());
     }
 
     public List<PhoneNumberView> views(List<PhoneNumber> list) {
@@ -222,8 +227,10 @@ public class PhoneNumberService {
                 .stream().collect(Collectors.toMap(Customer::getId, Function.identity()));
         Map<String, Team> ts = teams.findAllById(list.stream().map(PhoneNumber::getTeamId).filter(Objects::nonNull)
                 .distinct().toList()).stream().collect(Collectors.toMap(Team::getId, Function.identity()));
+        Set<String> unfinished = moves.findByUnfinishedOfNotNull().stream().map(PhoneNumberMove::getPhoneNumberId)
+                .collect(Collectors.toSet());
         return list.stream().map(n -> view(n, ws.get(n.getWorkspaceId()), cs.get(n.getCustomerId()),
-                n.getTeamId() == null ? null : ts.get(n.getTeamId()))).toList();
+                n.getTeamId() == null ? null : ts.get(n.getTeamId()), unfinished.contains(n.getId()))).toList();
     }
 
     /**
@@ -245,14 +252,14 @@ public class PhoneNumberService {
         return new PhoneNumberView.Page(items, all.size(), p);
     }
 
-    private PhoneNumberView view(PhoneNumber n, Workspace w, Customer c, Team t) {
+    private PhoneNumberView view(PhoneNumber n, Workspace w, Customer c, Team t, boolean moveUnfinished) {
         PhoneNumberStatus s = PhoneNumberStatus.of(n, w, c, live.stateOf(n.getId()));
         return new PhoneNumberView(n.getId(), n.shownNumber(), n.getLabel(), n.getConnectionType(), n.getCustomerId(),
                 c == null ? null : c.getName(), n.getWorkspaceId(), w == null ? null : w.getName(),
                 s.status(), n.getDisabled(), s.disabledBecause(), n.getLastConnectedAt(), n.getLastSeenAt(),
                 n.getLastWrongNumber(), n.getLastWrongNumberAt(), n.getDeviceKeyHash() != null, n.getCreationTime(),
                 t == null ? null : new PhoneNumberView.TeamRef(t.getId(), t.getName()), null, n.getArchiveOf(),
-                n.getArchivedAt());
+                n.getArchivedAt(), moveUnfinished);
     }
 
     /** An archive only keeps the old brand's chats: it cannot be enabled, connected or given a team. */
