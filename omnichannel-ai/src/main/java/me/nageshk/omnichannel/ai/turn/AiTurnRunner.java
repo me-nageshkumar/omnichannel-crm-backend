@@ -122,7 +122,7 @@ public class AiTurnRunner {
     /** An app-side MCP tool as the model knows it. */
     private record AppTool(McpEndpoint endpoint, String tool) {}
 
-    private record Tools(List<AiTool> list, Map<String, AppTool> app, boolean finish) {}
+    private record Tools(List<AiTool> list, Map<String, AppTool> app, boolean finish, boolean progress) {}
 
     /** What a turn gathers along the way, kept on the row whether it ends DONE or FAILED. */
     private static final class Tally {
@@ -130,6 +130,8 @@ public class AiTurnRunner {
         final List<AiCall.ToolCallLog> logs = new ArrayList<>();
         boolean toolsUsed;
         boolean rebuilt;
+        /** The note_progress calls' values, merged in order. */
+        final Map<String, Object> progress = new LinkedHashMap<>();
 
         void add(AiUsage u) {
             if (u == null) return;
@@ -162,6 +164,7 @@ public class AiTurnRunner {
         call.setUsage(tally.usage);
         call.setToolCalls(tally.logs);
         call.setToolsUsed(tally.toolsUsed);
+        call.progress(tally.progress);
         call.setLatencyMs((System.nanoTime() - started) / 1_000_000);
         call.setFinishedAt(clock.instant());
         return call.toResult();
@@ -286,6 +289,14 @@ public class AiTurnRunner {
                 break;
             }
 
+            boolean onlyProgress = tools.progress() && asked.stream().allMatch(c -> ProgressTool.NAME.equals(c.name()));
+            if (onlyProgress && !text.isBlank()) {
+                // a reply that notes progress beside its text ends the turn: the "noted" outputs are owed to the
+                // next turn, which sends them first (as for finish), so noting costs no extra round trip
+                transcript.addAll(noteProgress(asked, r, tally));
+                open = new ArrayList<>(asked.stream().map(ToolCall::id).toList());
+                break;
+            }
             Optional<ToolCall> finishCall = asked.stream().filter(c -> FinishTool.NAME.equals(c.name())).findFirst();
             if (finishCall.isEmpty() && rounds >= props.maxToolRounds()) {
                 throw new TurnFailure("TOOL_ROUNDS",
@@ -294,6 +305,10 @@ public class AiTurnRunner {
             List<AiItem> results = new ArrayList<>();
             for (ToolCall c : asked) {
                 if (FinishTool.NAME.equals(c.name())) continue;
+                if (tools.progress() && ProgressTool.NAME.equals(c.name())) {
+                    results.addAll(noteProgress(List.of(c), r, tally));
+                    continue;
+                }
                 if (clock.instant().isAfter(deadline)) {
                     throw new TurnFailure("TIMEOUT", "The turn ran out of time (" + props.turnTimeout().toSeconds()
                             + " s) before the tool " + c.name());
@@ -349,6 +364,7 @@ public class AiTurnRunner {
         call.setUsage(tally.usage);
         call.setToolCalls(tally.logs);
         call.setToolsUsed(tally.toolsUsed);
+        call.progress(tally.progress);
         call.setLatencyMs(Duration.between(start, clock.instant()).toMillis());
         call.setStagedAt(clock.instant());
         // the result goes on the row first, and only while this claim holds it: a copy whose lease ran out never
@@ -406,6 +422,8 @@ public class AiTurnRunner {
         Map<String, AppTool> app = new LinkedHashMap<>();
         Optional<AiTool.FunctionTool> finish = FinishTool.of(r.outcomes(), r.collect());
         finish.ifPresent(list::add);
+        Optional<AiTool.FunctionTool> progress = r.trackProgress() ? ProgressTool.of(r.collect()) : Optional.empty();
+        progress.ifPresent(list::add);
         for (McpServer s : profile.getMcpServers() == null ? List.<McpServer>of() : profile.getMcpServers()) {
             List<String> allowed = s.getAllowedTools() == null ? List.of() : s.getAllowedTools();
             if (s.getConnectBy() == ConnectBy.APP) {
@@ -430,7 +448,7 @@ public class AiTurnRunner {
         List<String> stores = profile.getVectorStoreIds() == null ? List.of() : profile.getVectorStoreIds();
         if (!stores.isEmpty() && caps.vectorStores()) list.add(new AiTool.FileSearchTool(List.copyOf(stores)));
         if (profile.isWebSearch() && caps.webSearch()) list.add(new AiTool.WebSearchTool());
-        return new Tools(list, app, finish.isPresent());
+        return new Tools(list, app, finish.isPresent(), progress.isPresent());
     }
 
     /** {@code <label>__<tool>}, cut to the 64 letters, digits, _ and - that function names may hold. */
@@ -438,7 +456,8 @@ public class AiTurnRunner {
         String base = (label + "__" + tool).replaceAll("[^A-Za-z0-9_-]", "_");
         if (base.length() > 64) base = base.substring(0, 64);
         String name = base;
-        for (int i = 2; taken.containsKey(name) || FinishTool.NAME.equals(name); i++) {
+        for (int i = 2; taken.containsKey(name) || FinishTool.NAME.equals(name) || ProgressTool.NAME.equals(name);
+                i++) {
             String suffix = "_" + i;
             name = base.substring(0, Math.min(base.length(), 64 - suffix.length())) + suffix;
         }
@@ -469,6 +488,16 @@ public class AiTurnRunner {
         tally.logs.add(new AiCall.ToolCallLog(c.name(), (System.nanoTime() - started) / 1_000_000, ok,
                 output.length() > EXCERPT ? output.substring(0, EXCERPT) + "…" : output));
         return new AiItem.ToolResultItem(c.id(), output);
+    }
+
+    /** note_progress calls: their values merged into the turn's progress, each answered "noted". */
+    private static List<AiItem> noteProgress(List<ToolCall> progressCalls, TurnRequest r, Tally tally) {
+        List<AiItem> results = new ArrayList<>();
+        for (ToolCall c : progressCalls) {
+            tally.progress.putAll(ProgressTool.parse(c.argumentsJson(), r.collect()));
+            results.add(new AiItem.ToolResultItem(c.id(), ProgressTool.NOTED));
+        }
+        return results;
     }
 
     private static AiItem.ToolResultItem result(List<AiItem> transcript, String callId) {

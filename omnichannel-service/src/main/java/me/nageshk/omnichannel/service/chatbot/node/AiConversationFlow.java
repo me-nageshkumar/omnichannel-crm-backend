@@ -98,7 +98,29 @@ final class AiConversationFlow {
         return take(ctx, node, s, fresh, List.of(), null);
     }
 
+    /** What the turn noted joins the node's progress; every result after the answer carries the whole of it. */
     StepResult onAi(RunContext ctx, FlowNode node, AiNodeSettings s, TurnResult r) {
+        Map<String, Object> st = new LinkedHashMap<>(AiExecutor.state(ctx, node));
+        Map<String, Object> progress = progressOf(st);
+        if (r.progress() != null) progress.putAll(r.progress());
+        if (r.status() == TurnStatus.DONE && r.finish() != null && r.finish().fields() != null) {
+            // the finish lists every collected key, null (or empty) for what was never given: those are not progress
+            r.finish().fields().forEach((k, v) -> {
+                if (v != null && !(v instanceof String str && str.isBlank())) progress.put(k, v);
+            });
+        }
+        st.put("progress", progress);
+        ctx.vars().put(node.name(), st);
+        return answered(ctx, node, s, r).withProgress(progress);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> progressOf(Map<String, Object> st) {
+        return st.get("progress") instanceof Map<?, ?> m ? new LinkedHashMap<>((Map<String, Object>) m)
+                : new LinkedHashMap<>();
+    }
+
+    private StepResult answered(RunContext ctx, FlowNode node, AiNodeSettings s, TurnResult r) {
         Map<String, Object> st = new LinkedHashMap<>(AiExecutor.state(ctx, node));
         st.put("usage", AiExecutor.addUsage(st, r.usage()));
         if (r.conversationId() != null) st.put("conversationId", r.conversationId());
@@ -224,7 +246,8 @@ final class AiConversationFlow {
         TurnRequest request = new TurnRequest(ctx.workspaceId(), ctx.run().getId(), ctx.run().getChatbotId(),
                 node.name(), s.profileId(), s.overrides(),
                 AiExecutor.blank(s.extraInstructions()) ? null : ctx.render(s.extraInstructions()), List.copyOf(in),
-                s.outcomesOrEmpty(), s.collectOrEmpty(), false, s.replyFormat(), conversationId, supersedesCallId);
+                s.outcomesOrEmpty(), s.collectOrEmpty(), false, !s.collectOrEmpty().isEmpty(), s.replyFormat(),
+                conversationId, supersedesCallId);
         String callId;
         try {
             callId = gateway.submit(request);

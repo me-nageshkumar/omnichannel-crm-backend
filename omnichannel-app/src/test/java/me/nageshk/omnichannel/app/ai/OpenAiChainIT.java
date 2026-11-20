@@ -34,7 +34,8 @@ class OpenAiChainIT extends AiTestBase {
 
     private TurnResult turn(String profileId, String conversationId, String input) throws Exception {
         String id = gateway.submit(new TurnRequest(brand.getId(), "run1", "bot1", "Ask", profileId, null,
-                "The customer is Asha.", List.of(input), List.of(), List.of(), false, null, conversationId, null));
+                "The customer is Asha.", List.of(input), List.of(), List.of(), false, false, null, conversationId,
+                null));
         worker.tick().get(10, TimeUnit.SECONDS);
         return gateway.result(brand.getId(), id).orElseThrow();
     }

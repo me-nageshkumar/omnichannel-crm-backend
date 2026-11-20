@@ -16,6 +16,8 @@ import me.nageshk.omnichannel.service.chatbot.ChatbotViews.RunView;
 import me.nageshk.omnichannel.service.chatbot.ChatbotViews.TestRequest;
 import me.nageshk.omnichannel.service.chatbot.ChatbotPreviewRenderer;
 import me.nageshk.omnichannel.service.chatbot.ChatbotRunQueryService;
+import me.nageshk.omnichannel.service.chatbot.report.ChatbotReport;
+import me.nageshk.omnichannel.service.chatbot.report.ChatbotReportService;
 import me.nageshk.omnichannel.service.cloud.CloudMediaService;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMediaUploadResponse;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMessages;
@@ -52,15 +54,17 @@ class ChatbotController {
     private final ChatbotPreviewRenderer preview;
     private final CloudMediaService media;
     private final CloudMessages cloud;
+    private final ChatbotReportService reports;
 
     ChatbotController(ChatbotService chatbots, ChatbotOptionsService options, ChatbotRunQueryService runs,
-            ChatbotPreviewRenderer preview, CloudMediaService media, CloudMessages cloud) {
+            ChatbotPreviewRenderer preview, CloudMediaService media, CloudMessages cloud, ChatbotReportService reports) {
         this.chatbots = chatbots;
         this.options = options;
         this.runs = runs;
         this.preview = preview;
         this.media = media;
         this.cloud = cloud;
+        this.reports = reports;
     }
 
     // ---- test, runs, editor helpers (spec §7, §8.1, §8.3) ----
@@ -79,6 +83,27 @@ class ChatbotController {
             @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size) {
         return runs.runs(workspaceId, id, status, from, to, page, size);
+    }
+
+    @GetMapping("/{id}/report")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:view')")
+    ChatbotReport report(@PathVariable String workspaceId, @PathVariable String id,
+            @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
+            @RequestParam(required = false) String phoneNumberId) {
+        return reports.report(workspaceId, id, from, to, phoneNumberId);
+    }
+
+    @GetMapping("/{id}/report/runs")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:view')")
+    ChatbotReport.RunRowPage reportRuns(@PathVariable String workspaceId, @PathVariable String id,
+            @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
+            @RequestParam(required = false) String phoneNumberId, @RequestParam(required = false) String nodeId,
+            @RequestParam(defaultValue = "false") boolean reached, @RequestParam(required = false) ChatbotRunStatus status,
+            @RequestParam(defaultValue = "false") boolean active,
+            @RequestParam(required = false) ChatbotReportService.ChatBucket chat,
+            @RequestParam(required = false) Integer given, @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        return reports.runs(workspaceId, id, from, to, phoneNumberId, nodeId, reached, status, active, chat, given, page, size);
     }
 
     @GetMapping("/{id}/runs/{runId}")

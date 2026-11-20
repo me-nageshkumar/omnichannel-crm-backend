@@ -1,14 +1,19 @@
 package me.nageshk.omnichannel.app.crm;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.contact.AdOrigin;
 import me.nageshk.omnichannel.crm.contact.CaptureService;
+import me.nageshk.omnichannel.crm.contact.LeadOwnerFill;
 import me.nageshk.omnichannel.crm.contact.Origin;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureResult;
+import me.nageshk.omnichannel.crm.deal.CrmDeal;
+import me.nageshk.omnichannel.crm.deal.CrmDealRepository;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipelineService;
 import me.nageshk.omnichannel.crm.pipeline.CrmStage;
@@ -18,7 +23,9 @@ import me.nageshk.omnichannel.crm.platform.ContactDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformAdClick;
 import me.nageshk.omnichannel.crm.platform.PlatformChat;
 import me.nageshk.omnichannel.crm.platform.PlatformContact;
+import me.nageshk.omnichannel.crm.platform.PeopleDirectory;
 import me.nageshk.omnichannel.crm.platform.PlatformNumber;
+import me.nageshk.omnichannel.crm.platform.PlatformPerson;
 import me.nageshk.omnichannel.crm.settings.CrmSettings;
 import me.nageshk.omnichannel.crm.settings.CrmSettingsService;
 import me.nageshk.omnichannel.service.automation.AutomationActionFailed;
@@ -34,10 +41,16 @@ class AutomationCrmAdapter implements AutomationCrm {
     private final CrmPipelineService pipelines;
     private final ContactDirectory contacts;
     private final ChatDirectory chats;
+    private final LeadOwnerFill ownerFill;
+    private final CrmDealRepository deals;
+    private final PeopleDirectory people;
 
     AutomationCrmAdapter(CrmSettingsService settings, CaptureService capture, CrmAccess access,
             CrmPipelineService pipelines, ContactDirectory contacts,
-            ChatDirectory chats) {
+            ChatDirectory chats, LeadOwnerFill ownerFill, CrmDealRepository deals, PeopleDirectory people) {
+        this.deals = deals;
+        this.people = people;
+        this.ownerFill = ownerFill;
         this.settings = settings;
         this.capture = capture;
         this.access = access;
@@ -85,6 +98,28 @@ class AutomationCrmAdapter implements AutomationCrm {
         CrmStage placed = lane(pipeline, res.deal().stageId());
         return new LeadResult(res.contact().id(), res.deal().id(), pipeline.getName(),
                 placed == null ? null : placed.getName());
+    }
+
+    @Override
+    public FillResult fillOwner(String workspaceId, String customerId, String contactId, String phoneNumberId,
+            String userId) {
+        LeadOwnerFill.Filled f = ownerFill.fill(workspaceId, customerId, contactId, phoneNumberId, userId);
+        return new FillResult(f.crmContactId(), f.dealIds());
+    }
+
+    @Override
+    public Map<String, DealInfo> dealInfo(String workspaceId, List<String> dealIds) {
+        if (dealIds == null || dealIds.isEmpty()) return Map.of();
+        List<CrmDeal> found = deals.findAllById(dealIds).stream().filter(d -> workspaceId.equals(d.getWorkspaceId()))
+                .toList();
+        Map<String, PlatformPerson> owners = people.people(found.stream().map(CrmDeal::getOwnerId)
+                .filter(java.util.Objects::nonNull).distinct().toList());
+        Map<String, DealInfo> out = new HashMap<>();
+        for (CrmDeal d : found) {
+            PlatformPerson owner = d.getOwnerId() == null ? null : owners.get(d.getOwnerId());
+            out.put(d.getId(), new DealInfo(d.getPipelineId(), owner == null ? null : owner.name()));
+        }
+        return out;
     }
 
     @Override

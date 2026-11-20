@@ -20,6 +20,8 @@ import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
 import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
 import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
+import me.nageshk.omnichannel.db.tenant.Team;
+import me.nageshk.omnichannel.db.tenant.TeamRepository;
 import me.nageshk.omnichannel.db.user.User;
 import me.nageshk.omnichannel.db.user.UserRepository;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
@@ -50,11 +52,12 @@ public class ChatbotRunQueryService {
     private final ContactRepository contacts;
     private final PhoneNumberRepository numbers;
     private final UserRepository users;
+    private final TeamRepository teams;
     private final MongoTemplate mongo;
 
     public ChatbotRunQueryService(ChatbotService chatbots, ChatbotRunService runs, ChatbotRunRepository runRepo,
             WaWebChatRepository chats, ContactRepository contacts, PhoneNumberRepository numbers, UserRepository users,
-            MongoTemplate mongo) {
+            TeamRepository teams, MongoTemplate mongo) {
         this.chatbots = chatbots;
         this.runs = runs;
         this.runRepo = runRepo;
@@ -62,6 +65,7 @@ public class ChatbotRunQueryService {
         this.contacts = contacts;
         this.numbers = numbers;
         this.users = users;
+        this.teams = teams;
         this.mongo = mongo;
     }
 
@@ -151,6 +155,16 @@ public class ChatbotRunQueryService {
         return new RunView(r.getId(), r.getChatbotId(), r.getChatbotName(), r.getVersionNumber(), chat, contact, number,
                 r.getStatus(), r.getCurrentNodeId(), r.getCurrentNodeName(), r.getWaiting(), r.isTest(), r.getStartedBy(),
                 r.getSteps() == null ? List.of() : r.getSteps(), r.getVariables(), r.getEndReason(), stoppedBy,
-                r.getCreatedAt(), r.getFinishedAt());
+                r.getCreatedAt(), r.getFinishedAt(), ending(r, names));
+    }
+
+    private RunView.Ending ending(ChatbotRun r, Map<String, String> names) {
+        me.nageshk.omnichannel.db.chatbot.RunEnding e = r.getEnding();
+        if (e == null) return null;
+        AutomationRef agent = e.agentUserId() == null ? null : new AutomationRef(e.agentUserId(),
+                names.computeIfAbsent(e.agentUserId(), id -> users.findById(id).map(User::getName).orElse(null)));
+        AutomationRef team = e.teamId() == null ? null : new AutomationRef(e.teamId(),
+                teams.findById(e.teamId()).map(Team::getName).orElse(null));
+        return new RunView.Ending(e.chat(), agent, team, e.at());
     }
 }

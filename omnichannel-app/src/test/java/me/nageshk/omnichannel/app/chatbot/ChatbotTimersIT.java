@@ -118,6 +118,27 @@ class ChatbotTimersIT extends ChatbotTestBase {
     }
 
     @Test
+    void waitingStepKeepsProgressWhenRunEnds() throws Exception {
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(withSettings(createChatbot("Bot", askFlow()), Map.of("endAfterMinutes", 30)));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            ChatbotRun stored = run(run.getId());
+            me.nageshk.omnichannel.db.chatbot.ChatbotStep s = stored.getSteps().get(stored.getSteps().size() - 1);
+            stored.getSteps().set(stored.getSteps().size() - 1, new me.nageshk.omnichannel.db.chatbot.ChatbotStep(s.index(),
+                    s.nodeId(), s.nodeName(), s.type(), s.startedAt(), s.finishedAt(), s.outcome(), s.output(), s.summary(),
+                    s.error(), s.result(), s.waitedFor(), Map.of("name", "Asha")));
+            runRepo.save(stored);
+            clock.advance(Duration.ofMinutes(31));
+            tick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.ENDED);
+            me.nageshk.omnichannel.db.chatbot.ChatbotStep last = run(run.getId()).getSteps().get(run(run.getId()).getSteps().size() - 1);
+            assertThat(last.outcome()).isEqualTo(me.nageshk.omnichannel.db.chatbot.ChatbotStep.Outcome.WAITING);
+            assertThat(last.progress()).isEqualTo(Map.of("name", "Asha"));
+        }
+    }
+
+    @Test
     void replyPushesTimersForward() throws Exception {
         WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
         Map<String, Object> f = flow(List.of(

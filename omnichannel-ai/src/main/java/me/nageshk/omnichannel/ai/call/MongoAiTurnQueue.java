@@ -71,6 +71,7 @@ public class MongoAiTurnQueue implements AiTurnQueue {
 
     private static Update result(AiCall c) {
         return new Update().set("model", c.getModel()).set("reply", c.getReply()).set("finish", c.finishJson())
+                .set("progress", c.progressJson())
                 .set("toolCalls", c.getToolCalls()).set("usage", c.getUsage()).set("toolsUsed", c.isToolsUsed())
                 .set("latencyMs", c.getLatencyMs()).set("stateBefore", c.getStateBefore())
                 .set("transcriptSizeBefore", c.getTranscriptSizeBefore())

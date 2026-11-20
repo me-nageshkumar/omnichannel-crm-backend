@@ -100,7 +100,7 @@ class AiTurnWorkerTest {
 
     private static AiCall row(String id) {
         AiCall c = AiCall.pending(new TurnRequest("ws", "run", "bot", "Ask", "p", null, null, List.of("Hi"),
-                List.of(), List.of(), false, null, null, null), "conv", "scripted", "m", NOW);
+                List.of(), List.of(), false, false, null, null, null), "conv", "scripted", "m", NOW);
         c.setId(id);
         return c;
     }

@@ -64,6 +64,8 @@ public class ChatbotRun {
     private Instant retryAt;
     private Instant createdAt;
     private Instant finishedAt;
+    /** Where the chat went when the run ended; absent while the run is active and on runs that ended before this existed. */
+    private RunEnding ending;
     /**
      * The last customer message the run has dealt with: the trigger message at the start (else the chat's newest one),
      * then each WhatsApp reply a node was answered with or the AI node took. An AI conversation starts after it.

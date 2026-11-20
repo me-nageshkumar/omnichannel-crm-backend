@@ -16,6 +16,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -32,7 +33,9 @@ public class AiCall {
     /** One app-side tool call of the turn; the result is cut to an excerpt. */
     public record ToolCallLog(String name, long ms, boolean ok, String resultExcerpt) {}
 
-    private static final JsonMapper JSON = JsonMapper.builder().build();
+    /** A request queued before a flag was added (trackProgress) reads it as false instead of failing the turn. */
+    private static final JsonMapper JSON = JsonMapper.builder()
+            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES).build();
 
     @Id
     private String id;
@@ -58,6 +61,8 @@ public class AiCall {
     private String reply;
     /** The finish call as JSON text, for the same reason (the fields are keyed by the node's collect keys). */
     private String finish;
+    /** What the turn's note_progress calls noted, as JSON text like the finish; null when nothing. */
+    private String progress;
     private List<ToolCallLog> toolCalls = new ArrayList<>();
     private AiUsage usage;
     private boolean toolsUsed;
@@ -111,6 +116,19 @@ public class AiCall {
         return finish;
     }
 
+    /** What the turn noted, never null. */
+    public Map<String, Object> progress() {
+        return progress == null ? Map.of() : JSON.readValue(progress, new TypeReference<Map<String, Object>>() {});
+    }
+
+    public void progress(Map<String, Object> p) {
+        progress = p == null || p.isEmpty() ? null : JSON.writeValueAsString(p);
+    }
+
+    String progressJson() {
+        return progress;
+    }
+
     public void fail(String code, String message) {
         status = AiCallStatus.FAILED;
         errorCode = code;
@@ -120,7 +138,7 @@ public class AiCall {
     /** The result the listeners get; {@code json} is the reply parsed when the request asked for JSON. */
     public TurnResult toResult() {
         TurnStatus s = status == AiCallStatus.DONE ? TurnStatus.DONE : TurnStatus.FAILED;
-        return new TurnResult(id, s, reply, s == TurnStatus.DONE ? json() : null, finish(),
+        return new TurnResult(id, s, reply, s == TurnStatus.DONE ? json() : null, finish(), progress(),
                 usage == null ? new AiUsage(0, 0, 0, 0) : usage, toolsUsed, conversationId, runId, errorCode, error);
     }
 

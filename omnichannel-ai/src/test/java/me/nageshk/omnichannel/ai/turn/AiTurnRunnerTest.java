@@ -127,13 +127,22 @@ class AiTurnRunnerTest {
 
     private static TurnRequest request(String conversationId, String... inputs) {
         return new TurnRequest(WS, "run1", "bot1", "Ask", "p1", null, null, List.of(inputs), List.of(), List.of(),
-                false, null, conversationId, null);
+                false, false, null, conversationId, null);
     }
 
     private static TurnRequest with(TurnRequest r, List<AiOutcome> outcomes, List<AiField> collect, boolean force,
             AiReplyFormat format, String supersedes) {
         return new TurnRequest(r.workspaceId(), r.runId(), r.chatbotId(), r.nodeName(), r.profileId(), r.overrides(),
-                r.extraInstructions(), r.inputs(), outcomes, collect, force, format, r.conversationId(), supersedes);
+                r.extraInstructions(), r.inputs(), outcomes, collect, force, r.trackProgress(), format,
+                r.conversationId(), supersedes);
+    }
+
+    /** The request with progress tracked over these collect keys (and these outcomes, for a finish). */
+    private static TurnRequest tracked(TurnRequest r, List<AiOutcome> outcomes, List<AiField> collect,
+            String supersedes) {
+        return new TurnRequest(r.workspaceId(), r.runId(), r.chatbotId(), r.nodeName(), r.profileId(), r.overrides(),
+                r.extraInstructions(), r.inputs(), outcomes, collect, false, true, r.replyFormat(),
+                r.conversationId(), supersedes);
     }
 
     /** What the gateway and worker do around a run: start the conversation, insert the row, run, keep the row. */
@@ -625,5 +634,188 @@ class AiTurnRunnerTest {
         provider.text("r4", "From the docs");
         assertThat(turn(request(null, "files")).toolsUsed()).as("file search only").isFalse();
         assertThat(provider.last().tools()).containsExactly(new AiTool.FileSearchTool(List.of("vs1")));
+    }
+
+    private static final List<AiField> NAME_CITY = List.of(new AiField("name", "Their name", AiFieldType.TEXT),
+            new AiField("city", null, AiFieldType.TEXT));
+
+    private static ToolCall progress(String id, String json) {
+        return new ToolCall(id, "note_progress", json);
+    }
+
+    private List<String> toolNames(ProviderRequest r) {
+        return r.tools().stream().map(t -> ((AiTool.FunctionTool) t).name()).toList();
+    }
+
+    @Test
+    void progressToolOnlyWhenTracked() {
+        provider.text("r1", "A").text("r2", "B").text("r3", "C");
+
+        turn(with(request(null, "Hi"), List.of(), NAME_CITY, false, null, null));
+        assertThat(provider.last().tools()).as("not tracked").isEmpty();
+
+        turn(tracked(request(null, "Hi"), List.of(), List.of(), null));
+        assertThat(provider.last().tools()).as("tracked, but nothing to collect").isEmpty();
+
+        turn(tracked(request(null, "Hi"), List.of(), NAME_CITY, null));
+        assertThat(toolNames(provider.last())).containsExactly("note_progress");
+        assertThat(provider.last().tools().get(0)).isEqualTo(ProgressTool.of(NAME_CITY).orElseThrow());
+    }
+
+    @Test
+    void progressWithTextCostsNoExtraRound() {
+        use(new ScriptedProvider("chained", StateMode.CHAINED));
+        provider.add(provider.reply("r1", "Thanks Asha! Which city are you in?",
+                List.of(progress("p1", "{\"name\":\"Asha\",\"city\":null}")), false));
+
+        TurnResult r = turn(tracked(request(null, "I am Asha"), List.of(), NAME_CITY, null));
+
+        assertThat(r.status()).isEqualTo(TurnStatus.DONE);
+        assertThat(provider.requests).as("no round trip just to answer note_progress").hasSize(1);
+        assertThat(r.text()).isEqualTo("Thanks Asha! Which city are you in?");
+        assertThat(r.progress()).isEqualTo(Map.of("name", "Asha"));
+        assertThat(r.finish()).isNull();
+        assertThat(r.toolsUsed()).as("noting progress changes nothing outside").isFalse();
+        assertThat(row(r).progress()).isEqualTo(Map.of("name", "Asha"));
+        assertThat(row(r).toResult().progress()).isEqualTo(Map.of("name", "Asha"));
+        assertThat(row(r).getToolCalls()).isEmpty();
+        AiConversation c = conversations.get(r.conversationId());
+        assertThat(c.getOpenCallIds()).containsExactly("p1");
+        assertThat(TranscriptItems.items(c.getTranscript())).containsExactly(new UserText("I am Asha"),
+                new AssistantText("Thanks Asha! Which city are you in?"),
+                new ToolCallItem("p1", "note_progress", "{\"name\":\"Asha\",\"city\":null}"),
+                new ToolResultItem("p1", "noted"));
+    }
+
+    @Test
+    void owedProgressOutputLeadsNextTurn() {
+        use(new ScriptedProvider("chained", StateMode.CHAINED));
+        provider.add(provider.reply("r1", "Which city?", List.of(progress("p1", "{\"name\":\"Asha\",\"city\":null}")),
+                false)).text("r2", "Pune, lovely");
+        TurnResult first = turn(tracked(request(null, "I am Asha"), List.of(), NAME_CITY, null));
+
+        TurnResult second = turn(tracked(request(first.conversationId(), "Pune"), List.of(), NAME_CITY, null));
+
+        ProviderRequest sent = provider.last();
+        assertThat(sent.state()).isEqualTo(Map.of("responseId", "r1"));
+        assertThat(sent.input()).containsExactly(new ToolResultItem("p1", "noted"), new UserText("Pune"));
+        assertThat(second.progress()).as("this turn noted nothing").isEmpty();
+        assertThat(conversations.get(first.conversationId()).getOpenCallIds()).isEmpty();
+    }
+
+    @Test
+    void progressOnlyReplyLoopsOnce() {
+        use(new ScriptedProvider("chained", StateMode.CHAINED));
+        provider.calls("r1", progress("p1", "{\"name\":\"Asha\",\"city\":null}")).text("r2", "Which city?");
+
+        TurnResult r = turn(tracked(request(null, "I am Asha"), List.of(), NAME_CITY, null));
+
+        assertThat(r.status()).isEqualTo(TurnStatus.DONE);
+        assertThat(provider.requests).hasSize(2);
+        assertThat(provider.last().state()).isEqualTo(Map.of("responseId", "r1"));
+        assertThat(provider.last().input()).containsExactly(new ToolResultItem("p1", "noted"));
+        assertThat(r.text()).isEqualTo("Which city?");
+        assertThat(r.progress()).isEqualTo(Map.of("name", "Asha"));
+        assertThat(conversations.get(r.conversationId()).getOpenCallIds()).as("answered inside the turn").isEmpty();
+
+        // the round counts in maxToolRounds
+        runner = runner(1);
+        provider.calls("r3", progress("p2", "{\"name\":null,\"city\":\"Pune\"}"))
+                .calls("r4", progress("p3", "{\"name\":null,\"city\":\"Pune\"}"));
+        TurnResult looped = turn(tracked(request(r.conversationId(), "Pune"), List.of(), NAME_CITY, null));
+        assertThat(looped.status()).isEqualTo(TurnStatus.FAILED);
+        assertThat(looped.errorCode()).isEqualTo("TOOL_ROUNDS");
+        assertThat(provider.requests).hasSize(4);
+    }
+
+    @Test
+    void progressBesideFinishStillFinishes() {
+        use(new ScriptedProvider("chained", StateMode.CHAINED));
+        String finishArgs = "{\"outcome\":\"a\",\"fields\":{\"name\":\"Asha K\",\"city\":\"Pune\"},\"reply\":\"Bye\"}";
+        provider.calls("r1", progress("p1", "{\"name\":\"Asha\",\"city\":null}"),
+                progress("p2", "{\"name\":\"Asha K\",\"city\":\"Pune\"}"), new ToolCall("c1", "finish", finishArgs))
+                .text("r2", "Again?");
+        TurnRequest req = tracked(request(null, "Asha K from Pune"), List.of(new AiOutcome("a", "Done", null)),
+                NAME_CITY, null);
+
+        TurnResult r = turn(req);
+
+        assertThat(r.status()).isEqualTo(TurnStatus.DONE);
+        assertThat(provider.requests).hasSize(1);
+        assertThat(toolNames(provider.requests.get(0))).containsExactly("finish", "note_progress");
+        assertThat(r.finish()).isEqualTo(new AiFinish("a", Map.of("name", "Asha K", "city", "Pune"), "Bye"));
+        assertThat(r.progress()).as("later calls win").isEqualTo(Map.of("name", "Asha K", "city", "Pune"));
+        assertThat(conversations.get(r.conversationId()).getOpenCallIds()).containsExactly("p1", "p2", "c1");
+
+        turn(tracked(request(r.conversationId(), "Hello again"), List.of(new AiOutcome("a", "Done", null)), NAME_CITY,
+                null));
+        assertThat(provider.last().input()).containsExactly(new ToolResultItem("p1", "noted"),
+                new ToolResultItem("p2", "noted"), new ToolResultItem("c1", "finished"), new UserText("Hello again"));
+    }
+
+    @Test
+    void progressBesideAppToolInTheSameRound() {
+        profile.setMcpServers(List.of(appServer()));
+        when(mcp.call(any(), eq("lookup"), anyString())).thenReturn("found");
+        provider.calls("r1", new ToolCall("t1", "crm__lookup", "{}"),
+                progress("p1", "{\"name\":\"Asha\",\"city\":null}")).text("r2", "Got you");
+
+        TurnResult r = turn(tracked(request(null, "I am Asha"), List.of(), NAME_CITY, null));
+
+        assertThat(provider.requests).hasSize(2);
+        assertThat(provider.last().input()).containsExactly(new UserText("I am Asha"),
+                new ToolCallItem("t1", "crm__lookup", "{}"),
+                new ToolCallItem("p1", "note_progress", "{\"name\":\"Asha\",\"city\":null}"),
+                new ToolResultItem("t1", "found"), new ToolResultItem("p1", "noted"));
+        assertThat(r.progress()).isEqualTo(Map.of("name", "Asha"));
+        assertThat(row(r).getToolCalls()).extracting(AiCall.ToolCallLog::name).containsExactly("crm__lookup");
+    }
+
+    @Test
+    void untrackedProgressCallIsAnUnknownTool() {
+        provider.calls("r1", progress("p1", "{\"name\":\"Asha\",\"city\":null}")).text("r2", "Hi");
+
+        TurnResult r = turn(with(request(null, "I am Asha"), List.of(), NAME_CITY, false, null, null));
+
+        assertThat(r.progress()).isEmpty();
+        assertThat(provider.last().input())
+                .contains(new ToolResultItem("p1", "error: there is no tool named note_progress"));
+    }
+
+    @Test
+    void supersededTurnKeepsProgressDropsOwedCalls() {
+        use(new ScriptedProvider("chained", StateMode.CHAINED));
+        provider.add(provider.reply("r1", "Which city?", List.of(progress("p0", "{\"name\":\"Asha\",\"city\":null}")),
+                        false))
+                .add(provider.reply("r2", "And your budget?",
+                        List.of(progress("p1", "{\"name\":null,\"city\":\"Pune\"}")), false))
+                .text("r3", "Pune or Mumbai?");
+        TurnResult first = turn(tracked(request(null, "I am Asha"), List.of(), NAME_CITY, null));
+        TurnResult second = turn(tracked(request(first.conversationId(), "Pune"), List.of(), NAME_CITY, null));
+        assertThat(provider.last().input()).containsExactly(new ToolResultItem("p0", "noted"), new UserText("Pune"));
+
+        TurnResult third = turn(tracked(request(first.conversationId(), "Pune", "no wait, Mumbai"), List.of(),
+                NAME_CITY, second.callId()));
+
+        assertThat(third.status()).isEqualTo(TurnStatus.DONE);
+        ProviderRequest sent = provider.last();
+        assertThat(sent.state()).isEqualTo(Map.of("responseId", "r1"));
+        assertThat(sent.input()).as("the base's open call again, never the discarded turn's")
+                .containsExactly(new ToolResultItem("p0", "noted"), new UserText("Pune\nno wait, Mumbai"));
+        assertThat(row(second).progress()).as("the customer did say it").isEqualTo(Map.of("city", "Pune"));
+        assertThat(third.progress()).isEmpty();
+        AiConversation c = conversations.get(first.conversationId());
+        assertThat(c.getOpenCallIds()).isEmpty();
+        assertThat(TranscriptItems.items(c.getTranscript())).doesNotContain(new ToolResultItem("p1", "noted"));
+    }
+
+    @Test
+    void rowsQueuedBeforeProgressStillRead() {
+        AiCall call = AiCall.pending(request(null, "Hi"), "conv", provider.id(), "m1", NOW);
+        call.setRequest(call.getRequest().replace(",\"trackProgress\":false", ""));
+        assertThat(call.getRequest()).doesNotContain("trackProgress");
+
+        assertThat(call.turnRequest().trackProgress()).isFalse();
+        assertThat(call.toResult().progress()).isEmpty();
     }
 }

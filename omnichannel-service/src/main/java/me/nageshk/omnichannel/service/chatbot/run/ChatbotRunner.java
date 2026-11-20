@@ -17,6 +17,7 @@ import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
 import me.nageshk.omnichannel.db.chatbot.ChatbotSettings;
 import me.nageshk.omnichannel.db.chatbot.ChatbotStep;
 import me.nageshk.omnichannel.db.chatbot.ChatbotVersionRepository;
+import me.nageshk.omnichannel.db.chatbot.RunEnding;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
@@ -37,6 +38,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
@@ -67,13 +72,15 @@ public class ChatbotRunner {
     private final Clock clock;
     private final ChatbotSettingsService settingsService;
     private final me.nageshk.omnichannel.service.inbox.BotChats botChats;
+    private final MongoTemplate mongo;
 
     public ChatbotRunner(ChatbotRepository chatbots, ChatbotVersionRepository versions, ChatbotRunRepository runs,
             WaWebChatRepository chats, ContactRepository contacts, FlowParser parser, NodeExecutors executors,
             ChatbotSender sender, ChatPointer pointer, RunClaims claims, @Lazy ChatbotRunService service,
             @Lazy ThreadPoolTaskExecutor chatbotExecutor, ApplicationEventPublisher publisher,
             OmnichannelProperties props, Clock clock, ChatbotSettingsService settingsService,
-            me.nageshk.omnichannel.service.inbox.BotChats botChats) {
+            me.nageshk.omnichannel.service.inbox.BotChats botChats, MongoTemplate mongo) {
+        this.mongo = mongo;
         this.botChats = botChats;
         this.settingsService = settingsService;
         this.chatbots = chatbots;
@@ -238,7 +245,8 @@ public class ChatbotRunner {
         if (!next.started()) {
             log.warn("jump from run {} to {} did not start: {}", run.getId(), chatbotId, next.reason());
             // nothing holds the chat now: the team gets it, as after a failed run
-            release(ended, ChatbotRunStatus.FAILED);
+            Released released = release(ended, ChatbotRunStatus.FAILED);
+            record(ended, released.result(), released.chat());
         }
         return ended;
     }
@@ -284,12 +292,23 @@ public class ChatbotRunner {
 
     /**
      * As {@link #ended(ChatbotRun)}; a run {@code replaced} by another run of the same chat keeps the chat for that
-     * run (spec 2026-11-18 §5.3).
+     * run (spec 2026-11-18 §5.3). Records where the chat went on the run before the change is announced.
      */
     public void ended(ChatbotRun saved, boolean replaced) {
-        if (!replaced) release(saved, saved.getStatus());
+        RunEnding.Chat result = replaced ? RunEnding.Chat.LEFT : null;
+        WaWebChat chat = null;
+        if (!replaced) {
+            Released released = release(saved, saved.getStatus());
+            result = released.result();
+            chat = released.chat();
+        }
+        record(saved, result, chat);
         pointer.clear(saved.getChatId(), saved.getId());
         publisher.publishEvent(new InboxEvents.ChatbotRunChanged(saved));
+    }
+
+    /** What {@link #release} did: where the chat went, and the chat as it stands when that is known. */
+    private record Released(RunEnding.Chat result, WaWebChat chat) {
     }
 
     /**
@@ -297,8 +316,9 @@ public class ChatbotRunner {
      * when it finished or the customer went silent, routed when it failed or a person stopped it, left alone after a
      * hand-over or a jump. Only a chat still in {@code BOT} under this run is touched; a failure is logged.
      */
-    private void release(ChatbotRun run, ChatbotRunStatus status) {
-        if (run.getChatId() == null || status == null) return;
+    private Released release(ChatbotRun run, ChatbotRunStatus status) {
+        if (status == ChatbotRunStatus.HANDED_OVER) return new Released(RunEnding.Chat.HANDED_OVER, null);
+        if (run.getChatId() == null || status == null) return new Released(RunEnding.Chat.LEFT, null);
         try {
             Chatbot chatbot = chatbots.findById(run.getChatbotId()).orElse(null);
             String name = run.getChatbotName() != null ? run.getChatbotName()
@@ -310,13 +330,37 @@ public class ChatbotRunner {
                 default -> null;
             };
             if (after == me.nageshk.omnichannel.db.chatbot.AfterChatbot.CLOSE) {
-                botChats.close(run.getChatId(), run.getId(), name);
+                return botChats.close(run.getChatId(), run.getId(), name)
+                        .map(c -> new Released(RunEnding.Chat.CLOSED, c)).orElse(new Released(RunEnding.Chat.LEFT, null));
             } else if (after == me.nageshk.omnichannel.db.chatbot.AfterChatbot.ROUTE) {
-                botChats.toPeople(run.getChatId(), run.getId(), me.nageshk.omnichannel.db.inbox.RoutedReason.CHATBOT_ENDED,
-                        name);
+                return botChats.toPeople(run.getChatId(), run.getId(),
+                        me.nageshk.omnichannel.db.inbox.RoutedReason.CHATBOT_ENDED, name)
+                        .map(c -> new Released(RunEnding.Chat.ROUTED, c)).orElse(new Released(RunEnding.Chat.LEFT, null));
             }
         } catch (RuntimeException e) {
             log.warn("could not give back chat {} after run {} ended", run.getChatId(), run.getId(), e);
+        }
+        return new Released(RunEnding.Chat.LEFT, null);
+    }
+
+    /**
+     * Stores where the run's chat went with one update (the version moves, so a runner holding an older copy cannot
+     * save over it) and mirrors it on {@code saved}. A failure is logged, never thrown.
+     */
+    private void record(ChatbotRun saved, RunEnding.Chat result, WaWebChat chat) {
+        if (result == null || saved.getId() == null) return;
+        try {
+            if (result == RunEnding.Chat.HANDED_OVER && saved.getChatId() != null) {
+                chat = chats.findById(saved.getChatId()).orElse(null);
+            }
+            RunEnding ending = new RunEnding(result, chat == null ? null : chat.getAssignedUserId(),
+                    chat == null ? null : chat.getAssignedTeamId(), clock.instant());
+            mongo.updateFirst(new Query(Criteria.where("_id").is(saved.getId())),
+                    new Update().set("ending", ending).inc("version", 1), ChatbotRun.class);
+            saved.setEnding(ending);
+            if (saved.getVersion() != null) saved.setVersion(saved.getVersion() + 1);
+        } catch (RuntimeException e) {
+            log.warn("could not record where chat {} went after run {} ended", saved.getChatId(), saved.getId(), e);
         }
     }
 
@@ -338,44 +382,14 @@ public class ChatbotRunner {
     // ---- steps ----
 
     private static void recordWaiting(ChatbotRun run, FlowNode node, Instant startedAt, StepResult r) {
-        List<ChatbotStep> steps = run.getSteps();
-        int last = steps.size() - 1;
-        if (last >= 0 && steps.get(last).outcome() == ChatbotStep.Outcome.WAITING && steps.get(last).nodeId().equals(node.id())) {
-            // a re-ask: the same wait goes on
-            ChatbotStep s = steps.get(last);
-            steps.set(last, new ChatbotStep(s.index(), s.nodeId(), s.nodeName(), s.type(), s.startedAt(), null, s.outcome(), null,
-                    r.summary() != null ? r.summary() : s.summary(), null, null, r.waiting()));
-            return;
-        }
-        steps.add(new ChatbotStep(steps.size(), node.id(), node.name(), node.type().code(), startedAt, null,
-                ChatbotStep.Outcome.WAITING, null, r.summary(), null, null, r.waiting()));
+        StepRecorder.waiting(run, node, startedAt, r);
     }
 
     private void completeStep(ChatbotRun run, FlowNode node, Instant startedAt, StepResult r) {
-        List<ChatbotStep> steps = run.getSteps();
-        int last = steps.size() - 1;
-        Instant now = clock.instant();
-        if (last >= 0 && steps.get(last).outcome() == ChatbotStep.Outcome.WAITING && steps.get(last).nodeId().equals(node.id())) {
-            ChatbotStep s = steps.get(last);
-            steps.set(last, new ChatbotStep(s.index(), s.nodeId(), s.nodeName(), s.type(), s.startedAt(), now,
-                    ChatbotStep.Outcome.DONE, r.output(), r.summary() != null ? r.summary() : s.summary(), null, r.result(), s.waitedFor()));
-            return;
-        }
-        steps.add(new ChatbotStep(steps.size(), node.id(), node.name(), node.type().code(), startedAt, now,
-                ChatbotStep.Outcome.DONE, r.output(), r.summary(), null, r.result(), null));
+        StepRecorder.complete(run, node, startedAt, clock.instant(), r);
     }
 
     private void recordFailed(ChatbotRun run, FlowNode node, Instant startedAt, String error) {
-        List<ChatbotStep> steps = run.getSteps();
-        int last = steps.size() - 1;
-        Instant now = clock.instant();
-        if (last >= 0 && steps.get(last).outcome() == ChatbotStep.Outcome.WAITING && steps.get(last).nodeId().equals(node.id())) {
-            ChatbotStep s = steps.get(last);
-            steps.set(last, new ChatbotStep(s.index(), s.nodeId(), s.nodeName(), s.type(), s.startedAt(), now,
-                    ChatbotStep.Outcome.FAILED, null, s.summary(), error, null, s.waitedFor()));
-            return;
-        }
-        steps.add(new ChatbotStep(steps.size(), node.id(), node.name(), node.type().code(), startedAt, now,
-                ChatbotStep.Outcome.FAILED, null, null, error, null, null));
+        StepRecorder.failed(run, node, startedAt, clock.instant(), error);
     }
 }

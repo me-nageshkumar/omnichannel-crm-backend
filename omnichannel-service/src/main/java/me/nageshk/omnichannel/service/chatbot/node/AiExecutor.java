@@ -285,8 +285,8 @@ public class AiExecutor extends BaseExecutor {
         List<AiOutcome> outcomes = s.outcomesOrEmpty();
         TurnRequest request = new TurnRequest(ctx.workspaceId(), ctx.run().getId(), ctx.run().getChatbotId(),
                 node.name(), s.profileId(), s.overrides(), blank(s.extraInstructions()) ? null : ctx.render(s.extraInstructions()),
-                List.of(ctx.render(s.userMessage())), outcomes, s.collectOrEmpty(), !outcomes.isEmpty(), s.replyFormat(),
-                conversationId, null);
+                List.of(ctx.render(s.userMessage())), outcomes, s.collectOrEmpty(), !outcomes.isEmpty(), false,
+                s.replyFormat(), conversationId, null);
         String callId;
         try {
             callId = gateway.submit(request);

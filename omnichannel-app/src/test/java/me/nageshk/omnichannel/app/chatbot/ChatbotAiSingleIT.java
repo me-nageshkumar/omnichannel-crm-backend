@@ -452,8 +452,8 @@ class ChatbotAiSingleIT extends AiTestBase {
         try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
             ChatbotRun run = start(id, chat);
             String callId = run.getWaiting().key();
-            TurnResult result = new TurnResult(callId, TurnStatus.DONE, "Quick", null, null, new AiUsage(1, 1, 0, 0),
-                    false, "conv-1", run.getId(), null, null);
+            TurnResult result = new TurnResult(callId, TurnStatus.DONE, "Quick", null, null, Map.of(),
+                    new AiUsage(1, 1, 0, 0), false, "conv-1", run.getId(), null, null);
             // as if the turn finished before the runner saved the wait: the run is still RUNNING at the node
             mongo.updateFirst(new Query(Criteria.where("_id").is(run.getId())),
                     new Update().set("status", ChatbotRunStatus.RUNNING.name()), ChatbotRun.class);
@@ -468,8 +468,8 @@ class ChatbotAiSingleIT extends AiTestBase {
             Thread.sleep(200);
             assertThat(d.requests("sendMessage")).hasSize(1);
             // a result for no run at all is ignored
-            listener.turnFinished(new TurnResult("other", TurnStatus.DONE, "x", null, null, new AiUsage(0, 0, 0, 0),
-                    false, null, null, null, null));
+            listener.turnFinished(new TurnResult("other", TurnStatus.DONE, "x", null, null, Map.of(),
+                    new AiUsage(0, 0, 0, 0), false, null, null, null, null));
         }
     }
 }
