@@ -61,6 +61,22 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
      */
     public ChannelWebhookEvent save(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt,
             int ordinal, boolean imported) {
+        return saveResult(ctx, event, raw, seq, capturedAt, ordinal, imported).doc();
+    }
+
+    /** What a save did: stored for the first time, found already stored, or failed (logged). */
+    public enum Outcome { STORED, DUPLICATE, FAILED }
+
+    public record SaveResult(Outcome outcome, ChannelWebhookEvent doc) {}
+
+    /** As {@link #save}, saying whether the event was new: a Cloud webhook processes only new events. Never throws. */
+    public SaveResult saveResult(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt,
+            int ordinal) {
+        return saveResult(ctx, event, raw, seq, capturedAt, ordinal, false);
+    }
+
+    private SaveResult saveResult(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt,
+            int ordinal, boolean imported) {
         String key = WebhookEventKeys.of(event, imported);
         try {
             ChannelWebhookEvent doc = new ChannelWebhookEvent();
@@ -85,13 +101,13 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
                     doc.setRawDropped(true);
                 }
             }
-            return mongo.insert(doc);
+            return new SaveResult(Outcome.STORED, mongo.insert(doc));
         } catch (DuplicateKeyException e) {
             log.debug("webhook event {} of {} is already stored", key, ctx.channelAccountId());
-            return existing(key);
+            return new SaveResult(Outcome.DUPLICATE, existing(key));
         } catch (RuntimeException e) {
             log.warn("Could not store the webhook event of {}: {}", ctx.channelAccountId(), e.toString());
-            return null;
+            return new SaveResult(Outcome.FAILED, null);
         }
     }
 

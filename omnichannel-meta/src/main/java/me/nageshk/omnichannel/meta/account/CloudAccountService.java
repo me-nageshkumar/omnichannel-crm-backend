@@ -29,6 +29,9 @@ public class CloudAccountService implements CloudAccounts {
 
     private static final Logger log = LoggerFactory.getLogger(CloudAccountService.class);
     private static final String LIMIT_FIELD = "whatsapp_business_manager_messaging_limit";
+    /** Meta's webhook fields about a number or its account, applied to the Cloud accounts. */
+    public static final java.util.Set<String> NUMBER_FIELDS_OF_CHANGES = java.util.Set.of("phone_number_quality_update",
+            "phone_number_name_update", "account_update");
 
     private final CloudAccountRepository repository;
     private final MetaConnectionService connections;
@@ -147,6 +150,39 @@ public class CloudAccountService implements CloudAccounts {
     @Override
     public void delete(String phoneNumberId) {
         repository.deleteByPhoneNumberId(phoneNumberId);
+    }
+
+    /** The account of a Meta number, for routing a webhook change. */
+    public Optional<CloudAccount> account(String metaPhoneNumberId) {
+        return metaPhoneNumberId == null || metaPhoneNumberId.isBlank() ? Optional.empty()
+                : repository.findByMetaPhoneNumberId(metaPhoneNumberId);
+    }
+
+    /**
+     * A number or account change from Meta's webhook: the number named (by display number, or by id in an
+     * {@code account_update}) is read from Meta again; a quality change also carries the new daily limit.
+     */
+    public void applyChange(MetaConnection c, String field, tools.jackson.databind.JsonNode value) {
+        String display = value.path("display_phone_number").asString("").replaceAll("\\D", "");
+        String metaId = value.path("phone_number").asString("");
+        for (CloudAccount a : repository.findByConnectionId(c.getId())) {
+            String digits = a.getDisplayPhoneNumber() == null ? "" : a.getDisplayPhoneNumber().replaceAll("\\D", "");
+            boolean named = (!display.isEmpty() && display.equals(digits)) || metaId.equals(a.getMetaPhoneNumberId());
+            if (!named) continue;
+            String limit = value.path("max_daily_conversations_per_business").asString(
+                    value.path("current_limit").asString(null));
+            if (limit != null) a.setMessagingLimitTier(limit);
+            try {
+                String token = connections.open(c).accessToken();
+                apply(a, graph.get(token, a.getMetaPhoneNumberId(), Map.of("fields", MetaConnectionService.NUMBER_FIELDS)));
+            } catch (GraphException e) {
+                a.setLastError("Meta: " + e.getMessage());
+            }
+            a.setCheckedAt(clock.instant());
+            repository.save(a);
+            log.info("Meta {} for number {}: {}", field, a.getMetaPhoneNumberId(), value.path("event").asString(
+                    value.path("decision").asString("")));
+        }
     }
 
     // ---- internals ----

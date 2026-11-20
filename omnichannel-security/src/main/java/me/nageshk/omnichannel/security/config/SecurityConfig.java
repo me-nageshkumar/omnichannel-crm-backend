@@ -44,6 +44,7 @@ public class SecurityConfig {
     public static final String PAGE_EVENT_PATH = "/t/*/e";
     /** A chatbot form page is submitted by its token, without a login (chatbot spec §8.4). */
     public static final String FORM_SUBMIT_PATH = "/f/*";
+    public static final String META_WEBHOOK_PATH = "/hooks/meta/*";
 
     /**
      * {@code POST} to the login and verify-otp paths is handled by an {@link AuthenticationFilter}:
@@ -81,6 +82,8 @@ public class SecurityConfig {
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         .requestMatchers(HttpMethod.POST, PAGE_EVENT_PATH).permitAll()
                         .requestMatchers(HttpMethod.POST, FORM_SUBMIT_PATH).permitAll()
+                        // Meta's webhook: every delivery is checked against its X-Hub-Signature-256
+                        .requestMatchers(HttpMethod.POST, META_WEBHOOK_PATH).permitAll()
                         .requestMatchers("/api/**").authenticated()
                         // the console's static files and its client-side routes
                         .requestMatchers(HttpMethod.GET, "/**").permitAll()

@@ -79,4 +79,52 @@ public abstract class MetaTestBase extends ChatbotTestBase {
         return rest.exchange(url("/api/workspaces/" + brand.getId() + "/phone-numbers" + path), m, auth(who, body),
                 JsonNode.class);
     }
+
+    /** The webhook key of a connection view ({@code …/hooks/meta/<key>}). */
+    protected static String keyOf(JsonNode connection) {
+        return connection.get("webhook").get("url").asString().replaceFirst(".*/hooks/meta/", "");
+    }
+
+    /** POSTs {@code json} to the connection's webhook, signed with {@code secret}. */
+    protected ResponseEntity<String> webhook(String key, String json, String secret) {
+        byte[] body = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+        h.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        if (secret != null) h.set("X-Hub-Signature-256", signature(body, secret));
+        return rest.exchange(url("/hooks/meta/" + key), HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body, h), String.class);
+    }
+
+    protected ResponseEntity<String> webhook(String key, String json) {
+        return webhook(key, json, APP_SECRET);
+    }
+
+    protected static String signature(byte[] body, String secret) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    "HmacSHA256"));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : mac.doFinal(body)) hex.append(String.format("%02x", b));
+            return "sha256=" + hex;
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** A Meta {@code messages} change carrying one text from {@code from} to Meta number {@code metaId}. */
+    protected static String textChange(String metaId, String display, String from, String wamid, String body) {
+        return "{\"field\":\"messages\",\"value\":{\"messaging_product\":\"whatsapp\",\"metadata\":"
+                + "{\"display_phone_number\":\"" + display + "\",\"phone_number_id\":\"" + metaId + "\"},"
+                + "\"contacts\":[{\"profile\":{\"name\":\"Veenu\"},\"wa_id\":\"" + from + "\"}],"
+                + "\"messages\":[{\"from\":\"" + from + "\",\"id\":\"" + wamid + "\",\"timestamp\":\""
+                + (java.time.Instant.now().getEpochSecond()) + "\",\"type\":\"text\",\"text\":{\"body\":\""
+                + body + "\"}}]}}";
+    }
+
+    /** The envelope around changes of WABA 222. */
+    protected static String envelope(String... changes) {
+        return "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"222\",\"changes\":["
+                + String.join(",", changes) + "]}]}";
+    }
 }
