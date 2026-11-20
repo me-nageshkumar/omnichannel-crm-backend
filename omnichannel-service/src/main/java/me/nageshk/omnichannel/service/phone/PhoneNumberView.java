@@ -3,6 +3,7 @@ package me.nageshk.omnichannel.service.phone;
 import java.time.Instant;
 import me.nageshk.omnichannel.db.enablement.Disabled;
 import me.nageshk.omnichannel.db.phone.ConnectionType;
+import me.nageshk.omnichannel.meta.api.CloudAccountInfo;
 import me.nageshk.omnichannel.service.phone.PhoneNumberStatus.DisabledBecause;
 import me.nageshk.omnichannel.service.phone.PhoneNumberStatus.Status;
 
@@ -29,14 +30,15 @@ public record PhoneNumberView(
         Boolean guest,
         String archiveOf,
         Instant archivedAt,
-        Boolean moveUnfinished) {
+        Boolean moveUnfinished,
+        CloudAccountInfo cloud) {
     public record TeamRef(String id, String name) {}
 
     /** The same view flagged as a guest number (or not) for the inbox's number list; null elsewhere. */
     public PhoneNumberView asGuest(boolean guest) {
         return new PhoneNumberView(id, number, label, connectionType, customerId, customerName, workspaceId,
                 workspaceName, status, disabled, disabledBecause, lastConnectedAt, lastSeenAt, wrongNumber, wrongNumberAt,
-                hasDevice, creationTime, team, guest, archiveOf, archivedAt, moveUnfinished);
+                hasDevice, creationTime, team, guest, archiveOf, archivedAt, moveUnfinished, cloud);
     }
 
     public record Page(java.util.List<PhoneNumberView> items, long total, int page) {}

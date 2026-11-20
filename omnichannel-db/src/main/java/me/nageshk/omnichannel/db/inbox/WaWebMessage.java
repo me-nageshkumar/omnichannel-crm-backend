@@ -71,6 +71,16 @@ public class WaWebMessage {
     private Instant creationTime;
 
     /** {@code mediaId} is the chatMedia GridFS id once the bytes are fetched, else null. */
+    /** Why Meta could not deliver a Cloud message (its error's code, title and details); null otherwise. */
+    private Failure failure;
+    /** The imported Meta template this message sent (Cloud API numbers), and what it looked like. */
+    private String cloudTemplateId;
+    private me.nageshk.omnichannel.common.channel.whatsapp.message.TemplateSnapshot template;
+    /** When the wallet charge was given back because Meta failed the message later; set once. */
+    private Instant usageReturnedAt;
+
+    public record Failure(Integer code, String title, String details) {}
+
     public record Media(String mimetype, String filename, Long size, String mediaId, Instant downloadedAt) {
     }
 

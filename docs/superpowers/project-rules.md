@@ -72,6 +72,11 @@ kill $(lsof -nP -iTCP:8089 -sTCP:LISTEN -t)
 (cd "$B" && OMNICHANNEL_PAGES_BASE_URL=https://<tunnel-host> nohup java -jar omnichannel-app/target/omnichannel-app-0.1.0-SNAPSHOT.jar --server.port=8089 \
   > /tmp/claude-501/app-8089.log 2>&1 &)
 
+# Cloud API numbers on 8089 (2026-11-20): Meta calls <pages address>/hooks/meta/<key>, so the tunnel must be up
+# and the pages address set. Walk with Meta's free test number (App dashboard → WhatsApp → API Setup; up to five
+# verified recipients) before a brand's real number: add the Meta connection (the user types app ID, app secret
+# and token in the page; never in chat), add the number, write from a phone the user names, reply, send a template
+# (Meta's sample hello_world) after the window. After a new tunnel: connection → Retry webhook setup.
 # Extension page script into the backend, from the extension's main checkout (writes into the sibling backend)
 (cd /Users/nagesh/Projects/WhatsAppWebJS/SCM/whatsapp-web-extension && npm run -s build)
 ```

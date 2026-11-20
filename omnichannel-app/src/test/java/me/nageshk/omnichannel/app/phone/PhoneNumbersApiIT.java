@@ -274,7 +274,7 @@ class PhoneNumbersApiIT {
     }
 
     @Test
-    void connectionTypeDefaultsToWebAndCloudApiIsNotSupportedYet() throws Exception {
+    void connectionTypeDefaultsToWebAndCloudApiNeedsItsDetails() throws Exception {
         Map<String, Object> web = number("919928088743", null);
         web.put("connectionType", "WHATSAPP_WEB");
         send(post(numbersOf(brandA)), wmToken, web)
@@ -285,7 +285,7 @@ class PhoneNumbersApiIT {
         cloud.put("connectionType", "WHATSAPP_CLOUD_API");
         send(post(numbersOf(brandA)), wmToken, cloud)
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fields.connectionType").value("WhatsApp Cloud API numbers are not supported yet"));
+                .andExpect(jsonPath("$.fields.cloud").value("is required for a WhatsApp Cloud API number"));
         assertThat(numbers.count()).isEqualTo(1);
     }
 

@@ -80,6 +80,14 @@ public class ApiExceptionHandler {
         return body(HttpStatus.CONFLICT, e.code(), e.getMessage());
     }
 
+    /** Meta refused a Cloud send (400, its reason shown) or its outcome is unknown (502). */
+    @ExceptionHandler(me.nageshk.omnichannel.meta.api.CloudSendException.class)
+    public ResponseEntity<Map<String, String>> cloudSend(me.nageshk.omnichannel.meta.api.CloudSendException e) {
+        boolean refused = e.kind() == me.nageshk.omnichannel.meta.api.CloudSendException.Kind.REFUSED;
+        return body(refused ? HttpStatus.BAD_REQUEST : HttpStatus.BAD_GATEWAY,
+                refused ? "CLOUD_SEND_REFUSED" : "CLOUD_SEND_FAILED", "Meta: " + e.getMessage());
+    }
+
     @ExceptionHandler(AssigneeCannotSeeNumberException.class)
     public ResponseEntity<Map<String, String>> assigneeCannotSeeNumber(AssigneeCannotSeeNumberException e) {
         return body(HttpStatus.UNPROCESSABLE_ENTITY, AssigneeCannotSeeNumberException.CODE, e.getMessage());

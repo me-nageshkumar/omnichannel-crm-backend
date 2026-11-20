@@ -94,6 +94,26 @@ public class UsageCharger {
         }
     }
 
+    /**
+     * Gives back the charge of a message Meta accepted and later failed (spec 2026-11-20 §5.4: the brand pays only
+     * for messages Meta took for delivery). Once per message, however often Meta repeats the status.
+     */
+    public void giveBackForMessage(String messageId, String why) {
+        if (messageId == null) return;
+        try {
+            WaWebMessage claimed = mongo.findAndModify(new Query(Criteria.where("_id").is(messageId)
+                    .and("usageEntryId").ne(null).and("usageReturnedAt").is(null)),
+                    new Update().set("usageReturnedAt", clock.instant()), WaWebMessage.class);
+            if (claimed == null) return;
+            WalletEntry e = mongo.findById(claimed.getUsageEntryId(), WalletEntry.class);
+            if (e == null || e.getAmount() == null) return;
+            giveBack(new Charge(e.getCustomerId(), e.getId(), e.getAmount().abs(), e.getSource(), e.getWorkspaceId(),
+                    e.getRef(), e.getUsageAt()), why);
+        } catch (RuntimeException ex) {
+            log.warn("could not give back the charge of message {}: {}", messageId, ex.toString());
+        }
+    }
+
     /** The answers that mean the page never tried to send: it was not reachable, not ready, or had no such chat. */
     private static final java.util.Set<String> NOT_TRIED = java.util.Set.of(RpcException.SEND_FAILED,
             RpcException.WHATSAPP_NOT_READY, RpcException.CHAT_NOT_FOUND, RpcException.METHOD_NOT_FOUND);
@@ -107,15 +127,25 @@ public class UsageCharger {
     public static boolean definitelyNotSent(Throwable error) {
         Throwable cause = error;
         while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) cause = cause.getCause();
-        return cause instanceof RpcException rpc && NOT_TRIED.contains(rpc.code());
+        if (cause instanceof RpcException rpc) return NOT_TRIED.contains(rpc.code());
+        // a Cloud send Meta refused, or a number that could not send (token refused, rate limited): nothing went out
+        if (cause instanceof me.nageshk.omnichannel.meta.api.CloudSendException c) return c.definitelyNotSent();
+        return cause instanceof me.nageshk.omnichannel.common.api.NoDeviceException
+                || cause instanceof me.nageshk.omnichannel.common.api.WindowClosedException;
     }
 
-    /** Notes on the stored message which wallet entry paid for it. Best effort. */
+    /**
+     * Notes on the stored message which wallet entry paid for it. Best effort. A Cloud message Meta already failed
+     * (its failed status can come before this note) is given back now, as the later status could not.
+     */
     public void stamp(String messageId, Charge charge) {
         if (charge == null || messageId == null) return;
         try {
-            mongo.updateFirst(new Query(Criteria.where("_id").is(messageId)),
-                    new Update().set("usageEntryId", charge.entryId()), WaWebMessage.class);
+            WaWebMessage stamped = mongo.findAndModify(new Query(Criteria.where("_id").is(messageId)),
+                    new Update().set("usageEntryId", charge.entryId()),
+                    org.springframework.data.mongodb.core.FindAndModifyOptions.options().returnNew(true),
+                    WaWebMessage.class);
+            if (stamped != null && stamped.getFailure() != null) giveBackForMessage(messageId, "Meta could not deliver it");
         } catch (RuntimeException e) {
             log.warn("could not note charge {} on message {}", charge.entryId(), messageId, e);
         }

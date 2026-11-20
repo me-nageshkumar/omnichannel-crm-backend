@@ -51,7 +51,8 @@ public class NumberRecords {
             "waWebChatActions", "keyed by chat id, no number field: they follow their chats",
             "phoneNumberMoves", "the move history names the real number on purpose",
             "automationEventHistory", "history: what the rules saw when the event ran, kept as it was",
-            "automationTests", "rule test records: what a test ran on, kept as it was");
+            "automationTests", "rule test records: what a test ran on, kept as it was",
+            "cloudAccounts", "a Cloud API number cannot move (its Meta connection belongs to the brand)");
 
     private final MongoTemplate mongo;
     private final CrmNumberRecords crm;

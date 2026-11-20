@@ -41,10 +41,13 @@ public class AutomationViews {
     private final Clock clock;
 
     private final me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots;
+    private final me.nageshk.omnichannel.meta.api.CloudTemplates cloudTemplates;
 
     public AutomationViews(AutomationTestRepository tests, AutomationRunRepository runs,
             MessageTemplateRepository templates, TeamRepository teams, UserRepository users, AutomationCrm crm,
-            Clock clock, me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots) {
+            Clock clock, me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots,
+            me.nageshk.omnichannel.meta.api.CloudTemplates cloudTemplates) {
+        this.cloudTemplates = cloudTemplates;
         this.chatbots = chatbots;
         this.tests = tests;
         this.runs = runs;
@@ -134,6 +137,7 @@ public class AutomationViews {
             case ASSIGN_CHAT -> "Assign chat";
             case ADD_TO_CRM -> "Add to CRM";
             case START_CHATBOT -> "Start chatbot";
+            case SEND_CLOUD_TEMPLATE -> "Send WhatsApp template";
         };
     }
 
@@ -149,6 +153,7 @@ public class AutomationViews {
             };
             case ADD_TO_CRM -> "Add to CRM (" + l.pipeline(a.pipelineId(), a.stageId()) + ")";
             case START_CHATBOT -> "Start “" + l.chatbot(a.chatbotId()) + "”";
+            case SEND_CLOUD_TEMPLATE -> "Send WhatsApp template “" + l.cloudTemplate(a.cloudTemplateId()) + "”";
         };
     }
 
@@ -168,6 +173,16 @@ public class AutomationViews {
         String template(String id) {
             return name(templateNames, id, i -> templates.findByIdAndWorkspaceId(i, workspaceId)
                     .map(MessageTemplate::getName));
+        }
+
+        String cloudTemplate(String id) {
+            return name(chatbotNames, "cloud:" + id, i -> {
+                try {
+                    return Optional.of(cloudTemplates.get(workspaceId, id).name());
+                } catch (RuntimeException e) {
+                    return Optional.of(String.valueOf(id));
+                }
+            });
         }
 
         String chatbot(String id) {

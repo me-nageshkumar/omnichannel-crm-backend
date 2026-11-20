@@ -1,5 +1,9 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import me.nageshk.omnichannel.meta.api.CloudAccounts;
+import me.nageshk.omnichannel.meta.api.CloudMedia;
+import me.nageshk.omnichannel.service.channel.ChannelWebhookEventStore;
+
 import com.mongodb.client.gridfs.model.GridFSFile;
 import java.io.ByteArrayInputStream;
 import java.time.Clock;
@@ -54,10 +58,17 @@ public class ChatMediaService {
     private final ApplicationEventPublisher publisher;
     private final ObjectMapper mapper;
     private final Clock clock;
+    private final CloudAccounts cloudAccounts;
+    private final CloudMedia cloudMedia;
+    private final ChannelWebhookEventStore webhookEvents;
 
     public ChatMediaService(@Qualifier("chatMediaGridFs") GridFsTemplate gridFs, InboxDevices devices,
             RpcDispatcher dispatcher, WaWebMessageRepository messages, WaWebChatRepository chats,
-            ApplicationEventPublisher publisher, ObjectMapper mapper, Clock clock) {
+            ApplicationEventPublisher publisher, ObjectMapper mapper, Clock clock, CloudAccounts cloudAccounts,
+            CloudMedia cloudMedia, ChannelWebhookEventStore webhookEvents) {
+        this.cloudAccounts = cloudAccounts;
+        this.cloudMedia = cloudMedia;
+        this.webhookEvents = webhookEvents;
         this.gridFs = gridFs;
         this.devices = devices;
         this.dispatcher = dispatcher;
@@ -109,6 +120,9 @@ public class ChatMediaService {
         if (media.mediaId() != null) return CompletableFuture.completedFuture(open(chat.getWorkspaceId(), media.mediaId()));
 
         if (media.size() != null && media.size() > MAX_SIZE) throw MediaUnavailableException.tooLarge();
+        if (cloudAccounts.find(chat.getPhoneNumberId()).isPresent()) {
+            return CompletableFuture.completedFuture(fetchFromMeta(chat, message));
+        }
 
         DeviceSession device = devices.requireReady(chat.getWorkspaceId(), chat);
         return dispatcher.call(device, "downloadMedia", mapper.createObjectNode().put("messageId", message.getWaMessageId()))
@@ -123,13 +137,46 @@ public class ChatMediaService {
                 });
     }
 
+    /** A Cloud message's file: Meta's media id is in the stored event of the message. */
+    private MediaFile fetchFromMeta(WaWebChat chat, WaWebMessage message) {
+        String metaId = webhookEvents.messageEvent(message.getWaMessageId()).map(ChatMediaService::metaMediaIdOf)
+                .orElse(null);
+        if (metaId == null) throw new MediaUnavailableException();
+        CloudMedia.Downloaded d;
+        try {
+            d = cloudMedia.download(chat.getPhoneNumberId(), metaId, MAX_SIZE);
+        } catch (CloudMedia.CloudMediaException e) {
+            throw e.tooLarge() ? MediaUnavailableException.tooLarge() : new MediaUnavailableException();
+        }
+        return cacheBytes(chat, message, d.bytes(), d.mimeType(), d.filename());
+    }
+
+    private static String metaMediaIdOf(me.nageshk.omnichannel.common.channel.whatsapp.webhook.WebhookEvent e) {
+        if (e.entry() == null || e.entry().isEmpty() || e.entry().get(0).changes() == null
+                || e.entry().get(0).changes().isEmpty() || e.entry().get(0).changes().get(0).value() == null) {
+            return null;
+        }
+        var messages = e.entry().get(0).changes().get(0).value().messages();
+        if (messages == null || messages.isEmpty()) return null;
+        var m = messages.get(0);
+        for (var media : new me.nageshk.omnichannel.common.channel.whatsapp.webhook.Media[] {m.image(), m.video(),
+                m.audio(), m.document(), m.sticker()}) {
+            if (media != null && media.id() != null) return media.id();
+        }
+        return null;
+    }
+
     private MediaFile cache(WaWebChat chat, WaWebMessage message, JsonNode result) {
-        byte[] data = decode(result);
+        return cacheBytes(chat, message, decode(result), text(result, "mimetype"), text(result, "filename"));
+    }
+
+    private MediaFile cacheBytes(WaWebChat chat, WaWebMessage message, byte[] data, String givenMime,
+            String givenName) {
         WaWebMessage current = messages.findById(message.getId()).orElse(message);
         WaWebMessage.Media was = current.getMedia() == null ? message.getMedia() : current.getMedia();
         if (was.mediaId() != null) return open(chat.getWorkspaceId(), was.mediaId());
-        String mimetype = was.mimetype() != null ? was.mimetype() : text(result, "mimetype");
-        String filename = was.filename() != null ? was.filename() : text(result, "filename");
+        String mimetype = was.mimetype() != null ? was.mimetype() : givenMime;
+        String filename = was.filename() != null ? was.filename() : givenName;
         String mediaId = store(chat.getWorkspaceId(), chat.getPhoneNumberId(), message.getId(), mimetype, filename,
                 data);
         Instant now = clock.instant();

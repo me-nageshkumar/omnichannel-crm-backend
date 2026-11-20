@@ -219,7 +219,7 @@ public class ContactService {
     public Contact findForChat(String workspaceId, String remote) {
         Contact c = null;
         int at = remote.indexOf('@');
-        String phone = !remote.endsWith("@lid") && at > 0 ? remote.substring(0, at) : null;
+        String phone = !hiddenId(remote) && at > 0 ? remote.substring(0, at) : null;
         if (phone != null) c = contacts.findByWorkspaceIdAndPhone(workspaceId, phone).orElse(null);
         if (c == null) c = contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, remote).orElse(null);
         return c != null ? c : mergingFor(workspaceId, remote, phone);
@@ -261,6 +261,14 @@ public class ContactService {
         return contacts.save(byPhone);
     }
 
+    /**
+     * A chat id that hides the person's phone: WhatsApp Web's {@code @lid}, or a Cloud {@code @user} (Meta's
+     * business-scoped user id).
+     */
+    static boolean hiddenId(String remote) {
+        return remote.endsWith("@lid") || remote.endsWith("@user");
+    }
+
     /** Whether a contact other than {@code contactId} lists the id, or stashed it while being merged. */
     private boolean heldByAnother(String workspaceId, String waId, String contactId) {
         Contact live = contacts.findByWorkspaceIdAndWaIdsContaining(workspaceId, waId).orElse(null);
@@ -278,7 +286,7 @@ public class ContactService {
 
     private Contact upsert(String workspaceId, String customerId, String remote, String senderName,
             String lidPhone, Instant at) {
-        boolean lid = remote.endsWith("@lid");
+        boolean lid = hiddenId(remote);
         String phone = lid ? Phones.normalise(lidPhone) : remote.substring(0, remote.indexOf('@'));
         if (!lid && !Phones.isValid(phone)) return null;
         if (lid && !Phones.isValid(phone)) phone = null;

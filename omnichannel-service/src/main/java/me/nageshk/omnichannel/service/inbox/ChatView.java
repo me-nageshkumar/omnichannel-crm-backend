@@ -23,7 +23,20 @@ public record ChatView(
         AdClickView adClick,
         List<OtherChat> otherChats,
         /** The chatbot run active on the chat, else null (chatbot spec §5.4). */
-        ActiveChatbotView chatbot) {
+        ActiveChatbotView chatbot,
+        /** WHATSAPP_WEB or WHATSAPP_CLOUD: how the number reaches WhatsApp. */
+        String channel,
+        /** Meta's 24-hour window, Cloud chats only; null for WhatsApp Web chats. */
+        ServiceWindow.ChatWindow window) {
+
+    /** A WhatsApp Web chat (no window). */
+    public ChatView(String id, String phoneNumberId, String remoteId, Contact contact, ChatStatus status,
+            Ref assignedUser, Ref assignedTeam, int unreadCount, Instant lastMessageAt, LastMessage lastMessage,
+            Instant creationTime, Ref lastAgent, AdClickView adClick, List<OtherChat> otherChats,
+            ActiveChatbotView chatbot) {
+        this(id, phoneNumberId, remoteId, contact, status, assignedUser, assignedTeam, unreadCount, lastMessageAt,
+                lastMessage, creationTime, lastAgent, adClick, otherChats, chatbot, "WHATSAPP_WEB", null);
+    }
     /** {@code waitingFor} is "WhatsApp reply", "form", "timer" or null while a node runs. */
     public record ActiveChatbotView(String runId, String chatbotId, String name, String nodeName, String waitingFor) {
     }

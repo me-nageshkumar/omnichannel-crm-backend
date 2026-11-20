@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.service.automation;
 
+import me.nageshk.omnichannel.common.api.WindowClosedException;
+import me.nageshk.omnichannel.meta.api.CloudSendException;
 import me.nageshk.omnichannel.common.api.SubscriptionInactiveException;
 import me.nageshk.omnichannel.common.api.WalletEmptyException;
 import java.util.concurrent.ExecutionException;
@@ -105,6 +107,17 @@ public class SendTemplateHandler implements ActionHandler {
         if (cause instanceof SubscriptionInactiveException) return ActionResult.failed("The plan does not allow this");
         // not worth another try either: it would fail the same way until the wallet is topped up
         if (cause instanceof WalletEmptyException) return ActionResult.failed("The wallet balance is too low");
+        // a closed 24-hour window does not reopen by itself: only the customer writing, or a WhatsApp template
+        if (cause instanceof WindowClosedException) {
+            return ActionResult.failed("The 24-hour window closed; only a WhatsApp template can go now");
+        }
+        if (cause instanceof CloudSendException c) {
+            return c.definitelyNotSent() ? ActionResult.failed("Meta did not send it: " + c.getMessage())
+                    : ActionResult.interrupted("Meta did not answer in time; the message may have gone");
+        }
+        if (cause instanceof NoDeviceException n && n.code() != null && n.code().startsWith("CLOUD_")) {
+            return ActionResult.retryLater("The Cloud API number cannot send now: " + n.getMessage());
+        }
         if (cause instanceof NoDeviceException n) {
             return ActionResult.retryLater(NoDeviceException.WHATSAPP_NOT_READY.equals(n.code())
                     ? "WhatsApp Web is not ready on the number"

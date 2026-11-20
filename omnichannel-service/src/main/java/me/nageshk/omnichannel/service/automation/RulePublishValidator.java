@@ -16,8 +16,12 @@ public class RulePublishValidator {
     private final AutomationCrm crm;
     private final me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots;
 
+    private final me.nageshk.omnichannel.meta.api.CloudTemplates cloudTemplates;
+
     public RulePublishValidator(TemplateTargets templates, AssignTargets assign, AutomationCrm crm,
-            me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots) {
+            me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots,
+            me.nageshk.omnichannel.meta.api.CloudTemplates cloudTemplates) {
+        this.cloudTemplates = cloudTemplates;
         this.templates = templates;
         this.assign = assign;
         this.crm = crm;
@@ -50,6 +54,7 @@ public class RulePublishValidator {
                     if (options == null) options = crm.options(ws);
                     CrmTargets.check(options, a.pipelineId(), a.stageId()).forEach((k, v) -> out.put(at + "." + k, v));
                 }
+                case SEND_CLOUD_TEMPLATE -> checkCloudTemplate(ws, a).forEach((k, v) -> out.put(at + "." + k, v));
                 case START_CHATBOT -> {
                     if (blank(a.chatbotId())) {
                         out.put(at + ".chatbotId", "Pick a chatbot");
@@ -62,6 +67,30 @@ public class RulePublishValidator {
                     }
                 }
             }
+        }
+        return out;
+    }
+
+    /** The template exists in the brand and can be sent, and every value names one of its blanks. */
+    private Map<String, String> checkCloudTemplate(String ws, AutomationAction a) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        if (blank(a.cloudTemplateId())) {
+            out.put("cloudTemplateId", "Pick a WhatsApp template");
+            return out;
+        }
+        me.nageshk.omnichannel.meta.api.CloudTemplateInfo t;
+        try {
+            t = cloudTemplates.get(ws, a.cloudTemplateId());
+        } catch (me.nageshk.omnichannel.common.api.NotFoundException e) {
+            out.put("cloudTemplateId", "The WhatsApp template no longer exists");
+            return out;
+        }
+        if (!t.sendable()) out.put("cloudTemplateId", "The WhatsApp template is not approved, or not supported yet");
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        t.variables().forEach(v -> keys.add(v.key()));
+        if (a.values() != null) {
+            a.values().keySet().stream().filter(k -> !keys.contains(k))
+                    .forEach(k -> out.put("values." + k, "The template has no such blank"));
         }
         return out;
     }

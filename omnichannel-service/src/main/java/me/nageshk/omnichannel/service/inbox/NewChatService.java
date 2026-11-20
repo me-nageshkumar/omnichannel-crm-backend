@@ -62,7 +62,8 @@ public class NewChatService {
         if (scopes.visibleNumbers(me, workspaceId).stream().noneMatch(v -> v.number().getId().equals(phoneNumberId))) {
             throw new NotFoundException("phone number not found");
         }
-        devices.requireReady(workspaceId, phoneNumberId);
+        SendChannel channel = devices.requireChannel(workspaceId, phoneNumberId);
+        if (req.cloudTemplate() != null) return startWithCloudTemplate(me, workspaceId, number, channel, phone, req);
         SendRequest message = new SendRequest(req.text(), req.templateId(), req.values());
 
         WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, phone + "@c.us");
@@ -70,9 +71,7 @@ public class NewChatService {
 
         // a number nobody has chatted with: ask WhatsApp (or the cache) whether it exists and under which id; the
         // request thread waits for the device, as the send it replaces would have
-        NumberLookup lookup = await(lookups.lookup(workspaceId, phoneNumberId, phone, false));
-        if (!lookup.registered()) throw new NotOnWhatsAppException();
-        String remoteId = lookup.remoteId();
+        String remoteId = remoteIdOf(channel, workspaceId, phoneNumberId, phone);
         chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
         if (chat != null) return sendToExisting(me, workspaceId, chat, message);
 
@@ -89,6 +88,31 @@ public class NewChatService {
         fresh.setAssignedUserId(me.userId());
         fresh.setAssignedAt(clock.instant());
         return sender.send(me, workspaceId, fresh, message, phone);
+    }
+
+    /**
+     * A first message that is a Meta template, on a Cloud API number: the existing chat of the phone (claimed as a
+     * start claims it), else a new one assigned to the caller.
+     */
+    private CompletableFuture<MessageView> startWithCloudTemplate(AuthenticatedUser me, String workspaceId,
+            PhoneNumber number, SendChannel channel, String phone, NewChatRequest req) {
+        if (!(channel instanceof SendChannel.CloudChannel)) {
+            throw new ValidationException("cloudTemplate", "channel not available");
+        }
+        String phoneNumberId = number.getId();
+        WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, phone + "@c.us");
+        if (chat != null) return sender.sendCloudTemplate(me, workspaceId, claimed(me, workspaceId, chat), req.cloudTemplate(), null);
+        WaWebChat fresh = new WaWebChat();
+        fresh.setCustomerId(number.getCustomerId());
+        fresh.setWorkspaceId(workspaceId);
+        fresh.setPhoneNumberId(phoneNumberId);
+        fresh.setRemoteId(phone + "@c.us");
+        fresh.setContactId(contactRepository.findByWorkspaceIdAndPhone(workspaceId, phone).map(Contact::getId)
+                .orElse(null));
+        fresh.setStatus(ChatStatus.OPEN);
+        fresh.setAssignedUserId(me.userId());
+        fresh.setAssignedAt(clock.instant());
+        return sender.sendCloudTemplate(me, workspaceId, fresh, req.cloudTemplate(), phone);
     }
 
     /**
@@ -156,15 +180,13 @@ public class NewChatService {
         if (scopes.visibleNumbers(me, workspaceId).stream().noneMatch(v -> v.number().getId().equals(phoneNumberId))) {
             throw new NotFoundException("phone number not found");
         }
-        devices.requireReady(workspaceId, phoneNumberId);
+        SendChannel channel = devices.requireChannel(workspaceId, phoneNumberId);
         CloudMessage toPhone = message.withTo(phone);
 
         WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, phone + "@c.us");
         if (chat != null) return sender.sendCloud(me, workspaceId, claimed(me, workspaceId, chat), toPhone, null, true);
 
-        NumberLookup lookup = await(lookups.lookup(workspaceId, phoneNumberId, phone, false));
-        if (!lookup.registered()) throw new NotOnWhatsAppException();
-        String remoteId = lookup.remoteId();
+        String remoteId = remoteIdOf(channel, workspaceId, phoneNumberId, phone);
         chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
         if (chat != null) return sender.sendCloud(me, workspaceId, claimed(me, workspaceId, chat), toPhone, null, true);
 
@@ -179,6 +201,17 @@ public class NewChatService {
         fresh.setAssignedUserId(me.userId());
         fresh.setAssignedAt(clock.instant());
         return sender.sendCloud(me, workspaceId, fresh, toPhone, phone, true);
+    }
+
+    /**
+     * The chat id of a phone nobody has chatted with: WhatsApp Web asks its device (the person may live under a
+     * {@code @lid}); a Cloud number has no lookup, Meta answers a send to a phone not on WhatsApp with a failed status.
+     */
+    private String remoteIdOf(SendChannel channel, String workspaceId, String phoneNumberId, String phone) {
+        if (channel instanceof SendChannel.CloudChannel) return phone + "@c.us";
+        NumberLookup lookup = await(lookups.lookup(workspaceId, phoneNumberId, phone, false));
+        if (!lookup.registered()) throw new NotOnWhatsAppException();
+        return lookup.remoteId();
     }
 
     /** Joins the future; a failure surfaces as the exception it carries, so the API handler maps it. */

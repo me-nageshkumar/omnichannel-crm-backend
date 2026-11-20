@@ -36,6 +36,17 @@ public class InboxViews {
     private final MessagePageService messagePageService;
     private final me.nageshk.omnichannel.db.chatbot.ChatbotRunRepository runs;
     private final me.nageshk.omnichannel.service.chatbot.run.ChatPointer pointer;
+    private final me.nageshk.omnichannel.db.phone.PhoneNumberRepository numbers;
+    private final java.time.Clock clock;
+    /** Whether a number is a Cloud API number; a number's connection type never changes. */
+    private final java.util.Map<String, Boolean> cloudNumbers = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private boolean cloud(String phoneNumberId) {
+        if (phoneNumberId == null) return false;
+        return cloudNumbers.computeIfAbsent(phoneNumberId, id -> numbers.findById(id)
+                .map(n -> n.getConnectionType() == me.nageshk.omnichannel.db.phone.ConnectionType.WHATSAPP_CLOUD_API)
+                .orElse(false));
+    }
 
     public ChatView chat(WaWebChat chat) {
         return chats(List.of(chat)).get(0);
@@ -69,7 +80,8 @@ public class InboxViews {
                 loc == null ? null : new MessageView.Location(loc.latitude(), loc.longitude(), loc.description()),
                 m.getTimestamp(), m.getStatus(), m.getStatusTimes(),
                 sentBy(m), m.getTemplateId(), m.getPollOptions(), m.getPollVotes(), m.getCall(),
-                m.getBusinessTag(), AdClickView.of(m.getAdClick()), m.getMessagePageId(), messagePage(m));
+                m.getBusinessTag(), AdClickView.of(m.getAdClick()), m.getMessagePageId(), messagePage(m),
+                m.getFailure(), m.getTemplate());
     }
 
     /** The page's view, or null when there is none or it cannot be read: a bad page never hides the message. */
@@ -100,7 +112,9 @@ public class InboxViews {
                 c.getStatus(), user, team, c.getUnreadCount(), c.getLastMessageAt(),
                 last == null ? null
                         : new ChatView.LastMessage(last.direction(), last.type(), last.text(), last.status()),
-                c.getCreationTime(), lastAgent, AdClickView.of(c.getAdClick()), otherChats, chatbot(c));
+                c.getCreationTime(), lastAgent, AdClickView.of(c.getAdClick()), otherChats, chatbot(c),
+                cloud(c.getPhoneNumberId()) ? "WHATSAPP_CLOUD" : "WHATSAPP_WEB",
+                cloud(c.getPhoneNumberId()) ? ServiceWindow.of(c, clock.instant()) : null);
     }
 
     private ChatView.ActiveChatbotView chatbot(WaWebChat c) {

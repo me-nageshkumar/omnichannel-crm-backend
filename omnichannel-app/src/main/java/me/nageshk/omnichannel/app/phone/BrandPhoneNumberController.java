@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.app.phone;
 
+import me.nageshk.omnichannel.meta.api.CloudNumberRequest;
+
 import java.util.List;
 import me.nageshk.omnichannel.db.phone.PhoneNumber;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
@@ -27,7 +29,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/workspaces/{workspaceId}/phone-numbers")
 public class BrandPhoneNumberController {
 
-    public record AddRequest(String number, String label, String connectionType) {}
+    public record AddRequest(String number, String label, String connectionType, CloudNumberRequest cloud) {}
+
+    public record RegisterRequest(String pin) {}
 
     public record LabelRequest(String label) {}
     public record TeamRequest(String teamId) {}
@@ -53,6 +57,9 @@ public class BrandPhoneNumberController {
     @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
     public PhoneNumberView add(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
             @RequestBody AddRequest req) {
+        if (req.cloud() != null && "WHATSAPP_CLOUD_API".equals(req.connectionType() == null ? null : req.connectionType().trim())) {
+            return service.view(service.createCloud(me.customerId(), workspaceId, req.label(), req.cloud(), me));
+        }
         return service.view(service.create(me.customerId(), workspaceId, req.number(), req.label(), req.connectionType(), me));
     }
 
@@ -105,6 +112,14 @@ public class BrandPhoneNumberController {
     @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
     public PhoneNumberView revokeDevice(@PathVariable String workspaceId, @PathVariable String id) {
         return service.view(service.revokeDevice(service.requireInWorkspace(workspaceId, id)));
+    }
+
+    @PostMapping("/{id}/cloud/register")
+    @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
+    public PhoneNumberView registerCloud(@PathVariable String workspaceId, @PathVariable String id,
+            @RequestBody(required = false) RegisterRequest req) {
+        return service.view(service.registerCloud(service.requireInWorkspace(workspaceId, id),
+                req == null ? null : req.pin()));
     }
 
     private PhoneNumberView setEnabled(AuthenticatedUser me, String workspaceId, String id, boolean enabled) {

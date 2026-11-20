@@ -46,4 +46,21 @@ class ServiceBoundaryTest {
         }
         assertThat(violations).isEmpty();
     }
+
+    @Test
+    void serviceImportsOnlyTheMetaApi() throws IOException {
+        String meta = "me.nageshk.omnichannel.meta.";
+        List<String> violations = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                for (String line : Files.readAllLines(file)) {
+                    String t = line.trim();
+                    if (!t.startsWith("import ")) continue;
+                    String target = t.substring("import ".length()).replaceFirst("^static\\s+", "");
+                    if (target.startsWith(meta) && !target.startsWith(meta + "api.")) violations.add(file + ": " + t);
+                }
+            }
+        }
+        assertThat(violations).isEmpty();
+    }
 }

@@ -1,11 +1,14 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import me.nageshk.omnichannel.db.phone.ConnectionType;
+import me.nageshk.omnichannel.meta.api.CloudAccountInfo;
+import me.nageshk.omnichannel.meta.api.CloudAccounts;
+
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import lombok.RequiredArgsConstructor;
 import me.nageshk.omnichannel.common.api.NoDeviceException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
@@ -23,7 +26,6 @@ import org.springframework.stereotype.Component;
  * because that service calls {@link InboxCleanup} and so must not be reachable from here.
  */
 @Component
-@RequiredArgsConstructor
 public class InboxDevices {
 
     private static final Logger log = LoggerFactory.getLogger(InboxDevices.class);
@@ -33,8 +35,23 @@ public class InboxDevices {
     private final PhoneNumberRepository numbers;
     private final AccessService access;
     private final DeviceRegistry registry;
+    private final CloudAccounts cloud;
     /** The digits of each number, without the {@code +}; a number never changes once onboarded. */
     private final Map<String, String> digits = new ConcurrentHashMap<>();
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public InboxDevices(PhoneNumberRepository numbers, AccessService access, DeviceRegistry registry,
+            CloudAccounts cloud) {
+        this.numbers = numbers;
+        this.access = access;
+        this.registry = registry;
+        this.cloud = cloud;
+    }
+
+    /** Without Cloud accounts: every number is a WhatsApp Web number (unit tests). */
+    public InboxDevices(PhoneNumberRepository numbers, AccessService access, DeviceRegistry registry) {
+        this(numbers, access, registry, null);
+    }
 
     /**
      * @throws NotFoundException if the chat's number is not in the workspace
@@ -46,6 +63,58 @@ public class InboxDevices {
 
     /** Same as {@link #requireReady(String, WaWebChat)}, for a number that has no chat yet. */
     public DeviceSession requireReady(String workspaceId, String phoneNumberId) {
+        PhoneNumber number = usable(workspaceId, phoneNumberId);
+        return requireDevice(number);
+    }
+
+    /**
+     * The way a send to the chat leaves: the number's device for a WhatsApp Web number, Meta for a Cloud API number
+     * (spec 2026-11-20 §5.4). The number checks are the same for both.
+     *
+     * @throws NoDeviceException {@code CLOUD_NOT_READY} when a Cloud number cannot send (token refused, not
+     *     registered), else as {@link #requireReady}
+     */
+    public SendChannel requireChannel(String workspaceId, WaWebChat chat) {
+        return requireChannel(workspaceId, chat.getPhoneNumberId());
+    }
+
+    public SendChannel requireChannel(String workspaceId, String phoneNumberId) {
+        PhoneNumber number = usable(workspaceId, phoneNumberId);
+        if (cloud == null || number.getConnectionType() != ConnectionType.WHATSAPP_CLOUD_API) {
+            return new SendChannel.DeviceChannel(requireDevice(number));
+        }
+        CloudAccountInfo account = cloud.find(number.getId()).orElseThrow(() -> new NoDeviceException(CLOUD_NOT_READY,
+                "This WhatsApp Cloud API number has no Meta account; add it again."));
+        if (!account.canSend()) {
+            throw new NoDeviceException(CLOUD_NOT_READY, switch (account.state()) {
+                case TOKEN_INVALID -> "Meta refused this number's access token; replace it on Phone numbers.";
+                case NOT_REGISTERED -> "This number is not registered with Meta yet; register it on Phone numbers.";
+                default -> "This number cannot send now.";
+            });
+        }
+        return new SendChannel.CloudChannel(account);
+    }
+
+    /** Whether {@link #requireChannel(String, String)} would succeed: a ready device, or a Cloud number that can send. */
+    public boolean canSend(String workspaceId, String phoneNumberId) {
+        try {
+            requireChannel(workspaceId, phoneNumberId);
+            return true;
+        } catch (NoDeviceException | NotFoundException e) {
+            return false;
+        }
+    }
+
+    /** Whether the number is a WhatsApp Cloud API number (whatever its state). */
+    public boolean isCloudNumber(String phoneNumberId) {
+        return cloud != null && phoneNumberId != null && numbers.findById(phoneNumberId)
+                .map(n -> n.getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API).orElse(false);
+    }
+
+    /** A Cloud number cannot send: its token was refused or it is not registered. */
+    public static final String CLOUD_NOT_READY = "CLOUD_NOT_READY";
+
+    private PhoneNumber usable(String workspaceId, String phoneNumberId) {
         PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
                 .orElseThrow(() -> new NotFoundException("phone number not found"));
         remember(number);
@@ -58,6 +127,10 @@ public class InboxDevices {
         if (number.getDisabled() != null || !access.isWorkspaceUsable(workspaceId)) {
             throw new NoDeviceException(NoDeviceException.NO_DEVICE, "the number is disabled");
         }
+        return number;
+    }
+
+    private DeviceSession requireDevice(PhoneNumber number) {
         DeviceSession device = registry.find(number.getId()).orElseThrow(() -> new NoDeviceException(
                 NoDeviceException.NO_DEVICE, "no extension connected for number " + number.getId()));
         if (!device.confirmed() || !DeviceSession.STATE_CONNECTED.equals(device.waState())) {

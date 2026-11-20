@@ -21,6 +21,7 @@ import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
@@ -61,6 +62,22 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
      */
     public ChannelWebhookEvent save(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt,
             int ordinal, boolean imported) {
+        return saveResult(ctx, event, raw, seq, capturedAt, ordinal, imported).doc();
+    }
+
+    /** What a save did: stored for the first time, found already stored, or failed (logged). */
+    public enum Outcome { STORED, DUPLICATE, FAILED }
+
+    public record SaveResult(Outcome outcome, ChannelWebhookEvent doc) {}
+
+    /** As {@link #save}, saying whether the event was new: a Cloud webhook processes only new events. Never throws. */
+    public SaveResult saveResult(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt,
+            int ordinal) {
+        return saveResult(ctx, event, raw, seq, capturedAt, ordinal, false);
+    }
+
+    private SaveResult saveResult(ChannelContext ctx, WebhookEvent event, JsonNode raw, Long seq, Instant capturedAt,
+            int ordinal, boolean imported) {
         String key = WebhookEventKeys.of(event, imported);
         try {
             ChannelWebhookEvent doc = new ChannelWebhookEvent();
@@ -71,6 +88,11 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
             doc.setOrdinal(ordinal);
             // auditing sees a set id as an existing document and would leave the creation time (the expiry) unset
             doc.setCreationTime(Instant.now());
+            if (ctx.kind() == me.nageshk.omnichannel.common.channel.ChannelKind.WHATSAPP_CLOUD) {
+                doc.setPendingSince(Instant.now());
+                doc.setCloud(new ChannelWebhookEvent.CloudTarget(ctx.customerId(), ctx.workspaceId(),
+                        ctx.channelAccountId(), ctx.displayPhoneNumber()));
+            }
             // An unconvertible raw gets an event shell so the document is still found by number.
             WebhookEvent toStore = event != null
                     ? event
@@ -85,13 +107,71 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
                     doc.setRawDropped(true);
                 }
             }
-            return mongo.insert(doc);
+            return new SaveResult(Outcome.STORED, mongo.insert(doc));
         } catch (DuplicateKeyException e) {
             log.debug("webhook event {} of {} is already stored", key, ctx.channelAccountId());
-            return existing(key);
+            return new SaveResult(Outcome.DUPLICATE, existing(key));
         } catch (RuntimeException e) {
             log.warn("Could not store the webhook event of {}: {}", ctx.channelAccountId(), e.toString());
-            return null;
+            return new SaveResult(Outcome.FAILED, null);
+        }
+    }
+
+    /** A Cloud event has been processed: the replay leaves it alone. Best effort. */
+    public void markProcessed(String id) {
+        if (id == null) return;
+        try {
+            mongo.updateFirst(new Query(Criteria.where("_id").is(id)), new Update().unset("pendingSince").unset("sweptAt"),
+                    ChannelWebhookEvent.class);
+        } catch (RuntimeException e) {
+            log.warn("Could not mark webhook event {} processed: {}", id, e.toString());
+        }
+    }
+
+    /**
+     * Takes up to {@code limit} Cloud events stored at least {@code minAge} ago and not processed yet, each with a
+     * {@code lease} so a second sweep does not take it meanwhile.
+     */
+    public List<ChannelWebhookEvent> claimPending(java.time.Duration minAge, java.time.Duration lease, int limit) {
+        Instant now = Instant.now();
+        List<ChannelWebhookEvent> out = new java.util.ArrayList<>();
+        for (int i = 0; i < limit; i++) {
+            Query q = new Query(Criteria.where("pendingSince").lte(now.minus(minAge)).orOperator(
+                    Criteria.where("sweptAt").is(null), Criteria.where("sweptAt").lte(now.minus(lease))))
+                    .with(org.springframework.data.domain.Sort.by("pendingSince"));
+            ChannelWebhookEvent doc = mongo.findAndModify(q, new Update().set("sweptAt", now),
+                    org.springframework.data.mongodb.core.FindAndModifyOptions.options().returnNew(true),
+                    ChannelWebhookEvent.class);
+            if (doc == null) break;
+            out.add(doc);
+        }
+        return out;
+    }
+
+    /** The event of a stored document, as a webhook event. */
+    public WebhookEvent eventOf(ChannelWebhookEvent doc) {
+        return doc.getEvent() == null ? null : mapper.convertValue(doc.getEvent(), WebhookEvent.class);
+    }
+
+    /** The stored live event of a message ({@code message:<id>}), if any. */
+    public java.util.Optional<WebhookEvent> messageEvent(String waMessageId) {
+        if (waMessageId == null || waMessageId.isBlank()) return java.util.Optional.empty();
+        ChannelWebhookEvent d = existing("message:" + waMessageId);
+        return d == null || d.getEvent() == null ? java.util.Optional.empty()
+                : java.util.Optional.of(mapper.convertValue(d.getEvent(), WebhookEvent.class));
+    }
+
+    /** The stored status events of a message ({@code status:<id>:<state>}), oldest first. */
+    public List<WebhookEvent> statusesFor(String waMessageId) {
+        if (waMessageId == null || waMessageId.isBlank()) return List.of();
+        try {
+            Query q = new Query(Criteria.where("eventKey").regex("^" + java.util.regex.Pattern.quote(
+                    "status:" + waMessageId + ":"))).with(org.springframework.data.domain.Sort.by("_id"));
+            return mongo.find(q, ChannelWebhookEvent.class).stream()
+                    .map(d -> mapper.convertValue(d.getEvent(), WebhookEvent.class)).toList();
+        } catch (RuntimeException e) {
+            log.warn("Could not read the stored statuses of {}: {}", waMessageId, e.toString());
+            return List.of();
         }
     }
 

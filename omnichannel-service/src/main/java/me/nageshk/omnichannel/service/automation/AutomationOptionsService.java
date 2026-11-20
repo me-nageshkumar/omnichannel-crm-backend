@@ -29,11 +29,14 @@ public class AutomationOptionsService {
     private final AutomationCrm crm;
 
     private final me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots;
+    private final me.nageshk.omnichannel.meta.api.CloudTemplates cloudTemplates;
 
     public AutomationOptionsService(WorkspaceRepository workspaces, PhoneNumberRepository numbers,
             TeamRepository teams, MessageTemplateRepository templates, UserAdminService userAdmin,
             AccessService access, AutomationCrm crm,
-            me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots) {
+            me.nageshk.omnichannel.db.chatbot.ChatbotRepository chatbots,
+            me.nageshk.omnichannel.meta.api.CloudTemplates cloudTemplates) {
+        this.cloudTemplates = cloudTemplates;
         this.chatbots = chatbots;
         this.workspaces = workspaces;
         this.numbers = numbers;
@@ -67,7 +70,24 @@ public class AutomationOptionsService {
                 .toList();
         var chatbotOptions = chatbots.findAllByWorkspaceIdOrderByNameAsc(workspaceId).stream()
                 .map(c -> new OptionsView.ChatbotOption(c.getId(), c.getName(), c.getStatus())).toList();
-        return new OptionsView(numberOptions, agents, teamRefs, templateOptions, crm.options(workspaceId), chatbotOptions);
+        return new OptionsView(numberOptions, agents, teamRefs, templateOptions, crm.options(workspaceId), chatbotOptions,
+                cloudTemplateOptions(workspaceId));
+    }
+
+    /** Each sendable WhatsApp template once, with the Cloud numbers that can send it (those of its WABA). */
+    private List<OptionsView.CloudTemplateOption> cloudTemplateOptions(String workspaceId) {
+        java.util.Map<String, OptionsView.CloudTemplateOption> byId = new java.util.LinkedHashMap<>();
+        for (var n : numbers.findByWorkspaceIdOrderByNumber(workspaceId)) {
+            if (n.getConnectionType() != me.nageshk.omnichannel.db.phone.ConnectionType.WHATSAPP_CLOUD_API) continue;
+            for (var t : cloudTemplates.forNumber(workspaceId, n.getId(), true)) {
+                var seen = byId.get(t.id());
+                List<String> ids = new java.util.ArrayList<>(seen == null ? List.of() : seen.phoneNumberIds());
+                ids.add(n.getId());
+                byId.put(t.id(), new OptionsView.CloudTemplateOption(t.id(), t.name(), t.language(), ids, t.variables(),
+                        t.fills()));
+            }
+        }
+        return List.copyOf(byId.values());
     }
 
     private boolean seesAll(User u, String workspaceId) {
