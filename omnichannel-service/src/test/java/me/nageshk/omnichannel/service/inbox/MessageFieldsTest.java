@@ -474,7 +474,8 @@ class MessageFieldsTest {
         var lidOnly = new me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message(null, "abc123", "m1", "1", "text",
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null);
-        assertThat(MessageFields.chatId(lidOnly)).isEqualTo("abc123@lid");
+        // a Cloud body (no wa_web) naming only Meta's user id: a @user chat (spec 2026-11-20 §5.3)
+        assertThat(MessageFields.chatId(lidOnly)).isEqualTo("abc123@user");
     }
 
     @Test
@@ -484,6 +485,7 @@ class MessageFieldsTest {
         assertThat(MessageFields.chatId(s)).isEqualTo("919912345678@c.us");
         var lidOnly = new me.nageshk.omnichannel.common.channel.whatsapp.webhook.Status("m1", "sent", "1", null,
                 "abc123", null, null, null, null, null);
-        assertThat(MessageFields.chatId(lidOnly)).isEqualTo("abc123@lid");
+        // a Cloud body (no wa_web) naming only Meta's user id: a @user chat (spec 2026-11-20 §5.3)
+        assertThat(MessageFields.chatId(lidOnly)).isEqualTo("abc123@user");
     }
 }
