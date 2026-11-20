@@ -349,7 +349,15 @@ public class InboxSendService {
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
-        return CompletableFuture.completedFuture(afterCloudSend(actor, chat, account, out, wamid, typedPhone));
+        try {
+            return CompletableFuture.completedFuture(afterCloudSend(actor, chat, account, out, wamid, typedPhone));
+        } catch (RuntimeException e) {
+            // Meta took it: a failure from here on is not "not sent", so the charge stays
+            log.warn("Meta accepted {} on {} but it could not be recorded: {}", wamid, chat.getPhoneNumberId(),
+                    e.toString());
+            return CompletableFuture.failedFuture(new CloudSendException(CloudSendException.Kind.UNKNOWN, null,
+                    "Meta accepted the message, but it could not be recorded here", e.getMessage(), null));
+        }
     }
 
     /** Sends an imported Meta template as the console user {@code me}; see the {@link SendActor} form. */

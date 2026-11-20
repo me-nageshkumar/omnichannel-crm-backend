@@ -134,12 +134,18 @@ public class UsageCharger {
                 || cause instanceof me.nageshk.omnichannel.common.api.WindowClosedException;
     }
 
-    /** Notes on the stored message which wallet entry paid for it. Best effort. */
+    /**
+     * Notes on the stored message which wallet entry paid for it. Best effort. A Cloud message Meta already failed
+     * (its failed status can come before this note) is given back now, as the later status could not.
+     */
     public void stamp(String messageId, Charge charge) {
         if (charge == null || messageId == null) return;
         try {
-            mongo.updateFirst(new Query(Criteria.where("_id").is(messageId)),
-                    new Update().set("usageEntryId", charge.entryId()), WaWebMessage.class);
+            WaWebMessage stamped = mongo.findAndModify(new Query(Criteria.where("_id").is(messageId)),
+                    new Update().set("usageEntryId", charge.entryId()),
+                    org.springframework.data.mongodb.core.FindAndModifyOptions.options().returnNew(true),
+                    WaWebMessage.class);
+            if (stamped != null && stamped.getFailure() != null) giveBackForMessage(messageId, "Meta could not deliver it");
         } catch (RuntimeException e) {
             log.warn("could not note charge {} on message {}", charge.entryId(), messageId, e);
         }

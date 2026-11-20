@@ -35,6 +35,7 @@ public final class GraphStub {
     private final ConcurrentLinkedQueue<Canned> queue = new ConcurrentLinkedQueue<>();
     private final List<Recorded> recorded = new CopyOnWriteArrayList<>();
     private volatile Runnable beforeNext;
+    private final java.util.Map<String, Runnable> beforeMatching = new java.util.concurrent.ConcurrentHashMap<>();
 
     public GraphStub() {
         try {
@@ -60,6 +61,8 @@ public final class GraphStub {
             beforeNext = null;
             hook.run();
         }
+        Runnable matchedHook = beforeMatching.remove(method + " " + path);
+        if (matchedHook != null) matchedHook.run();
         Canned c = take(method, path);
         if (c == null) c = queue.poll();
         if (c == null) c = new Canned(null, 200, "{\"data\":[]}".getBytes(StandardCharsets.UTF_8), "application/json");
@@ -106,6 +109,11 @@ public final class GraphStub {
         this.beforeNext = hook;
     }
 
+    /** Runs once, inside the first request whose {@code "METHOD path"} is {@code match}, before it is answered. */
+    public void before(String match, Runnable hook) {
+        beforeMatching.put(match, hook);
+    }
+
     public List<Recorded> recorded() {
         return List.copyOf(recorded);
     }
@@ -122,6 +130,7 @@ public final class GraphStub {
         queue.clear();
         recorded.clear();
         beforeNext = null;
+        beforeMatching.clear();
     }
 
     /** {@code debug_token} for a valid token of {@code appId} with both WhatsApp scopes on the given WABAs. */

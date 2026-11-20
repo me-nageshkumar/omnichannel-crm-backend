@@ -15,6 +15,9 @@ public class MetaConfig {
         e.setMaxPoolSize(4);
         e.setQueueCapacity(10_000);
         e.setThreadNamePrefix("meta-webhook-");
+        // a restart lets queued changes finish; anything cut short is replayed from the event store
+        e.setWaitForTasksToCompleteOnShutdown(true);
+        e.setAwaitTerminationSeconds(20);
         e.initialize();
         return e;
     }

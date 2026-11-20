@@ -118,6 +118,8 @@ public class MetaConnectionService {
         setToken(c, token);
         Secrets opened = new Secrets(secret, token);
         runCheck(c, opened);
+        // saved first: setting the callback makes Meta call it at once, and it must find this connection
+        c = persist(c);
         setUpWebhook(c, opened);
         return view(announced(persist(c)));
     }

@@ -21,6 +21,7 @@ import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
@@ -87,6 +88,11 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
             doc.setOrdinal(ordinal);
             // auditing sees a set id as an existing document and would leave the creation time (the expiry) unset
             doc.setCreationTime(Instant.now());
+            if (ctx.kind() == me.nageshk.omnichannel.common.channel.ChannelKind.WHATSAPP_CLOUD) {
+                doc.setPendingSince(Instant.now());
+                doc.setCloud(new ChannelWebhookEvent.CloudTarget(ctx.customerId(), ctx.workspaceId(),
+                        ctx.channelAccountId(), ctx.displayPhoneNumber()));
+            }
             // An unconvertible raw gets an event shell so the document is still found by number.
             WebhookEvent toStore = event != null
                     ? event
@@ -109,6 +115,42 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
             log.warn("Could not store the webhook event of {}: {}", ctx.channelAccountId(), e.toString());
             return new SaveResult(Outcome.FAILED, null);
         }
+    }
+
+    /** A Cloud event has been processed: the replay leaves it alone. Best effort. */
+    public void markProcessed(String id) {
+        if (id == null) return;
+        try {
+            mongo.updateFirst(new Query(Criteria.where("_id").is(id)), new Update().unset("pendingSince").unset("sweptAt"),
+                    ChannelWebhookEvent.class);
+        } catch (RuntimeException e) {
+            log.warn("Could not mark webhook event {} processed: {}", id, e.toString());
+        }
+    }
+
+    /**
+     * Takes up to {@code limit} Cloud events stored at least {@code minAge} ago and not processed yet, each with a
+     * {@code lease} so a second sweep does not take it meanwhile.
+     */
+    public List<ChannelWebhookEvent> claimPending(java.time.Duration minAge, java.time.Duration lease, int limit) {
+        Instant now = Instant.now();
+        List<ChannelWebhookEvent> out = new java.util.ArrayList<>();
+        for (int i = 0; i < limit; i++) {
+            Query q = new Query(Criteria.where("pendingSince").lte(now.minus(minAge)).orOperator(
+                    Criteria.where("sweptAt").is(null), Criteria.where("sweptAt").lte(now.minus(lease))))
+                    .with(org.springframework.data.domain.Sort.by("pendingSince"));
+            ChannelWebhookEvent doc = mongo.findAndModify(q, new Update().set("sweptAt", now),
+                    org.springframework.data.mongodb.core.FindAndModifyOptions.options().returnNew(true),
+                    ChannelWebhookEvent.class);
+            if (doc == null) break;
+            out.add(doc);
+        }
+        return out;
+    }
+
+    /** The event of a stored document, as a webhook event. */
+    public WebhookEvent eventOf(ChannelWebhookEvent doc) {
+        return doc.getEvent() == null ? null : mapper.convertValue(doc.getEvent(), WebhookEvent.class);
     }
 
     /** The stored live event of a message ({@code message:<id>}), if any. */

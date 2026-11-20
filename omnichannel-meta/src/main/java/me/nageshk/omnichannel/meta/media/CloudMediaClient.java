@@ -52,7 +52,12 @@ class CloudMediaClient implements CloudMedia {
         parts.put("messaging_product", "whatsapp");
         parts.put("type", mimeType);
         parts.put("file", new GraphClient.FilePart(filename == null ? "file" : filename, mimeType, bytes));
-        return graph.postMultipart(token, a.getMetaPhoneNumberId() + "/media", parts).path("id").asString();
+        try {
+            return graph.postMultipart(token, a.getMetaPhoneNumberId() + "/media", parts).path("id").asString();
+        } catch (GraphException e) {
+            if (e.kind() == GraphException.Kind.AUTH) connections.markInvalid(a.getConnectionId(), e.getMessage());
+            throw new CloudMediaException("Meta: " + e.getMessage(), false);
+        }
     }
 
     private String token(String phoneNumberId) {

@@ -37,6 +37,9 @@ public class CloudTemplateService implements CloudTemplates {
 
     private static final Logger log = LoggerFactory.getLogger(CloudTemplateService.class);
     static final String FIELDS = "id,name,language,status,category,components,parameter_format,rejected_reason";
+    /** The template status values; other webhook events (REINSTATED, FLAGGED, …) are not statuses. */
+    static final Set<String> STATUSES = Set.of("APPROVED", "REJECTED", "PENDING", "PAUSED", "DISABLED", "IN_APPEAL",
+            "PENDING_DELETION", "DELETED", "ARCHIVED", "LIMIT_EXCEEDED");
     private static final TypeReference<List<Map<String, Object>>> LIST = new TypeReference<>() {};
 
     /** Counts of a sync. */
@@ -182,7 +185,12 @@ public class CloudTemplateService implements CloudTemplates {
             return;
         }
         CloudTemplate t = row.get();
-        if (!event.isEmpty()) t.setStatus(event);
+        if (!STATUSES.contains(event)) {
+            // REINSTATED, UNARCHIVED, FLAGGED, …: not a status; Meta's own list says what the template is now
+            sync(c);
+            return;
+        }
+        t.setStatus(event);
         String reason = value.path("reason").asString(null);
         t.setRejectedReason(reason == null || "NONE".equals(reason) ? null : reason);
         t.setSyncedAt(clock.instant());

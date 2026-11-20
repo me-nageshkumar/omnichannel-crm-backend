@@ -48,4 +48,17 @@ public class ChannelWebhookEvent {
     private Instant capturedAt;
     @CreatedDate
     private Instant creationTime;
+
+    /**
+     * Set on a Cloud API event until it has been processed (spec 2026-11-20 §5.3): a database failure or a restart
+     * between storing and processing leaves it set, and the replay sweep processes it again. Null otherwise.
+     */
+    @org.springframework.data.mongodb.core.index.Indexed(name = "pendingSince_sparse", sparse = true)
+    private Instant pendingSince;
+    /** When the replay sweep last took the event (a lease, so two sweeps never process it together). */
+    private Instant sweptAt;
+    /** The number a Cloud event belongs to, for the replay (Cloud events only). */
+    private CloudTarget cloud;
+
+    public record CloudTarget(String customerId, String workspaceId, String phoneNumberId, String displayDigits) {}
 }

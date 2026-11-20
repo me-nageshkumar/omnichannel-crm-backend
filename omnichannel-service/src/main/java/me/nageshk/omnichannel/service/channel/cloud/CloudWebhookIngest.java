@@ -37,7 +37,7 @@ public class CloudWebhookIngest implements CloudWebhookSink {
 
     private static final Logger log = LoggerFactory.getLogger(CloudWebhookIngest.class);
 
-    private record Stored(ChannelContext ctx, WebhookEvent event) {}
+    private record Stored(ChannelContext ctx, WebhookEvent event, String docId) {}
 
     private final ChannelWebhookEventStore store;
     private final WhatsAppWebhookProcessor processor;
@@ -78,22 +78,48 @@ public class CloudWebhookIngest implements CloudWebhookSink {
             for (int i = 0; i < events.size(); i++) {
                 SaveResult r = store.saveResult(ctx, events.get(i), change.value(), null, change.receivedAt(), i);
                 if (r.outcome() == Outcome.FAILED) failed = true;
-                else if (r.outcome() == Outcome.STORED) fresh.add(new Stored(ctx, events.get(i)));
+                else if (r.outcome() == Outcome.STORED) fresh.add(new Stored(ctx, events.get(i), r.doc().getId()));
             }
         }
         return new Delivery(failed, () -> process(fresh));
     }
 
-    private void process(List<Stored> fresh) {
-        for (Stored s : fresh) {
-            try {
-                processor.process(s.ctx(), s.event());
-            } catch (RuntimeException e) {
-                log.warn("could not ingest a Meta event of {}: {}", s.ctx().channelAccountId(), e.toString());
+    /**
+     * Processes the stored Cloud events nobody processed (a database failure mid-ingest, a full queue, a restart):
+     * Meta has had its 200 and would not send them again. Returns how many were processed.
+     */
+    public int replay(java.time.Duration minAge) {
+        int done = 0;
+        for (var doc : store.claimPending(minAge, java.time.Duration.ofMinutes(2), 100)) {
+            var t = doc.getCloud();
+            WebhookEvent event = store.eventOf(doc);
+            if (t == null || event == null) {
+                store.markProcessed(doc.getId());
                 continue;
             }
-            fetchMedia(s);
+            ChannelContext ctx = new ChannelContext(ChannelKind.WHATSAPP_CLOUD, t.customerId(), t.workspaceId(),
+                    t.phoneNumberId(), t.displayDigits());
+            if (processOne(new Stored(ctx, event, doc.getId()))) done++;
         }
+        return done;
+    }
+
+    /** True when the event was processed (and marked so); false leaves it for the next replay. */
+    private boolean processOne(Stored s) {
+        try {
+            processor.process(s.ctx(), s.event());
+        } catch (RuntimeException e) {
+            log.warn("could not ingest a Meta event of {} (it is replayed later): {}", s.ctx().channelAccountId(),
+                    e.toString());
+            return false;
+        }
+        store.markProcessed(s.docId());
+        fetchMedia(s);
+        return true;
+    }
+
+    private void process(List<Stored> fresh) {
+        for (Stored s : fresh) processOne(s);
     }
 
     /** Meta keeps an incoming file a week and its address minutes: the bytes are fetched at once. */

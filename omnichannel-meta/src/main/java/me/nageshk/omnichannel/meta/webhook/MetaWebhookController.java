@@ -129,10 +129,15 @@ class MetaWebhookController {
         }
         CloudWebhookSink.Delivery delivery = messages.isEmpty() ? new CloudWebhookSink.Delivery(false, () -> {})
                 : sink.accept(messages);
-        executor.execute(() -> {
-            run(delivery.afterReply());
-            numberChanges.forEach(MetaWebhookController::run);
-        });
+        try {
+            executor.execute(() -> {
+                run(delivery.afterReply());
+                numberChanges.forEach(MetaWebhookController::run);
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // stored: the replay sweep processes the messages; number and template changes come again with the next
+            log.warn("Meta webhook for app {}: the processing queue is full or stopping; left to the replay", c.getAppId());
+        }
         return delivery.failed() ? ResponseEntity.internalServerError().build() : ResponseEntity.ok().build();
     }
 
