@@ -320,6 +320,15 @@ public class InboxController {
         return sender.send(me, workspaceId, query.requireVisible(me, workspaceId, chatId), req);
     }
 
+    /** Sends an imported Meta template to a Cloud API number's chat (spec 2026-11-20 §5.6). */
+    @PostMapping("/chats/{chatId}/cloud-templates")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    public CompletableFuture<MessageView> sendCloudTemplate(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable String workspaceId, @PathVariable String chatId,
+            @RequestBody(required = false) me.nageshk.omnichannel.service.inbox.CloudTemplateRequest req) {
+        return sender.sendCloudTemplate(me, workspaceId, query.requireVisible(me, workspaceId, chatId), req, null);
+    }
+
     /** Sends a Cloud API message to the chat; {@code to} is filled from the chat. See {@link CloudSendService}. */
     @PostMapping("/chats/{chatId}/cloud-messages")
     @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")

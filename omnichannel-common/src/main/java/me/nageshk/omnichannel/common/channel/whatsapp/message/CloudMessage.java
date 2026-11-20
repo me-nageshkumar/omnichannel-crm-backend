@@ -13,7 +13,7 @@ import tools.jackson.databind.annotation.JsonNaming;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CloudMessage(String messagingProduct, String recipientType, String to, String type, Text text,
         Interactive interactive, MediaObject image, MediaObject video, MediaObject audio, MediaObject document,
-        LocationObject location, Context context) {
+        LocationObject location, Context context, Template template) {
 
     public static final String TEXT = "text";
     public static final String INTERACTIVE = "interactive";
@@ -22,8 +22,10 @@ public record CloudMessage(String messagingProduct, String recipientType, String
     public static final String AUDIO = "audio";
     public static final String DOCUMENT = "document";
     public static final String LOCATION = "location";
+    /** A Meta template: Cloud API numbers only (spec 2026-11-20 §5.6). */
+    public static final String TEMPLATE = "template";
     /** Every message type this project sends. */
-    public static final Set<String> TYPES = Set.of(TEXT, INTERACTIVE, IMAGE, VIDEO, AUDIO, DOCUMENT, LOCATION);
+    public static final Set<String> TYPES = Set.of(TEXT, INTERACTIVE, IMAGE, VIDEO, AUDIO, DOCUMENT, LOCATION, TEMPLATE);
     public static final Set<String> MEDIA_TYPES = Set.of(IMAGE, VIDEO, AUDIO, DOCUMENT);
 
     /** The message this one replies to. */
@@ -34,7 +36,21 @@ public record CloudMessage(String messagingProduct, String recipientType, String
     /** A text or interactive message (the shape before media and location types were added). */
     public CloudMessage(String messagingProduct, String recipientType, String to, String type, Text text,
             Interactive interactive, Context context) {
-        this(messagingProduct, recipientType, to, type, text, interactive, null, null, null, null, null, context);
+        this(messagingProduct, recipientType, to, type, text, interactive, null, null, null, null, null, context, null);
+    }
+
+    /** Any message but a Meta template (the shape before templates were added). */
+    public CloudMessage(String messagingProduct, String recipientType, String to, String type, Text text,
+            Interactive interactive, MediaObject image, MediaObject video, MediaObject audio, MediaObject document,
+            LocationObject location, Context context) {
+        this(messagingProduct, recipientType, to, type, text, interactive, image, video, audio, document, location,
+                context, null);
+    }
+
+    /** A Meta template message to {@code to}. */
+    public static CloudMessage template(String to, Template template) {
+        return new CloudMessage(MessagingProduct.WHATSAPP, "individual", to, TEMPLATE, null, null, null, null, null,
+                null, null, null, template);
     }
 
     /** The media object matching {@code type}, or null when the type is not a media type. */
@@ -51,6 +67,6 @@ public record CloudMessage(String messagingProduct, String recipientType, String
     /** A copy with another {@code to}. */
     public CloudMessage withTo(String newTo) {
         return new CloudMessage(messagingProduct, recipientType, newTo, type, text, interactive, image, video, audio,
-                document, location, context);
+                document, location, context, template);
     }
 }

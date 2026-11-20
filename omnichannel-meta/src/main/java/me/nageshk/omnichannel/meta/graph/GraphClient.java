@@ -96,6 +96,11 @@ public class GraphClient {
                 out.toByteArray()), token);
     }
 
+    /** A JSON page at an absolute URL Meta gave (a {@code paging.next}), fetched with the token. */
+    public JsonNode getUrl(String token, String absoluteUrl) {
+        return json(exchange(token, HttpMethod.GET, URI.create(absoluteUrl), null, null), token);
+    }
+
     /** The bytes at an absolute URL Meta gave (a media URL), fetched with the token. */
     public byte[] download(String token, String absoluteUrl) {
         return exchange(token, HttpMethod.GET, URI.create(absoluteUrl), null, null).body();

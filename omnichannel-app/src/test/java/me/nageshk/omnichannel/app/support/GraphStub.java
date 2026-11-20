@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * A local stand-in for graph.facebook.com. Answers are matched by path prefix (method optional, {@code "POST /333/messages"})
+ * A local stand-in for graph.facebook.com. Answers are matched by exact path (method optional, {@code "POST /333/messages"})
  * first, in the order queued, then by the plain queue; with nothing queued it answers 200 {@code {"data":[]}}. Every
  * request is recorded. Paths are recorded without the version segment, so tests read {@code /333/messages}. Tests
  * point {@code omnichannel.meta.graph-base-url} at {@link #baseUrl()}.
@@ -73,7 +73,7 @@ public final class GraphStub {
         for (Iterator<Canned> it = matched.iterator(); it.hasNext();) {
             Canned c = it.next();
             String m = c.match();
-            boolean hit = m.contains(" ") ? (method + " " + path).startsWith(m) : path.startsWith(m);
+            boolean hit = m.contains(" ") ? (method + " " + path).equals(m) : path.equals(m);
             if (hit) {
                 matched.remove(c);
                 return c;
@@ -91,7 +91,7 @@ public final class GraphStub {
         queue.add(new Canned(null, status, body.getBytes(StandardCharsets.UTF_8), "application/json"));
     }
 
-    /** Answered once to the first request whose path (or {@code "METHOD path"}) starts with {@code match}. */
+    /** Answered once to the first request whose path (or {@code "METHOD path"}) is {@code match}. */
     public void enqueue(String match, int status, String body) {
         matched.add(new Canned(match, status, body.getBytes(StandardCharsets.UTF_8), "application/json"));
     }

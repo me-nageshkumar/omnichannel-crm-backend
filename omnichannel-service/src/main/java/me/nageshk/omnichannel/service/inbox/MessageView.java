@@ -34,7 +34,9 @@ public record MessageView(
         /** What the customer did on that page, else null. */
         MessagePageView messagePage,
         /** Why Meta could not deliver it, else null (Cloud numbers). */
-        WaWebMessage.Failure failure) {
+        WaWebMessage.Failure failure,
+        /** The Meta template it sent, as the customer saw it, else null. */
+        me.nageshk.omnichannel.common.channel.whatsapp.message.TemplateSnapshot template) {
 
     /** A message without a delivery failure. */
     public MessageView(String id, String chatId, String waMessageId, MessageDirection direction, MessageSource source,
@@ -43,7 +45,8 @@ public record MessageView(
             List<WaWebMessage.PollVote> pollVotes, WaWebMessage.Call call, String businessTag, AdClickView adClick,
             String messagePageId, MessagePageView messagePage) {
         this(id, chatId, waMessageId, direction, source, type, body, media, location, timestamp, status, statusTimes,
-                sentBy, templateId, pollOptions, pollVotes, call, businessTag, adClick, messagePageId, messagePage, null);
+                sentBy, templateId, pollOptions, pollVotes, call, businessTag, adClick, messagePageId, messagePage, null,
+                null);
     }
 
     /** {@code available} is true once the bytes are cached, so the console can show a thumbnail at once. */

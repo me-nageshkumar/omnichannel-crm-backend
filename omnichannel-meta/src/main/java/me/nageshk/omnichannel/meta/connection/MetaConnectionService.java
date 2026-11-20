@@ -64,10 +64,16 @@ public class MetaConnectionService {
     private final Optional<ConnectionNumbers> numbersOf;
     private final me.nageshk.omnichannel.meta.account.CloudAccountRepository accounts;
     private final WebhookSetupService webhooks;
+    private final org.springframework.context.ApplicationEventPublisher events;
+
+    /** Meta accepted a connection's token just now (a save or a replaced secret): its templates are imported. */
+    public record ConnectionChecked(String connectionId) {}
 
     public MetaConnectionService(MetaConnectionRepository repository, SecretBox secrets, GraphClient graph,
             PublicOrigin origin, MongoTemplate mongo, Clock clock, Optional<ConnectionNumbers> numbersOf,
-            WebhookSetupService webhooks, me.nageshk.omnichannel.meta.account.CloudAccountRepository accounts) {
+            WebhookSetupService webhooks, me.nageshk.omnichannel.meta.account.CloudAccountRepository accounts,
+            org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.accounts = accounts;
         this.webhooks = webhooks;
         this.repository = repository;
@@ -113,7 +119,7 @@ public class MetaConnectionService {
         Secrets opened = new Secrets(secret, token);
         runCheck(c, opened);
         setUpWebhook(c, opened);
-        return view(persist(c));
+        return view(announced(persist(c)));
     }
 
     public ConnectionView replace(String workspaceId, String id, String userId, Save in) {
@@ -139,6 +145,7 @@ public class MetaConnectionService {
             Secrets opened = open(c);
             runCheck(c, opened);
             setUpWebhook(c, opened);
+            return view(announced(persist(c)));
         }
         return view(persist(c));
     }
@@ -363,6 +370,11 @@ public class MetaConnectionService {
         c.setAccessToken(secrets.seal(plain));
         c.setTokenHint(SecretBox.hint(plain));
         c.setTokenSetAt(clock.instant());
+    }
+
+    private MetaConnection announced(MetaConnection c) {
+        if (c.getStatus() == ConnectionStatus.OK) events.publishEvent(new ConnectionChecked(c.getId()));
+        return c;
     }
 
     private MetaConnection persist(MetaConnection c) {

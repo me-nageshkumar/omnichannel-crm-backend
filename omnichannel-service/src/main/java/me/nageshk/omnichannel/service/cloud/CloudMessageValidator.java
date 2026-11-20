@@ -57,6 +57,18 @@ public class CloudMessageValidator {
             errors.put("to", toIsPhone ? Phones.MESSAGE : REQUIRED);
         }
         String type = m.type() == null ? "" : m.type();
+        if (CloudMessage.TEMPLATE.equals(type)) {
+            // a Meta template goes out on a Cloud API number only; its parts are checked against the imported template
+            if (!MessagingProduct.WHATSAPP.equals(m.messagingProduct())) {
+                throw new ValidationException("messaging_product", "channel not available");
+            }
+            if (m.template() == null || m.template().name() == null || m.template().name().isBlank()
+                    || m.template().language() == null || m.template().language().code() == null) {
+                errors.put("template", "name and language.code are required");
+            }
+            if (!errors.isEmpty()) throw new ValidationException(errors);
+            return toIsPhone ? m.withTo(to) : m;
+        }
         if (!CloudMessage.TYPES.contains(type)) {
             errors.put("type", "must be text, interactive, image, video, audio, document or location");
         } else {

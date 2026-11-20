@@ -46,6 +46,8 @@ class MetaWebhookController {
 
     private final MetaConnectionService connections;
     private final CloudAccountService accounts;
+    private final me.nageshk.omnichannel.meta.template.CloudTemplateService templates;
+    static final String TEMPLATE_STATUS = "message_template_status_update";
     private final CloudWebhookSink sink;
     private final ObjectMapper mapper;
     private final Executor executor;
@@ -53,11 +55,13 @@ class MetaWebhookController {
     private final long maxBytes;
     private final Map<String, Instant> ignoredLogged = new ConcurrentHashMap<>();
 
-    MetaWebhookController(MetaConnectionService connections, CloudAccountService accounts, CloudWebhookSink sink,
+    MetaWebhookController(MetaConnectionService connections, CloudAccountService accounts,
+            me.nageshk.omnichannel.meta.template.CloudTemplateService templates, CloudWebhookSink sink,
             ObjectMapper mapper, @Qualifier("metaWebhookExecutor") Executor executor, Clock clock,
             MetaProperties props) {
         this.connections = connections;
         this.accounts = accounts;
+        this.templates = templates;
         this.sink = sink;
         this.mapper = mapper;
         this.executor = executor;
@@ -114,6 +118,8 @@ class MetaWebhookController {
                 JsonNode value = change.path("value");
                 if (MESSAGES.equals(field)) {
                     route(c, wabaId, value, now).ifPresent(messages::add);
+                } else if (TEMPLATE_STATUS.equals(field)) {
+                    numberChanges.add(() -> templates.applyChange(c, value));
                 } else if (CloudAccountService.NUMBER_FIELDS_OF_CHANGES.contains(field)) {
                     numberChanges.add(() -> accounts.applyChange(c, field, value));
                 } else {

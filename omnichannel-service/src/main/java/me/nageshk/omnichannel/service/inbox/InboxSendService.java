@@ -1,5 +1,9 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import me.nageshk.omnichannel.common.channel.whatsapp.message.TemplateSnapshot;
+import me.nageshk.omnichannel.meta.api.CloudTemplateInfo;
+import me.nageshk.omnichannel.meta.api.CloudTemplates;
+import me.nageshk.omnichannel.service.cloud.CloudTemplateFills;
 import me.nageshk.omnichannel.meta.api.CloudAccountInfo;
 import me.nageshk.omnichannel.meta.api.CloudApi;
 import me.nageshk.omnichannel.meta.api.CloudMedia;
@@ -84,7 +88,15 @@ public class InboxSendService {
     /** What goes to the device and what is stored for it; {@code body} may be null. */
     private record Outgoing(String content, ObjectNode options, String type, String body,
             WaWebMessage.Media media, byte[] mediaBytes, WaWebMessage.Location location, String templateId,
-            List<String> pollOptions, String messagePageId, Map<String, Object> request, CloudMessage cloudMessage) {
+            List<String> pollOptions, String messagePageId, Map<String, Object> request, CloudMessage cloudMessage,
+            String cloudTemplateId, TemplateSnapshot template) {
+
+        Outgoing(String content, ObjectNode options, String type, String body, WaWebMessage.Media media,
+                byte[] mediaBytes, WaWebMessage.Location location, String templateId, List<String> pollOptions,
+                String messagePageId, Map<String, Object> request, CloudMessage cloudMessage) {
+            this(content, options, type, body, media, mediaBytes, location, templateId, pollOptions, messagePageId,
+                    request, cloudMessage, null, null);
+        }
 
         /** Without a Cloud message: what goes to a WhatsApp Web device (and to Meta, mapped). */
         Outgoing(String content, ObjectNode options, String type, String body, WaWebMessage.Media media,
@@ -134,6 +146,8 @@ public class InboxSendService {
     private final CloudApi cloudApi;
     private final CloudMedia metaMedia;
     private final CloudStoredStatuses cloudStatuses;
+    private final CloudTemplates cloudTemplates;
+    private final CloudTemplateFills templateFills;
 
     /** Sends to a chat the console did not address by a typed phone. */
     public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
@@ -290,6 +304,11 @@ public class InboxSendService {
             return new Outgoing(caption, null, m.type(), caption.isEmpty() ? null : caption, stored, bytes, null, null,
                     null, null, request, m);
         }
+        if (CloudMessage.TEMPLATE.equals(m.type())) {
+            // a template sent through the Cloud-shaped API as Meta's object; the inbox sends imported ones with a preview
+            String body = "Template " + m.template().name();
+            return new Outgoing(body, null, CloudMessage.TEMPLATE, body, null, null, null, null, null, null, request, m);
+        }
         String body = m.interactive() != null && m.interactive().body() != null ? m.interactive().body().text() : null;
         return new Outgoing(body, null, CloudMessage.INTERACTIVE, body, null, null, null, null, null, null, request, m);
     }
@@ -317,6 +336,85 @@ public class InboxSendService {
             return CompletableFuture.failedFuture(e);
         }
         return CompletableFuture.completedFuture(afterCloudSend(actor, chat, account, out, wamid, typedPhone));
+    }
+
+    /** Sends an imported Meta template as the console user {@code me}; see the {@link SendActor} form. */
+    public CompletableFuture<MessageView> sendCloudTemplate(AuthenticatedUser me, String workspaceId, WaWebChat chat,
+            CloudTemplateRequest req, String typedPhone) {
+        UserActor actor = new UserActor(me, users.findById(me.userId()).map(User::getName).orElse(me.getUsername()));
+        return sendCloudTemplate(actor, workspaceId, chat, req, typedPhone);
+    }
+
+    /**
+     * Sends an imported, approved Meta template on a Cloud API number (spec 2026-11-20 §5.6), any time: templates are
+     * what Meta allows outside the 24-hour window. Blanks take the given values, else their fills; every blank must
+     * have a value and a media header needs its file, all checked before anything is charged.
+     *
+     * @throws ValidationException {@code cloudTemplateId} (unknown, not sendable, another WABA's, or a WhatsApp Web
+     *     chat), {@code values.<key>} (empty), {@code headerMediaId} (missing)
+     */
+    public CompletableFuture<MessageView> sendCloudTemplate(SendActor actor, String workspaceId, WaWebChat chat,
+            CloudTemplateRequest req, String typedPhone) {
+        if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() == ChatStatus.CLOSED) {
+            throw new ChatClosedException();
+        }
+        if (req == null || isBlank(req.cloudTemplateId())) throw new ValidationException("cloudTemplateId", "required");
+        SendChannel channel = devices.requireChannel(workspaceId, chat);
+        if (!(channel instanceof SendChannel.CloudChannel cc)) {
+            throw new ValidationException("cloudTemplateId", "channel not available");
+        }
+        workGate.requireSend(workspaceId, actor);
+        CloudTemplateInfo t = cloudTemplates.get(workspaceId, req.cloudTemplateId().strip());
+        if (!t.sendable()) {
+            throw new ValidationException("cloudTemplateId", "This WhatsApp template is not approved, or not supported yet");
+        }
+        if (!t.wabaId().equals(cc.account().wabaId())) {
+            throw new ValidationException("cloudTemplateId", "This template belongs to another WhatsApp account");
+        }
+        Map<String, String> values = templateFills.resolve(t, chat, req.values());
+        Map<String, String> errors = new LinkedHashMap<>();
+        cloudTemplates.missing(t, values).forEach(k -> errors.put("values." + k, "required"));
+        CloudMediaService.MediaFile headerFile = null;
+        if (t.header().media()) {
+            if (isBlank(req.headerMediaId())) {
+                errors.put("headerMediaId", "a file for the template's " + t.header().format().toLowerCase() + " header");
+            } else {
+                headerFile = cloudMedia.open(workspaceId, req.headerMediaId());
+            }
+        }
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        CloudMediaService.MediaFile file = headerFile;
+        return charged(actor, workspaceId, () -> {
+            WaWebChat target = takenOver(actor, chat);
+            String metaMediaId = null;
+            if (file != null) {
+                try (InputStream in = file.resource().getInputStream()) {
+                    metaMediaId = metaMedia.upload(chat.getPhoneNumberId(), in.readAllBytes(), file.mimeType(),
+                            file.resource().getFilename());
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                } catch (CloudMedia.CloudMediaException e) {
+                    return CompletableFuture.failedFuture(new CloudSendException(CloudSendException.Kind.REFUSED, null,
+                            "Meta did not take the header file", e.getMessage(), null));
+                }
+            }
+            CloudTemplates.Built built = cloudTemplates.build(t, values, metaMediaId);
+            TemplateSnapshot shown = file == null ? built.snapshot() : new TemplateSnapshot(built.snapshot().name(),
+                    built.snapshot().language(), new TemplateSnapshot.Header(built.snapshot().header().format(), null,
+                            req.headerMediaId()), built.snapshot().body(), built.snapshot().footer(),
+                    built.snapshot().buttons());
+            CloudMessage m = CloudMessage.template(phoneOf(target.getRemoteId()), built.template());
+            Outgoing out = new Outgoing(built.renderedBody(), null, CloudMessage.TEMPLATE, built.renderedBody(), null,
+                    null, null, null, null, null, cloud.toMap(m), m, t.id(), shown);
+            return dispatch(actor, target, channel, out, typedPhone).thenApply(view -> {
+                try {
+                    cloudTemplates.markUsed(t.id());
+                } catch (RuntimeException e) {
+                    log.warn("could not mark WhatsApp template {} used: {}", t.id(), e.toString());
+                }
+                return view;
+            });
+        });
     }
 
     /** Meta asks the number to slow down; the chatbot and rules try again later. */
@@ -743,6 +841,8 @@ public class InboxSendService {
         message.setTemplateId(out.templateId());
         if (out.messagePageId() != null) message.setMessagePageId(out.messagePageId());
         if (out.request() != null) message.setRequest(out.request());
+        if (out.cloudTemplateId() != null) message.setCloudTemplateId(out.cloudTemplateId());
+        if (out.template() != null) message.setTemplate(out.template());
         InboxIngestService.applyAck(message, ack, now);
         message = messages.save(message);
         message = cacheMedia(message, out);

@@ -63,6 +63,7 @@ public class NewChatService {
             throw new NotFoundException("phone number not found");
         }
         SendChannel channel = devices.requireChannel(workspaceId, phoneNumberId);
+        if (req.cloudTemplate() != null) return startWithCloudTemplate(me, workspaceId, number, channel, phone, req);
         SendRequest message = new SendRequest(req.text(), req.templateId(), req.values());
 
         WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, phone + "@c.us");
@@ -87,6 +88,31 @@ public class NewChatService {
         fresh.setAssignedUserId(me.userId());
         fresh.setAssignedAt(clock.instant());
         return sender.send(me, workspaceId, fresh, message, phone);
+    }
+
+    /**
+     * A first message that is a Meta template, on a Cloud API number: the existing chat of the phone (claimed as a
+     * start claims it), else a new one assigned to the caller.
+     */
+    private CompletableFuture<MessageView> startWithCloudTemplate(AuthenticatedUser me, String workspaceId,
+            PhoneNumber number, SendChannel channel, String phone, NewChatRequest req) {
+        if (!(channel instanceof SendChannel.CloudChannel)) {
+            throw new ValidationException("cloudTemplate", "channel not available");
+        }
+        String phoneNumberId = number.getId();
+        WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, phone + "@c.us");
+        if (chat != null) return sender.sendCloudTemplate(me, workspaceId, claimed(me, workspaceId, chat), req.cloudTemplate(), null);
+        WaWebChat fresh = new WaWebChat();
+        fresh.setCustomerId(number.getCustomerId());
+        fresh.setWorkspaceId(workspaceId);
+        fresh.setPhoneNumberId(phoneNumberId);
+        fresh.setRemoteId(phone + "@c.us");
+        fresh.setContactId(contactRepository.findByWorkspaceIdAndPhone(workspaceId, phone).map(Contact::getId)
+                .orElse(null));
+        fresh.setStatus(ChatStatus.OPEN);
+        fresh.setAssignedUserId(me.userId());
+        fresh.setAssignedAt(clock.instant());
+        return sender.sendCloudTemplate(me, workspaceId, fresh, req.cloudTemplate(), phone);
     }
 
     /**

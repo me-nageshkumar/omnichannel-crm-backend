@@ -5,6 +5,7 @@ import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMediaInfo;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.CloudMediaUploadResponse;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.MessagingProduct;
+import me.nageshk.omnichannel.db.phone.ConnectionType;
 import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.cloud.CloudMediaService;
@@ -48,9 +49,13 @@ public class CloudMediaController {
             @RequestPart(value = "file", required = false) MultipartFile file,
             @RequestParam(value = "messaging_product", required = false) String product,
             @RequestParam(value = "type", required = false) String type) {
-        requireNumber(workspaceId, phoneNumberId);
-        if (!MessagingProduct.WHATSAPP_WEB.equals(product)) {
-            throw new ValidationException("messaging_product", "must be whatsapp-web");
+        // the number's own product; a Cloud number's file is kept here and goes up to Meta when it is sent
+        boolean cloud = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
+                .orElseThrow(() -> new NotFoundException("phone number not found"))
+                .getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API;
+        String expected = cloud ? MessagingProduct.WHATSAPP : MessagingProduct.WHATSAPP_WEB;
+        if (!expected.equals(product)) {
+            throw new ValidationException("messaging_product", "must be " + expected);
         }
         return new CloudMediaUploadResponse(media.upload(me, workspaceId, type, file).id());
     }
