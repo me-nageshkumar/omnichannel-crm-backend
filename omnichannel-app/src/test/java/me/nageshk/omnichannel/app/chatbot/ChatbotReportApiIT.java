@@ -252,7 +252,7 @@ class ChatbotReportApiIT extends ChatbotTestBase {
         JsonNode rep = report(id, "", manager);
         JsonNode t = rep.get("totals");
         assertThat(total(id, "")).isEqualTo(t.get("started").asLong());
-        assertThat(total(id, "?status=RUNNING") + total(id, "?status=WAITING")).isEqualTo(t.get("running").asLong());
+        assertThat(total(id, "?active=true")).isEqualTo(t.get("running").asLong()).isEqualTo(2);
         assertThat(total(id, "?status=COMPLETED")).isEqualTo(t.get("completed").asLong());
         assertThat(total(id, "?status=ENDED")).isEqualTo(t.get("wentSilent").asLong());
         assertThat(total(id, "?status=STOPPED")).isEqualTo(t.get("stopped").asLong());
@@ -298,6 +298,59 @@ class ChatbotReportApiIT extends ChatbotTestBase {
         assertThat(one.get("items").get(0).get("progress").get("name").asString()).isEqualTo("A");
         assertThat(bots(HttpMethod.GET, "/" + id + "/report/runs?given=1", manager, null).getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void nullAndEmptyProgressValuesAreNotGiven() {
+        Map<String, Object> ai = Map.of("mode", "CONVERSATION", "collect", List.of(
+                Map.of("key", "name", "type", "TEXT"), Map.of("key", "city", "type", "TEXT"),
+                Map.of("key", "experience", "type", "TEXT")));
+        String id = createChatbot("Bot", flow(List.of(node("ai", "ai", "Counsellor", ai)), List.of())).get("id").asString();
+        Map<String, Object> p = new java.util.HashMap<>();
+        p.put("name", "x");
+        p.put("city", null);
+        p.put("experience", "");
+        ChatbotRun r = run(id, ChatbotRunStatus.ENDED, null, false, n1.getId(), step(0, "ai", "Counsellor", p));
+        JsonNode row = report(id, "", manager).get("progress").get(0);
+        assertThat(row.get("byCount").get(1).asLong()).isEqualTo(1);
+        assertThat(row.get("byCount").get(3).asLong()).isZero();
+        assertThat(row.get("fields").get(0).get("given").asLong()).isEqualTo(1);
+        assertThat(row.get("fields").get(1).get("given").asLong()).isZero();
+        assertThat(row.get("fields").get(2).get("given").asLong()).isZero();
+        JsonNode one = runs(id, "?nodeId=ai&given=1");
+        assertThat(one.get("items")).hasSize(1);
+        assertThat(one.get("items").get(0).get("runId").asString()).isEqualTo(r.getId());
+        assertThat(total(id, "?nodeId=ai&given=3")).isZero();
+    }
+
+    @Test
+    void activeListsRunningAndWaitingNewestFirst() {
+        String id = createChatbot("Bot", sayFlow()).get("id").asString();
+        ChatbotRun a = run(id, ChatbotRunStatus.RUNNING, null);
+        ChatbotRun b = run(id, ChatbotRunStatus.WAITING, null);
+        run(id, ChatbotRunStatus.COMPLETED, null);
+        a.setCreatedAt(clock.instant().minus(Duration.ofMinutes(10)));
+        runRepo.save(a);
+        b.setCreatedAt(clock.instant().minus(Duration.ofMinutes(5)));
+        runRepo.save(b);
+        JsonNode l = runs(id, "?active=true");
+        assertThat(l.get("total").asLong()).isEqualTo(report(id, "", manager).get("totals").get("running").asLong()).isEqualTo(2);
+        assertThat(l.get("items").get(0).get("runId").asString()).isEqualTo(b.getId());
+        assertThat(l.get("items").get(1).get("runId").asString()).isEqualTo(a.getId());
+        ResponseEntity<JsonNode> both = bots(HttpMethod.GET, "/" + id + "/report/runs?active=true&status=RUNNING", manager, null);
+        assertThat(both.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(both.getBody().get("fields").has("active")).isTrue();
+        assertThat(total(id, "?active=false")).isEqualTo(3);
+    }
+
+    @Test
+    void lastStepIsTheLastArrayElementInReportAndRuns() {
+        String id = createChatbot("Bot", sayFlow()).get("id").asString();
+        ChatbotStep noNode = new ChatbotStep(1, null, null, "send_message", clock.instant(), clock.instant(),
+                ChatbotStep.Outcome.DONE, "next", null, null, null, null, null);
+        run(id, ChatbotRunStatus.ENDED, null, false, n1.getId(), step(0, "w", "Welcome", null), noNode);
+        JsonNode w = report(id, "", manager).get("steps").get(0);
+        assertThat(total(id, "?nodeId=w")).isEqualTo(w.get("endedHere").has("ENDED") ? w.get("endedHere").get("ENDED").asLong() : 0);
     }
 
     @Test

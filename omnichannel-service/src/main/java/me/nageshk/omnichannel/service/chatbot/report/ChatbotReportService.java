@@ -119,9 +119,7 @@ public class ChatbotReportService {
                                 .append("as", "s").append("in", new Document("i", "$$s.nodeId").append("n", "$$s.nodeName"))))
                         .append("lastKeys", new Document("$let", new Document("vars", new Document("last",
                                 new Document("$arrayElemAt", List.of(new Document("$ifNull", List.of("$steps", List.of())), -1))))
-                                .append("in", new Document("$map", new Document("input", new Document("$objectToArray",
-                                        new Document("$ifNull", List.of("$$last.progress", new Document()))))
-                                        .append("in", "$$this.k")))))))),
+                                .append("in", givenKeys("$$last.progress"))))))),
                 RUNS, Document.class).getMappedResults();
         return build(bot, totals, runs);
     }
@@ -134,17 +132,20 @@ public class ChatbotReportService {
     /**
      * The runs behind a report number, newest first. The base criteria are {@link #criteria}; {@code chat} mirrors the
      * totals (finished runs only), {@code nodeId} alone is "ended here" (finished runs whose last step is on the node),
-     * with {@code reached} "visited it"; {@code given} (needs {@code nodeId}) narrows ended-here runs to those that
+     * with {@code reached} "visited it"; {@code active} selects the running and waiting runs (the report's "running" total; not with {@code status}),
+     * {@code given} (needs {@code nodeId}) narrows ended-here runs to those that
      * have given exactly that many of the AI node's collected fields.
      */
     public RunRowPage runs(String workspaceId, String chatbotId, Instant from, Instant to, String phoneNumberId,
-            String nodeId, boolean reached, ChatbotRunStatus status, ChatBucket chat, Integer given, int page, int size) {
+            String nodeId, boolean reached, ChatbotRunStatus status, boolean active, ChatBucket chat, Integer given, int page, int size) {
         Chatbot bot = chatbots.require(workspaceId, chatbotId);
         if (nodeId != null && nodeId.isBlank()) nodeId = null;
         if (given != null && nodeId == null) throw new ValidationException("nodeId", "is required with given");
         List<Criteria> all = new ArrayList<>();
         all.add(criteria(workspaceId, chatbotId, from, to, phoneNumberId));
+        if (active && status != null) throw new ValidationException("active", "cannot be combined with status");
         if (status != null) all.add(Criteria.where("status").is(status.name()));
+        if (active) all.add(Criteria.where("status").in(ChatbotRunStatus.RUNNING.name(), ChatbotRunStatus.WAITING.name()));
         boolean endedHere = nodeId != null && (!reached || given != null);
         if (chat != null || endedHere) all.add(Criteria.where("status").nin(ChatbotRunStatus.RUNNING.name(), ChatbotRunStatus.WAITING.name()));
         if (chat != null) all.add(chatCriteria(chat));
@@ -159,9 +160,7 @@ public class ChatbotReportService {
             conds.add(new Document("$eq", List.of("$$last.nodeId", new Document("$literal", nodeId))));
             if (given != null) {
                 List<String> keys = collectKeys(bot, nodeId);
-                Document have = new Document("$map", new Document("input", new Document("$objectToArray",
-                        new Document("$cond", List.of(new Document("$eq", List.of(new Document("$type", "$$last.progress"), "object")),
-                                "$$last.progress", new Document())))).append("in", "$$this.k"));
+                Document have = givenKeys("$$last.progress");
                 conds.add(new Document("$eq", List.of(new Document("$size", new Document("$setIntersection",
                         List.of(have, new Document("$literal", keys)))), given)));
             }
@@ -177,6 +176,16 @@ public class ChatbotReportService {
         pipe.add(op(new Document("$limit", pageSize)));
         List<ChatbotRun> runs = mongo.aggregate(Aggregation.newAggregation(pipe), RUNS, ChatbotRun.class).getMappedResults();
         return new RunRowPage(rows(workspaceId, runs, nodeId), total, pageNo, pageSize);
+    }
+
+    /** The keys of a progress object that hold a value: not null, not an empty string (the finish lists the rest as null). */
+    private static Document givenKeys(String progress) {
+        Document pairs = new Document("$objectToArray", new Document("$cond", List.of(
+                new Document("$eq", List.of(new Document("$type", progress), "object")), progress, new Document())));
+        Document given = new Document("$and", List.of(
+                new Document("$ne", java.util.Arrays.asList("$$this.v", null)), new Document("$ne", List.of("$$this.v", ""))));
+        return new Document("$map", new Document("input", new Document("$filter", new Document("input", pairs)
+                .append("cond", given))).append("in", "$$this.k"));
     }
 
     private static Criteria chatCriteria(ChatBucket chat) {
@@ -315,8 +324,8 @@ public class ChatbotReportService {
             String last = null;
             for (Document s : steps) {
                 String nodeId = s.getString("i");
+                last = nodeId; // the last step of the array, as in runs(): steps always carry their node id
                 if (nodeId == null) continue;
-                last = nodeId;
                 if (s.getString("n") != null) lastName.put(nodeId, s.getString("n"));
                 else lastName.putIfAbsent(nodeId, nodeId);
                 if (seen.add(nodeId)) reached.merge(nodeId, 1L, Long::sum);

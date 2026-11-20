@@ -99,10 +99,11 @@ class ChatbotController {
             @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
             @RequestParam(required = false) String phoneNumberId, @RequestParam(required = false) String nodeId,
             @RequestParam(defaultValue = "false") boolean reached, @RequestParam(required = false) ChatbotRunStatus status,
+            @RequestParam(defaultValue = "false") boolean active,
             @RequestParam(required = false) ChatbotReportService.ChatBucket chat,
             @RequestParam(required = false) Integer given, @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
-        return reports.runs(workspaceId, id, from, to, phoneNumberId, nodeId, reached, status, chat, given, page, size);
+        return reports.runs(workspaceId, id, from, to, phoneNumberId, nodeId, reached, status, active, chat, given, page, size);
     }
 
     @GetMapping("/{id}/runs/{runId}")

@@ -301,6 +301,13 @@ Spec `docs/superpowers/specs/2026-11-18-bot-first-routing-design.md`.
 
 - Leads created before 2026-11-20 get an owner only on their chat's next assignment; runs before this release show
   "not recorded".
+- An agent without `crm:view-all` sees the CRM contact as a lead's owner, but a deal's owner only when the agent is
+  assigned to the deal's pipeline (a counsellor needs the Admissions pipeline).
+- Progress under-counts when the model does not call `note_progress`: only what it noted, and what the finish gave,
+  is counted.
+- The report loads each run's step ids into memory: fine for about 10,000 runs in range; a heavy brand may need
+  stored counters later.
+- Report dates are the viewer's local days (the same days for a viewer in the brand's time zone).
 
 ## Link addresses: known limits
 

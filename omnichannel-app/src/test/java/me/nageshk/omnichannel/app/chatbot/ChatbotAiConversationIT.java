@@ -889,6 +889,30 @@ class ChatbotAiConversationIT extends AiTestBase {
     }
 
     @Test
+    void finishNullsAndBlanksNeverCountAsGiven() throws Exception {
+        scripted.reply(noting("Which name?", "{\"name\":null,\"city\":\"Indore\"}"));
+        scripted.reply(finish("", "{\"outcome\":\"booked\",\"fields\":{\"name\":\"Asha\",\"city\":null,\"course\":\"\"},\"reply\":\"Done\"}"));
+        Map<String, Object> s = new LinkedHashMap<>(conv(Map.of("outcomes", List.of(Map.of("id", "booked", "label",
+                "Booked", "description", "done")))));
+        s.put("collect", List.of(
+                Map.of("key", "name", "description", "name", "type", "TEXT"),
+                Map.of("key", "city", "description", "city", "type", "TEXT"),
+                Map.of("key", "course", "description", "course", "type", "TEXT")));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(flow(List.of(node("ai", "ai", "Sales", s)), List.of()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            turn(run, "I live in Indore", 1);
+            say("I am Asha");
+            await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
+            aiTick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            ChatbotStep step = run(run.getId()).getSteps().get(0);
+            assertThat(step.progress()).isEqualTo(Map.of("name", "Asha", "city", "Indore"));
+        }
+    }
+
+    @Test
     void failedTurnKeepsProgress() throws Exception {
         scripted.reply(noting("Which city?", "{\"name\":\"Asha\",\"city\":null}"));
         scripted.fail(new me.nageshk.omnichannel.ai.provider.AiProviderException(

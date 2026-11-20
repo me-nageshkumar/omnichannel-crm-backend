@@ -104,7 +104,10 @@ final class AiConversationFlow {
         Map<String, Object> progress = progressOf(st);
         if (r.progress() != null) progress.putAll(r.progress());
         if (r.status() == TurnStatus.DONE && r.finish() != null && r.finish().fields() != null) {
-            progress.putAll(r.finish().fields());
+            // the finish lists every collected key, null (or empty) for what was never given: those are not progress
+            r.finish().fields().forEach((k, v) -> {
+                if (v != null && !(v instanceof String str && str.isBlank())) progress.put(k, v);
+            });
         }
         st.put("progress", progress);
         ctx.vars().put(node.name(), st);
