@@ -130,7 +130,8 @@ public class UsageCharger {
         if (cause instanceof RpcException rpc) return NOT_TRIED.contains(rpc.code());
         // a Cloud send Meta refused, or a number that could not send (token refused, rate limited): nothing went out
         if (cause instanceof me.nageshk.omnichannel.meta.api.CloudSendException c) return c.definitelyNotSent();
-        return cause instanceof me.nageshk.omnichannel.common.api.NoDeviceException;
+        return cause instanceof me.nageshk.omnichannel.common.api.NoDeviceException
+                || cause instanceof me.nageshk.omnichannel.common.api.WindowClosedException;
     }
 
     /** Notes on the stored message which wallet entry paid for it. Best effort. */

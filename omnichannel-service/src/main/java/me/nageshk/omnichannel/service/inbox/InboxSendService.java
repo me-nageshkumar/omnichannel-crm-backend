@@ -1,5 +1,6 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import me.nageshk.omnichannel.common.api.WindowClosedException;
 import me.nageshk.omnichannel.common.channel.whatsapp.message.TemplateSnapshot;
 import me.nageshk.omnichannel.meta.api.CloudTemplateInfo;
 import me.nageshk.omnichannel.meta.api.CloudTemplates;
@@ -187,7 +188,10 @@ public class InboxSendService {
         SendChannel channel = devices.requireChannel(workspaceId, chat);
         workGate.requireSend(workspaceId, actor);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
-        if (channel instanceof SendChannel.CloudChannel) refuseOnCloud(out);
+        if (channel instanceof SendChannel.CloudChannel) {
+            refuseOnCloud(out);
+            requireOpenWindow(chat);
+        }
         return charged(actor, workspaceId, () -> dispatch(actor, takenOver(actor, chat), channel, out, typedPhone));
     }
 
@@ -237,6 +241,8 @@ public class InboxSendService {
         SendChannel channel = devices.requireChannel(workspaceId, chat);
         workGate.requireSend(workspaceId, actor);
         CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
+        // a raw Meta template is the one message the window lets through
+        if (channel instanceof SendChannel.CloudChannel && !CloudMessage.TEMPLATE.equals(m.type())) requireOpenWindow(chat);
         // charged first: a message the wallet cannot pay for prepares no page and no preview
         return charged(actor, workspaceId, () -> {
             WaWebChat target = takenOver(actor, chat);
@@ -268,6 +274,12 @@ public class InboxSendService {
     }
 
     // ---- Cloud API numbers (spec 2026-11-20 §5.4) ----
+
+    /** Free-form messages on a Cloud number need the customer's 24-hour window open; checked before the charge. */
+    private void requireOpenWindow(WaWebChat chat) {
+        ServiceWindow.ChatWindow w = ServiceWindow.of(chat, clock.instant());
+        if (!w.open()) throw new WindowClosedException(w.closesAt());
+    }
 
     /** A saved message Meta has no equivalent for is refused before anything is charged. */
     private static void refuseOnCloud(Outgoing out) {
@@ -327,6 +339,8 @@ public class InboxSendService {
                 case TOKEN_REFUSED -> new NoDeviceException(InboxDevices.CLOUD_NOT_READY,
                         "Meta refused this number's access token; replace it on Phone numbers.");
                 case RATE_LIMITED -> new NoDeviceException(CLOUD_RATE_LIMITED, "Meta asks to slow down: " + e.getMessage());
+                // our clock thought the window open; Meta's word wins
+                case WINDOW_CLOSED -> new WindowClosedException(ServiceWindow.of(chat, clock.instant()).closesAt());
                 default -> e;
             });
         } catch (CloudMedia.CloudMediaException e) {

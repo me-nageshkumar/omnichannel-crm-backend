@@ -1,5 +1,7 @@
 package me.nageshk.omnichannel.service.chatbot.run;
 
+import me.nageshk.omnichannel.common.api.WindowClosedException;
+import me.nageshk.omnichannel.meta.api.CloudSendException;
 import me.nageshk.omnichannel.common.api.SubscriptionInactiveException;
 import me.nageshk.omnichannel.common.api.WalletEmptyException;
 import java.util.Map;
@@ -42,7 +44,8 @@ public class ChatbotSender {
         guard(ctx);
         try {
             return await(inbox.sendCloud(actor(ctx), ctx.workspaceId(), chat, message.withTo(toOf(chat, ctx.contact())), null, false));
-        } catch (NoDeviceException | RpcException | ValidationException | SubscriptionInactiveException | WalletEmptyException e) {
+        } catch (NoDeviceException | RpcException | ValidationException | SubscriptionInactiveException | WalletEmptyException
+                | WindowClosedException | CloudSendException e) {
             throw map(e);
         }
     }
@@ -52,7 +55,8 @@ public class ChatbotSender {
         guard(ctx);
         try {
             return await(inbox.send(actor(ctx), ctx.workspaceId(), chat, new SendRequest(null, templateId, values), null));
-        } catch (NoDeviceException | RpcException | ValidationException | SubscriptionInactiveException | WalletEmptyException e) {
+        } catch (NoDeviceException | RpcException | ValidationException | SubscriptionInactiveException | WalletEmptyException
+                | WindowClosedException | CloudSendException e) {
             throw map(e);
         }
     }
@@ -85,6 +89,15 @@ public class ChatbotSender {
         // the plan stopped covering chatbots, or the subscription ended: the run ends here rather than retrying
         if (cause instanceof SubscriptionInactiveException) return new NodeFailed("the plan does not allow this");
         if (cause instanceof WalletEmptyException) return new NodeFailed("the wallet balance is too low");
+        // Meta allows free-form messages only within 24 hours of the customer's last one: retrying cannot help
+        if (cause instanceof WindowClosedException) return new NodeFailed("the 24-hour window closed; only a WhatsApp template can go now");
+        if (cause instanceof CloudSendException c) {
+            return c.definitelyNotSent() ? new NodeFailed("Meta did not send it: " + c.getMessage())
+                    : new NodeFailed("Meta did not answer in time; the message may have gone");
+        }
+        if (cause instanceof NoDeviceException n && n.code() != null && n.code().startsWith("CLOUD_")) {
+            return new RetryLater("the Cloud API number cannot send now: " + n.getMessage());
+        }
         if (cause instanceof NoDeviceException n) {
             return new RetryLater(NoDeviceException.WHATSAPP_NOT_READY.equals(n.code())
                     ? "WhatsApp Web is not ready on the number" : "the number's extension is offline or the number is disabled");
