@@ -22,6 +22,9 @@ import me.nageshk.omnichannel.common.enablement.EnableLevel;
 import me.nageshk.omnichannel.db.phone.ConnectCode;
 import me.nageshk.omnichannel.db.phone.ConnectCodeRepository;
 import me.nageshk.omnichannel.db.phone.ConnectionType;
+import me.nageshk.omnichannel.meta.api.CloudAccountInfo;
+import me.nageshk.omnichannel.meta.api.CloudAccounts;
+import me.nageshk.omnichannel.meta.api.CloudNumberRequest;
 import me.nageshk.omnichannel.db.phone.PhoneNumber;
 import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.db.tenant.Customer;
@@ -74,11 +77,13 @@ public class PhoneNumberService {
     private final PhoneNumberMoveRepository moves;
     private final Clock clock;
     private final Limits limits;
+    private final CloudAccounts cloud;
 
     public PhoneNumberService(PhoneNumberRepository numbers, WorkspaceRepository workspaces,
             CustomerRepository customers, Enablement enablement, LiveDevices live, ApplicationEventPublisher events,
             ConnectCodeRepository codes, AccessService access, InboxCleanup inboxCleanup, TeamRepository teams,
-            Clock clock, Limits limits, PhoneNumberMoveRepository moves) {
+            Clock clock, Limits limits, PhoneNumberMoveRepository moves, CloudAccounts cloud) {
+        this.cloud = cloud;
         this.moves = moves;
         this.limits = limits;
         this.teams = teams;
@@ -101,15 +106,16 @@ public class PhoneNumberService {
     }
 
     /**
-     * @param connectionType null or {@code WHATSAPP_WEB}; {@code WHATSAPP_CLOUD_API} is reserved and
-     *     refused until Cloud API numbers can be onboarded
+     * @param connectionType null or {@code WHATSAPP_WEB}; a Cloud API number is added with
+     *     {@link #createCloud}
      */
     public PhoneNumber create(String customerId, String workspaceId, String number, String label,
             String connectionType, AuthenticatedUser me) {
+        ConnectionType type = requireConnectionType(connectionType);
         PhoneNumber n = new PhoneNumber();
         n.setNumber(requireNumber(number));
         n.setLabel(cleanLabel(label));
-        n.setConnectionType(requireConnectionType(connectionType));
+        n.setConnectionType(type);
         n.setCustomerId(customerId);
         n.setWorkspaceId(workspaceId);
         n.setCreatedBy(me.getUsername());
@@ -119,6 +125,67 @@ public class PhoneNumberService {
             return numbers.insert(n);
         } catch (DuplicateKeyException e) {
             throw duplicate();
+        }
+    }
+
+    /**
+     * Adds a number that lives on the brand's own Meta app (spec 2026-11-20 §5.7): Meta is read first, so a Meta
+     * failure writes nothing; the number is Meta's display number.
+     *
+     * @throws ValidationException (field {@code cloud}) for missing details or Meta's refusal
+     * @throws DuplicateException if any brand already has the number or the Meta number
+     */
+    public PhoneNumber createCloud(String customerId, String workspaceId, String label, CloudNumberRequest req,
+            AuthenticatedUser me) {
+        String cleanLabel = cleanLabel(label);
+        CloudAccountInfo previewed = cloud.preview(workspaceId, req);
+        String digits = previewed.displayPhoneNumber() == null ? "" : previewed.displayPhoneNumber().replaceAll("\\D", "");
+        if (!NUMBER.matcher(digits).matches()) {
+            throw new ValidationException("cloud", "Meta gave no usable phone number for " + req.metaPhoneNumberId());
+        }
+        PhoneNumber n = new PhoneNumber();
+        n.setNumber(digits);
+        n.setLabel(cleanLabel);
+        n.setConnectionType(ConnectionType.WHATSAPP_CLOUD_API);
+        n.setCustomerId(customerId);
+        n.setWorkspaceId(workspaceId);
+        n.setCreatedBy(me.getUsername());
+        if (numbers.existsByNumber(n.getNumber())) throw duplicate();
+        limits.require(customerId, LimitKey.PHONE_NUMBERS);
+        PhoneNumber saved;
+        try {
+            saved = numbers.insert(n);
+        } catch (DuplicateKeyException e) {
+            throw duplicate();
+        }
+        try {
+            cloud.create(workspaceId, customerId, saved.getId(), previewed);
+        } catch (RuntimeException e) {
+            numbers.delete(saved);
+            throw e;
+        }
+        return saved;
+    }
+
+    /** Registers a Cloud number with its two-step PIN (never stored). */
+    public PhoneNumber registerCloud(PhoneNumber n, String pin) {
+        if (n.getConnectionType() != ConnectionType.WHATSAPP_CLOUD_API) {
+            throw new CodedException(HttpStatus.CONFLICT, "WHATSAPP_WEB_NUMBER", null,
+                    "Only WhatsApp Cloud API numbers are registered with a PIN.");
+        }
+        cloud.register(n.getId(), pin);
+        return n;
+    }
+
+    /**
+     * A Cloud API number has no WhatsApp Web device: connect codes, device revokes and moves do not apply.
+     *
+     * @throws CodedException 409 {@code CLOUD_NUMBER}
+     */
+    public static void refuseCloud(PhoneNumber n, String what) {
+        if (n.getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API) {
+            throw new CodedException(HttpStatus.CONFLICT, "CLOUD_NUMBER", null,
+                    "A WhatsApp Cloud API number cannot " + what + ".");
         }
     }
 
@@ -164,6 +231,7 @@ public class PhoneNumberService {
             throw new CodedException(HttpStatus.CONFLICT, "number_moving", null,
                     "This number is moving to another brand: finish or cancel the move first.");
         }
+        if (n.getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API) cloud.delete(n.getId());
         inboxCleanup.deleteForNumber(n.getId());
         codes.deleteByPhoneNumberId(n.getId());
         numbers.delete(n);
@@ -194,6 +262,7 @@ public class PhoneNumberService {
      * @throws DeviceDisabledException when the number, its brand or its customer is disabled
      */
     public ConnectCodeView issueConnectCode(PhoneNumber n) {
+        refuseCloud(n, "connect a WhatsApp Web device");
         refuseArchive(n);
         if (n.getDisabled() != null || !access.isWorkspaceUsable(n.getWorkspaceId())) {
             throw new DeviceDisabledException();
@@ -209,6 +278,7 @@ public class PhoneNumberService {
     }
 
     public PhoneNumber revokeDevice(PhoneNumber n) {
+        refuseCloud(n, "revoke a WhatsApp Web device");
         refuseArchive(n);
         n.setDeviceKeyHash(null);
         n.setDeviceKeyId(null);
@@ -264,7 +334,8 @@ public class PhoneNumberService {
                 s.status(), n.getDisabled(), s.disabledBecause(), n.getLastConnectedAt(), n.getLastSeenAt(),
                 n.getLastWrongNumber(), n.getLastWrongNumberAt(), n.getDeviceKeyHash() != null, n.getCreationTime(),
                 t == null ? null : new PhoneNumberView.TeamRef(t.getId(), t.getName()), null, n.getArchiveOf(),
-                n.getArchivedAt(), moveUnfinished);
+                n.getArchivedAt(), moveUnfinished,
+                n.getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API ? cloud.find(n.getId()).orElse(null) : null);
     }
 
     /** An archive only keeps the old brand's chats: it cannot be enabled, connected or given a team. */
@@ -305,7 +376,7 @@ public class PhoneNumberService {
             return ConnectionType.WHATSAPP_WEB;
         }
         if (ConnectionType.WHATSAPP_CLOUD_API.name().equals(value.trim())) {
-            throw new ValidationException("connectionType", "WhatsApp Cloud API numbers are not supported yet");
+            throw new ValidationException("cloud", "is required for a WhatsApp Cloud API number");
         }
         throw new ValidationException("connectionType", "unknown connection type");
     }

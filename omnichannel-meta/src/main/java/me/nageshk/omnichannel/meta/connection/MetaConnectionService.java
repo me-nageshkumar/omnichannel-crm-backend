@@ -15,6 +15,8 @@ import me.nageshk.omnichannel.common.api.DuplicateException;
 import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.common.secret.SecretBox;
+import me.nageshk.omnichannel.meta.api.ConnectionNumber;
+import me.nageshk.omnichannel.meta.api.ConnectionNumbers;
 import me.nageshk.omnichannel.meta.api.ConnectionStatus;
 import me.nageshk.omnichannel.meta.api.PublicOrigin;
 import me.nageshk.omnichannel.meta.connection.ConnectionView.Account;
@@ -53,26 +55,20 @@ public class MetaConnectionService {
         }
     }
 
-    /** Hook for the numbers a connection serves (filled by the Cloud accounts once they exist). */
-    public interface NumbersOf {
-        List<ConnectionView.NumberRef> numbers(String connectionId);
-
-        /** Our phone number id for a Meta number id, or null. */
-        String ourNumberFor(String metaPhoneNumberId);
-    }
-
     private final MetaConnectionRepository repository;
     private final SecretBox secrets;
     private final GraphClient graph;
     private final PublicOrigin origin;
     private final MongoTemplate mongo;
     private final Clock clock;
-    private final Optional<NumbersOf> numbersOf;
+    private final Optional<ConnectionNumbers> numbersOf;
+    private final me.nageshk.omnichannel.meta.account.CloudAccountRepository accounts;
     private final WebhookSetupService webhooks;
 
     public MetaConnectionService(MetaConnectionRepository repository, SecretBox secrets, GraphClient graph,
-            PublicOrigin origin, MongoTemplate mongo, Clock clock, Optional<NumbersOf> numbersOf,
-            WebhookSetupService webhooks) {
+            PublicOrigin origin, MongoTemplate mongo, Clock clock, Optional<ConnectionNumbers> numbersOf,
+            WebhookSetupService webhooks, me.nageshk.omnichannel.meta.account.CloudAccountRepository accounts) {
+        this.accounts = accounts;
         this.webhooks = webhooks;
         this.repository = repository;
         this.secrets = secrets;
@@ -193,7 +189,7 @@ public class MetaConnectionService {
 
     public void delete(String workspaceId, String id) {
         MetaConnection c = find(workspaceId, id);
-        List<ConnectionView.NumberRef> using = numbers(c.getId());
+        List<ConnectionNumber> using = numbers(c.getId());
         if (!using.isEmpty()) {
             List<String> names = using.stream().map(n -> n.label() != null ? n.label() : n.number()).sorted().toList();
             throw new me.nageshk.omnichannel.common.api.CodedException(org.springframework.http.HttpStatus.CONFLICT,
@@ -324,7 +320,7 @@ public class MetaConnectionService {
                 numbers.add(new MetaNumber(metaId, n.path("display_phone_number").asString(null),
                         n.path("verified_name").asString(null), n.path("name_status").asString(null),
                         n.path("quality_rating").asString(null), platformOf(n),
-                        numbersOf.map(f -> f.ourNumberFor(metaId)).orElse(null)));
+                        accounts.findByMetaPhoneNumberId(metaId).map(a -> a.getPhoneNumberId()).orElse(null)));
             }
         } catch (GraphException e) {
             log.info("could not list the numbers of WABA {}: {}", wabaId, e.getMessage());
@@ -353,7 +349,7 @@ public class MetaConnectionService {
         return "CONNECTED".equals(n.path("status").asString("")) || "CLOUD_API".equals(platformOf(n));
     }
 
-    private List<ConnectionView.NumberRef> numbers(String connectionId) {
+    private List<ConnectionNumber> numbers(String connectionId) {
         return connectionId == null ? List.of() : numbersOf.map(f -> f.numbers(connectionId)).orElse(List.of());
     }
 

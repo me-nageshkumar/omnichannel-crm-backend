@@ -118,6 +118,7 @@ public class PhoneNumberMoveService {
      */
     public PhoneNumberMove move(String phoneNumberId, String toWorkspaceId, AuthenticatedUser me) {
         PhoneNumber n = phoneNumbers.require(phoneNumberId);
+        PhoneNumberService.refuseCloud(n, "move to another brand");
         refuseArchive(n);
         if (moves.findByUnfinishedOf(n.getId()).isPresent()) throw unfinished();
         target(n, toWorkspaceId);
@@ -210,6 +211,7 @@ public class PhoneNumberMoveService {
     /** What moving the number to the brand would do; refused as {@link #move} refuses a wrong target. */
     public MovePreview preview(String phoneNumberId, String toWorkspaceId) {
         PhoneNumber n = phoneNumbers.require(phoneNumberId);
+        PhoneNumberService.refuseCloud(n, "move to another brand");
         refuseArchive(n);
         Workspace target = target(n, toWorkspaceId);
         String fromName = workspaces.findById(n.getWorkspaceId()).map(Workspace::getName).orElse(null);

@@ -49,4 +49,34 @@ public abstract class MetaTestBase extends ChatbotTestBase {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return res.getBody();
     }
+
+    /** Stubs Meta's answers for adding {@code metaId} (in WABA 222) as a registered Cloud number. */
+    protected static void stubNumber(String metaId, String display, boolean registered, String... alsoInWaba) {
+        StringBuilder list = new StringBuilder("{\"data\":[{\"id\":\"" + metaId + "\"}");
+        for (String other : alsoInWaba) list.append(",{\"id\":\"").append(other).append("\"}");
+        list.append("]}");
+        GRAPH.enqueue("GET /" + metaId, 200, "{\"id\":\"" + metaId + "\",\"display_phone_number\":\"" + display
+                + "\",\"verified_name\":\"Bimal Institute\",\"name_status\":\"APPROVED\",\"quality_rating\":"
+                + "\"GREEN\",\"code_verification_status\":\"VERIFIED\",\"status\":\""
+                + (registered ? "CONNECTED" : "PENDING") + "\",\"host_platform\":\""
+                + (registered ? "CLOUD_API" : "NOT_APPLICABLE") + "\"}");
+        GRAPH.enqueue("GET /222/phone_numbers", 200, list.toString());
+        GRAPH.enqueue("GET /222", 200, "{\"id\":\"222\",\"whatsapp_business_manager_messaging_limit\":\"TIER_250\"}");
+    }
+
+    /** Adds a registered Cloud number of {@code connectionId}; returns the number's view. */
+    protected JsonNode addCloudNumber(String connectionId, String label, String metaId, String display) {
+        stubNumber(metaId, display, true);
+        ResponseEntity<JsonNode> res = rest.exchange(url("/api/workspaces/" + brand.getId() + "/phone-numbers"),
+                HttpMethod.POST, auth(manager, Map.of("label", label, "connectionType", "WHATSAPP_CLOUD_API", "cloud",
+                        Map.of("connectionId", connectionId, "wabaId", "222", "metaPhoneNumberId", metaId))),
+                JsonNode.class);
+        assertThat(res.getStatusCode()).as(String.valueOf(res.getBody())).isEqualTo(HttpStatus.CREATED);
+        return res.getBody();
+    }
+
+    protected ResponseEntity<JsonNode> numbers(HttpMethod m, String path, User who, Object body) {
+        return rest.exchange(url("/api/workspaces/" + brand.getId() + "/phone-numbers" + path), m, auth(who, body),
+                JsonNode.class);
+    }
 }
