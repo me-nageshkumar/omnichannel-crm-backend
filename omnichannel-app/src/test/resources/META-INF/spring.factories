@@ -1,0 +1,2 @@
+# One embedded MongoDB per test process, shared by the test contexts (support/SharedMongo)
+org.springframework.test.context.ContextCustomizerFactory=me.nageshk.omnichannel.app.support.SharedMongoContextCustomizerFactory

@@ -1,13 +1,16 @@
-de:
-  flapdoodle:
-    mongodb:
-      embedded:
-        version: 7.0.12
+# one embedded MongoDB per test process, started by support/SharedMongo (a ContextCustomizerFactory in
+# META-INF/spring.factories points every context at it); flapdoodle's own per-context mongod is off
+spring:
+  autoconfigure:
+    exclude: de.flapdoodle.embed.mongo.spring.autoconfigure.EmbeddedMongoAutoConfiguration
 # the tests call localhost; a server on every address can share its port with a program on 127.0.0.1 alone, which
 # then answers instead (TestServerAddressIT)
 server:
   address: 127.0.0.1
 omnichannel:
+  # tests run the Meta webhook replay themselves (CloudReplayIT); a sweep in every cached context would share a database
+  meta:
+    auto-replay: false
   # tests never read or write the appConfig collection at startup (AppConfigLoaderTest covers it)
   app-config:
     enabled: false

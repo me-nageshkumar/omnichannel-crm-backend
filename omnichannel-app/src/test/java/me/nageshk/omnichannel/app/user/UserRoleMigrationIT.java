@@ -18,6 +18,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class UserRoleMigrationIT {
 
     @Autowired UserRoleMigration migration;

@@ -20,6 +20,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class ClassAliasRenamesIT {
 
     private static final String OLD = "me.nageshk.omnichannel.";

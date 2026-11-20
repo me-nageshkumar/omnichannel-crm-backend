@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class MessageTypeMigrationIT {
 
     private static final String MESSAGES = "waWebMessages";

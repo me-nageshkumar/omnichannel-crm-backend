@@ -16,6 +16,7 @@ import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
 
 /** Spec 2026-11-14 §5: stored full settings become a chatbot layer once; defaults turn into inherited fields. */
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class ChatbotSettingsMigrationIT extends ChatbotTestBase {
 
     @Autowired ChatbotSettingsMigration migration;

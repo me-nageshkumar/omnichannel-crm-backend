@@ -136,11 +136,21 @@ public class TestUsers {
         roleCache.evictAll();
     }
 
+    /**
+     * BCrypt is slow on purpose (about 80 ms a hash at the production strength), and every test creates several users:
+     * each test password is hashed once per test process and the hash reused. A login still checks a real BCrypt hash.
+     */
+    private static final java.util.Map<String, String> HASHES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private String hashOf(String rawPassword) {
+        return HASHES.computeIfAbsent(rawPassword, encoder::encode);
+    }
+
     private User base(String username, String rawPassword, String totpSecret) {
         User u = new User();
         u.setName("Test " + username);
         u.setUsername(username);
-        u.setPassword(encoder.encode(rawPassword));
+        u.setPassword(hashOf(rawPassword));
         u.setActive(true);
         u.setTwoFactor(totpSecret == null ? TwoFactor.disabled() : TwoFactor.enabledWith(totpSecret));
         return u;
