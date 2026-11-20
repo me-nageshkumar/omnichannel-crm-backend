@@ -27,6 +27,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.gridfs.GridFsTemplate;
 
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class CollectionRenamesIT {
 
     @Autowired MongoTemplate mongo;

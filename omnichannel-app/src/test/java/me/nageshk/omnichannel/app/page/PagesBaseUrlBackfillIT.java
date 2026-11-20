@@ -19,6 +19,7 @@ import org.springframework.data.mongodb.core.query.Update;
 
 /** Link addresses spec §5.3: pages and forms from before carry the platform address they were sent with. */
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class PagesBaseUrlBackfillIT {
 
     @Autowired PagesBaseUrlBackfill backfill;

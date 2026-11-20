@@ -16,6 +16,7 @@ import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.index.IndexInfo;
 
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class ContactIdsMigrationIT {
 
     @Autowired MongoTemplate mongo;

@@ -27,6 +27,7 @@ import org.springframework.data.mongodb.core.query.Query;
 
 /** Per-number settings documents from before design §3.4 become a brand default and are kept aside. */
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class InboxSettingsMigrationIT {
 
     @Autowired InboxSettingsMigration migration;

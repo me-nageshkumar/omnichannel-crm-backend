@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 
 /** Every half minute, processes Cloud events stored a minute ago or more and still not processed. */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "omnichannel.meta.auto-replay",
+        havingValue = "true", matchIfMissing = true)
 class CloudWebhookReplay {
 
     private static final Logger log = LoggerFactory.getLogger(CloudWebhookReplay.class);

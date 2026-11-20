@@ -11,6 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class MongoAppConfigStoreIT {
 
     @Autowired MongoClient client;

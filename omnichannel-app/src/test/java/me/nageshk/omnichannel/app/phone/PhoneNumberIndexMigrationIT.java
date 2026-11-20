@@ -17,6 +17,7 @@ import org.springframework.data.mongodb.core.index.IndexOperations;
 
 /** The plain unique index on {@code number} is replaced by one that ignores archives, which have no number. */
 @SpringBootTest
+@me.nageshk.omnichannel.app.support.OwnDatabase
 class PhoneNumberIndexMigrationIT {
 
     @Autowired PhoneNumberIndexMigration migration;
