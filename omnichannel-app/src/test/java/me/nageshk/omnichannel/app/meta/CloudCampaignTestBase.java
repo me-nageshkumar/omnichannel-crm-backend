@@ -39,6 +39,7 @@ abstract class CloudCampaignTestBase extends MetaTestBase {
 
     protected String connectionId;
     protected String numberId;
+    protected String webhookKey;
 
     @Override
     protected List<Class<?>> collections() {
@@ -57,7 +58,9 @@ abstract class CloudCampaignTestBase extends MetaTestBase {
         for (String f : new String[] {"wabaHolds", "numberHolds"}) {
             ((Map<?, ?>) org.springframework.test.util.ReflectionTestUtils.getField(cloudSenders, f)).clear();
         }
-        connectionId = connect("111").get("id").asString();
+        JsonNode connection = connect("111");
+        connectionId = connection.get("id").asString();
+        webhookKey = keyOf(connection);
         numberId = addCloudNumber(connectionId, "Admissions", "333", "+91 98765 43210").get("id").asString();
         GRAPH.reset();
     }

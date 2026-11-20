@@ -55,6 +55,8 @@ public class CampaignRunner {
     private final WebCampaignChannel web;
     private final CloudCampaignChannel cloud;
     private final CloudCampaignSenders cloudSenders;
+    private final CloudCampaignChecks cloudChecks;
+    private final RecipientClaims claims;
     private final Clock clock;
     private final Executor executor;
     private final Duration stuckAfter;
@@ -64,7 +66,7 @@ public class CampaignRunner {
 
     CampaignRunner(MongoTemplate mongo, CampaignSenderService senders, CampaignSettingsService settingsService,
             CampaignCounter counter, WebCampaignChannel web, CloudCampaignChannel cloud,
-            CloudCampaignSenders cloudSenders, Clock clock,
+            CloudCampaignSenders cloudSenders, CloudCampaignChecks cloudChecks, RecipientClaims claims, Clock clock,
             @Qualifier("campaignScheduler") Executor executor, OmnichannelProperties props) {
         this.mongo = mongo;
         this.senders = senders;
@@ -73,6 +75,8 @@ public class CampaignRunner {
         this.web = web;
         this.cloud = cloud;
         this.cloudSenders = cloudSenders;
+        this.cloudChecks = cloudChecks;
+        this.claims = claims;
         this.clock = clock;
         this.executor = executor;
         this.stuckAfter = props.rpc().timeout().plus(STUCK_MARGIN);
@@ -91,6 +95,7 @@ public class CampaignRunner {
             List<Campaign> running = mongo.find(new Query(Criteria.where("status").is(CampaignStatus.RUNNING))
                     .with(Sort.by("startedAt", "_id")), Campaign.class);
             failStuck(now);
+            running = pauseStoppedByMeta(running);
             Map<String, List<Campaign>> byWorkspace = new LinkedHashMap<>();
             for (Campaign c : running) byWorkspace.computeIfAbsent(c.getWorkspaceId(), k -> new ArrayList<>()).add(c);
             List<CompletableFuture<Void>> started = new ArrayList<>();
@@ -124,6 +129,28 @@ public class CampaignRunner {
         campaignIds.forEach(counter::refresh);
         log.warn("failed {} campaign recipients stuck in SENDING as INTERRUPTED", failed);
         return (int) failed;
+    }
+
+    /** Pauses the running Cloud campaigns that Meta's side stops now; returns the ones still running. */
+    private List<Campaign> pauseStoppedByMeta(List<Campaign> running) {
+        List<Campaign> still = new ArrayList<>();
+        for (Campaign c : running) {
+            CloudCampaignChecks.Problem p = null;
+            if (c.isCloud()) {
+                try {
+                    p = cloudChecks.problem(c);
+                } catch (RuntimeException e) {
+                    log.warn("could not check Cloud campaign {} against Meta's side", c.getId(), e);
+                }
+            }
+            if (p == null) {
+                still.add(c);
+            } else {
+                log.info("pausing Cloud campaign {}: {}", c.getId(), p.reason());
+                claims.pause(c.getId(), p.reason());
+            }
+        }
+        return still;
     }
 
     private void startSenders(String ws, List<Campaign> campaigns, Instant now,
