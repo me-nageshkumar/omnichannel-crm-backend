@@ -1,5 +1,10 @@
 package me.nageshk.omnichannel.service.inbox;
 
+import me.nageshk.omnichannel.meta.api.CloudAccountInfo;
+import me.nageshk.omnichannel.meta.api.CloudApi;
+import me.nageshk.omnichannel.meta.api.CloudMedia;
+import me.nageshk.omnichannel.meta.api.CloudSendException;
+import me.nageshk.omnichannel.service.channel.cloud.CloudStoredStatuses;
 import me.nageshk.omnichannel.service.billing.WorkGate;
 import me.nageshk.omnichannel.service.billing.wallet.UsageCharger;
 import java.io.IOException;
@@ -79,7 +84,15 @@ public class InboxSendService {
     /** What goes to the device and what is stored for it; {@code body} may be null. */
     private record Outgoing(String content, ObjectNode options, String type, String body,
             WaWebMessage.Media media, byte[] mediaBytes, WaWebMessage.Location location, String templateId,
-            List<String> pollOptions, String messagePageId, Map<String, Object> request) {
+            List<String> pollOptions, String messagePageId, Map<String, Object> request, CloudMessage cloudMessage) {
+
+        /** Without a Cloud message: what goes to a WhatsApp Web device (and to Meta, mapped). */
+        Outgoing(String content, ObjectNode options, String type, String body, WaWebMessage.Media media,
+                byte[] mediaBytes, WaWebMessage.Location location, String templateId, List<String> pollOptions,
+                String messagePageId, Map<String, Object> request) {
+            this(content, options, type, body, media, mediaBytes, location, templateId, pollOptions, messagePageId,
+                    request, null);
+        }
 
         Outgoing(String content, ObjectNode options, String type, String body, WaWebMessage.Media media,
                 byte[] mediaBytes, WaWebMessage.Location location, String templateId) {
@@ -118,6 +131,9 @@ public class InboxSendService {
     private final CloudMediaService cloudMedia;
     private final CloudMessages cloud;
     private final UsageCharger usage;
+    private final CloudApi cloudApi;
+    private final CloudMedia metaMedia;
+    private final CloudStoredStatuses cloudStatuses;
 
     /** Sends to a chat the console did not address by a typed phone. */
     public CompletableFuture<MessageView> send(AuthenticatedUser me, String workspaceId, WaWebChat chat,
@@ -154,10 +170,11 @@ public class InboxSendService {
         if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() == ChatStatus.CLOSED) {
             throw new ChatClosedException();
         }
-        DeviceSession device = devices.requireReady(workspaceId, chat);
+        SendChannel channel = devices.requireChannel(workspaceId, chat);
         workGate.requireSend(workspaceId, actor);
         Outgoing out = outgoing(actor, workspaceId, chat, req);
-        return charged(actor, workspaceId, () -> dispatch(actor, takenOver(actor, chat), device, out, typedPhone));
+        if (channel instanceof SendChannel.CloudChannel) refuseOnCloud(out);
+        return charged(actor, workspaceId, () -> dispatch(actor, takenOver(actor, chat), channel, out, typedPhone));
     }
 
     /**
@@ -203,13 +220,14 @@ public class InboxSendService {
         if (!(actor instanceof AutomationActor || actor instanceof ChatbotActor) && chat.getStatus() == ChatStatus.CLOSED) {
             throw new ChatClosedException();
         }
-        DeviceSession device = devices.requireReady(workspaceId, chat);
+        SendChannel channel = devices.requireChannel(workspaceId, chat);
         workGate.requireSend(workspaceId, actor);
         CloudMessage m = validator.validate(workspaceId, message, cloudMedia::mimeOf, toIsPhone);
         // charged first: a message the wallet cannot pay for prepares no page and no preview
         return charged(actor, workspaceId, () -> {
             WaWebChat target = takenOver(actor, chat);
-            return dispatch(actor, target, device, cloudOutgoing(target, m), typedPhone);
+            Outgoing out = channel instanceof SendChannel.CloudChannel ? cloudNative(target, m) : cloudOutgoing(target, m);
+            return dispatch(actor, target, channel, out, typedPhone);
         });
     }
 
@@ -222,8 +240,10 @@ public class InboxSendService {
                 : chat;
     }
 
-    private CompletableFuture<MessageView> dispatch(SendActor actor, WaWebChat chat, DeviceSession device,
+    private CompletableFuture<MessageView> dispatch(SendActor actor, WaWebChat chat, SendChannel channel,
             Outgoing out, String typedPhone) {
+        if (channel instanceof SendChannel.CloudChannel c) return cloudDispatch(actor, chat, c.account(), out, typedPhone);
+        DeviceSession device = ((SendChannel.DeviceChannel) channel).device();
         ObjectNode params = mapper.createObjectNode();
         params.put("chatId", chat.getRemoteId());
         params.put("content", out.content());
@@ -231,6 +251,142 @@ public class InboxSendService {
         params.put("sendSeen", true);
         return dispatcher.call(device, "sendMessage", params)
                 .thenApply(result -> afterSend(actor, chat, out, result, typedPhone));
+    }
+
+    // ---- Cloud API numbers (spec 2026-11-20 §5.4) ----
+
+    /** A saved message Meta has no equivalent for is refused before anything is charged. */
+    private static void refuseOnCloud(Outgoing out) {
+        if ("poll_creation".equals(out.type())) {
+            throw new ValidationException("templateId", "Polls are not available on Cloud API numbers");
+        }
+    }
+
+    /** A validated Cloud message goes to Meta as it is: buttons and lists are native, no message page. */
+    private Outgoing cloudNative(WaWebChat chat, CloudMessage m) {
+        Map<String, Object> request = cloud.toMap(m);
+        if (CloudMessage.TEXT.equals(m.type())) {
+            String body = m.text().body();
+            return new Outgoing(body, null, null, body, null, null, null, null, null, null, request, m);
+        }
+        if (CloudMessage.LOCATION.equals(m.type())) {
+            LocationObject l = m.location();
+            return new Outgoing("", null, "location", null, null, null,
+                    new WaWebMessage.Location(l.latitude(), l.longitude(), joined(l.name(), l.address())), null, null,
+                    null, request, m);
+        }
+        if (CloudMessage.MEDIA_TYPES.contains(m.type())) {
+            MediaObject o = m.media();
+            CloudMediaService.MediaFile file = cloudMedia.open(chat.getWorkspaceId(), o.id());
+            byte[] bytes;
+            try (InputStream in = file.resource().getInputStream()) {
+                bytes = in.readAllBytes();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            String filename = o.filename() != null ? o.filename() : file.resource().getFilename();
+            String caption = o.caption() == null ? "" : o.caption();
+            WaWebMessage.Media stored = new WaWebMessage.Media(file.mimeType(), filename, file.size(), null, null);
+            return new Outgoing(caption, null, m.type(), caption.isEmpty() ? null : caption, stored, bytes, null, null,
+                    null, null, request, m);
+        }
+        String body = m.interactive() != null && m.interactive().body() != null ? m.interactive().body().text() : null;
+        return new Outgoing(body, null, CloudMessage.INTERACTIVE, body, null, null, null, null, null, null, request, m);
+    }
+
+    /**
+     * Sends through Meta. A refusal fails the future (so the charge is given back when nothing went out); a refused
+     * token stops the number until it is replaced; a rate limit is a "try later", as a missing device is.
+     */
+    private CompletableFuture<MessageView> cloudDispatch(SendActor actor, WaWebChat chat, CloudAccountInfo account,
+            Outgoing out, String typedPhone) {
+        String wamid;
+        try {
+            wamid = cloudApi.send(chat.getPhoneNumberId(), toCloud(chat, out), userIdOf(chat.getRemoteId()));
+        } catch (CloudSendException e) {
+            return CompletableFuture.failedFuture(switch (e.kind()) {
+                case TOKEN_REFUSED -> new NoDeviceException(InboxDevices.CLOUD_NOT_READY,
+                        "Meta refused this number's access token; replace it on Phone numbers.");
+                case RATE_LIMITED -> new NoDeviceException(CLOUD_RATE_LIMITED, "Meta asks to slow down: " + e.getMessage());
+                default -> e;
+            });
+        } catch (CloudMedia.CloudMediaException e) {
+            return CompletableFuture.failedFuture(new CloudSendException(CloudSendException.Kind.REFUSED, null,
+                    "Meta did not take the file", e.getMessage(), null));
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        return CompletableFuture.completedFuture(afterCloudSend(actor, chat, account, out, wamid, typedPhone));
+    }
+
+    /** Meta asks the number to slow down; the chatbot and rules try again later. */
+    public static final String CLOUD_RATE_LIMITED = "CLOUD_RATE_LIMITED";
+
+    /** The Cloud message for what is going out: the caller's own, or the typed text or saved message mapped. */
+    private CloudMessage toCloud(WaWebChat chat, Outgoing out) {
+        String to = phoneOf(chat.getRemoteId());
+        CloudMessage m = out.cloudMessage();
+        if (m == null) {
+            String type = out.type() == null ? CloudMessage.TEXT : out.type();
+            m = switch (type) {
+                case CloudMessage.TEXT -> new CloudMessage(MessagingProduct.WHATSAPP, "individual", to, CloudMessage.TEXT,
+                        new Text(true, out.body()), null, null);
+                case CloudMessage.LOCATION -> new CloudMessage(MessagingProduct.WHATSAPP, "individual", to,
+                        CloudMessage.LOCATION, null, null, null, null, null, null, new LocationObject(
+                                out.location().latitude(), out.location().longitude(), out.location().description(),
+                                null), null);
+                case CloudMessage.IMAGE, CloudMessage.VIDEO, CloudMessage.AUDIO, CloudMessage.DOCUMENT -> media(
+                        chat.getPhoneNumberId(), type, to, null, out);
+                default -> throw new ValidationException("templateId", "A " + type
+                        + " message is not available on Cloud API numbers");
+            };
+        } else if (CloudMessage.MEDIA_TYPES.contains(m.type())) {
+            m = media(chat.getPhoneNumberId(), m.type(), to, m, out);
+        }
+        return m.withTo(to);
+    }
+
+    /** A media message by Meta's id: the bytes are uploaded first (spec §5.4: every send, no reuse cache). */
+    private CloudMessage media(String phoneNumberId, String type, String to, CloudMessage given, Outgoing out) {
+        String metaId = metaMedia.upload(phoneNumberId, out.mediaBytes(), out.media().mimetype(),
+                out.media().filename());
+        MediaObject o = new MediaObject(metaId, null, out.body(),
+                CloudMessage.DOCUMENT.equals(type) ? out.media().filename() : null);
+        return new CloudMessage(MessagingProduct.WHATSAPP, "individual", to, type, null, null,
+                CloudMessage.IMAGE.equals(type) ? o : null, CloudMessage.VIDEO.equals(type) ? o : null,
+                CloudMessage.AUDIO.equals(type) ? o : null, CloudMessage.DOCUMENT.equals(type) ? o : null, null,
+                given == null ? null : given.context());
+    }
+
+    /** Meta's user id of a {@code @user} chat (a person whose phone Meta does not share), else null. */
+    private static String userIdOf(String remoteId) {
+        return remoteId != null && remoteId.endsWith(MessageFields.USER)
+                ? remoteId.substring(0, remoteId.length() - MessageFields.USER.length()) : null;
+    }
+
+    private MessageView afterCloudSend(SendActor actor, WaWebChat sent, CloudAccountInfo account, Outgoing out,
+            String wamid, String typedPhone) {
+        devices.requireStillIn(sent.getWorkspaceId(), sent.getPhoneNumberId());
+        Instant now = clock.instant();
+        String type = out.type() == null ? "text" : out.type();
+        Recorded recorded = InboxIngestService.retrying(
+                () -> record(actor, sent, out, type, wamid, now, 0, now, typedPhone));
+        ChannelContext ctx = new ChannelContext(ChannelKind.WHATSAPP_CLOUD, sent.getCustomerId(), sent.getWorkspaceId(),
+                sent.getPhoneNumberId(), devices.digitsOf(sent.getPhoneNumberId()));
+        try {
+            cloudStatuses.apply(ctx, wamid);
+        } catch (RuntimeException e) {
+            log.warn("could not apply early statuses of {}: {}", wamid, e.toString());
+        }
+        markReadAtMeta(recorded.chat());
+        return finish(actor, recorded, out, now);
+    }
+
+    /** The customer's last message is marked read at Meta, as the bridge's {@code sendSeen} does; best effort. */
+    private void markReadAtMeta(WaWebChat chat) {
+        messages.findFirstByChatIdAndDirectionOrderByTimestampDesc(chat.getId(), MessageDirection.IN)
+                .map(WaWebMessage::getWaMessageId)
+                .ifPresent(id -> CompletableFuture.runAsync(() -> cloudApi.markRead(chat.getPhoneNumberId(), id)));
     }
 
     /** What goes to the device for a validated Cloud message. */
@@ -440,6 +596,11 @@ public class InboxSendService {
 
         Recorded recorded = InboxIngestService.retrying(
                 () -> record(actor, sent, out, type == null ? "text" : type, id, at, ack, now, phone));
+        return finish(actor, recorded, out, now);
+    }
+
+    /** After the row is stored: the sender claims the chat, the page and template note it, the consoles hear. */
+    private MessageView finish(SendActor actor, Recorded recorded, Outgoing out, Instant now) {
         WaWebChat chat = recorded.chat();
         if (actor instanceof UserActor user) {
             try {

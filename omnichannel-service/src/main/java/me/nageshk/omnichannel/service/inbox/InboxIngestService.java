@@ -532,7 +532,8 @@ public class InboxIngestService {
             return Optional.empty();
         }
         // a fetched message's receipt carries WhatsApp's time; a live status has none of its own
-        boolean changed = failureOf(message, status);
+        boolean failedNow = failureOf(message, status);
+        boolean changed = failedNow;
         changed |= isImported(status)
                 ? applyReceipt(message, MessageFields.ackOf(status),
                         MessageFields.timestampOf(status.timestamp(), clock.instant()), isEstimated(status)
@@ -544,6 +545,9 @@ public class InboxIngestService {
                 chat.setLastMessage(withStatus(chat.getLastMessage(), message.getStatus()));
                 chat = chats.save(chat);
             }
+        }
+        if (failedNow && ctx.kind() == me.nageshk.omnichannel.common.channel.ChannelKind.WHATSAPP_CLOUD) {
+            publisher.publishEvent(new InboxEvents.CloudMessageFailed(message.getId()));
         }
         return Optional.of(new Stored(new Ingested(chat, message, false, false, false), changed, null, false));
     }

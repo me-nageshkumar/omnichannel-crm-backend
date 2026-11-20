@@ -9,6 +9,8 @@ import me.nageshk.omnichannel.common.channel.whatsapp.message.MessagingProduct;
 import me.nageshk.omnichannel.db.contact.Contact;
 import me.nageshk.omnichannel.db.contact.ContactRepository;
 import me.nageshk.omnichannel.db.inbox.WaWebChat;
+import me.nageshk.omnichannel.db.phone.ConnectionType;
+import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
 import me.nageshk.omnichannel.security.auth.AuthenticatedUser;
 import me.nageshk.omnichannel.service.inbox.InboxSendService;
 import me.nageshk.omnichannel.service.inbox.MessageView;
@@ -27,9 +29,11 @@ public class CloudSendService {
     private final CloudMessageValidator validator;
     private final CloudMediaService media;
     private final ContactRepository contacts;
+    private final PhoneNumberRepository numbers;
 
     public CloudSendService(NewChatService newChats, InboxSendService sender, CloudMessageValidator validator,
-            CloudMediaService media, ContactRepository contacts) {
+            CloudMediaService media, ContactRepository contacts, PhoneNumberRepository numbers) {
+        this.numbers = numbers;
         this.newChats = newChats;
         this.sender = sender;
         this.validator = validator;
@@ -37,33 +41,51 @@ public class CloudSendService {
         this.contacts = contacts;
     }
 
-    /** Sends to the phone in {@code to} through the number; a bridge number takes {@code whatsapp-web} only. */
+    /**
+     * Sends to the phone in {@code to} through the number: a WhatsApp Web number takes {@code whatsapp-web} only, a
+     * Cloud API number {@code whatsapp} only (spec 2026-11-20 §5.4).
+     */
     public CompletableFuture<CloudSendResponse> send(AuthenticatedUser me, String workspaceId, String phoneNumberId,
             CloudMessage message) {
-        requireBridgeProduct(message);
+        String product = productOf(workspaceId, phoneNumberId);
+        if (!product.equals(message.messagingProduct())) {
+            throw new ValidationException("messaging_product", "channel not available");
+        }
         CloudMessage valid = validator.validate(workspaceId, message, media::mimeOf, true);
-        return newChats.startCloud(me, workspaceId, phoneNumberId, valid).thenApply(view -> response(valid, view));
+        return newChats.startCloud(me, workspaceId, phoneNumberId, valid)
+                .thenApply(view -> response(product, valid, view));
     }
 
     /** Sends to an open chat; {@code to} is the chat's phone when it has one, else its hidden id. */
     public CompletableFuture<CloudSendResponse> sendToChat(AuthenticatedUser me, String workspaceId, WaWebChat chat,
             CloudMessage message) {
-        requireBridgeProduct(message);
+        requireKnownProduct(message);
+        String product = productOf(workspaceId, chat.getPhoneNumberId());
         CloudMessage withTo = message.withTo(toOf(chat));
         CloudMessage valid = validator.validate(workspaceId, withTo, media::mimeOf, false);
-        return sender.sendCloud(me, workspaceId, chat, valid, null, false).thenApply(view -> response(valid, view));
+        return sender.sendCloud(me, workspaceId, chat, valid, null, false)
+                .thenApply(view -> response(product, valid, view));
     }
 
     /** The composer's preview is validated the chat-keyed way: {@code to} is not part of it. */
     public CloudMessage validateForPreview(String workspaceId, CloudMessage message) {
-        requireBridgeProduct(message);
+        requireKnownProduct(message);
         return validator.validate(workspaceId, message.withTo("preview"), media::mimeOf, false);
     }
 
-    private static void requireBridgeProduct(CloudMessage message) {
-        if (!MessagingProduct.WHATSAPP_WEB.equals(message.messagingProduct())) {
+    /** A chat-keyed send (the console's) goes out on the chat's own channel, whichever product it names. */
+    private static void requireKnownProduct(CloudMessage message) {
+        if (!MessagingProduct.WHATSAPP_WEB.equals(message.messagingProduct())
+                && !MessagingProduct.WHATSAPP.equals(message.messagingProduct())) {
             throw new ValidationException("messaging_product", "channel not available");
         }
+    }
+
+    /** The product a number speaks: {@code whatsapp} for a Cloud API number, else {@code whatsapp-web}. */
+    private String productOf(String workspaceId, String phoneNumberId) {
+        return numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
+                .filter(n -> n.getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API)
+                .map(n -> MessagingProduct.WHATSAPP).orElse(MessagingProduct.WHATSAPP_WEB);
     }
 
     private String toOf(WaWebChat chat) {
@@ -76,8 +98,8 @@ public class CloudSendService {
         return remote;
     }
 
-    private static CloudSendResponse response(CloudMessage m, MessageView view) {
-        return new CloudSendResponse(MessagingProduct.WHATSAPP_WEB,
+    private static CloudSendResponse response(String product, CloudMessage m, MessageView view) {
+        return new CloudSendResponse(product,
                 List.of(new CloudSendResponse.Contact(m.to(), m.to())),
                 List.of(new CloudSendResponse.Message(view.id())));
     }

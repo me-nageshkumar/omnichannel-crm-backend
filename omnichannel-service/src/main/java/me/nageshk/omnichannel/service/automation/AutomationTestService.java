@@ -501,7 +501,7 @@ public class AutomationTestService {
             checks.add(new PreflightView.Check(PreflightView.Level.BLOCKER, actionIndex(key), message));
         });
         boolean ready = numbers.findByWorkspaceIdOrderByNumber(workspaceId).stream()
-                .anyMatch(n -> devices.isReady(workspaceId, n.getId()));
+                .anyMatch(n -> devices.canSend(workspaceId, n.getId()));
         if (!ready) checks.add(new PreflightView.Check(PreflightView.Level.BLOCKER, null, NO_DEVICE));
         List<AutomationAction> list = actionsOf(rule);
         for (int i = 0; i < list.size(); i++) {

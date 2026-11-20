@@ -35,6 +35,9 @@ public final class InboxEvents {
     }
 
     /** A message was stored ({@code inserted}) or its status moved. */
+    /** Meta failed a Cloud message it had accepted: its charge goes back (spec 2026-11-20 §5.4). */
+    public record CloudMessageFailed(String messageId) {}
+
     public record MessageUpserted(WaWebChat chat, WaWebMessage message, boolean inserted) {
     }
 
