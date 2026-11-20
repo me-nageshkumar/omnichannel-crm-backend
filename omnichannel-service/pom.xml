@@ -21,6 +21,10 @@
     </dependency>
     <dependency>
       <groupId>me.nageshk</groupId>
+      <artifactId>omnichannel-meta</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>me.nageshk</groupId>
       <artifactId>omnichannel-security</artifactId>
     </dependency>
     <dependency>
