@@ -146,6 +146,7 @@ public class InboxSendService {
     private final UsageCharger usage;
     private final CloudApi cloudApi;
     private final CloudMedia metaMedia;
+    private final CloudHeaderUploads headerUploads;
     private final CloudStoredStatuses cloudStatuses;
     private final CloudTemplates cloudTemplates;
     private final CloudTemplateFills templateFills;
@@ -413,11 +414,19 @@ public class InboxSendService {
             WaWebChat target = takenOver(actor, chat);
             String metaMediaId = null;
             if (file != null) {
-                try (InputStream in = file.resource().getInputStream()) {
-                    metaMediaId = metaMedia.upload(chat.getPhoneNumberId(), in.readAllBytes(), file.mimeType(),
-                            file.resource().getFilename());
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
+                java.util.function.Supplier<String> upload = () -> {
+                    try (InputStream in = file.resource().getInputStream()) {
+                        return metaMedia.upload(chat.getPhoneNumberId(), in.readAllBytes(), file.mimeType(),
+                                file.resource().getFilename());
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                };
+                try {
+                    // a campaign sends the same file to everyone: it goes to Meta once per number
+                    metaMediaId = actor instanceof CampaignActor
+                            ? headerUploads.metaMediaId(chat.getPhoneNumberId(), req.headerMediaId(), upload)
+                            : upload.get();
                 } catch (CloudMedia.CloudMediaException e) {
                     return CompletableFuture.failedFuture(new CloudSendException(CloudSendException.Kind.REFUSED, null,
                             "Meta did not take the header file", e.getMessage(), null));

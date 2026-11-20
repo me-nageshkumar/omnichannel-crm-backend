@@ -149,4 +149,30 @@ abstract class CloudCampaignTestBase extends MetaTestBase {
     protected static String sent(String wamid) {
         return "{\"messaging_product\":\"whatsapp\",\"messages\":[{\"id\":\"" + wamid + "\"}]}";
     }
+
+    /** A small PNG uploaded as the app's media of the Cloud number; returns its id. */
+    protected String uploadPng() {
+        byte[] png = new byte[100];
+        System.arraycopy(new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, 0, png, 0, 8);
+        org.springframework.http.HttpHeaders fileHeaders = new org.springframework.http.HttpHeaders();
+        fileHeaders.setContentType(org.springframework.http.MediaType.IMAGE_PNG);
+        fileHeaders.setContentDispositionFormData("file", "brochure.png");
+        org.springframework.util.MultiValueMap<String, Object> form = new org.springframework.util.LinkedMultiValueMap<>();
+        form.add("file", new org.springframework.http.HttpEntity<>(new org.springframework.core.io.ByteArrayResource(png) {
+            @Override
+            public String getFilename() {
+                return "brochure.png";
+            }
+        }, fileHeaders));
+        form.add("messaging_product", "whatsapp");
+        form.add("type", "image");
+        org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+        h.putAll(auth(manager, null).getHeaders());
+        h.setContentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA);
+        ResponseEntity<JsonNode> res = rest.exchange(url("/api/workspaces/" + brand.getId() + "/channel-accounts/"
+                + numberId + "/media"), HttpMethod.POST, new org.springframework.http.HttpEntity<>(form, h),
+                JsonNode.class);
+        assertThat(res.getStatusCode().is2xxSuccessful()).as(String.valueOf(res.getBody())).isTrue();
+        return res.getBody().get("id").asString();
+    }
 }
