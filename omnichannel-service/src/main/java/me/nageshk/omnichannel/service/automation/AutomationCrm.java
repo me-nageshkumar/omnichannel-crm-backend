@@ -20,6 +20,17 @@ public interface AutomationCrm {
     /** The CRM's pipelines and lanes for the rule editor; a brand with the CRM off gets {@code (false, null, [])}. */
     CrmOptions options(String workspaceId);
 
+    /**
+     * Gives the contact's unowned CRM lead (the contact on the number and its open deals) to the user, for what the
+     * user can see in the CRM; an owner already set is kept. Never throws for nothing to do: the CRM off, no CRM
+     * contact on the number, the user not in the brand.
+     */
+    FillResult fillOwner(String workspaceId, String customerId, String contactId, String phoneNumberId,
+            String userId);
+
+    /** What {@link #fillOwner} set; a null contact id and no deals when nothing changed. */
+    record FillResult(String crmContactId, List<String> dealIds) {}
+
     record LeadRequest(String workspaceId, String customerId, String contactId, String phoneNumberId, String chatId,
             Instant firstMessageAt, String pipelineId, String stageId, String dealTitle, String ownerUserId) {}
 

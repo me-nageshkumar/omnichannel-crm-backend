@@ -7,6 +7,7 @@ import me.nageshk.omnichannel.crm.access.CrmAccess;
 import me.nageshk.omnichannel.crm.access.CrmContext;
 import me.nageshk.omnichannel.crm.contact.AdOrigin;
 import me.nageshk.omnichannel.crm.contact.CaptureService;
+import me.nageshk.omnichannel.crm.contact.LeadOwnerFill;
 import me.nageshk.omnichannel.crm.contact.Origin;
 import me.nageshk.omnichannel.crm.contact.dto.CaptureResult;
 import me.nageshk.omnichannel.crm.pipeline.CrmPipeline;
@@ -34,10 +35,12 @@ class AutomationCrmAdapter implements AutomationCrm {
     private final CrmPipelineService pipelines;
     private final ContactDirectory contacts;
     private final ChatDirectory chats;
+    private final LeadOwnerFill ownerFill;
 
     AutomationCrmAdapter(CrmSettingsService settings, CaptureService capture, CrmAccess access,
             CrmPipelineService pipelines, ContactDirectory contacts,
-            ChatDirectory chats) {
+            ChatDirectory chats, LeadOwnerFill ownerFill) {
+        this.ownerFill = ownerFill;
         this.settings = settings;
         this.capture = capture;
         this.access = access;
@@ -85,6 +88,13 @@ class AutomationCrmAdapter implements AutomationCrm {
         CrmStage placed = lane(pipeline, res.deal().stageId());
         return new LeadResult(res.contact().id(), res.deal().id(), pipeline.getName(),
                 placed == null ? null : placed.getName());
+    }
+
+    @Override
+    public FillResult fillOwner(String workspaceId, String customerId, String contactId, String phoneNumberId,
+            String userId) {
+        LeadOwnerFill.Filled f = ownerFill.fill(workspaceId, customerId, contactId, phoneNumberId, userId);
+        return new FillResult(f.crmContactId(), f.dealIds());
     }
 
     @Override
