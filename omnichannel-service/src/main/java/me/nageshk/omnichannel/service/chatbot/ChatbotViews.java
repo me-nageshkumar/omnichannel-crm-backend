@@ -43,12 +43,16 @@ public final class ChatbotViews {
             ContactRef contact, NumberRef number, me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus status,
             String currentNodeId, String currentNodeName, me.nageshk.omnichannel.db.chatbot.Waiting waiting, boolean test,
             me.nageshk.omnichannel.db.chatbot.StartedBy startedBy, List<me.nageshk.omnichannel.db.chatbot.ChatbotStep> steps,
-            Map<String, Object> variables, String endReason, AutomationRef stoppedBy, Instant createdAt, Instant finishedAt) {
+            Map<String, Object> variables, String endReason, AutomationRef stoppedBy, Instant createdAt, Instant finishedAt, Ending ending) {
         public record ChatRef(String id, String remoteId) {
         }
         public record ContactRef(String id, String name, String phone) {
         }
         public record NumberRef(String id, String label) {
+        }
+        /** Where the run's chat went: the agent and team are null when none. */
+        public record Ending(me.nageshk.omnichannel.db.chatbot.RunEnding.Chat chat, AutomationRef agent,
+                AutomationRef team, Instant at) {
         }
     }
 

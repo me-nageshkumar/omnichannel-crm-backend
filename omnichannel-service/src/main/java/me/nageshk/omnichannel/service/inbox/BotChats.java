@@ -69,12 +69,14 @@ public class BotChats {
      * The chatbot is done with the chat: it is opened, marked as handed over and routed under the number's team,
      * recorded as asked by the chatbot. Does nothing unless the chat is still the chatbot's and, when {@code runId}
      * is given, held by that run or by none.
+     *
+     * @return the chat as it stands after, or empty when the guard did not match and nothing changed
      */
-    public void toPeople(String chatId, String runId, RoutedReason reason, String chatbotName) {
+    public Optional<WaWebChat> toPeople(String chatId, String runId, RoutedReason reason, String chatbotName) {
         Update u = new Update().set("status", ChatStatus.OPEN).set("handedOverAt", clock.instant()).inc("version", 1);
         WaWebChat opened = mongo.findAndModify(heldBy(chatId, runId), u, FindAndModifyOptions.options().returnNew(true),
                 WaWebChat.class);
-        if (opened == null) return;
+        if (opened == null) return Optional.empty();
         WaWebChat chat = opened;
         ChatRoutingService.RoutingOptions options = new ChatRoutingService.RoutingOptions(null, true, reason,
                 "Chatbot: " + chatbotName, chatbotName);
@@ -86,7 +88,7 @@ public class BotChats {
                 // a customer message was saved meanwhile: route the fresh copy, unless someone has it now
                 WaWebChat now = chats.findById(chatId).orElse(null);
                 if (now == null || now.getStatus() != ChatStatus.OPEN || now.getAssignedUserId() != null
-                        || now.getAssignedTeamId() != null) return;
+                        || now.getAssignedTeamId() != null) return Optional.of(now);
                 chat = now;
             } catch (RuntimeException e) {
                 log.warn("routing chat {} after its chatbot ended failed; it stays open for the team", chatId, e);
@@ -94,14 +96,19 @@ public class BotChats {
             }
         }
         publisher.publishEvent(new InboxEvents.ChatChanged(chat));
+        return Optional.of(chat);
     }
 
-    /** The chatbot is done and the chat is closed, recorded as closed by the chatbot. Same guard as {@link #toPeople}. */
-    public void close(String chatId, String runId, String chatbotName) {
+    /**
+     * The chatbot is done and the chat is closed, recorded as closed by the chatbot. Same guard as {@link #toPeople}.
+     *
+     * @return the closed chat, or empty when the guard did not match
+     */
+    public Optional<WaWebChat> close(String chatId, String runId, String chatbotName) {
         Update u = new Update().set("status", ChatStatus.CLOSED).unset("handedOverAt").inc("version", 1);
         WaWebChat closed = mongo.findAndModify(heldBy(chatId, runId), u, FindAndModifyOptions.options().returnNew(true),
                 WaWebChat.class);
-        if (closed == null) return;
+        if (closed == null) return Optional.empty();
         WaWebChatAction a = new WaWebChatAction();
         a.setCustomerId(closed.getCustomerId());
         a.setWorkspaceId(closed.getWorkspaceId());
@@ -112,6 +119,7 @@ public class BotChats {
         a = actions.save(a);
         publisher.publishEvent(new InboxEvents.ActionRecorded(closed, a));
         publisher.publishEvent(new InboxEvents.ChatChanged(closed));
+        return Optional.of(closed);
     }
 
     /** People have the chat from a chatbot although it was not the chatbot's: no chatbot starts on it from a rule. */
