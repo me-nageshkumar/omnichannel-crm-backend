@@ -322,6 +322,29 @@ Spec `docs/superpowers/specs/2026-11-18-link-addresses-design.md`.
 - The check fetches the address from this server; on a network that cannot reach its own public address (some NAT
   set-ups) a working address reads as failing.
 
+## Cloud API numbers: known limits
+
+Spec `specs/2026-11-20-cloud-numbers-design.md` (a brand's own Meta app, imported Meta templates).
+
+- **No campaigns** on Cloud numbers yet: the sender checks still leave them out (their pacing is WhatsApp Web's).
+- **No template editor**: templates are written and approved in Meta's WhatsApp Manager and imported (Sync, and
+  Meta's status webhook). Carousel, flow, catalog, limited-time-offer, location-header and authentication templates
+  are listed as "not supported yet" and cannot be sent.
+- **Chatbots send no templates**; a chatbot message after the 24-hour window takes the node's failure path.
+- **No Embedded Signup, no coexistence**: each brand makes its own Meta app, system user and token; a number used in
+  the WhatsApp Business app cannot also be on the Cloud API here.
+- **No move** of a Cloud number to another brand (its Meta connection belongs to the brand).
+- **Senders known only by Meta's user id** (no phone shared) get a `<user_id>@user` chat and a phone-less contact;
+  when the same person later writes with a phone, that chat is not linked to the first one yet.
+- **The webhook address is the platform's pages address** (the ngrok tunnel on 8089 until deployment); a new tunnel
+  means "Retry webhook setup" on the connection, or pasting the new address in the Meta app.
+- **Media is uploaded to Meta on every send** (no reuse of Meta media ids), and an incoming file is fetched right
+  after the message arrives (Meta keeps its id a week).
+- **Meta's `/{app-id}/subscriptions`** is contested in Meta's own docs; when it is refused the connection shows the
+  address and verify token to paste by hand (`MANUAL`).
+- **Status webhooks for other numbers** of a brand's Meta app (e.g. a provider's number in the same WABA) are
+  counted on the connection and dropped.
+
 ## Moving a number: when Retry keeps failing
 
 Spec `docs/superpowers/specs/2026-11-18-knowledge-bases-and-number-move-design.md` §7. Take a `mongodump` of the
