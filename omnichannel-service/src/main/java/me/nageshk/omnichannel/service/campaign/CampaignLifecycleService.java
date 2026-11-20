@@ -120,6 +120,8 @@ public class CampaignLifecycleService {
         return new CampaignRequest(c.getName(),
                 new CampaignRequest.AudienceRequest(a.kind(), a.filterId(), a.phoneColumn(), a.nameColumn(),
                         a.segmentId()),
-                c.getTemplateIds(), c.getPlaceholders(), c.getSenderIds());
+                c.getTemplateIds(), c.getPlaceholders(), c.getSenderIds(), c.getChannel(),
+                c.getCloudTemplate() == null ? null : new CampaignRequest.CloudTemplateChoice(
+                        c.getCloudTemplate().cloudTemplateId(), c.getCloudTemplate().headerMediaId()));
     }
 }

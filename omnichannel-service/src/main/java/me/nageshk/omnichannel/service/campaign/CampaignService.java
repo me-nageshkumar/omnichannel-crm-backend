@@ -88,6 +88,11 @@ public class CampaignService {
     public Campaign update(AuthenticatedUser me, String workspaceId, String id, CampaignRequest req, CsvUpload csv) {
         requireSegmentAccess(me, workspaceId, req);
         Campaign existing = require(workspaceId, id);
+        if (req.channel() == null) {
+            // an update without the kind keeps the campaign's own
+            req = new CampaignRequest(req.name(), req.audience(), req.templateIds(), req.placeholders(),
+                    req.senderIds(), existing.getChannel(), req.cloudTemplate());
+        }
         Campaign.Audience old = existing.getAudience();
         CampaignCsv.Parsed parsed = isCsv(req) && csv != null ? CampaignCsv.parse(csv.bytes()) : null;
         boolean keepsFile = isCsv(req) && csv == null && old != null && old.kind() == AudienceKind.CSV;
@@ -105,6 +110,7 @@ public class CampaignService {
                 .set("templateIds", v.templates().stream().map(MessageTemplate::getId).toList())
                 .set("templateNames", v.templates().stream().map(MessageTemplate::getName).toList())
                 .set("placeholders", v.placeholders()).set("senderIds", v.senderIds())
+                .set("channel", v.channel()).set("cloudTemplate", v.cloudTemplate())
                 .set("lastUpdateTime", clock.instant()).inc("version", 1);
         long matched;
         try {
@@ -202,6 +208,8 @@ public class CampaignService {
         c.setTemplateNames(v.templates().stream().map(MessageTemplate::getName).toList());
         c.setPlaceholders(v.placeholders());
         c.setSenderIds(v.senderIds());
+        c.setChannel(v.channel());
+        c.setCloudTemplate(v.cloudTemplate());
     }
 
     private Campaign save(Campaign c) {

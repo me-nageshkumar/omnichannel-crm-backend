@@ -129,7 +129,7 @@ abstract class CloudCampaignTestBase extends MetaTestBase {
     /** The mapping of positional blank {@code body:1} to the contact's name, "there" when blank. */
     protected static List<Map<String, Object>> nameIntoBody1() {
         return List.of(Map.of("name", "body:1", "source", Map.of("kind", "CONTACT_FIELD", "field", "name"),
-                "fallback", "there"), Map.of("name", "body:2", "source", Map.of("kind", "FIXED"), "fallback", "BCA"));
+                "fallback", "there"), Map.of("name", "body:2", "source", Map.of("kind", "FIXED", "text", "BCA"), "fallback", ""));
     }
 
     protected void start(String id) {
