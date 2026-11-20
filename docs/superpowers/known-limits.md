@@ -326,7 +326,15 @@ Spec `docs/superpowers/specs/2026-11-18-link-addresses-design.md`.
 
 Spec `specs/2026-11-20-cloud-numbers-design.md` (a brand's own Meta app, imported Meta templates).
 
-- **No campaigns** on Cloud numbers yet: the sender checks still leave them out (their pacing is WhatsApp Web's).
+- **Campaigns on Cloud numbers** (spec `specs/2026-11-21-cloud-campaigns-design.md`): one kind of number per
+  campaign (never mixed); one Meta template per campaign, no rotation; one header file shared by every recipient.
+- A Cloud number sends one recipient after another (about 3 a second), not in parallel; 10,000 take about an hour.
+- Meta's daily limit is counted per WhatsApp account (WABA) from our own stored template messages; sends from other
+  numbers or tools on the same business portfolio (Wati, say) are invisible, so Meta's refusal is the backstop.
+- Holds after Meta asks to wait (1 h for the limit, Retry-After for a rate limit) and the header uploads (29 days)
+  are kept in memory; a restart forgets them, costing one more refused send or upload.
+- Meta's template and quality changes are checked on each campaign tick (10 s), not pushed: a campaign pauses
+  within one tick. Flagged/restricted number events are only logged; Meta's refusals then pause the campaign.
 - **No template editor**: templates are written and approved in Meta's WhatsApp Manager and imported (Sync, and
   Meta's status webhook). Carousel, flow, catalog, limited-time-offer, location-header and authentication templates
   are listed as "not supported yet" and cannot be sent.
