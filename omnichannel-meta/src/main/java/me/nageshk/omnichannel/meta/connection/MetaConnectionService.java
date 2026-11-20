@@ -42,8 +42,9 @@ public class MetaConnectionService {
     static final List<String> SCOPES = List.of("whatsapp_business_management", "whatsapp_business_messaging");
     private static final int MAX_NAME = 80;
     private static final SecureRandom RANDOM = new SecureRandom();
-    static final String NUMBER_FIELDS = "id,display_phone_number,verified_name,name_status,quality_rating,"
-            + "platform_type,code_verification_status,messaging_limit_tier,status";
+    /** Meta's current phone-number fields (v27; {@code platform_type} and {@code messaging_limit_tier} are gone). */
+    public static final String NUMBER_FIELDS = "id,display_phone_number,verified_name,name_status,quality_rating,"
+            + "code_verification_status,status,host_platform,account_mode";
 
     /** The opened secrets of a connection, for Graph calls inside this module; never leaves the server. */
     public record Secrets(String appSecret, String accessToken) {
@@ -148,10 +149,30 @@ public class MetaConnectionService {
 
     /** Checks the token again and lists the WABAs and numbers it may use. */
     public Check check(String workspaceId, String id, String userId) {
+        return check(workspaceId, id, userId, null);
+    }
+
+    /**
+     * As {@link #check(String, String, String)}; a typed {@code wabaId} is looked up too, since Meta leaves a token's
+     * WABA ids out when the permission covers all of the business's WABAs. A WABA the token can read is remembered.
+     */
+    public Check check(String workspaceId, String id, String userId, String wabaId) {
         MetaConnection c = find(workspaceId, id);
         c.setUpdatedBy(userId);
         Secrets s = open(c);
         runCheck(c, s);
+        String typed = wabaId == null ? "" : wabaId.strip();
+        if (c.getStatus() == ConnectionStatus.OK && typed.matches("\\d{1,25}") && !c.getWabaIds().contains(typed)) {
+            try {
+                graph.get(s.accessToken(), typed, Map.of("fields", "id,name"));
+                List<String> ids = new ArrayList<>(c.getWabaIds());
+                ids.add(typed);
+                c.setWabaIds(ids);
+            } catch (GraphException e) {
+                throw new ValidationException("wabaId", "Meta does not let this token read WABA " + typed + ": "
+                        + e.getMessage());
+            }
+        }
         c = persist(c);
         List<Account> accounts = new ArrayList<>();
         if (c.getStatus() == ConnectionStatus.OK) {
@@ -302,7 +323,7 @@ public class MetaConnectionService {
                 String metaId = n.path("id").asString();
                 numbers.add(new MetaNumber(metaId, n.path("display_phone_number").asString(null),
                         n.path("verified_name").asString(null), n.path("name_status").asString(null),
-                        n.path("quality_rating").asString(null), n.path("platform_type").asString(null),
+                        n.path("quality_rating").asString(null), platformOf(n),
                         numbersOf.map(f -> f.ourNumberFor(metaId)).orElse(null)));
             }
         } catch (GraphException e) {
@@ -319,6 +340,17 @@ public class MetaConnectionService {
             return;
         }
         webhooks.setUp(c, s, webhookUrl(c));
+    }
+
+    /** Meta's hosting platform of a number ({@code host_platform}, the legacy {@code platform_type} as fallback). */
+    public static String platformOf(JsonNode n) {
+        String host = n.path("host_platform").asString(null);
+        return host != null ? host : n.path("platform_type").asString(null);
+    }
+
+    /** Whether the number can send: registered on the Cloud API (status CONNECTED, or hosted on CLOUD_API). */
+    public static boolean registeredOf(JsonNode n) {
+        return "CONNECTED".equals(n.path("status").asString("")) || "CLOUD_API".equals(platformOf(n));
     }
 
     private List<ConnectionView.NumberRef> numbers(String connectionId) {

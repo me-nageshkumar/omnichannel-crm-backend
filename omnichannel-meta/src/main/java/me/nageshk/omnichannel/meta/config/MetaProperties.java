@@ -9,6 +9,6 @@ import org.springframework.util.unit.DataSize;
 @ConfigurationProperties("omnichannel.meta")
 public record MetaProperties(
         @DefaultValue("https://graph.facebook.com") String graphBaseUrl,
-        @DefaultValue("v23.0") String graphVersion,
+        @DefaultValue("v27.0") String graphVersion,
         @DefaultValue("20s") Duration requestTimeout,
         @DefaultValue("3MB") DataSize webhookMaxBytes) {}

@@ -22,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/workspaces/{workspaceId}/meta/connections")
 class MetaConnectionController {
 
+    record CheckRequest(String wabaId) {}
+
     private final MetaConnectionService service;
 
     MetaConnectionController(MetaConnectionService service) {
@@ -58,8 +60,8 @@ class MetaConnectionController {
     @PostMapping("/{id}/check")
     @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
     Check check(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
-            @PathVariable String id) {
-        return service.check(workspaceId, id, me.userId());
+            @PathVariable String id, @RequestBody(required = false) CheckRequest body) {
+        return service.check(workspaceId, id, me.userId(), body == null ? null : body.wabaId());
     }
 
     @PostMapping("/{id}/webhook")

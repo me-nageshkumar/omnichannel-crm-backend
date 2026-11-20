@@ -139,6 +139,37 @@ class MetaConnectionsApiIT extends MetaTestBase {
     }
 
     @Test
+    void checkWithTypedWabaWhenTokenListsNone() {
+        GRAPH.enqueue("GET /debug_token", 200, GraphStub.validToken("111"));
+        String id = meta(HttpMethod.POST, "/connections", manager, Map.of("name", "Bimal app", "appId", "111",
+                "appSecret", APP_SECRET, "accessToken", TOKEN)).getBody().get("id").asString();
+        GRAPH.enqueue("GET /debug_token", 200, GraphStub.validToken("111"));
+        GRAPH.enqueue("GET /555/phone_numbers", 200, "{\"data\":[{\"id\":\"666\",\"display_phone_number\":"
+                + "\"+91 90000 00000\",\"status\":\"CONNECTED\",\"host_platform\":\"CLOUD_API\"}]}");
+        GRAPH.enqueue("GET /555", 200, "{\"id\":\"555\",\"name\":\"Typed WABA\"}");
+
+        ResponseEntity<JsonNode> res = meta(HttpMethod.POST, "/connections/" + id + "/check", manager,
+                Map.of("wabaId", "555"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode number = res.getBody().get("accounts").get(0).get("numbers").get(0);
+        assertThat(number.get("metaPhoneNumberId").asString()).isEqualTo("666");
+        assertThat(number.get("platformType").asString()).isEqualTo("CLOUD_API");
+    }
+
+    @Test
+    void typedWabaTheTokenCannotReadIs400() {
+        String id = connect("111").get("id").asString();
+        GRAPH.enqueue("GET /debug_token", 200, GraphStub.validToken("111", "222"));
+        GRAPH.enqueue("GET /777", 400, "{\"error\":{\"message\":\"Unsupported get request\",\"code\":100}}");
+
+        ResponseEntity<JsonNode> res = meta(HttpMethod.POST, "/connections/" + id + "/check", manager,
+                Map.of("wabaId", "777"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     void deleteUnusedIs204() {
         String id = connect("111").get("id").asString();
 

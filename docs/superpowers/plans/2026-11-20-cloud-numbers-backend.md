@@ -41,7 +41,7 @@ All under `/api/workspaces/{ws}`. Times are ISO-8601 strings. Error bodies are t
 - `GET meta/connections` → `ConnectionView[]`; `GET meta/connections/{id}` → `ConnectionView`.
 - `POST meta/connections` `{name, appId, appSecret, accessToken}` → 201 `ConnectionView` (runs the check and the webhook setup; a failed check still saves, with `status INVALID` and `lastError`). 409 `{field: "appId"}` when the app is connected anywhere else.
 - `PUT meta/connections/{id}` `{name, appSecret?, accessToken?}` → `ConnectionView` (absent secret = keep; `appId` cannot change).
-- `POST meta/connections/{id}/check` → `{connection: ConnectionView, accounts: [{wabaId, wabaName, numbers: [{metaPhoneNumberId, displayPhoneNumber, verifiedName, nameStatus, qualityRating, platformType, phoneNumberId}]}]}` (`phoneNumberId` = ours when already added, else null).
+- `POST meta/connections/{id}/check` (optional body `{wabaId}`: Meta may leave a token's WABA ids out, so the admin can type one; 400 field `wabaId` if the token cannot read it) → `{connection: ConnectionView, accounts: [{wabaId, wabaName, numbers: [{metaPhoneNumberId, displayPhoneNumber, verifiedName, nameStatus, qualityRating, platformType, phoneNumberId}]}]}` (`phoneNumberId` = ours when already added, else null).
 - `POST meta/connections/{id}/webhook` → `ConnectionView` (tries the setup again).
 - `DELETE meta/connections/{id}` → 204; 409 `{field: "numbers", message: "Used by: Admissions, …"}`.
 
