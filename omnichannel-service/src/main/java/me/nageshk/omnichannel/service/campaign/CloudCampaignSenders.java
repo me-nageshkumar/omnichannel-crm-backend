@@ -62,6 +62,15 @@ public class CloudCampaignSenders {
         return out;
     }
 
+    /**
+     * Whether recipients preferring this number may keep waiting for it: it is still a Cloud number of the
+     * workspace and not disabled (a refused token or a missing registration can be fixed, so they wait).
+     */
+    public boolean mayBeWaitedFor(String ws, String phoneNumberId) {
+        return numbers.findByIdAndWorkspaceId(phoneNumberId, ws).filter(n -> n.getDisabled() == null
+                && n.getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API).isPresent();
+    }
+
     public boolean canSend(String phoneNumberId) {
         return accounts.find(phoneNumberId).map(CloudAccountInfo::canSend).orElse(false);
     }

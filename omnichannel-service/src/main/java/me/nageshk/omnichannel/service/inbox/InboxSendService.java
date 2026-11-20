@@ -337,9 +337,11 @@ public class InboxSendService {
             wamid = cloudApi.send(chat.getPhoneNumberId(), toCloud(chat, out), userIdOf(chat.getRemoteId()));
         } catch (CloudSendException e) {
             return CompletableFuture.failedFuture(switch (e.kind()) {
-                case TOKEN_REFUSED -> new NoDeviceException(InboxDevices.CLOUD_NOT_READY,
-                        "Meta refused this number's access token; replace it on Phone numbers.");
-                case RATE_LIMITED -> new NoDeviceException(CLOUD_RATE_LIMITED, "Meta asks to slow down: " + e.getMessage());
+                // Meta's own error stays the cause, so a campaign can read its code and Retry-After
+                case TOKEN_REFUSED -> (NoDeviceException) new NoDeviceException(InboxDevices.CLOUD_NOT_READY,
+                        "Meta refused this number's access token; replace it on Phone numbers.").initCause(e);
+                case RATE_LIMITED -> (NoDeviceException) new NoDeviceException(CLOUD_RATE_LIMITED,
+                        "Meta asks to slow down: " + e.getMessage()).initCause(e);
                 // our clock thought the window open; Meta's word wins
                 case WINDOW_CLOSED -> new WindowClosedException(ServiceWindow.of(chat, clock.instant()).closesAt());
                 default -> e;

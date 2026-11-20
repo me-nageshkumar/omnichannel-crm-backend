@@ -53,6 +53,8 @@ public class CampaignRunner {
     private final CampaignSettingsService settingsService;
     private final CampaignCounter counter;
     private final WebCampaignChannel web;
+    private final CloudCampaignChannel cloud;
+    private final CloudCampaignSenders cloudSenders;
     private final Clock clock;
     private final Executor executor;
     private final Duration stuckAfter;
@@ -61,13 +63,16 @@ public class CampaignRunner {
     private final AtomicBoolean ticking = new AtomicBoolean();
 
     CampaignRunner(MongoTemplate mongo, CampaignSenderService senders, CampaignSettingsService settingsService,
-            CampaignCounter counter, WebCampaignChannel web, Clock clock,
+            CampaignCounter counter, WebCampaignChannel web, CloudCampaignChannel cloud,
+            CloudCampaignSenders cloudSenders, Clock clock,
             @Qualifier("campaignScheduler") Executor executor, OmnichannelProperties props) {
         this.mongo = mongo;
         this.senders = senders;
         this.settingsService = settingsService;
         this.counter = counter;
         this.web = web;
+        this.cloud = cloud;
+        this.cloudSenders = cloudSenders;
         this.clock = clock;
         this.executor = executor;
         this.stuckAfter = props.rpc().timeout().plus(STUCK_MARGIN);
@@ -148,9 +153,9 @@ public class CampaignRunner {
         }
     }
 
-    /** The channel of a sender's campaigns, which are all of its own kind; null for kinds not sent here yet. */
+    /** The channel of a sender's campaigns, which are all of its own kind (a number is Web or Cloud). */
     private CampaignChannel channelOf(List<Campaign> campaigns) {
-        return campaigns.stream().anyMatch(Campaign::isCloud) ? null : web;
+        return campaigns.stream().anyMatch(Campaign::isCloud) ? cloud : web;
     }
 
     /**
@@ -161,14 +166,14 @@ public class CampaignRunner {
     private void skipUnusablePreferred(List<Campaign> running) {
         Map<String, Boolean> usable = new HashMap<>();
         for (Campaign c : running) {
-            if (c.isCloud()) continue;
             List<String> preferred = mongo.findDistinct(new Query(Criteria.where("campaignId").is(c.getId())
                     .and("status").is(RecipientStatus.PENDING).and("preferredSenderId").ne(null)),
                     "preferredSenderId", CampaignRecipient.class, String.class);
             boolean skipped = false;
             for (String senderId : preferred) {
                 if (usable.computeIfAbsent(c.getWorkspaceId() + "/" + senderId,
-                        k -> senders.mayBeWaitedFor(c.getWorkspaceId(), senderId))) continue;
+                        k -> c.isCloud() ? cloudSenders.mayBeWaitedFor(c.getWorkspaceId(), senderId)
+                                : senders.mayBeWaitedFor(c.getWorkspaceId(), senderId))) continue;
                 skipped |= mongo.updateMulti(new Query(Criteria.where("campaignId").is(c.getId())
                                 .and("status").is(RecipientStatus.PENDING).and("preferredSenderId").is(senderId)),
                         new Update().set("status", RecipientStatus.SKIPPED)
