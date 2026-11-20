@@ -88,7 +88,7 @@ public class BotChats {
                 // a customer message was saved meanwhile: route the fresh copy, unless someone has it now
                 WaWebChat now = chats.findById(chatId).orElse(null);
                 if (now == null || now.getStatus() != ChatStatus.OPEN || now.getAssignedUserId() != null
-                        || now.getAssignedTeamId() != null) return Optional.of(now);
+                        || now.getAssignedTeamId() != null) return Optional.empty();
                 chat = now;
             } catch (RuntimeException e) {
                 log.warn("routing chat {} after its chatbot ended failed; it stays open for the team", chatId, e);

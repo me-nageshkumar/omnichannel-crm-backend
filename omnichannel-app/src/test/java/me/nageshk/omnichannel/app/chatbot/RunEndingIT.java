@@ -20,9 +20,13 @@ import me.nageshk.omnichannel.security.access.AccessService;
 import me.nageshk.omnichannel.service.chatbot.run.ChatbotRunService;
 import me.nageshk.omnichannel.service.chatbot.run.ChatbotTicker;
 import me.nageshk.omnichannel.service.inbox.ChatAssignmentService;
+import me.nageshk.omnichannel.service.inbox.ChatRoutingService;
 import me.nageshk.omnichannel.service.inbox.InboxSettingService;
 import me.nageshk.omnichannel.service.inbox.RoutingSetting;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
 import tools.jackson.databind.JsonNode;
@@ -39,6 +43,12 @@ class RunEndingIT extends ChatbotTestBase {
     @Autowired InboxSettingService settings;
     @Autowired ChatAssignmentService assignment;
     @Autowired AccessService access;
+    @MockitoSpyBean ChatRoutingService routing;
+
+    @AfterEach
+    void realRouting() {
+        org.mockito.Mockito.reset(routing);
+    }
 
     private static Map<String, Object> askFlow() {
         return flow(List.of(node("q", "ask_question", "AskName", Map.of("text", "Name?", "answerType", "TEXT"))), List.of());
@@ -180,5 +190,24 @@ class RunEndingIT extends ChatbotTestBase {
         assertThat(view.get("ending").get("agent").get("id").asString()).isEqualTo(agent.getId());
         assertThat(view.get("ending").get("agent").get("name").asString()).isEqualTo(agent.getName());
         assertThat(view.get("ending").get("team").get("name").asString()).isEqualTo(support.getName());
+    }
+
+    @Test
+    void routingLostToSomeoneElseRecordsLeft() throws Exception {
+        WaWebChat c = inQueue();
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun r = start(bot("Ask", askFlow()), c);
+            // a message lands during routing and a person takes the chat before the retry
+            org.mockito.Mockito.doAnswer(call -> {
+                WaWebChat held = chats.findById(c.getId()).orElseThrow();
+                held.setAssignedUserId(agent.getId());
+                chats.save(held);
+                throw new OptimisticLockingFailureException("a message landed");
+            }).when(routing).route(org.mockito.ArgumentMatchers.any(WaWebChat.class),
+                    org.mockito.ArgumentMatchers.any(ChatRoutingService.RoutingOptions.class));
+            runs.stop(r, "stopped by manager", manager.getId());
+            RunEnding e = endingOf(r);
+            assertThat(e.chat()).isEqualTo(RunEnding.Chat.LEFT);
+        }
     }
 }
