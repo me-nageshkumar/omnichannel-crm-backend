@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -50,11 +51,40 @@ final class CloudCampaignChannel implements CampaignChannel {
     static final int LIMIT_REACHED_CODE = 131048;
     static final Duration LIMIT_HOLD = Duration.ofHours(1);
     static final Duration RATE_HOLD = Duration.ofSeconds(60);
+    /** Meta refusals that hold for the whole template: the template does not exist, is paused or is disabled. */
+    static final Set<Integer> TEMPLATE_CODES = Set.of(132001, 132015, 132016);
+    /** Meta refusals that hold for every recipient: account locked, payment, parameter count or format. */
+    static final Set<Integer> CAMPAIGN_CODES = Set.of(131031, 131042, 132000, 132012);
+    /** The inbox's title for a header file Meta would not take. */
+    static final String HEADER_REFUSED = "Meta did not take the header file";
+    /** This many refusals in a row with the same code are taken as the campaign's fault, not the recipients'. */
+    static final int BREAKER = 3;
 
     private static final Logger log = LoggerFactory.getLogger(CloudCampaignChannel.class);
 
     /** What the loop does after one recipient: SENT counts against the daily limit. */
     private enum Next { SENT, GO_ON, STOP }
+
+    /** Meta's refusals in a row in one loop, by code. */
+    private static final class Streak {
+        private Integer code;
+        private int count;
+
+        /** Counts one more refusal with {@code next}; returns how many in a row had it. */
+        int add(Integer next) {
+            if (count > 0 && java.util.Objects.equals(code, next)) {
+                count++;
+            } else {
+                code = next;
+                count = 1;
+            }
+            return count;
+        }
+
+        void reset() {
+            count = 0;
+        }
+    }
 
     private final RecipientClaims claims;
     private final CloudCampaignSenders cloudSenders;
@@ -80,14 +110,19 @@ final class CloudCampaignChannel implements CampaignChannel {
 
     @Override
     public boolean eligible(String ws, String senderId, CampaignSettings settings, Instant now) {
+        if (!ready(ws, senderId, settings, now)) return false;
+        return !cloudSenders.atLimit(ws, cloudSenders.wabaOf(senderId).orElseThrow(), now);
+    }
+
+    /** Everything but the daily limit, which {@link #process} counts once itself. */
+    private boolean ready(String ws, String senderId, CampaignSettings settings, Instant now) {
         PhoneNumber n = numbers.findByIdAndWorkspaceId(senderId, ws).orElse(null);
         if (n == null || n.getDisabled() != null || n.getConnectionType() != ConnectionType.WHATSAPP_CLOUD_API) {
             return false;
         }
-        String waba = cloudSenders.wabaOf(senderId).orElse(null);
-        return waba != null && cloudSenders.canSend(senderId) && workGate.allows(ws, WorkGate.CAMPAIGNS)
-                && SenderPolicy.inWindow(settings, now) && cloudSenders.heldUntil(senderId, now) == null
-                && !cloudSenders.atLimit(ws, waba, now);
+        return cloudSenders.wabaOf(senderId).isPresent() && cloudSenders.canSend(senderId)
+                && workGate.allows(ws, WorkGate.CAMPAIGNS) && SenderPolicy.inWindow(settings, now)
+                && cloudSenders.heldUntil(senderId, now) == null;
     }
 
     /**
@@ -96,14 +131,19 @@ final class CloudCampaignChannel implements CampaignChannel {
      */
     @Override
     public void process(String ws, String senderId, List<Campaign> campaigns, CampaignSettings settings) {
+        String waba = null;
         try {
             Instant now = clock.instant();
-            if (!eligible(ws, senderId, settings, now)) return;
-            String waba = cloudSenders.wabaOf(senderId).orElseThrow();
+            if (!ready(ws, senderId, settings, now)) return;
+            String mine = cloudSenders.wabaOf(senderId).orElseThrow();
+            // the numbers of one WhatsApp account share its daily limit: one of them sends at a time
+            if (!cloudSenders.enterWaba(mine)) return;
+            waba = mine;
             Integer limit = cloudSenders.dailyLimit(ws, waba);
             long left = limit == null ? Long.MAX_VALUE : limit - cloudSenders.usedLast24h(ws, waba, now);
             long started = System.nanoTime();
             List<Campaign> open = new ArrayList<>(campaigns);
+            Streak streak = new Streak();
             while (left > 0 && System.nanoTime() - started < TICK_BUDGET.toNanos()) {
                 CampaignClaim claim = claims.claim(senderId, null, open, settings);
                 if (claim == null) return;
@@ -122,7 +162,7 @@ final class CloudCampaignChannel implements CampaignChannel {
                 }
                 Next next;
                 try {
-                    next = handle(claim, waba);
+                    next = handle(claim, waba, streak);
                 } finally {
                     claims.leavePhone(claim);
                 }
@@ -131,10 +171,12 @@ final class CloudCampaignChannel implements CampaignChannel {
             }
         } catch (RuntimeException e) {
             log.warn("campaign work of Cloud number {} failed", senderId, e);
+        } finally {
+            if (waba != null) cloudSenders.leaveWaba(waba);
         }
     }
 
-    private Next handle(CampaignClaim claim, String waba) {
+    private Next handle(CampaignClaim claim, String waba, Streak streak) {
         Campaign c = claim.campaign();
         CampaignRecipient r = claim.recipient();
         String ws = c.getWorkspaceId();
@@ -150,22 +192,25 @@ final class CloudCampaignChannel implements CampaignChannel {
         Map<String, String> values = placeholderValues.of(c, r, claims.contactOf(r));
         // from here the message may reach the phone: it counts as recently messaged whatever becomes of the send
         if (!claims.whileSending(claim, new Update().set("dispatchedAt", clock.instant()))) return Next.GO_ON;
+        MessageView message;
         try {
             CompletableFuture<MessageView> sent = newChats.startCloudTemplateForCampaign(
                     new CampaignActor(c.getId(), c.getName()), ws, claim.senderId(), r.getPhone(),
                     new CloudTemplateRequest(t.cloudTemplateId(), values, t.headerMediaId()));
-            MessageView message = await(sent);
-            claims.sent(claim, message, clock.instant());
-            return Next.SENT;
+            message = await(sent);
         } catch (ExecutionException e) {
-            return outcome(claim, waba, e.getCause());
+            return outcome(claim, waba, e.getCause(), streak);
         } catch (RuntimeException e) {
-            return outcome(claim, waba, e);
+            return outcome(claim, waba, e, streak);
         }
+        // Meta took it: a failure to record it leaves the recipient SENDING for failStuck, never sent again
+        claims.sent(claim, message, clock.instant());
+        streak.reset();
+        return Next.SENT;
     }
 
     /** What a failed send does to the recipient, the number and the campaign (spec 2026-11-21 §5.4). */
-    private Next outcome(CampaignClaim claim, String waba, Throwable cause) {
+    private Next outcome(CampaignClaim claim, String waba, Throwable cause, Streak streak) {
         Throwable t = cause instanceof CompletionException && cause.getCause() != null ? cause.getCause() : cause;
         // the inbox reports a refused token or a rate limit as "no device", with Meta's error as the cause
         if (t instanceof NoDeviceException && t.getCause() instanceof CloudSendException meta) t = meta;
@@ -173,7 +218,7 @@ final class CloudCampaignChannel implements CampaignChannel {
         Instant now = clock.instant();
         if (t instanceof ValidationException v) {
             if (v.fields().keySet().stream().anyMatch(k -> k.startsWith("values."))) {
-                claims.failed(claim, MISSING_VALUE);
+                claims.failedUnsent(claim, MISSING_VALUE);
                 return Next.GO_ON;
             }
             if (v.fields().containsKey("cloudTemplateId")) {
@@ -211,7 +256,20 @@ final class CloudCampaignChannel implements CampaignChannel {
                     return Next.STOP;
                 }
                 case REFUSED, WINDOW_CLOSED -> {
-                    claims.failed(claim, e.metaCode() == null ? e.title() : e.metaCode() + " " + e.title());
+                    Integer code = e.metaCode();
+                    if (code != null && TEMPLATE_CODES.contains(code)) {
+                        claims.release(claim);
+                        claims.pause(campaignId, TEMPLATE_UNAVAILABLE);
+                        return Next.STOP;
+                    }
+                    boolean campaignWide = code != null ? CAMPAIGN_CODES.contains(code) : HEADER_REFUSED.equals(e.title());
+                    if (campaignWide || streak.add(code) >= BREAKER) {
+                        log.warn("Meta refuses campaign {} ({}); pausing it", campaignId, e.getMessage());
+                        claims.release(claim);
+                        claims.pause(campaignId, CampaignRunner.SEND_REFUSED);
+                        return Next.STOP;
+                    }
+                    claims.failedUnsent(claim, code == null ? e.title() : code + " " + e.title());
                     return Next.GO_ON;
                 }
                 case UNKNOWN -> {

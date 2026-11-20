@@ -37,6 +37,8 @@ public class CloudCampaignSenders {
     private final Clock clock;
     private final Map<String, Instant> wabaHolds = new ConcurrentHashMap<>();
     private final Map<String, Instant> numberHolds = new ConcurrentHashMap<>();
+    /** The WhatsApp accounts one of whose numbers is sending now. */
+    private final java.util.Set<String> wabasSending = ConcurrentHashMap.newKeySet();
 
     CloudCampaignSenders(PhoneNumberRepository numbers, CloudAccounts accounts, MongoTemplate mongo, Clock clock) {
         this.numbers = numbers;
@@ -104,6 +106,15 @@ public class CloudCampaignSenders {
     public boolean atLimit(String ws, String wabaId, Instant now) {
         Integer limit = dailyLimit(ws, wabaId);
         return limit != null && usedLast24h(ws, wabaId, now) >= limit;
+    }
+
+    /** Claims the WhatsApp account for one number's work; false when another of its numbers is sending. */
+    public boolean enterWaba(String wabaId) {
+        return wabasSending.add(wabaId);
+    }
+
+    public void leaveWaba(String wabaId) {
+        wabasSending.remove(wabaId);
     }
 
     public void holdWaba(String wabaId, Instant until) {

@@ -16,6 +16,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @CompoundIndexes({
         @CompoundIndex(name = "phone_wamessage_unique", def = "{'phoneNumberId': 1, 'waMessageId': 1}", unique = true),
         @CompoundIndex(name = "chat_timestamp", def = "{'chatId': 1, 'timestamp': -1, '_id': -1}"),
+        // a Cloud campaign counts the templates its WhatsApp account sent in the last 24 hours
+        @CompoundIndex(name = "phone_timestamp", def = "{'phoneNumberId': 1, 'timestamp': -1}"),
         // the chatbot AI node reads a chat's messages in the order they were stored (ruling R1)
         @CompoundIndex(name = "chat_created", def = "{'chatId': 1, 'creationTime': 1, '_id': 1}")
 })

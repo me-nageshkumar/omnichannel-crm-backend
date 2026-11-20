@@ -118,6 +118,11 @@ class RecipientClaims {
         whileSending(claim, new Update().set("status", RecipientStatus.FAILED).set("error", error));
     }
 
+    /** Failed, and certainly not sent: the person does not count as recently messaged. */
+    void failedUnsent(CampaignClaim claim, String error) {
+        whileSending(claim, new Update().set("status", RecipientStatus.FAILED).set("error", error).unset("dispatchedAt"));
+    }
+
     /** Pauses a campaign that is still running, in the system's name. */
     void pause(String campaignId, String reason) {
         mongo.updateFirst(new Query(Criteria.where("_id").is(campaignId).and("status").is(CampaignStatus.RUNNING)),

@@ -28,9 +28,9 @@ import tools.jackson.databind.JsonNode;
  * Cloud campaigns (spec 2026-11-21): a brand with a Meta connection and one Cloud number "333" in WABA "222"
  * (TIER_250, quality GREEN), at Tuesday 11:00 IST, inside the default sending window.
  */
-abstract class CloudCampaignTestBase extends MetaTestBase {
+public abstract class CloudCampaignTestBase extends MetaTestBase {
 
-    static final String FOLLOW_UP = CloudTemplatesIT.FOLLOW_UP;
+    public static final String FOLLOW_UP = CloudTemplatesIT.FOLLOW_UP;
     static final String BROCHURE = CloudTemplatesIT.BROCHURE;
     static final String PENDING = CloudTemplatesIT.PENDING;
 
