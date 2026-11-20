@@ -297,6 +297,11 @@ Spec `docs/superpowers/specs/2026-11-18-bot-first-routing-design.md`.
 - A chat an agent holds with a chatbot running on it is not in the Chatbot list (it is in the agent's lists with the
   chip). An `OPEN` chat may have a running chatbot and nobody assigned (a person unassigned it or gave it to a team).
 
+## Lead owners and chatbot report: known limits
+
+- Leads created before 2026-11-20 get an owner only on their chat's next assignment; runs before this release show
+  "not recorded".
+
 ## Link addresses: known limits
 
 Spec `docs/superpowers/specs/2026-11-18-link-addresses-design.md`.
