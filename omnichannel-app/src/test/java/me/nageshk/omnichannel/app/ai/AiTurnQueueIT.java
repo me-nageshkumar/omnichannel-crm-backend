@@ -116,7 +116,7 @@ class AiTurnQueueIT extends AiTestBase {
 
     private TurnRequest request(String conversationId, String input) {
         return new TurnRequest(brand.getId(), "run1", "bot1", "Ask", profileId, null, null, List.of(input), List.of(),
-                List.of(), false, null, conversationId, null);
+                List.of(), false, false, null, conversationId, null);
     }
 
     private static ProviderReply text(String t) {
@@ -170,7 +170,7 @@ class AiTurnQueueIT extends AiTestBase {
     @Test
     void submitChecksTheProfile() {
         TurnRequest r = new TurnRequest(other.getId(), "run1", "bot1", "Ask", profileId, null, null, List.of("Hi"),
-                List.of(), List.of(), false, null, null, null);
+                List.of(), List.of(), false, false, null, null, null);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> gateway.submit(r))
                 .isInstanceOf(NotFoundException.class);
     }
@@ -437,7 +437,7 @@ class AiTurnQueueIT extends AiTestBase {
         scripted.reply(text("{\"message\":\"Hi\",\"user.name\":\"Asha\"}"));
 
         String id = gateway.submit(new TurnRequest(brand.getId(), "run1", "bot1", "Ask", profileId, null, null,
-                List.of("Hi"), List.of(), List.of(), false, json, null, null));
+                List.of("Hi"), List.of(), List.of(), false, false, json, null, null));
         tick();
 
         TurnResult r = gateway.result(brand.getId(), id).orElseThrow();
@@ -450,11 +450,30 @@ class AiTurnQueueIT extends AiTestBase {
                 new AiUsage(1, 1, 0, 0), null, false));
         String second = gateway.submit(new TurnRequest(brand.getId(), "run1", "bot1", "Ask", profileId, null, null,
                 List.of("Bye"), List.of(new AiOutcome("done", "Done", null)),
-                List.of(new AiField("contact.city", null, AiFieldType.TEXT)), false, null, r.conversationId(), null));
+                List.of(new AiField("contact.city", null, AiFieldType.TEXT)), false, false, null, r.conversationId(),
+                null));
         tick();
 
         TurnResult f = gateway.result(brand.getId(), second).orElseThrow();
         assertThat(f.status()).as(String.valueOf(f.error())).isEqualTo(TurnStatus.DONE);
         assertThat(f.finish().fields()).containsEntry("contact.city", "Pune");
+    }
+
+    @Test
+    void progressWithDottedKeysIsKept() throws Exception {
+        scripted.reply(new ProviderReply("Which city?", List.of(new ToolCall("p1", "note_progress",
+                "{\"contact.name\":\"Asha\",\"contact.city\":null}")), Map.of(), new AiUsage(1, 1, 0, 0), null,
+                false));
+        String id = gateway.submit(new TurnRequest(brand.getId(), "run1", "bot1", "Ask", profileId, null, null,
+                List.of("I am Asha"), List.of(), List.of(new AiField("contact.name", null, AiFieldType.TEXT),
+                        new AiField("contact.city", null, AiFieldType.TEXT)), false, true, null, null, null));
+        tick();
+
+        TurnResult r = gateway.result(brand.getId(), id).orElseThrow();
+        assertThat(r.status()).as(String.valueOf(r.error())).isEqualTo(TurnStatus.DONE);
+        assertThat(r.progress()).isEqualTo(Map.of("contact.name", "Asha"));
+        assertThat(row(id).progress()).isEqualTo(Map.of("contact.name", "Asha"));
+        assertThat(recorder.results).extracting(TurnResult::progress).containsExactly(Map.of("contact.name", "Asha"));
+        assertThat(scripted.requests()).hasSize(1);
     }
 }

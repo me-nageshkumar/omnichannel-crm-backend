@@ -224,7 +224,8 @@ final class AiConversationFlow {
         TurnRequest request = new TurnRequest(ctx.workspaceId(), ctx.run().getId(), ctx.run().getChatbotId(),
                 node.name(), s.profileId(), s.overrides(),
                 AiExecutor.blank(s.extraInstructions()) ? null : ctx.render(s.extraInstructions()), List.copyOf(in),
-                s.outcomesOrEmpty(), s.collectOrEmpty(), false, s.replyFormat(), conversationId, supersedesCallId);
+                s.outcomesOrEmpty(), s.collectOrEmpty(), false, false, s.replyFormat(), conversationId,
+                supersedesCallId);
         String callId;
         try {
             callId = gateway.submit(request);

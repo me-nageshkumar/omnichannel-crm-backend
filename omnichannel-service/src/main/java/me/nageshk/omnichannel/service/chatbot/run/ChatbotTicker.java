@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import me.nageshk.omnichannel.ai.api.AiUsage;
 import me.nageshk.omnichannel.ai.api.TurnResult;
@@ -167,8 +168,8 @@ public class ChatbotTicker implements TaskAnswerSource {
         List<CompletableFuture<Void>> all = new ArrayList<>();
         for (ChatbotRun run : mongo.find(due, ChatbotRun.class)) {
             String key = run.getWaiting().key();
-            TurnResult failed = new TurnResult(key, TurnStatus.FAILED, null, null, null, new AiUsage(0, 0, 0, 0), false,
-                    null, run.getId(), "TIMEOUT", "The AI did not answer in time");
+            TurnResult failed = new TurnResult(key, TurnStatus.FAILED, null, null, null, Map.of(),
+                    new AiUsage(0, 0, 0, 0), false, null, run.getId(), "TIMEOUT", "The AI did not answer in time");
             all.add(CompletableFuture.runAsync(() -> runs.answerNow(TaskAnswer.ai(key, failed)), pool));
         }
         return CompletableFuture.allOf(all.toArray(new CompletableFuture[0]));

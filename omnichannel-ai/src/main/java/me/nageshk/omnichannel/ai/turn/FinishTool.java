@@ -34,14 +34,7 @@ public final class FinishTool {
         Map<String, Object> fieldProps = new LinkedHashMap<>();
         List<String> keys = new ArrayList<>();
         for (AiField f : fields) {
-            Map<String, Object> p = new LinkedHashMap<>();
-            p.put("type", List.of(switch (f.type() == null ? AiFieldType.TEXT : f.type()) {
-                case TEXT -> "string";
-                case NUMBER -> "number";
-                case BOOLEAN -> "boolean";
-            }, "null"));
-            if (f.description() != null && !f.description().isBlank()) p.put("description", f.description());
-            fieldProps.put(f.key(), p);
+            fieldProps.put(f.key(), fieldSchema(f));
             keys.add(f.key());
         }
         Map<String, Object> fieldsSchema = new LinkedHashMap<>();
@@ -66,6 +59,18 @@ public final class FinishTool {
         schema.put("required", List.of("outcome", "fields", "reply"));
         schema.put("additionalProperties", false);
         return Optional.of(new AiTool.FunctionTool(NAME, description(outcomes), schema));
+    }
+
+    /** One collect key as a strict property: its type or null, with its description when it has one. */
+    static Map<String, Object> fieldSchema(AiField f) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", List.of(switch (f.type() == null ? AiFieldType.TEXT : f.type()) {
+            case TEXT -> "string";
+            case NUMBER -> "number";
+            case BOOLEAN -> "boolean";
+        }, "null"));
+        if (f.description() != null && !f.description().isBlank()) p.put("description", f.description());
+        return p;
     }
 
     /**
