@@ -54,6 +54,8 @@ abstract class CloudCampaignTestBase extends MetaTestBase {
 
     @BeforeEach
     void cloudNumber() {
+        // a stored status of an earlier test's message id would be applied to this test's message of the same id
+        mongo.remove(new Query(), "channelWebhookEvents");
         // holds live in memory on the shared bean; a test's hold must not reach the next test
         for (String f : new String[] {"wabaHolds", "numberHolds"}) {
             ((Map<?, ?>) org.springframework.test.util.ReflectionTestUtils.getField(cloudSenders, f)).clear();

@@ -89,6 +89,17 @@ public class CampaignMessageListener {
             changed |= update(byMessage, RecipientStatus.DELIVERED,
                     new Update().set("status", RecipientStatus.READ).set("readAt", now));
         }
+        if (m.getFailure() != null && m.getCloudTemplateId() != null) {
+            // a Cloud campaign's message Meta could not deliver (spec 2026-11-21 §5.4); WhatsApp Web messages never
+            // carry a Meta template, so their recipients are left as they were
+            WaWebMessage.Failure f = m.getFailure();
+            String error = f.code() == null ? f.title() : f.title() == null ? String.valueOf(f.code())
+                    : f.code() + " " + f.title();
+            changed |= mongo.updateFirst(Query.of(byMessage).addCriteria(Criteria.where("status")
+                    .in(RecipientStatus.SENT, RecipientStatus.DELIVERED, RecipientStatus.READ)),
+                    new Update().set("status", RecipientStatus.FAILED).set("error", error), CampaignRecipient.class)
+                    .getModifiedCount() > 0;
+        }
         if (changed) counter.refresh(m.getCampaignId());
     }
 
