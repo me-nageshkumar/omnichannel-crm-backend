@@ -1,7 +1,9 @@
 package me.nageshk.omnichannel.service.chatbot.report;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import me.nageshk.omnichannel.db.chatbot.RunEnding;
 
 /** The chatbot report (lead-owner report spec §6.4): how many runs, where they stopped, how far conversations got. */
 public record ChatbotReport(Totals totals, List<StepRow> steps, List<ProgressRow> progress) {
@@ -23,5 +25,14 @@ public record ChatbotReport(Totals totals, List<StepRow> steps, List<ProgressRow
     }
 
     public record FieldCount(String key, String label, long given) {
+    }
+
+    /** One run behind a report number; names are looked up per page, deal fields are null without an add-to-CRM step. */
+    public record RunRow(String runId, String contactName, String phone, String numberLabel, Instant startedAt,
+            Instant finishedAt, String status, RunEnding ending, String agentName, String teamName,
+            Map<String, Object> progress, String chatId, String dealId, String dealPipelineId, String leadOwnerName) {
+    }
+
+    public record RunRowPage(List<RunRow> items, long total, int page, int size) {
     }
 }

@@ -93,6 +93,18 @@ class ChatbotController {
         return reports.report(workspaceId, id, from, to, phoneNumberId);
     }
 
+    @GetMapping("/{id}/report/runs")
+    @PreAuthorize("@access.has(#workspaceId, 'chatbot:view')")
+    ChatbotReport.RunRowPage reportRuns(@PathVariable String workspaceId, @PathVariable String id,
+            @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
+            @RequestParam(required = false) String phoneNumberId, @RequestParam(required = false) String nodeId,
+            @RequestParam(defaultValue = "false") boolean reached, @RequestParam(required = false) ChatbotRunStatus status,
+            @RequestParam(required = false) ChatbotReportService.ChatBucket chat,
+            @RequestParam(required = false) Integer given, @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        return reports.runs(workspaceId, id, from, to, phoneNumberId, nodeId, reached, status, chat, given, page, size);
+    }
+
     @GetMapping("/{id}/runs/{runId}")
     @PreAuthorize("@access.has(#workspaceId, 'chatbot:view')")
     RunView run(@PathVariable String workspaceId, @PathVariable String id, @PathVariable String runId) {

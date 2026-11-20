@@ -16,6 +16,21 @@ import java.util.Set;
 import me.nageshk.omnichannel.ai.api.AiField;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.db.chatbot.Chatbot;
+import me.nageshk.omnichannel.db.chatbot.ChatbotRun;
+import me.nageshk.omnichannel.db.chatbot.ChatbotStep;
+import me.nageshk.omnichannel.db.chatbot.RunEnding;
+import me.nageshk.omnichannel.db.contact.Contact;
+import me.nageshk.omnichannel.db.contact.ContactRepository;
+import me.nageshk.omnichannel.db.phone.PhoneNumber;
+import me.nageshk.omnichannel.db.phone.PhoneNumberRepository;
+import me.nageshk.omnichannel.db.tenant.Team;
+import me.nageshk.omnichannel.db.tenant.TeamRepository;
+import me.nageshk.omnichannel.db.user.User;
+import me.nageshk.omnichannel.db.user.UserRepository;
+import me.nageshk.omnichannel.service.automation.AutomationCrm;
+import me.nageshk.omnichannel.service.automation.AutomationCrm.DealInfo;
+import me.nageshk.omnichannel.service.chatbot.report.ChatbotReport.RunRow;
+import me.nageshk.omnichannel.service.chatbot.report.ChatbotReport.RunRowPage;
 import me.nageshk.omnichannel.db.chatbot.ChatbotRunStatus;
 import me.nageshk.omnichannel.service.chatbot.ChatbotService;
 import me.nageshk.omnichannel.service.chatbot.flow.Flow;
@@ -54,9 +69,20 @@ public class ChatbotReportService {
     private final NodeExecutors executors;
     private final MongoTemplate mongo;
     private final Clock clock;
+    private final ContactRepository contacts;
+    private final PhoneNumberRepository numbers;
+    private final UserRepository users;
+    private final TeamRepository teams;
+    private final AutomationCrm crm;
 
     public ChatbotReportService(ChatbotService chatbots, FlowParser parser, NodeExecutors executors, MongoTemplate mongo,
-            Clock clock) {
+            Clock clock, ContactRepository contacts, PhoneNumberRepository numbers, UserRepository users,
+            TeamRepository teams, AutomationCrm crm) {
+        this.contacts = contacts;
+        this.numbers = numbers;
+        this.users = users;
+        this.teams = teams;
+        this.crm = crm;
         this.chatbots = chatbots;
         this.parser = parser;
         this.executors = executors;
@@ -98,6 +124,147 @@ public class ChatbotReportService {
                                         .append("in", "$$this.k")))))))),
                 RUNS, Document.class).getMappedResults();
         return build(bot, totals, runs);
+    }
+
+    /** Where a finished run's chat went, as the report's {@code chat} totals count it. */
+    public enum ChatBucket { TO_AGENT, TO_QUEUE, CLOSED, LEFT, NOT_RECORDED }
+
+    public static final int MAX_PAGE = 100;
+
+    /**
+     * The runs behind a report number, newest first. The base criteria are {@link #criteria}; {@code chat} mirrors the
+     * totals (finished runs only), {@code nodeId} alone is "ended here" (finished runs whose last step is on the node),
+     * with {@code reached} "visited it"; {@code given} (needs {@code nodeId}) narrows ended-here runs to those that
+     * have given exactly that many of the AI node's collected fields.
+     */
+    public RunRowPage runs(String workspaceId, String chatbotId, Instant from, Instant to, String phoneNumberId,
+            String nodeId, boolean reached, ChatbotRunStatus status, ChatBucket chat, Integer given, int page, int size) {
+        Chatbot bot = chatbots.require(workspaceId, chatbotId);
+        if (nodeId != null && nodeId.isBlank()) nodeId = null;
+        if (given != null && nodeId == null) throw new ValidationException("nodeId", "is required with given");
+        List<Criteria> all = new ArrayList<>();
+        all.add(criteria(workspaceId, chatbotId, from, to, phoneNumberId));
+        if (status != null) all.add(Criteria.where("status").is(status.name()));
+        boolean endedHere = nodeId != null && (!reached || given != null);
+        if (chat != null || endedHere) all.add(Criteria.where("status").nin(ChatbotRunStatus.RUNNING.name(), ChatbotRunStatus.WAITING.name()));
+        if (chat != null) all.add(chatCriteria(chat));
+        if (nodeId != null && reached && given == null) all.add(Criteria.where("steps.nodeId").is(nodeId));
+        int pageNo = Math.max(0, page);
+        int pageSize = Math.max(1, Math.min(size, MAX_PAGE));
+        List<AggregationOperation> pipe = new ArrayList<>();
+        pipe.add(Aggregation.match(new Criteria().andOperator(all)));
+        if (endedHere) {
+            Document last = new Document("$arrayElemAt", List.of(new Document("$ifNull", List.of("$steps", List.of())), -1));
+            List<Object> conds = new ArrayList<>();
+            conds.add(new Document("$eq", List.of("$$last.nodeId", new Document("$literal", nodeId))));
+            if (given != null) {
+                List<String> keys = collectKeys(bot, nodeId);
+                Document have = new Document("$map", new Document("input", new Document("$objectToArray",
+                        new Document("$cond", List.of(new Document("$eq", List.of(new Document("$type", "$$last.progress"), "object")),
+                                "$$last.progress", new Document())))).append("in", "$$this.k"));
+                conds.add(new Document("$eq", List.of(new Document("$size", new Document("$setIntersection",
+                        List.of(have, new Document("$literal", keys)))), given)));
+            }
+            pipe.add(op(new Document("$match", new Document("$expr", new Document("$let", new Document("vars",
+                    new Document("last", last)).append("in", new Document("$and", conds)))))));
+        }
+        List<AggregationOperation> countPipe = new ArrayList<>(pipe);
+        countPipe.add(op(new Document("$count", "n")));
+        List<Document> counted = mongo.aggregate(Aggregation.newAggregation(countPipe), RUNS, Document.class).getMappedResults();
+        long total = counted.isEmpty() ? 0 : ((Number) counted.get(0).get("n")).longValue();
+        pipe.add(op(new Document("$sort", new Document("createdAt", -1).append("_id", -1))));
+        pipe.add(op(new Document("$skip", (long) pageNo * pageSize)));
+        pipe.add(op(new Document("$limit", pageSize)));
+        List<ChatbotRun> runs = mongo.aggregate(Aggregation.newAggregation(pipe), RUNS, ChatbotRun.class).getMappedResults();
+        return new RunRowPage(rows(workspaceId, runs, nodeId), total, pageNo, pageSize);
+    }
+
+    private static Criteria chatCriteria(ChatBucket chat) {
+        Criteria noAgent = Criteria.where("ending.agentUserId").is(null);
+        Criteria recorded = Criteria.where("ending.chat").ne(null);
+        List<String> queue = List.of(RunEnding.Chat.HANDED_OVER.name(), RunEnding.Chat.ROUTED.name());
+        return switch (chat) {
+            case NOT_RECORDED -> Criteria.where("ending.chat").is(null);
+            case TO_AGENT -> new Criteria().andOperator(recorded, Criteria.where("ending.agentUserId").ne(null));
+            case TO_QUEUE -> new Criteria().andOperator(recorded, noAgent, Criteria.where("ending.chat").in(queue));
+            case CLOSED -> new Criteria().andOperator(noAgent, Criteria.where("ending.chat").is(RunEnding.Chat.CLOSED.name()));
+            case LEFT -> {
+                List<String> others = new ArrayList<>(queue);
+                others.add(RunEnding.Chat.CLOSED.name());
+                yield new Criteria().andOperator(recorded, noAgent, Criteria.where("ending.chat").nin(others));
+            }
+        };
+    }
+
+    private List<String> collectKeys(Chatbot bot, String nodeId) {
+        FlowNode node = parseOrEmpty(bot).node(nodeId).orElse(null);
+        if (node == null || node.type() != NodeType.AI) return List.of();
+        try {
+            AiNodeSettings s = parser.settings(node, AiNodeSettings.class);
+            if (s.modeOrDefault() != AiNodeSettings.Mode.CONVERSATION) return List.of();
+            return s.collectOrEmpty().stream().map(AiField::key).toList();
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    private List<RunRow> rows(String workspaceId, List<ChatbotRun> runs, String nodeId) {
+        Set<String> contactIds = new HashSet<>(), numberIds = new HashSet<>(), userIds = new HashSet<>(), teamIds = new HashSet<>();
+        Map<String, String> dealOf = new HashMap<>();
+        for (ChatbotRun r : runs) {
+            if (r.getContactId() != null) contactIds.add(r.getContactId());
+            if (r.getPhoneNumberId() != null) numberIds.add(r.getPhoneNumberId());
+            if (r.getEnding() != null) {
+                if (r.getEnding().agentUserId() != null) userIds.add(r.getEnding().agentUserId());
+                if (r.getEnding().teamId() != null) teamIds.add(r.getEnding().teamId());
+            }
+            String deal = dealId(r);
+            if (deal != null) dealOf.put(r.getId(), deal);
+        }
+        Map<String, Contact> contactBy = new HashMap<>();
+        contacts.findAllById(contactIds).forEach(c -> contactBy.put(c.getId(), c));
+        Map<String, PhoneNumber> numberBy = new HashMap<>();
+        numbers.findAllById(numberIds).forEach(n -> numberBy.put(n.getId(), n));
+        Map<String, User> userBy = new HashMap<>();
+        users.findAllById(userIds).forEach(u -> userBy.put(u.getId(), u));
+        Map<String, Team> teamBy = new HashMap<>();
+        teams.findAllById(teamIds).forEach(t -> teamBy.put(t.getId(), t));
+        Map<String, DealInfo> deals = dealOf.isEmpty() ? Map.of()
+                : crm.dealInfo(workspaceId, dealOf.values().stream().distinct().toList());
+        List<RunRow> out = new ArrayList<>();
+        for (ChatbotRun r : runs) {
+            Contact c = contactBy.get(r.getContactId());
+            PhoneNumber n = numberBy.get(r.getPhoneNumberId());
+            RunEnding e = r.getEnding();
+            User agent = e == null || e.agentUserId() == null ? null : userBy.get(e.agentUserId());
+            Team team = e == null || e.teamId() == null ? null : teamBy.get(e.teamId());
+            String deal = dealOf.get(r.getId());
+            DealInfo info = deal == null ? null : deals.get(deal);
+            out.add(new RunRow(r.getId(), c == null ? null : c.getName(), c == null ? null : c.getPhone(),
+                    n == null ? null : n.getLabel(), r.getCreatedAt(), r.getFinishedAt(), r.getStatus().name(), e,
+                    agent == null ? null : agent.getName(), team == null ? null : team.getName(), progressOf(r, nodeId),
+                    r.getChatId(), deal, info == null ? null : info.pipelineId(), info == null ? null : info.ownerName()));
+        }
+        return out;
+    }
+
+    /** The deal the run's add-to-CRM step made (the last one that made one). */
+    private static String dealId(ChatbotRun r) {
+        String found = null;
+        for (ChatbotStep s : r.getSteps() == null ? List.<ChatbotStep>of() : r.getSteps()) {
+            if (!"add_to_crm".equals(s.type()) || s.result() == null) continue;
+            if (s.result().get("dealId") instanceof String d && !d.isBlank()) found = d;
+        }
+        return found;
+    }
+
+    /** What the conversation had collected at the filtered node's last step, else at the run's last step. */
+    private static Map<String, Object> progressOf(ChatbotRun r, String nodeId) {
+        ChatbotStep pick = null;
+        for (ChatbotStep s : r.getSteps() == null ? List.<ChatbotStep>of() : r.getSteps()) {
+            if (nodeId == null || nodeId.equals(s.nodeId())) pick = s;
+        }
+        return pick == null || pick.progress() == null ? Map.of() : pick.progress();
     }
 
     private Totals totals(Criteria criteria) {
