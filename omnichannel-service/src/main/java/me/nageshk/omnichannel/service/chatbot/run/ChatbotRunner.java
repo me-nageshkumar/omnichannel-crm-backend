@@ -382,44 +382,14 @@ public class ChatbotRunner {
     // ---- steps ----
 
     private static void recordWaiting(ChatbotRun run, FlowNode node, Instant startedAt, StepResult r) {
-        List<ChatbotStep> steps = run.getSteps();
-        int last = steps.size() - 1;
-        if (last >= 0 && steps.get(last).outcome() == ChatbotStep.Outcome.WAITING && steps.get(last).nodeId().equals(node.id())) {
-            // a re-ask: the same wait goes on
-            ChatbotStep s = steps.get(last);
-            steps.set(last, new ChatbotStep(s.index(), s.nodeId(), s.nodeName(), s.type(), s.startedAt(), null, s.outcome(), null,
-                    r.summary() != null ? r.summary() : s.summary(), null, null, r.waiting()));
-            return;
-        }
-        steps.add(new ChatbotStep(steps.size(), node.id(), node.name(), node.type().code(), startedAt, null,
-                ChatbotStep.Outcome.WAITING, null, r.summary(), null, null, r.waiting()));
+        StepRecorder.waiting(run, node, startedAt, r);
     }
 
     private void completeStep(ChatbotRun run, FlowNode node, Instant startedAt, StepResult r) {
-        List<ChatbotStep> steps = run.getSteps();
-        int last = steps.size() - 1;
-        Instant now = clock.instant();
-        if (last >= 0 && steps.get(last).outcome() == ChatbotStep.Outcome.WAITING && steps.get(last).nodeId().equals(node.id())) {
-            ChatbotStep s = steps.get(last);
-            steps.set(last, new ChatbotStep(s.index(), s.nodeId(), s.nodeName(), s.type(), s.startedAt(), now,
-                    ChatbotStep.Outcome.DONE, r.output(), r.summary() != null ? r.summary() : s.summary(), null, r.result(), s.waitedFor()));
-            return;
-        }
-        steps.add(new ChatbotStep(steps.size(), node.id(), node.name(), node.type().code(), startedAt, now,
-                ChatbotStep.Outcome.DONE, r.output(), r.summary(), null, r.result(), null));
+        StepRecorder.complete(run, node, startedAt, clock.instant(), r);
     }
 
     private void recordFailed(ChatbotRun run, FlowNode node, Instant startedAt, String error) {
-        List<ChatbotStep> steps = run.getSteps();
-        int last = steps.size() - 1;
-        Instant now = clock.instant();
-        if (last >= 0 && steps.get(last).outcome() == ChatbotStep.Outcome.WAITING && steps.get(last).nodeId().equals(node.id())) {
-            ChatbotStep s = steps.get(last);
-            steps.set(last, new ChatbotStep(s.index(), s.nodeId(), s.nodeName(), s.type(), s.startedAt(), now,
-                    ChatbotStep.Outcome.FAILED, null, s.summary(), error, null, s.waitedFor()));
-            return;
-        }
-        steps.add(new ChatbotStep(steps.size(), node.id(), node.name(), node.type().code(), startedAt, now,
-                ChatbotStep.Outcome.FAILED, null, null, error, null, null));
+        StepRecorder.failed(run, node, startedAt, clock.instant(), error);
     }
 }
