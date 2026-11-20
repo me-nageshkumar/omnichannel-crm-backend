@@ -62,6 +62,13 @@ class MetaConnectionController {
         return service.check(workspaceId, id, me.userId());
     }
 
+    @PostMapping("/{id}/webhook")
+    @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")
+    ConnectionView retryWebhook(@AuthenticationPrincipal AuthenticatedUser me, @PathVariable String workspaceId,
+            @PathVariable String id) {
+        return service.retryWebhook(workspaceId, id, me.userId());
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("@access.has(#workspaceId, 'phone-number:manage')")

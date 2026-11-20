@@ -67,9 +67,12 @@ public class MetaConnectionService {
     private final MongoTemplate mongo;
     private final Clock clock;
     private final Optional<NumbersOf> numbersOf;
+    private final WebhookSetupService webhooks;
 
     public MetaConnectionService(MetaConnectionRepository repository, SecretBox secrets, GraphClient graph,
-            PublicOrigin origin, MongoTemplate mongo, Clock clock, Optional<NumbersOf> numbersOf) {
+            PublicOrigin origin, MongoTemplate mongo, Clock clock, Optional<NumbersOf> numbersOf,
+            WebhookSetupService webhooks) {
+        this.webhooks = webhooks;
         this.repository = repository;
         this.secrets = secrets;
         this.graph = graph;
@@ -110,7 +113,9 @@ public class MetaConnectionService {
         String token = in.accessToken().strip();
         setSecret(c, secret);
         setToken(c, token);
-        runCheck(c, new Secrets(secret, token));
+        Secrets opened = new Secrets(secret, token);
+        runCheck(c, opened);
+        setUpWebhook(c, opened);
         return view(persist(c));
     }
 
@@ -133,7 +138,11 @@ public class MetaConnectionService {
             setToken(c, in.accessToken().strip());
             changed = true;
         }
-        if (changed) runCheck(c, open(c));
+        if (changed) {
+            Secrets opened = open(c);
+            runCheck(c, opened);
+            setUpWebhook(c, opened);
+        }
         return view(persist(c));
     }
 
@@ -149,6 +158,16 @@ public class MetaConnectionService {
             for (String waba : c.getWabaIds()) accounts.add(account(s.accessToken(), waba));
         }
         return new Check(view(c), accounts);
+    }
+
+    /** Tries the webhook setup again (after a failure, a new tunnel, or the app's callback changing). */
+    public ConnectionView retryWebhook(String workspaceId, String id, String userId) {
+        MetaConnection c = find(workspaceId, id);
+        c.setUpdatedBy(userId);
+        Secrets opened = open(c);
+        if (c.getStatus() != ConnectionStatus.OK) runCheck(c, opened);
+        setUpWebhook(c, opened);
+        return view(persist(c));
     }
 
     public void delete(String workspaceId, String id) {
@@ -290,6 +309,16 @@ public class MetaConnectionService {
             log.info("could not list the numbers of WABA {}: {}", wabaId, e.getMessage());
         }
         return new Account(wabaId, name, numbers);
+    }
+
+    /** Only a token Meta accepted can subscribe WABAs; otherwise the admin is told to fix the token first. */
+    private void setUpWebhook(MetaConnection c, Secrets s) {
+        if (c.getStatus() != ConnectionStatus.OK) {
+            c.setWebhookSetup(me.nageshk.omnichannel.meta.api.WebhookSetup.MANUAL);
+            c.setWebhookError("Fix the access token first; the webhook is set up once Meta accepts it");
+            return;
+        }
+        webhooks.setUp(c, s, webhookUrl(c));
     }
 
     private List<ConnectionView.NumberRef> numbers(String connectionId) {
