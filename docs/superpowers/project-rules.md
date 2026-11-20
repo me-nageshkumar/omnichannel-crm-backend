@@ -42,7 +42,7 @@ where things are, and traps already hit. Read sections 1 and 2 before any git, d
 B=/Users/nagesh/Projects/WhatsAppWebJS/SCM/omnichannel-crm-backend
 F=/Users/nagesh/Projects/WhatsAppWebJS/SCM/omnichannel-crm-frontend
 
-# Backend tests, from the repo or worktree root: full run about 5 min. -am is needed, or stale ~/.m2 jars are used.
+# Backend tests, from the repo or worktree root: full run about 4¼ min. -am is needed, or stale ~/.m2 jars are used.
 ./mvnw -q verify
 ./mvnw -q -pl omnichannel-app -am test -Dtest=SomeIT -Dsurefire.failIfNoSpecifiedTests=false
 
