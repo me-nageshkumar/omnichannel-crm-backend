@@ -14,8 +14,8 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * A Meta template's blanks, read from its components as Meta returns them, and the {@code template} send object
- * built from values (spec 2026-11-20 §5.6). Keys: {@code header.<n|name>}, {@code body.<n|name>},
- * {@code button.<index>}.
+ * built from values (spec 2026-11-20 §5.6). Keys: {@code header:<n|name>}, {@code body:<n|name>},
+ * {@code button:<index>} (no dots: rules store values in Mongo maps).
  */
 public final class TemplateVariables {
 
@@ -45,7 +45,7 @@ public final class TemplateVariables {
                     if ("TEXT".equals(format)) {
                         List<String> names = placeholders(c.path("text").asString(""));
                         for (int i = 0; i < names.size(); i++) {
-                            vars.add(new Variable("header." + names.get(i), "HEADER", i,
+                            vars.add(new Variable("header:" + names.get(i), "HEADER", i,
                                     example(c.path("example"), "header_text", "header_text_named_params", names.get(i), i)));
                         }
                     } else if (!MEDIA_HEADERS.contains(format)) {
@@ -55,7 +55,7 @@ public final class TemplateVariables {
                 case "BODY" -> {
                     List<String> names = placeholders(c.path("text").asString(""));
                     for (int i = 0; i < names.size(); i++) {
-                        vars.add(new Variable("body." + names.get(i), "BODY", i,
+                        vars.add(new Variable("body:" + names.get(i), "BODY", i,
                                 example(c.path("example"), "body_text", "body_text_named_params", names.get(i), i)));
                     }
                 }
@@ -68,9 +68,9 @@ public final class TemplateVariables {
                         if (!PLAIN_BUTTONS.contains(bt)) {
                             unsupported.add(bt + " buttons");
                         } else if ("URL".equals(bt) && !placeholders(b.path("url").asString("")).isEmpty()) {
-                            vars.add(new Variable("button." + i, "BUTTON", i, b.path("example").path(0).asString(null)));
+                            vars.add(new Variable("button:" + i, "BUTTON", i, b.path("example").path(0).asString(null)));
                         } else if ("COPY_CODE".equals(bt)) {
-                            vars.add(new Variable("button." + i, "BUTTON", i, b.path("example").asString(null)));
+                            vars.add(new Variable("button:" + i, "BUTTON", i, b.path("example").asString(null)));
                         }
                     }
                 }
@@ -136,7 +136,7 @@ public final class TemplateVariables {
                     for (int i = 0; i < bs.size(); i++) {
                         JsonNode b = bs.get(i);
                         String bt = b.path("type").asString("").toUpperCase();
-                        String value = values == null ? null : values.get("button." + i);
+                        String value = values == null ? null : values.get("button:" + i);
                         if ("URL".equals(bt) && !placeholders(b.path("url").asString("")).isEmpty()) {
                             out.add(new Template.Component("button", "url", String.valueOf(i),
                                     List.of(Template.Parameter.text(value, null))));
@@ -161,7 +161,7 @@ public final class TemplateVariables {
             boolean named) {
         List<Template.Parameter> out = new ArrayList<>();
         for (String n : names) {
-            out.add(Template.Parameter.text(values == null ? null : values.get(part + "." + n), named ? n : null));
+            out.add(Template.Parameter.text(values == null ? null : values.get(part + ":" + n), named ? n : null));
         }
         return out;
     }
@@ -170,7 +170,7 @@ public final class TemplateVariables {
         Matcher m = PLACEHOLDER.matcher(text);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {
-            String v = values == null ? null : values.get(part + "." + m.group(1));
+            String v = values == null ? null : values.get(part + ":" + m.group(1));
             m.appendReplacement(sb, Matcher.quoteReplacement(v == null ? m.group() : v));
         }
         m.appendTail(sb);

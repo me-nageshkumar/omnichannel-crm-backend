@@ -77,7 +77,7 @@
 - Consumes: Task 1 `listCloudTemplates`, `syncCloudTemplates`, `saveCloudTemplateFills`; the contact field / attribute options the saved-message placeholder editor already loads (reuse its hook or API call; do not import `MessageTemplate` types into the new page).
 - Produces: `CloudTemplatePreview` (props `{template: CloudTemplate, values?: Record<string,string>}`), reused by Task 4.
 
-- [ ] **Step 1: Write the failing tests:** `listsWithStatusAndSendable` (APPROVED/REJECTED/PAUSED labels, `rejectedReason` shown, unsupported shows `unsupportedReason` and no fills action); `syncShowsCounts` ("2 added, 1 updated, 0 removed"); `fillsSaveKindAndKey` (body.1 → Contact field "name"; saves `{"body.1": {kind: "CONTACT_FIELD", attributeKey: "name"}}`); `previewRendersValues` (values replace chips); `navOrder` in `routes.test.tsx` (WhatsApp templates right after Templates); `viewerSeesNoActions`.
+- [ ] **Step 1: Write the failing tests:** `listsWithStatusAndSendable` (APPROVED/REJECTED/PAUSED labels, `rejectedReason` shown, unsupported shows `unsupportedReason` and no fills action); `syncShowsCounts` ("2 added, 1 updated, 0 removed"); `fillsSaveKindAndKey` (body.1 → Contact field "name"; saves `{"body:1": {kind: "CONTACT_FIELD", attributeKey: "name"}}`); `previewRendersValues` (values replace chips); `navOrder` in `routes.test.tsx` (WhatsApp templates right after Templates); `viewerSeesNoActions`.
 - [ ] **Step 2: Run** `npx vitest run src/app/CloudTemplates src/app/routes.test.tsx --maxWorkers=4`. Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** the same command plus `npx tsc --noEmit && npm run lint`. Expected: PASS.
@@ -97,7 +97,7 @@
   - `windowClosedDisablesText` — closed → "24-hour window closed — send a WhatsApp template", textarea disabled, **WhatsApp template** enabled.
   - `windowClosesWhileOpen` — fake timers: `closesAt` 30 s ahead, advance 61 s → closed state without refetch.
   - `windowClosedErrorShown` — `sendText` rejects 409 `{code: "WINDOW_CLOSED"}` → the closed message, not the generic error.
-  - `pickerPrefillsAndSends` — template with `body.1` filled from contact name shows "Veenu" editable; send calls `sendCloudTemplate` with `{cloudTemplateId, values: {"body.1": "Veenu"}}`; an empty required value disables Send.
+  - `pickerPrefillsAndSends` — template with `body:1` filled from contact name shows "Veenu" editable; send calls `sendCloudTemplate` with `{cloudTemplateId, values: {"body:1": "Veenu"}}`; an empty required value disables Send.
   - `headerImageNeedsFile` — header IMAGE: Send disabled until a file is uploaded; then `headerMediaId` sent.
   - `newChatOnCloudUsesTemplate` — New chat on a Cloud number shows the template picker, no text box.
   - `templateBubbleDraws` — header text, body, footer, two quick-reply buttons rendered from `message.template`.

@@ -99,7 +99,7 @@ class CloudTemplatesIT extends MetaTestBase {
         assertThat(list(false)).hasSize(3);
         JsonNode followUp = null;
         for (JsonNode t : list(false)) if ("course_follow_up".equals(t.get("name").asString())) followUp = t;
-        assertThat(followUp.get("variables").get(0).get("key").asString()).isEqualTo("body.1");
+        assertThat(followUp.get("variables").get(0).get("key").asString()).isEqualTo("body:1");
 
         sync(FOLLOW_UP, BROCHURE);
 
@@ -145,11 +145,11 @@ class CloudTemplatesIT extends MetaTestBase {
         sync(FOLLOW_UP);
         String id = idOf("course_follow_up");
         ResponseEntity<JsonNode> saved = meta(HttpMethod.PUT, "/templates/" + id + "/fills", manager, Map.of("fills",
-                Map.of("body.1", Map.of("kind", "CONTACT_FIELD", "attributeKey", "name"))));
+                Map.of("body:1", Map.of("kind", "CONTACT_FIELD", "attributeKey", "name"))));
         assertThat(saved.getStatusCode()).isEqualTo(HttpStatus.OK);
         GRAPH.enqueue("POST /333/messages", 200, sent("wamid.T1"));
 
-        ResponseEntity<JsonNode> res = sendTemplate(id, Map.of("body.2", "BCA"), null);
+        ResponseEntity<JsonNode> res = sendTemplate(id, Map.of("body:2", "BCA"), null);
 
         assertThat(res.getStatusCode()).as(String.valueOf(res.getBody())).isEqualTo(HttpStatus.OK);
         JsonNode body = mapper.readTree(GRAPH.recorded("POST /333/messages").get(0).body());
@@ -171,10 +171,10 @@ class CloudTemplatesIT extends MetaTestBase {
         sync(FOLLOW_UP);
         String id = idOf("course_follow_up");
         meta(HttpMethod.PUT, "/templates/" + id + "/fills", manager, Map.of("fills",
-                Map.of("body.1", Map.of("kind", "CONTACT_FIELD", "attributeKey", "name"))));
+                Map.of("body:1", Map.of("kind", "CONTACT_FIELD", "attributeKey", "name"))));
         GRAPH.enqueue("POST /333/messages", 200, sent("wamid.T2"));
 
-        sendTemplate(id, Map.of("body.1", "Veenu ji", "body.2", "MBA"), null);
+        sendTemplate(id, Map.of("body:1", "Veenu ji", "body:2", "MBA"), null);
 
         JsonNode params = mapper.readTree(GRAPH.recorded("POST /333/messages").get(0).body()).get("template")
                 .get("components").get(0).get("parameters");
@@ -185,10 +185,10 @@ class CloudTemplatesIT extends MetaTestBase {
     void missingValueIs400() {
         sync(FOLLOW_UP);
 
-        ResponseEntity<JsonNode> res = sendTemplate(idOf("course_follow_up"), Map.of("body.1", "Veenu"), null);
+        ResponseEntity<JsonNode> res = sendTemplate(idOf("course_follow_up"), Map.of("body:1", "Veenu"), null);
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(res.getBody().get("fields").has("values.body.2")).isTrue();
+        assertThat(res.getBody().get("fields").has("values.body:2")).isTrue();
         assertThat(GRAPH.recorded("POST /333/messages")).isEmpty();
     }
 
@@ -230,8 +230,8 @@ class CloudTemplatesIT extends MetaTestBase {
 
         ResponseEntity<JsonNode> res = rest.exchange(url("/api/workspaces/" + brand.getId() + "/inbox/phone-numbers/"
                 + numberId + "/chats"), HttpMethod.POST, auth(manager, Map.of("phone", "919811122233", "cloudTemplate",
-                        Map.of("cloudTemplateId", idOf("course_follow_up"), "values", Map.of("body.1", "Ravi",
-                                "body.2", "BBA")))), JsonNode.class);
+                        Map.of("cloudTemplateId", idOf("course_follow_up"), "values", Map.of("body:1", "Ravi",
+                                "body:2", "BBA")))), JsonNode.class);
 
         assertThat(res.getStatusCode()).as(String.valueOf(res.getBody())).isEqualTo(HttpStatus.OK);
         JsonNode body = mapper.readTree(GRAPH.recorded("POST /333/messages").get(0).body());

@@ -373,6 +373,9 @@ public class InboxSendService {
             throw new ChatClosedException();
         }
         if (req == null || isBlank(req.cloudTemplateId())) throw new ValidationException("cloudTemplateId", "required");
+        if (!devices.isCloudNumber(chat.getPhoneNumberId())) {
+            throw new ValidationException("cloudTemplateId", "channel not available");
+        }
         SendChannel channel = devices.requireChannel(workspaceId, chat);
         if (!(channel instanceof SendChannel.CloudChannel cc)) {
             throw new ValidationException("cloudTemplateId", "channel not available");

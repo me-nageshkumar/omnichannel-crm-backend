@@ -52,7 +52,7 @@ All under `/api/workspaces/{ws}`. Times are ISO-8601 strings. Error bodies are t
 - On a Cloud number `connect-code`, `revoke-device`, history imports and the platform move → 409 `{code: "CLOUD_NUMBER"}`.
 
 **Meta templates** (`meta/templates`)
-- `CloudTemplateView`: `{id, wabaId, name, language, category, status, rejectedReason, parameterFormat: "POSITIONAL"|"NAMED", components, header: {format: "NONE"|"TEXT"|"IMAGE"|"VIDEO"|"DOCUMENT"}, variables: [{key, component: "HEADER"|"BODY"|"BUTTON", index, example}], fills: {[key]: {kind: "CONTACT_FIELD"|"CONTACT_ATTRIBUTE"|"AGENT", attributeKey, fallback}}, supported, unsupportedReason, sendable, syncedAt, lastUsedAt}`. `components` is Meta's JSON as imported. A variable's `key` is `"header.1"`, `"body.1"`/`"body.first_name"`, `"button.<index>"`.
+- `CloudTemplateView`: `{id, wabaId, name, language, category, status, rejectedReason, parameterFormat: "POSITIONAL"|"NAMED", components, header: {format: "NONE"|"TEXT"|"IMAGE"|"VIDEO"|"DOCUMENT"}, variables: [{key, component: "HEADER"|"BODY"|"BUTTON", index, example}], fills: {[key]: {kind: "CONTACT_FIELD"|"CONTACT_ATTRIBUTE"|"AGENT", attributeKey, fallback}}, supported, unsupportedReason, sendable, syncedAt, lastUsedAt}`. `components` is Meta's JSON as imported. A variable's `key` is `"header:1"`, `"body:1"`/`"body:first_name"`, `"button:<index>"` (no dots: rules keep values in Mongo maps).
 - `GET meta/templates?phoneNumberId=&sendable=` → `CloudTemplateView[]` (by the number's WABA; `inbox:send` or `phone-number:view`).
 - `POST meta/templates/sync` `{connectionId?}` → `{added, updated, removed}`.
 - `PUT meta/templates/{id}/fills` `{fills}` → `CloudTemplateView`.
@@ -261,13 +261,13 @@ All under `/api/workspaces/{ws}`. Times are ISO-8601 strings. Error bodies are t
 - Fill resolution happens in the service module (it owns contacts): `CloudTemplateFills.resolve(CloudTemplateInfo t, WaWebChat chat, SendActor actor, Map<String,String> given) -> Map<String,String>` in `service/cloud/`, using the same contact-field / attribute / agent lookups `TemplateRenderer` uses for saved-message placeholders (call those lookups; do not route through `MessageTemplate`).
 
 - [ ] **Step 1: Write the failing tests.**
-  - `TemplateVariablesTest`: body `"Hi {{1}}, your {{2}}"` → keys `body.1`, `body.2` with Meta's examples; named format `"Hi {{first_name}}"` → `body.first_name`; header TEXT `"Hello {{1}}"` → `header.1`; URL button `"https://x.in/{{1}}"` at index 0 → `button.0`; header IMAGE → `header.format IMAGE`, no text variable; a CAROUSEL, FLOW, CATALOG, LIMITED_TIME_OFFER component or category AUTHENTICATION → `supported false` with the reason naming it.
+  - `TemplateVariablesTest`: body `"Hi {{1}}, your {{2}}"` → keys `body:1`, `body:2` with Meta's examples; named format `"Hi {{first_name}}"` → `body:first_name`; header TEXT `"Hello {{1}}"` → `header:1`; URL button `"https://x.in/{{1}}"` at index 0 → `button:0`; header IMAGE → `header:format IMAGE`, no text variable; a CAROUSEL, FLOW, CATALOG, LIMITED_TIME_OFFER component or category AUTHENTICATION → `supported false` with the reason naming it.
   - `CloudTemplatesIT`:
     - `syncImportsAllPages` — stub `/222/message_templates` two pages (`paging.next`) → 3 rows; a second sync with one template gone → that row `status "DELETED"`.
     - `statusWebhookUpdatesRow` — signed `message_template_status_update` `{event:"REJECTED", message_template_id, reason}` → row `REJECTED`, `rejectedReason`; an unknown template id triggers a sync (stub called).
     - `onlyApprovedSupportedAreSendable` — `GET meta/templates?phoneNumberId=&sendable=true` lists APPROVED supported only; other brands' templates never listed.
     - `fillsPreFillFromContact` — fills `{body.1: {kind: CONTACT_FIELD, attributeKey: "name"}}`, contact "Veenu" → send with `values {}` sends `parameters[0].text "Veenu"`; a given value wins.
-    - `missingValueIs400` — no fill and no value for `body.2` → 400 field `values.body.2`.
+    - `missingValueIs400` — no fill and no value for `body:2` → 400 field `values.body:2`.
     - `sendTemplateFromInboxAfterWindow` — last inbound 3 days ago → `POST chats/{id}/cloud-templates` → stub body `type "template"`, `template.name`, `language.code`, components with values; row text = rendered body, `template` snapshot, `cloudTemplateId`; `lastUsedAt` set.
     - `headerImageTemplateNeedsFile` — header IMAGE without `headerMediaId` → 400 field `headerMediaId`; with a `cloudMedia` id → upload then `header` parameter `image.id`.
     - `newChatOnCloudIsTemplateOnly` — `POST inbox/phone-numbers/{id}/chats` with text → 409 `WINDOW_CLOSED`; with `cloudTemplate` → chat created and template sent, no number-lookup call.

@@ -23,7 +23,7 @@ class TemplateVariablesTest {
     @Test
     void positionalBody() {
         TemplateVariables.Derived d = TemplateVariables.derive(json(POSITIONAL), "POSITIONAL", "UTILITY");
-        assertThat(d.variables()).extracting(TemplateVariables.Variable::key).containsExactly("body.1", "body.2");
+        assertThat(d.variables()).extracting(TemplateVariables.Variable::key).containsExactly("body:1", "body:2");
         assertThat(d.variables().get(0).example()).isEqualTo("Veenu");
         assertThat(d.variables().get(0).component()).isEqualTo("BODY");
         assertThat(d.headerFormat()).isEqualTo("NONE");
@@ -35,7 +35,7 @@ class TemplateVariablesTest {
         TemplateVariables.Derived d = TemplateVariables.derive(json("[{\"type\":\"BODY\",\"text\":\"Hi {{first_name}}\","
                 + "\"example\":{\"body_text_named_params\":[{\"param_name\":\"first_name\",\"example\":\"Asha\"}]}}]"),
                 "NAMED", "MARKETING");
-        assertThat(d.variables()).extracting(TemplateVariables.Variable::key).containsExactly("body.first_name");
+        assertThat(d.variables()).extracting(TemplateVariables.Variable::key).containsExactly("body:first_name");
         assertThat(d.variables().get(0).example()).isEqualTo("Asha");
     }
 
@@ -46,7 +46,7 @@ class TemplateVariablesTest {
                 + "{\"type\":\"BUTTONS\",\"buttons\":[{\"type\":\"URL\",\"text\":\"Apply\",\"url\":\"https://x.in/{{1}}\","
                 + "\"example\":[\"https://x.in/abc\"]},{\"type\":\"QUICK_REPLY\",\"text\":\"Call me\"}]}]"),
                 "POSITIONAL", "UTILITY");
-        assertThat(d.variables()).extracting(TemplateVariables.Variable::key).containsExactly("header.1", "button.0");
+        assertThat(d.variables()).extracting(TemplateVariables.Variable::key).containsExactly("header:1", "button:0");
         assertThat(d.headerFormat()).isEqualTo("TEXT");
     }
 
@@ -79,7 +79,7 @@ class TemplateVariablesTest {
                 + "\"text\":\"Apply\",\"url\":\"https://x.in/{{1}}\"},{\"type\":\"COPY_CODE\",\"example\":\"SAVE10\"}]}]");
 
         TemplateVariables.Built b = TemplateVariables.build("course_follow_up", "en", components, "POSITIONAL",
-                Map.of("body.1", "Veenu", "body.2", "BCA", "button.0", "abc", "button.1", "BIMAL10"), "meta-media-9");
+                Map.of("body:1", "Veenu", "body:2", "BCA", "button:0", "abc", "button:1", "BIMAL10"), "meta-media-9");
 
         Template t = b.template();
         assertThat(t.name()).isEqualTo("course_follow_up");
@@ -100,7 +100,7 @@ class TemplateVariablesTest {
     @Test
     void namedParametersCarryParameterName() {
         TemplateVariables.Built b = TemplateVariables.build("hi", "en_US", json("[{\"type\":\"BODY\","
-                + "\"text\":\"Hi {{first_name}}\"}]"), "NAMED", Map.of("body.first_name", "Asha"), null);
+                + "\"text\":\"Hi {{first_name}}\"}]"), "NAMED", Map.of("body:first_name", "Asha"), null);
         Template.Parameter p = b.template().components().get(0).parameters().get(0);
         assertThat(p.parameterName()).isEqualTo("first_name");
         assertThat(p.text()).isEqualTo("Asha");
@@ -109,6 +109,6 @@ class TemplateVariablesTest {
     @Test
     void missingValuesAreNamed() {
         assertThat(TemplateVariables.missing(TemplateVariables.derive(json(POSITIONAL), "POSITIONAL", "UTILITY"),
-                Map.of("body.1", "Veenu", "body.2", " "))).containsExactly("body.2");
+                Map.of("body:1", "Veenu", "body:2", " "))).containsExactly("body:2");
     }
 }

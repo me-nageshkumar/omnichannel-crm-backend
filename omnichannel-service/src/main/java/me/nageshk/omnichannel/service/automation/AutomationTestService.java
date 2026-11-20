@@ -513,6 +513,7 @@ public class AutomationTestService {
                 case ASSIGN_CHAT -> "Assign chat really reassigns the test contact's chat";
                 case ADD_TO_CRM -> "Add to CRM really creates a CRM contact and a deal for the test contact";
                 case START_CHATBOT -> startChatbotWarning(workspaceId, a.chatbotId());
+                case SEND_CLOUD_TEMPLATE -> "Send WhatsApp template really sends it to the test contact";
             };
             checks.add(new PreflightView.Check(PreflightView.Level.WARNING, i, message));
         }

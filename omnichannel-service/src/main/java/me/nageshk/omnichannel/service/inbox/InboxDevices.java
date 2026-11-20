@@ -105,6 +105,12 @@ public class InboxDevices {
         }
     }
 
+    /** Whether the number is a WhatsApp Cloud API number (whatever its state). */
+    public boolean isCloudNumber(String phoneNumberId) {
+        return cloud != null && phoneNumberId != null && numbers.findById(phoneNumberId)
+                .map(n -> n.getConnectionType() == ConnectionType.WHATSAPP_CLOUD_API).orElse(false);
+    }
+
     /** A Cloud number cannot send: its token was refused or it is not registered. */
     public static final String CLOUD_NOT_READY = "CLOUD_NOT_READY";
 

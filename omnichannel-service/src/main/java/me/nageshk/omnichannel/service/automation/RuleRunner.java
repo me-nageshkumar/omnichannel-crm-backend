@@ -214,6 +214,7 @@ public class RuleRunner {
 
     /** Actions that may have sent a message before a crash: never re-run on resume (spec §5.1 of automations). */
     private static boolean maySend(AutomationActionType type) {
-        return type == AutomationActionType.SEND_TEMPLATE || type == AutomationActionType.START_CHATBOT;
+        return type == AutomationActionType.SEND_TEMPLATE || type == AutomationActionType.START_CHATBOT
+                || type == AutomationActionType.SEND_CLOUD_TEMPLATE;
     }
 }
