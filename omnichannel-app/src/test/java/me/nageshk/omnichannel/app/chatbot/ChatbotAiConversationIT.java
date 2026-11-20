@@ -14,6 +14,7 @@ import me.nageshk.omnichannel.ai.api.AiUsage;
 import me.nageshk.omnichannel.ai.call.AiCall;
 import me.nageshk.omnichannel.ai.call.AiTurnWorker;
 import me.nageshk.omnichannel.ai.provider.AiItem;
+import me.nageshk.omnichannel.ai.provider.AiTool;
 import me.nageshk.omnichannel.ai.provider.ProviderReply;
 import me.nageshk.omnichannel.ai.provider.ProviderRequest;
 import me.nageshk.omnichannel.ai.provider.ToolCall;
@@ -783,6 +784,129 @@ class ChatbotAiConversationIT extends AiTestBase {
             await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
             assertThat(aiCalls().get(0).turnRequest().inputs()).containsExactly("and my city is Pune");
             assertThat(state(run(run.getId()), "AskName")).containsEntry("answer", "Asha");
+        }
+    }
+
+    // ---- progress (the lead-owner report) ----
+
+    private static final Map<String, Object> NAME_CITY = Map.of("collect", List.of(
+            Map.of("key", "name", "description", "the customer's name", "type", "TEXT"),
+            Map.of("key", "city", "description", "the customer's city", "type", "TEXT")));
+
+    private static ProviderReply noting(String text, String progressJson) {
+        return new ProviderReply(text, List.of(new ToolCall("p1", "note_progress", progressJson)), Map.of(), usage(),
+                null, false);
+    }
+
+    private static List<String> toolNames(ProviderRequest r) {
+        return r.tools().stream().map(t -> ((AiTool.FunctionTool) t).name()).toList();
+    }
+
+    /** Starts the run, the customer says {@code said}, the AI answers: the run waits on the customer again. */
+    private ChatbotRun turn(ChatbotRun run, String said, int turnsAfter) throws Exception {
+        say(said);
+        await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
+        aiTick();
+        await(() -> waitingOnCustomerAfter(run.getId(), "Sales", turnsAfter));
+        return run(run.getId());
+    }
+
+    @Test
+    void conversationTracksProgressWhenItCollects() throws Exception {
+        scripted.reply(text("Hello"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(flow(List.of(node("ai", "ai", "Sales", conv(NAME_CITY))), List.of()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            turn(run, "hi", 1);
+            // the second of the two adjacent booleans of the request, not forceFinish
+            assertThat(scripted.requests().get(0).toolChoice()).isNull();
+            assertThat(toolNames(scripted.requests().get(0))).contains("note_progress");
+        }
+    }
+
+    @Test
+    void singleModeNeverTracks() throws Exception {
+        scripted.reply(text("Hello"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        Map<String, Object> s = new LinkedHashMap<>(NAME_CITY);
+        s.put("profileId", profileId);
+        s.put("mode", "SINGLE");
+        s.put("userMessage", "Say hello");
+        String id = publish(flow(List.of(node("ai", "ai", "Sales", s)), List.of()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            aiTick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            assertThat(scripted.requests()).isNotEmpty();
+            assertThat(toolNames(scripted.requests().get(0))).doesNotContain("note_progress");
+        }
+    }
+
+    @Test
+    void progressAccumulatesAcrossTurns() throws Exception {
+        scripted.reply(noting("Which city?", "{\"name\":\"Asha\",\"city\":null}"));
+        scripted.reply(noting("Thanks", "{\"name\":null,\"city\":\"Pune\"}"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(flow(List.of(node("ai", "ai", "Sales", conv(NAME_CITY))), List.of()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            ChatbotRun one = turn(run, "I am Asha", 1);
+            assertThat(one.getSteps().get(0).progress()).isEqualTo(Map.of("name", "Asha"));
+            ChatbotRun two = turn(run, "Pune", 2);
+            assertThat(two.getSteps().get(0).progress()).isEqualTo(Map.of("name", "Asha", "city", "Pune"));
+        }
+    }
+
+    @Test
+    void finishFieldsJoinProgress() throws Exception {
+        scripted.reply(noting("Which city?", "{\"name\":\"Asha\",\"city\":null}"));
+        scripted.reply(new ProviderReply("", List.of(
+                new ToolCall("p2", "note_progress", "{\"name\":null,\"city\":\"Pune\"}"),
+                new ToolCall("c1", "finish", "{\"outcome\":\"booked\",\"fields\":{\"course\":\"Yoga\"},\"reply\":\"Done\"}")),
+                Map.of(), usage(), null, false));
+        Map<String, Object> s = new LinkedHashMap<>(conv(Map.of("outcomes", List.of(Map.of("id", "booked", "label",
+                "Booked", "description", "done")))));
+        s.put("collect", List.of(
+                Map.of("key", "name", "description", "name", "type", "TEXT"),
+                Map.of("key", "city", "description", "city", "type", "TEXT"),
+                Map.of("key", "course", "description", "course", "type", "TEXT")));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(flow(List.of(node("ai", "ai", "Sales", s)), List.of()));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            turn(run, "I am Asha", 1);
+            say("Pune, yoga");
+            await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
+            aiTick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            ChatbotRun done = run(run.getId());
+            ChatbotStep step = done.getSteps().get(0);
+            assertThat(step.outcome()).isEqualTo(ChatbotStep.Outcome.DONE);
+            assertThat(step.progress()).isEqualTo(Map.of("name", "Asha", "city", "Pune", "course", "Yoga"));
+            assertThat(state(done, "Sales")).containsEntry("fields", Map.of("course", "Yoga"));
+        }
+    }
+
+    @Test
+    void failedTurnKeepsProgress() throws Exception {
+        scripted.reply(noting("Which city?", "{\"name\":\"Asha\",\"city\":null}"));
+        scripted.fail(new me.nageshk.omnichannel.ai.provider.AiProviderException(
+                me.nageshk.omnichannel.ai.provider.AiProviderException.Code.AUTH, "bad key"));
+        WaWebChat chat = incoming(n1, VEENU, "chat", "hello", "Veenu");
+        String id = publish(flow(List.of(node("ai", "ai", "Sales", conv(NAME_CITY)),
+                node("f", "send_message", "Oops", textMessage("Failed"))),
+                List.of(edge("ai", "failure", "f"))));
+        try (AutomationDevice d = new AutomationDevice(port, testDevices, n1)) {
+            ChatbotRun run = start(id, chat);
+            turn(run, "I am Asha", 1);
+            say("Pune");
+            await(() -> waitingOn(run.getId(), TaskKind.AI_RESPONSE));
+            aiTick();
+            await(() -> run(run.getId()).getStatus() == ChatbotRunStatus.COMPLETED);
+            ChatbotStep step = run(run.getId()).getSteps().get(0);
+            assertThat(step.output()).isEqualTo("failure");
+            assertThat(step.progress()).isEqualTo(Map.of("name", "Asha"));
         }
     }
 }
