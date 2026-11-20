@@ -512,6 +512,18 @@ public class InboxIngestService {
                 : messages.findFirstByPhoneNumberIdInAndWaMessageId(archives, waMessageId).orElse(null);
     }
 
+    /** Meta's reason for a failed Cloud status, kept on the row the first time. */
+    private static boolean failureOf(WaWebMessage message, Status status) {
+        if (!"failed".equals(status.status()) || message.getFailure() != null || status.errors() == null
+                || status.errors().isEmpty()) {
+            return false;
+        }
+        var e = status.errors().get(0);
+        String details = e.errorData() != null && e.errorData().details() != null ? e.errorData().details() : e.message();
+        message.setFailure(new WaWebMessage.Failure(e.code(), e.title(), details));
+        return true;
+    }
+
     private Optional<Stored> storeStatus(ChannelContext ctx, Status status) {
         WaWebMessage message = findMessage(ctx.channelAccountId(), status.id());
         WaWebChat chat = message == null ? null : chats.findById(message.getChatId()).orElse(null);
@@ -520,7 +532,8 @@ public class InboxIngestService {
             return Optional.empty();
         }
         // a fetched message's receipt carries WhatsApp's time; a live status has none of its own
-        boolean changed = isImported(status)
+        boolean changed = failureOf(message, status);
+        changed |= isImported(status)
                 ? applyReceipt(message, MessageFields.ackOf(status),
                         MessageFields.timestampOf(status.timestamp(), clock.instant()), isEstimated(status)
                                 ? fetchTimeOf(status) : null)

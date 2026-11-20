@@ -9,6 +9,7 @@ import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Change;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Contact;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Entry;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Message;
+import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Metadata;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Status;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.Value;
 import me.nageshk.omnichannel.common.channel.whatsapp.webhook.WebhookEvent;
@@ -18,6 +19,9 @@ import me.nageshk.omnichannel.service.channel.ChannelWebhookEventStore;
 import me.nageshk.omnichannel.service.channel.ChannelWebhookEventStore.Outcome;
 import me.nageshk.omnichannel.service.channel.ChannelWebhookEventStore.SaveResult;
 import me.nageshk.omnichannel.service.channel.whatsapp.WhatsAppWebhookProcessor;
+import me.nageshk.omnichannel.db.inbox.WaWebChatRepository;
+import me.nageshk.omnichannel.db.inbox.WaWebMessageRepository;
+import me.nageshk.omnichannel.service.inbox.ChatMediaService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -38,8 +42,15 @@ public class CloudWebhookIngest implements CloudWebhookSink {
     private final ChannelWebhookEventStore store;
     private final WhatsAppWebhookProcessor processor;
     private final ObjectMapper mapper;
+    private final WaWebMessageRepository messages;
+    private final WaWebChatRepository chats;
+    private final ChatMediaService media;
 
-    public CloudWebhookIngest(ChannelWebhookEventStore store, WhatsAppWebhookProcessor processor, ObjectMapper mapper) {
+    public CloudWebhookIngest(ChannelWebhookEventStore store, WhatsAppWebhookProcessor processor, ObjectMapper mapper,
+            WaWebMessageRepository messages, WaWebChatRepository chats, ChatMediaService media) {
+        this.messages = messages;
+        this.chats = chats;
+        this.media = media;
         this.store = store;
         this.processor = processor;
         this.mapper = mapper;
@@ -79,13 +90,46 @@ public class CloudWebhookIngest implements CloudWebhookSink {
                 processor.process(s.ctx(), s.event());
             } catch (RuntimeException e) {
                 log.warn("could not ingest a Meta event of {}: {}", s.ctx().channelAccountId(), e.toString());
+                continue;
+            }
+            fetchMedia(s);
+        }
+    }
+
+    /** Meta keeps an incoming file a week and its address minutes: the bytes are fetched at once. */
+    private void fetchMedia(Stored s) {
+        for (Message m : messagesOf(s.event())) {
+            if (m.image() == null && m.video() == null && m.audio() == null && m.document() == null
+                    && m.sticker() == null) {
+                continue;
+            }
+            try {
+                messages.findByPhoneNumberIdAndWaMessageId(s.ctx().channelAccountId(), m.id()).ifPresent(row -> {
+                    if (row.getMedia() == null || row.getMedia().mediaId() != null) return;
+                    chats.findById(row.getChatId()).ifPresent(chat -> media.fetchIfNeeded(chat, row).join());
+                });
+            } catch (RuntimeException e) {
+                log.info("could not fetch the file of Meta message {}: {}", m.id(), e.toString());
             }
         }
     }
 
+    private static List<Message> messagesOf(WebhookEvent e) {
+        List<Message> out = new ArrayList<>();
+        for (Entry entry : orEmpty(e.entry())) {
+            for (Change c : orEmpty(entry.changes())) {
+                if (c.value() != null) out.addAll(orEmpty(c.value().messages()));
+            }
+        }
+        return out;
+    }
+
     /** One event per message and per status (as the bridge stores them); a change with neither keeps its errors. */
     private List<WebhookEvent> split(CloudChange change) {
-        Value v = mapper.treeToValue(change.value(), Value.class);
+        Value meta = mapper.treeToValue(change.value(), Value.class);
+        // stored and processed under our number, as WhatsApp Web events are; raw keeps Meta's own ids
+        Value v = new Value(meta.messagingProduct(), new Metadata(change.displayDigits(), change.phoneNumberId()),
+                meta.contacts(), meta.messages(), meta.messageEchoes(), meta.statuses(), meta.errors());
         List<WebhookEvent> out = new ArrayList<>();
         for (Message m : orEmpty(v.messages())) {
             out.add(event(change, new Value(v.messagingProduct(), v.metadata(), contactsOf(v, m), List.of(m), null,

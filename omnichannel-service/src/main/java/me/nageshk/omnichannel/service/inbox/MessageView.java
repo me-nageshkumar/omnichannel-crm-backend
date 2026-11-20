@@ -32,7 +32,19 @@ public record MessageView(
         /** The message page this message links to, else null. */
         String messagePageId,
         /** What the customer did on that page, else null. */
-        MessagePageView messagePage) {
+        MessagePageView messagePage,
+        /** Why Meta could not deliver it, else null (Cloud numbers). */
+        WaWebMessage.Failure failure) {
+
+    /** A message without a delivery failure. */
+    public MessageView(String id, String chatId, String waMessageId, MessageDirection direction, MessageSource source,
+            String type, String body, MediaView media, Location location, Instant timestamp, MessageStatus status,
+            WaWebMessage.StatusTimes statusTimes, ChatView.Ref sentBy, String templateId, List<String> pollOptions,
+            List<WaWebMessage.PollVote> pollVotes, WaWebMessage.Call call, String businessTag, AdClickView adClick,
+            String messagePageId, MessagePageView messagePage) {
+        this(id, chatId, waMessageId, direction, source, type, body, media, location, timestamp, status, statusTimes,
+                sentBy, templateId, pollOptions, pollVotes, call, businessTag, adClick, messagePageId, messagePage, null);
+    }
 
     /** {@code available} is true once the bytes are cached, so the console can show a thumbnail at once. */
     public record MediaView(String mimetype, String filename, Long size, boolean available) {

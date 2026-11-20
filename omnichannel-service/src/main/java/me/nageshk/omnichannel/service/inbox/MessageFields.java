@@ -26,6 +26,8 @@ public final class MessageFields {
 
     private static final String LID = "@lid";
     private static final String PHONE = "@c.us";
+    /** A Cloud chat with a person known only by Meta's business-scoped user id. */
+    public static final String USER = "@user";
 
     private MessageFields() {
     }
@@ -56,7 +58,9 @@ public final class MessageFields {
     public static String chatId(Message m) {
         if (m.waWeb() != null && notBlank(m.waWeb().chatId())) return m.waWeb().chatId();
         if (notBlank(m.from())) return m.from() + PHONE;
-        return notBlank(m.fromUserId()) ? m.fromUserId() + LID : null;
+        // a Cloud message (no wa_web) from a person known only by Meta's business-scoped user id
+        if (notBlank(m.fromUserId())) return m.fromUserId() + (m.waWeb() == null ? USER : LID);
+        return null;
     }
 
     /** {@code wa_web.chat_id}, else the recipient's phone chat; null without either. */
@@ -69,12 +73,13 @@ public final class MessageFields {
     public static String chatId(Status s) {
         if (s.waWeb() != null && notBlank(s.waWeb().chatId())) return s.waWeb().chatId();
         if (notBlank(s.recipientId())) return s.recipientId() + PHONE;
-        return notBlank(s.recipientUserId()) ? s.recipientUserId() + LID : null;
+        if (notBlank(s.recipientUserId())) return s.recipientUserId() + (s.waWeb() == null ? USER : LID);
+        return null;
     }
 
-    /** True for a chat with a person: {@code @c.us} or {@code @lid}. */
+    /** True for a chat with a person: {@code @c.us}, {@code @lid}, or a Cloud {@code @user} (Meta's user id). */
     static boolean isPersonChat(String chatId) {
-        return chatId != null && (chatId.endsWith(PHONE) || chatId.endsWith(LID));
+        return chatId != null && (chatId.endsWith(PHONE) || chatId.endsWith(LID) || chatId.endsWith(USER));
     }
 
     // ---- the row
@@ -119,7 +124,12 @@ public final class MessageFields {
      * {@code wa_web.media_available} says the bytes can be fetched (view-once and expired media cannot).
      */
     static WaWebMessage.Media mediaOf(Content c) {
-        if (c.waWeb() == null || !Boolean.TRUE.equals(c.waWeb().mediaAvailable())) return null;
+        // a Cloud message has no wa_web: its media always has an id Meta serves for a week
+        if (c.waWeb() == null) {
+            Media m = typeMedia(c);
+            return m == null || m.id() == null ? null : new WaWebMessage.Media(m.mimeType(), m.filename(), null, null, null);
+        }
+        if (!Boolean.TRUE.equals(c.waWeb().mediaAvailable())) return null;
         Media m = typeMedia(c);
         if (m == null && c.interactive() != null && c.interactive().header() != null) {
             Interactive.Header h = c.interactive().header();

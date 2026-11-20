@@ -111,6 +111,28 @@ public class ChannelWebhookEventStore implements SmartInitializingSingleton {
         }
     }
 
+    /** The stored live event of a message ({@code message:<id>}), if any. */
+    public java.util.Optional<WebhookEvent> messageEvent(String waMessageId) {
+        if (waMessageId == null || waMessageId.isBlank()) return java.util.Optional.empty();
+        ChannelWebhookEvent d = existing("message:" + waMessageId);
+        return d == null || d.getEvent() == null ? java.util.Optional.empty()
+                : java.util.Optional.of(mapper.convertValue(d.getEvent(), WebhookEvent.class));
+    }
+
+    /** The stored status events of a message ({@code status:<id>:<state>}), oldest first. */
+    public List<WebhookEvent> statusesFor(String waMessageId) {
+        if (waMessageId == null || waMessageId.isBlank()) return List.of();
+        try {
+            Query q = new Query(Criteria.where("eventKey").regex("^" + java.util.regex.Pattern.quote(
+                    "status:" + waMessageId + ":"))).with(org.springframework.data.domain.Sort.by("_id"));
+            return mongo.find(q, ChannelWebhookEvent.class).stream()
+                    .map(d -> mapper.convertValue(d.getEvent(), WebhookEvent.class)).toList();
+        } catch (RuntimeException e) {
+            log.warn("Could not read the stored statuses of {}: {}", waMessageId, e.toString());
+            return List.of();
+        }
+    }
+
     /** The message's or status's own time, else the capture time, else now. */
     private static Instant eventTime(WebhookEvent event, Instant capturedAt) {
         Long seconds = WebhookEventKeys.secondsOf(event);

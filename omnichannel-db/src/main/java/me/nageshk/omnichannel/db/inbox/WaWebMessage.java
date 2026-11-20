@@ -71,6 +71,11 @@ public class WaWebMessage {
     private Instant creationTime;
 
     /** {@code mediaId} is the chatMedia GridFS id once the bytes are fetched, else null. */
+    /** Why Meta could not deliver a Cloud message (its error's code, title and details); null otherwise. */
+    private Failure failure;
+
+    public record Failure(Integer code, String title, String details) {}
+
     public record Media(String mimetype, String filename, Long size, String mediaId, Instant downloadedAt) {
     }
 
