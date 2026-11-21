@@ -80,8 +80,19 @@ public class WaWebMessage {
     private me.nageshk.omnichannel.common.channel.whatsapp.message.TemplateSnapshot template;
     /** When the wallet charge was given back because Meta failed the message later; set once. */
     private Instant usageReturnedAt;
+    /** What this message quotes (a swipe-reply), as stored when it arrived; null when it quotes nothing. */
+    private Quoted quoted;
+    /** True when WhatsApp marks it forwarded (or forwarded many times); null otherwise. */
+    private Boolean forwarded;
 
     public record Failure(Integer code, String title, String details) {}
+
+    /**
+     * The quoted message as the reply saw it (spec 2026-11-21 reply quotes): {@code messageId} is ours when we have
+     * it, {@code waMessageId} the channel's id; {@code title} a template's text header; {@code text} cut to 300.
+     */
+    public record Quoted(String messageId, String waMessageId, boolean fromMe, String from, String title, String text,
+            String type) {}
 
     public record Media(String mimetype, String filename, Long size, String mediaId, Instant downloadedAt) {
     }
