@@ -42,8 +42,9 @@ public class CloudMediaController {
         this.addresses = addresses;
     }
 
+    /** A file for one chat's message (inbox:send) or for a campaign's WhatsApp template header (campaign:manage). */
     @PostMapping
-    @PreAuthorize("@access.has(#workspaceId, 'inbox:send')")
+    @PreAuthorize("@access.has(#workspaceId, 'inbox:send') or @access.has(#workspaceId, 'campaign:manage')")
     public CloudMediaUploadResponse upload(@AuthenticationPrincipal AuthenticatedUser me,
             @PathVariable String workspaceId, @PathVariable String phoneNumberId,
             @RequestPart(value = "file", required = false) MultipartFile file,

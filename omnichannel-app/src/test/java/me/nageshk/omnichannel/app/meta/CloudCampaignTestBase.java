@@ -157,6 +157,13 @@ public abstract class CloudCampaignTestBase extends MetaTestBase {
 
     /** A small PNG uploaded as the app's media of the Cloud number; returns its id. */
     protected String uploadPng() {
+        ResponseEntity<JsonNode> res = uploadPngAs(manager);
+        assertThat(res.getStatusCode().is2xxSuccessful()).as(String.valueOf(res.getBody())).isTrue();
+        return res.getBody().get("id").asString();
+    }
+
+    /** The upload of a small PNG as {@code who}, for its status. */
+    protected ResponseEntity<JsonNode> uploadPngAs(me.nageshk.omnichannel.db.user.User who) {
         byte[] png = new byte[100];
         System.arraycopy(new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, 0, png, 0, 8);
         org.springframework.http.HttpHeaders fileHeaders = new org.springframework.http.HttpHeaders();
@@ -172,12 +179,9 @@ public abstract class CloudCampaignTestBase extends MetaTestBase {
         form.add("messaging_product", "whatsapp");
         form.add("type", "image");
         org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
-        h.putAll(auth(manager, null).getHeaders());
+        h.putAll(auth(who, null).getHeaders());
         h.setContentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA);
-        ResponseEntity<JsonNode> res = rest.exchange(url("/api/workspaces/" + brand.getId() + "/channel-accounts/"
-                + numberId + "/media"), HttpMethod.POST, new org.springframework.http.HttpEntity<>(form, h),
-                JsonNode.class);
-        assertThat(res.getStatusCode().is2xxSuccessful()).as(String.valueOf(res.getBody())).isTrue();
-        return res.getBody().get("id").asString();
+        return rest.exchange(url("/api/workspaces/" + brand.getId() + "/channel-accounts/" + numberId + "/media"),
+                HttpMethod.POST, new org.springframework.http.HttpEntity<>(form, h), JsonNode.class);
     }
 }
