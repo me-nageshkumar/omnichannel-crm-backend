@@ -96,5 +96,6 @@ class CloudReplyQuotesIT extends MetaTestBase {
         assertThat(q.waMessageId()).isEqualTo("wamid.UNKNOWN");
         assertThat(q.messageId()).isNull();
         assertThat(q.text()).isNull();
+        assertThat(q.fromMe()).isTrue();
     }
 }

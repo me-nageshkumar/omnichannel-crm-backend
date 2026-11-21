@@ -55,6 +55,29 @@ class ReplyQuotesIT extends AutomationTestBase {
         assertThat(q.waMessageId()).isEqualTo("9ZZZ");
         assertThat(q.text()).isEqualTo("Good morning Mam");
         assertThat(q.type()).isEqualTo("text");
+        assertThat(q.fromMe()).isTrue();
+    }
+
+    @Test
+    void unknownQuoteOfTheirsIsTheirs() {
+        ObjectNode p = payload(REMOTE, false, "chat", "Okay sir", "Asha");
+        p.put("quotedStanzaID", "9YYY");
+        p.putObject("quotedParticipant").put("server", "c.us").put("user", "919811122233")
+                .put("_serialized", "919811122233@c.us");
+        p.putObject("quotedMsg").put("type", "chat").put("body", "When is the exam?");
+        publish(n1, p);
+        assertThat(stored("Okay sir").getQuoted().fromMe()).isFalse();
+    }
+
+    @Test
+    void quoteResolvesWhenTheOriginalArrivesLater() {
+        publish(n1, reply("Okay sir", "3B5D"));
+        assertThat(stored("Okay sir").getQuoted().messageId()).isNull();
+        ours(REMOTE, "3B5D", "Fees are due on Friday");
+        WaWebMessage.Quoted q = stored("Okay sir").getQuoted();
+        assertThat(q.messageId()).isEqualTo(stored("Fees are due on Friday").getId());
+        assertThat(q.fromMe()).isTrue();
+        assertThat(q.text()).isEqualTo("Fees are due on Friday");
     }
 
     @Test

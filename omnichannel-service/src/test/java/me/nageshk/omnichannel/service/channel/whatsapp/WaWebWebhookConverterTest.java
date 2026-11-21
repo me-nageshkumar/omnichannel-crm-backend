@@ -244,6 +244,24 @@ class WaWebWebhookConverterTest {
     }
 
     @Test
+    void quotedImageThumbnailIsNotItsText() throws IOException {
+        String thumb = "/9j/4AAQSkZJRgABAQAAAQABAAD" + "A".repeat(400);
+        ObjectNode withCaption = quoting("image", "body", thumb);
+        ((ObjectNode) withCaption.get("quotedMsg")).put("caption", "Fees");
+        assertThat(convertRaw(withCaption, CAPTURED).messages().get(0).context().waWeb().quoted().body())
+                .isEqualTo("Fees");
+        Message bare = convertRaw(quoting("image", "body", thumb), CAPTURED).messages().get(0);
+        assertThat(bare.context().waWeb().quoted().type()).isEqualTo("image");
+        assertThat(bare.context().waWeb().quoted().body()).isNull();
+    }
+
+    @Test
+    void longQuotedTextIsCutInTheEvent() throws IOException {
+        Message m = convertRaw(quoting("chat", "body", "y".repeat(800)), CAPTURED).messages().get(0);
+        assertThat(m.context().waWeb().quoted().body()).hasSize(300);
+    }
+
+    @Test
     void noQuoteNoWaWeb() throws IOException {
         ObjectNode raw = text();
         raw.put("isForwarded", true);

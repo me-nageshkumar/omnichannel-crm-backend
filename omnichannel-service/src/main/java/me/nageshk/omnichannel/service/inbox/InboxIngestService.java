@@ -324,6 +324,7 @@ public class InboxIngestService {
         else chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         chat = chats.save(chat);
         message = messages.insert(message);
+        linkQuotes(message);
         return new ImportResult(ImportOutcome.INSERTED, chat, message, created, receiptsWanted(message));
     }
 
@@ -464,7 +465,10 @@ public class InboxIngestService {
             progress.folded = true;
             if (progress.reopened) progress.reopenedAction = recordReopened(chat, now);
         }
-        if (message.getId() == null) message = messages.save(message);
+        if (message.getId() == null) {
+            message = messages.save(message);
+            linkQuotes(message);
+        }
         return Optional.of(new Stored(
                 new Ingested(chat, message, progress.chatCreated, progress.reopened, true), true,
                 progress.reopenedAction, progress.campaignFirstReply));
@@ -587,6 +591,16 @@ public class InboxIngestService {
         return newMessage(ctx.customerId(), ctx.workspaceId(), ctx.channelAccountId(), chat, in);
     }
 
+    /** Replies stored before this message (a history import walks backwards) now find it as their quote. */
+    private void linkQuotes(WaWebMessage message) {
+        if (quotedMessages == null) return;
+        try {
+            quotedMessages.linkLater(message);
+        } catch (RuntimeException e) {
+            log.warn("could not link the replies quoting message {}: {}", message.getId(), e.toString());
+        }
+    }
+
     /** A row of a live event or a history import, {@code PENDING} with ack 0. */
     private WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId,
             WaWebChat chat, Incoming in) {
@@ -610,7 +624,7 @@ public class InboxIngestService {
         m.setCall(MessageFields.callOf(c));
         m.setBusinessTag(MessageFields.businessTagOf(c));
         m.setAdClick(in.fromMe() ? null : in.adClick());
-        m.setQuoted(quotedMessages == null ? null : quotedMessages.resolve(chat.getId(), in.context()));
+        m.setQuoted(quotedMessages == null ? null : quotedMessages.resolve(chat.getId(), phoneNumberId, in.context()));
         m.setForwarded(QuotedMessages.forwarded(in.context()));
         m.setAck(0);
         return m;

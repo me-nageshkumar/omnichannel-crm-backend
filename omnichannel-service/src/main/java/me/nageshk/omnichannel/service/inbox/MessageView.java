@@ -43,7 +43,7 @@ public record MessageView(
         Boolean forwarded) {
 
     /** A quoted message as the bubble shows it; {@code messageId} null when we do not have the original. */
-    public record QuotedView(String messageId, boolean fromMe, String from, String title, String text, String type) {
+    public record QuotedView(String messageId, Boolean fromMe, String from, String title, String text, String type) {
         public static QuotedView of(WaWebMessage.Quoted q) {
             return q == null ? null : new QuotedView(q.messageId(), q.fromMe(), q.from(), q.title(), q.text(), q.type());
         }

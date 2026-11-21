@@ -91,7 +91,7 @@ public class WaWebMessage {
      * The quoted message as the reply saw it (spec 2026-11-21 reply quotes): {@code messageId} is ours when we have
      * it, {@code waMessageId} the channel's id; {@code title} a template's text header; {@code text} cut to 300.
      */
-    public record Quoted(String messageId, String waMessageId, boolean fromMe, String from, String title, String text,
+    public record Quoted(String messageId, String waMessageId, Boolean fromMe, String from, String title, String text,
             String type) {}
 
     public record Media(String mimetype, String filename, Long size, String mediaId, Instant downloadedAt) {

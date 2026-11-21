@@ -354,6 +354,9 @@ public final class WaWebWebhookConverter {
 
     // ---- context and referral
 
+    /** The longest quoted text the event carries; the inbox keeps the same. */
+    static final int QUOTED_TEXT = 300;
+
     /** The quoted message and the forward flags; null when none applies. */
     private static Context context(JsonNode raw) {
         String quoted = text(raw.path("quotedStanzaID"));
@@ -374,8 +377,12 @@ public final class WaWebWebhookConverter {
         if (!q.isObject()) return null;
         String rawType = text(q.path("type"));
         String type = rawType == null ? null : cloudType(rawType);
-        String body = text(q.path("body"));
-        if (body == null) body = text(q.path("caption"));
+        // a media message's body is WhatsApp's base64 thumbnail: its caption is its text
+        boolean media = rawType != null && !"chat".equals(rawType);
+        String body = media ? text(q.path("caption")) : text(q.path("body"));
+        if (body == null && !media) body = text(q.path("caption"));
+        body = MessageBodies.readable(type == null ? "text" : type, body);
+        if (body != null && body.length() > QUOTED_TEXT) body = body.substring(0, QUOTED_TEXT);
         if (type == null && body == null) return null;
         return new Context.WaWeb(new Context.QuotedPreview(type, body));
     }
