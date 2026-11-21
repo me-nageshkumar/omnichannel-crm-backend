@@ -218,6 +218,56 @@ class WaWebWebhookConverterTest {
         assertThat(convertRaw(raw, CAPTURED).messages().get(0).waWeb().mediaAvailable()).isTrue();
     }
 
+    private ObjectNode quoting(String type, String field, String value) throws IOException {
+        ObjectNode raw = text();
+        raw.put("quotedStanzaID", "3B5D");
+        raw.putObject("quotedParticipant").put("server", "c.us").put("user", "919811122233")
+                .put("_serialized", "919811122233@c.us");
+        raw.putObject("quotedMsg").put("type", type).put(field, value);
+        return raw;
+    }
+
+    @Test
+    void quotedTextTravelsInContext() throws IOException {
+        Message m = convertRaw(quoting("chat", "body", "Good morning Mam"), CAPTURED).messages().get(0);
+        assertThat(m.context().id()).isEqualTo("3B5D");
+        assertThat(m.context().waWeb().quoted().type()).isEqualTo("text");
+        assertThat(m.context().waWeb().quoted().body()).isEqualTo("Good morning Mam");
+        assertThat(mapper.valueToTree(m.context()).at("/wa_web/quoted/body").asString()).isEqualTo("Good morning Mam");
+    }
+
+    @Test
+    void quotedImageCaption() throws IOException {
+        Message m = convertRaw(quoting("image", "caption", "Fees"), CAPTURED).messages().get(0);
+        assertThat(m.context().waWeb().quoted().type()).isEqualTo("image");
+        assertThat(m.context().waWeb().quoted().body()).isEqualTo("Fees");
+    }
+
+    @Test
+    void quotedImageThumbnailIsNotItsText() throws IOException {
+        String thumb = "/9j/4AAQSkZJRgABAQAAAQABAAD" + "A".repeat(400);
+        ObjectNode withCaption = quoting("image", "body", thumb);
+        ((ObjectNode) withCaption.get("quotedMsg")).put("caption", "Fees");
+        assertThat(convertRaw(withCaption, CAPTURED).messages().get(0).context().waWeb().quoted().body())
+                .isEqualTo("Fees");
+        Message bare = convertRaw(quoting("image", "body", thumb), CAPTURED).messages().get(0);
+        assertThat(bare.context().waWeb().quoted().type()).isEqualTo("image");
+        assertThat(bare.context().waWeb().quoted().body()).isNull();
+    }
+
+    @Test
+    void longQuotedTextIsCutInTheEvent() throws IOException {
+        Message m = convertRaw(quoting("chat", "body", "y".repeat(800)), CAPTURED).messages().get(0);
+        assertThat(m.context().waWeb().quoted().body()).hasSize(300);
+    }
+
+    @Test
+    void noQuoteNoWaWeb() throws IOException {
+        ObjectNode raw = text();
+        raw.put("isForwarded", true);
+        assertThat(convertRaw(raw, CAPTURED).messages().get(0).context().waWeb()).isNull();
+    }
+
     @Test
     void aLowForwardingScoreIsForwardedButNotFrequently() throws IOException {
         ObjectNode raw = text();

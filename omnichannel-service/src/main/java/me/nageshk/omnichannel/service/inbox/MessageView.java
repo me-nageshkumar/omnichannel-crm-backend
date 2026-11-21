@@ -36,7 +36,18 @@ public record MessageView(
         /** Why Meta could not deliver it, else null (Cloud numbers). */
         WaWebMessage.Failure failure,
         /** The Meta template it sent, as the customer saw it, else null. */
-        me.nageshk.omnichannel.common.channel.whatsapp.message.TemplateSnapshot template) {
+        me.nageshk.omnichannel.common.channel.whatsapp.message.TemplateSnapshot template,
+        /** What it quotes, else null. */
+        QuotedView quoted,
+        /** True when WhatsApp marks it forwarded, else null. */
+        Boolean forwarded) {
+
+    /** A quoted message as the bubble shows it; {@code messageId} null when we do not have the original. */
+    public record QuotedView(String messageId, Boolean fromMe, String from, String title, String text, String type) {
+        public static QuotedView of(WaWebMessage.Quoted q) {
+            return q == null ? null : new QuotedView(q.messageId(), q.fromMe(), q.from(), q.title(), q.text(), q.type());
+        }
+    }
 
     /** A message without a delivery failure. */
     public MessageView(String id, String chatId, String waMessageId, MessageDirection direction, MessageSource source,
@@ -46,7 +57,7 @@ public record MessageView(
             String messagePageId, MessagePageView messagePage) {
         this(id, chatId, waMessageId, direction, source, type, body, media, location, timestamp, status, statusTimes,
                 sentBy, templateId, pollOptions, pollVotes, call, businessTag, adClick, messagePageId, messagePage, null,
-                null);
+                null, null, null);
     }
 
     /** {@code available} is true once the bytes are cached, so the console can show a thumbnail at once. */

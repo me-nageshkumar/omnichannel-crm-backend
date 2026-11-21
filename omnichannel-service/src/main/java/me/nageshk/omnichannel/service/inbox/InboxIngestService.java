@@ -103,10 +103,21 @@ public class InboxIngestService {
     private final PhoneNumberRepository numbers;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
+    /** Null only when a test builds the service without it: no quotes are stored then. */
+    private final QuotedMessages quotedMessages;
 
+    /** Without reply quotes (tests that build the service by hand). */
     public InboxIngestService(ContactService contacts, WaWebChatRepository chats, WaWebMessageRepository messages,
             WaWebChatActionRepository actions, PhoneNumberRepository numbers, ApplicationEventPublisher publisher,
             Clock clock) {
+        this(contacts, chats, messages, actions, numbers, publisher, clock, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public InboxIngestService(ContactService contacts, WaWebChatRepository chats, WaWebMessageRepository messages,
+            WaWebChatActionRepository actions, PhoneNumberRepository numbers, ApplicationEventPublisher publisher,
+            Clock clock, QuotedMessages quotedMessages) {
+        this.quotedMessages = quotedMessages;
         this.contacts = contacts;
         this.numbers = numbers;
         this.chats = chats;
@@ -150,7 +161,7 @@ public class InboxIngestService {
         Instant at = MessageFields.timestampOf(message.timestamp(), clock.instant());
         Incoming in = new Incoming(remote, message.id(), false, at, MessageFields.senderNameOf(contact),
                 MessageFields.lidPhoneOf(message), MessageFields.of(message), MessageFields.adClickOf(message, at),
-                null);
+                null, message.context());
         return ingest(ctx, in, "messages");
     }
 
@@ -164,7 +175,7 @@ public class InboxIngestService {
         if (!MessageFields.isPersonChat(remote) || echo.id() == null || echo.id().isEmpty()) return Optional.empty();
         Instant at = MessageFields.timestampOf(echo.timestamp(), clock.instant());
         Incoming in = new Incoming(remote, echo.id(), true, at, null, null, MessageFields.of(echo), null,
-                status == null ? null : MessageFields.ackOf(status));
+                status == null ? null : MessageFields.ackOf(status), echo.context());
         return ingest(ctx, in, "smb_message_echoes");
     }
 
@@ -205,7 +216,7 @@ public class InboxIngestService {
         Instant at = MessageFields.timestampOf(message.timestamp(), clock.instant());
         return imported(ctx, new Incoming(MessageFields.chatId(message), message.id(), false, at,
                 MessageFields.senderNameOf(contact), MessageFields.lidPhoneOf(message), MessageFields.of(message),
-                MessageFields.adClickOf(message, at), 0));
+                MessageFields.adClickOf(message, at), 0, message.context()));
     }
 
     /**
@@ -217,7 +228,7 @@ public class InboxIngestService {
         Integer ack = echo.waWeb() == null ? null : echo.waWeb().ack();
         return imported(ctx, new Incoming(MessageFields.chatId(echo), echo.id(), true,
                 MessageFields.timestampOf(echo.timestamp(), clock.instant()), null, null, MessageFields.of(echo), null,
-                ack == null ? 0 : ack));
+                ack == null ? 0 : ack, echo.context()));
     }
 
     private ImportResult imported(ImportContext ctx, Incoming in) {
@@ -313,6 +324,7 @@ public class InboxIngestService {
         else chat.setLastOutboundAt(later(chat.getLastOutboundAt(), at));
         chat = chats.save(chat);
         message = messages.insert(message);
+        linkQuotes(message);
         return new ImportResult(ImportOutcome.INSERTED, chat, message, created, receiptsWanted(message));
     }
 
@@ -379,7 +391,8 @@ public class InboxIngestService {
      * null: 0 for a person's message, else WhatsApp Web's ack of ours.
      */
     private record Incoming(String remote, String waMessageId, boolean fromMe, Instant at, String senderName,
-            String lidPhone, MessageFields.Content content, AdClick adClick, Integer ack) {
+            String lidPhone, MessageFields.Content content, AdClick adClick, Integer ack,
+            me.nageshk.omnichannel.common.channel.whatsapp.webhook.Context context) {
     }
 
     /** What earlier attempts of one ingestion already persisted, so a retry still reports it. */
@@ -452,7 +465,10 @@ public class InboxIngestService {
             progress.folded = true;
             if (progress.reopened) progress.reopenedAction = recordReopened(chat, now);
         }
-        if (message.getId() == null) message = messages.save(message);
+        if (message.getId() == null) {
+            message = messages.save(message);
+            linkQuotes(message);
+        }
         return Optional.of(new Stored(
                 new Ingested(chat, message, progress.chatCreated, progress.reopened, true), true,
                 progress.reopenedAction, progress.campaignFirstReply));
@@ -571,12 +587,22 @@ public class InboxIngestService {
     }
 
     /** A row read from a webhook message or echo; ack 0 until a status moves it. */
-    private static WaWebMessage newMessage(ChannelContext ctx, WaWebChat chat, Incoming in) {
+    private WaWebMessage newMessage(ChannelContext ctx, WaWebChat chat, Incoming in) {
         return newMessage(ctx.customerId(), ctx.workspaceId(), ctx.channelAccountId(), chat, in);
     }
 
+    /** Replies stored before this message (a history import walks backwards) now find it as their quote. */
+    private void linkQuotes(WaWebMessage message) {
+        if (quotedMessages == null) return;
+        try {
+            quotedMessages.linkLater(message);
+        } catch (RuntimeException e) {
+            log.warn("could not link the replies quoting message {}: {}", message.getId(), e.toString());
+        }
+    }
+
     /** A row of a live event or a history import, {@code PENDING} with ack 0. */
-    private static WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId,
+    private WaWebMessage newMessage(String customerId, String workspaceId, String phoneNumberId,
             WaWebChat chat, Incoming in) {
         WaWebMessage m = new WaWebMessage();
         m.setCustomerId(customerId);
@@ -598,6 +624,8 @@ public class InboxIngestService {
         m.setCall(MessageFields.callOf(c));
         m.setBusinessTag(MessageFields.businessTagOf(c));
         m.setAdClick(in.fromMe() ? null : in.adClick());
+        m.setQuoted(quotedMessages == null ? null : quotedMessages.resolve(chat.getId(), phoneNumberId, in.context()));
+        m.setForwarded(QuotedMessages.forwarded(in.context()));
         m.setAck(0);
         return m;
     }

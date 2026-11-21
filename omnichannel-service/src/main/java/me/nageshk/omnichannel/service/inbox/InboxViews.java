@@ -81,7 +81,7 @@ public class InboxViews {
                 m.getTimestamp(), m.getStatus(), m.getStatusTimes(),
                 sentBy(m), m.getTemplateId(), m.getPollOptions(), m.getPollVotes(), m.getCall(),
                 m.getBusinessTag(), AdClickView.of(m.getAdClick()), m.getMessagePageId(), messagePage(m),
-                m.getFailure(), m.getTemplate());
+                m.getFailure(), m.getTemplate(), MessageView.QuotedView.of(m.getQuoted()), m.getForwarded());
     }
 
     /** The page's view, or null when there is none or it cannot be read: a bad page never hides the message. */
