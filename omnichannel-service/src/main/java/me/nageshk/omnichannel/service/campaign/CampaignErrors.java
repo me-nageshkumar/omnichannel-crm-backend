@@ -36,6 +36,11 @@ public final class CampaignErrors {
                 "+" + number + " cannot send campaigns right now.", Map.of("number", number));
     }
 
+    /** A Cloud campaign Meta's side still stops (spec 2026-11-21 §5.5). */
+    public static CodedException cannotResume(String message) {
+        return new CodedException(HttpStatus.CONFLICT, "CAMPAIGN_BLOCKED", null, message);
+    }
+
     public static CodedException placeholderUnmapped() {
         return new CodedException(HttpStatus.BAD_REQUEST, "PLACEHOLDER_UNMAPPED", "placeholders",
                 "Every placeholder needs a value.");

@@ -1,7 +1,9 @@
 package me.nageshk.omnichannel.app.campaign;
 
 import java.util.List;
+import me.nageshk.omnichannel.db.phone.ConnectionType;
 import me.nageshk.omnichannel.service.campaign.CampaignSenderService;
+import me.nageshk.omnichannel.service.campaign.CloudCampaignSenders;
 import me.nageshk.omnichannel.service.campaign.SenderUpdate;
 import me.nageshk.omnichannel.service.campaign.SenderView;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -17,15 +20,20 @@ import org.springframework.web.bind.annotation.RestController;
 class CampaignSenderController {
 
     private final CampaignSenderService service;
+    private final CloudCampaignSenders cloudSenders;
 
-    CampaignSenderController(CampaignSenderService service) {
+    CampaignSenderController(CampaignSenderService service, CloudCampaignSenders cloudSenders) {
         this.service = service;
+        this.cloudSenders = cloudSenders;
     }
 
+    /** The WhatsApp Web senders (unchanged), or with {@code channel=WHATSAPP_CLOUD_API} the Cloud numbers. */
     @GetMapping
     @PreAuthorize("@access.has(#workspaceId, 'campaign:view')")
-    List<SenderView> list(@PathVariable String workspaceId) {
-        return service.list(workspaceId);
+    List<?> list(@PathVariable String workspaceId,
+            @RequestParam(defaultValue = "WHATSAPP_WEB") ConnectionType channel) {
+        return channel == ConnectionType.WHATSAPP_CLOUD_API ? cloudSenders.list(workspaceId)
+                : service.list(workspaceId);
     }
 
     @PutMapping("/{phoneNumberId}")

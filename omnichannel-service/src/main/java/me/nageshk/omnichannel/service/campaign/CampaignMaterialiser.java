@@ -193,7 +193,9 @@ public class CampaignMaterialiser {
                 if (own != null && c.getSenderIds().contains(own)) preferred = own;
             }
             rec.setPreferredSenderId(preferred);
-            rec.setTemplateId(c.getTemplateIds().get(run.next++ % c.getTemplateIds().size()));
+            if (!c.getTemplateIds().isEmpty()) {
+                rec.setTemplateId(c.getTemplateIds().get(run.next++ % c.getTemplateIds().size()));
+            }
         }
         if (!out.isEmpty()) mongo.insertAll(out);
         run.written += out.size();

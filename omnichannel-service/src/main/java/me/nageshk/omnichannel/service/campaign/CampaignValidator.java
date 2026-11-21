@@ -11,9 +11,11 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import me.nageshk.omnichannel.common.api.DuplicateException;
+import me.nageshk.omnichannel.common.api.NotFoundException;
 import me.nageshk.omnichannel.common.api.ValidationException;
 import me.nageshk.omnichannel.db.campaign.AudienceKind;
 import me.nageshk.omnichannel.db.campaign.Campaign;
+import me.nageshk.omnichannel.db.campaign.CampaignCloudTemplate;
 import me.nageshk.omnichannel.db.campaign.CampaignRepository;
 import me.nageshk.omnichannel.db.campaign.PlaceholderSourceKind;
 import me.nageshk.omnichannel.db.campaign.SenderState;
@@ -30,6 +32,8 @@ import me.nageshk.omnichannel.db.template.PlaceholderKind;
 import me.nageshk.omnichannel.db.template.TemplatePlaceholder;
 import me.nageshk.omnichannel.db.template.TemplateStatus;
 import me.nageshk.omnichannel.db.template.TemplateType;
+import me.nageshk.omnichannel.meta.api.CloudTemplateInfo;
+import me.nageshk.omnichannel.meta.api.CloudTemplates;
 import org.springframework.stereotype.Component;
 
 /** Checks a campaign request group by group; the first failing group is the one reported. */
@@ -42,11 +46,16 @@ public class CampaignValidator {
 
     /** What a valid request resolved to: the cleaned name and audience, the templates, mappings and senders. */
     public record Validated(String name, Campaign.Audience audience, List<MessageTemplate> templates,
-            List<Campaign.PlaceholderMapping> placeholders, List<String> senderIds) {
+            List<Campaign.PlaceholderMapping> placeholders, List<String> senderIds, ConnectionType channel,
+            CampaignCloudTemplate cloudTemplate) {
 
         Validated withAudience(Campaign.Audience a) {
-            return new Validated(name, a, templates, placeholders, senderIds);
+            return new Validated(name, a, templates, placeholders, senderIds, channel, cloudTemplate);
         }
+    }
+
+    /** The Cloud numbers of a request and their one WhatsApp account. */
+    private record CloudSenders(List<String> ids, String wabaId) {
     }
 
     private final CampaignRepository campaigns;
@@ -56,11 +65,15 @@ public class CampaignValidator {
     private final PhoneNumberRepository numbers;
     private final CampaignSenderService senders;
     private final SegmentAudiences segments;
+    private final CloudTemplates cloudTemplates;
+    private final CloudCampaignSenders cloudSenders;
 
     CampaignValidator(CampaignRepository campaigns, ContactFilterRepository filters, MessageTemplateRepository templates,
             ContactAttributeRepository attributes, PhoneNumberRepository numbers, CampaignSenderService senders,
-            SegmentAudiences segments) {
+            SegmentAudiences segments, CloudTemplates cloudTemplates, CloudCampaignSenders cloudSenders) {
         this.segments = segments;
+        this.cloudTemplates = cloudTemplates;
+        this.cloudSenders = cloudSenders;
         this.campaigns = campaigns;
         this.filters = filters;
         this.templates = templates;
@@ -74,12 +87,114 @@ public class CampaignValidator {
      * so that it does not clash with its own name.
      */
     Validated validate(String workspaceId, CampaignRequest req, List<String> csvHeaders, String excludeId) {
+        if (req.channel() == ConnectionType.WHATSAPP_CLOUD_API) return validateCloud(workspaceId, req, csvHeaders,
+                excludeId);
+        if (req.cloudTemplate() != null) {
+            throw new ValidationException("cloudTemplate", "only campaigns on Cloud API numbers send WhatsApp templates");
+        }
         String name = name(workspaceId, req.name(), excludeId);
         Campaign.Audience audience = audience(workspaceId, req.audience(), csvHeaders);
         List<MessageTemplate> chosen = templates(workspaceId, req.templateIds());
         List<Campaign.PlaceholderMapping> mappings = placeholders(workspaceId, chosen, req.placeholders(), csvHeaders);
         List<String> senderIds = senders(workspaceId, req.senderIds());
-        return new Validated(name, audience, chosen, mappings, senderIds);
+        return new Validated(name, audience, chosen, mappings, senderIds, ConnectionType.WHATSAPP_WEB, null);
+    }
+
+    /** A campaign on Cloud API numbers (spec 2026-11-21 §5.7): one WhatsApp account, one approved Meta template. */
+    private Validated validateCloud(String workspaceId, CampaignRequest req, List<String> csvHeaders,
+            String excludeId) {
+        String name = name(workspaceId, req.name(), excludeId);
+        Campaign.Audience audience = audience(workspaceId, req.audience(), csvHeaders);
+        if (req.templateIds() != null && !req.templateIds().isEmpty()) {
+            throw new ValidationException("templateIds", "a Cloud campaign sends a WhatsApp template, not saved templates");
+        }
+        CloudSenders numbersOf = cloudSenders(workspaceId, req.senderIds());
+        CloudTemplateInfo t = cloudTemplate(workspaceId, req.cloudTemplate(), numbersOf.wabaId());
+        List<Campaign.PlaceholderMapping> mappings = cloudPlaceholders(workspaceId, t, req.placeholders(), csvHeaders);
+        String headerMediaId = req.cloudTemplate().headerMediaId();
+        headerMediaId = headerMediaId == null || headerMediaId.isBlank() ? null : headerMediaId.strip();
+        if (t.header().media() && headerMediaId == null) {
+            throw new ValidationException("cloudTemplate.headerMediaId",
+                    "a file for the template's " + t.header().format().toLowerCase() + " header");
+        }
+        if (!t.header().media()) headerMediaId = null;
+        return new Validated(name, audience, List.of(), mappings, numbersOf.ids(), ConnectionType.WHATSAPP_CLOUD_API,
+                new CampaignCloudTemplate(t.id(), t.name(), t.language(), headerMediaId));
+    }
+
+    private CloudSenders cloudSenders(String workspaceId, List<String> raw) {
+        List<String> ids = raw == null ? List.of() : new ArrayList<>(new LinkedHashSet<>(raw));
+        if (ids.isEmpty()) throw new ValidationException("senderIds", "required");
+        Map<String, PhoneNumber> mine = numbers.findByWorkspaceIdOrderByNumber(workspaceId).stream()
+                .collect(Collectors.toMap(PhoneNumber::getId, Function.identity()));
+        Set<String> wabas = new LinkedHashSet<>();
+        for (String id : ids) {
+            PhoneNumber n = mine.get(id);
+            if (n == null) throw new ValidationException("senderIds", "unknown number");
+            if (n.getDisabled() != null || n.getConnectionType() != ConnectionType.WHATSAPP_CLOUD_API
+                    || !cloudSenders.canSend(id)) {
+                throw CampaignErrors.senderNotAvailable(n.getNumber());
+            }
+            cloudSenders.wabaOf(id).ifPresent(wabas::add);
+        }
+        if (wabas.size() != 1) throw new ValidationException("senderIds", "Choose numbers of one WhatsApp account");
+        return new CloudSenders(ids, wabas.iterator().next());
+    }
+
+    private CloudTemplateInfo cloudTemplate(String workspaceId, CampaignRequest.CloudTemplateChoice choice,
+            String wabaId) {
+        String field = "cloudTemplate.cloudTemplateId";
+        if (choice == null || choice.cloudTemplateId() == null || choice.cloudTemplateId().isBlank()) {
+            throw new ValidationException(field, "required");
+        }
+        CloudTemplateInfo t;
+        try {
+            t = cloudTemplates.get(workspaceId, choice.cloudTemplateId().strip());
+        } catch (NotFoundException e) {
+            throw new ValidationException(field, "unknown WhatsApp template");
+        }
+        if (!t.sendable()) {
+            throw new ValidationException(field, "This WhatsApp template is not approved, or not supported yet");
+        }
+        if (!wabaId.equals(t.wabaId())) {
+            throw new ValidationException(field, "This template belongs to another WhatsApp account");
+        }
+        return t;
+    }
+
+    /**
+     * One mapping per blank of the template that the request maps; a blank left out takes the template's own fill
+     * when sent, so it needs a contact field or attribute fill (an agent fill has no value in a campaign).
+     */
+    private List<Campaign.PlaceholderMapping> cloudPlaceholders(String workspaceId, CloudTemplateInfo t,
+            List<Campaign.PlaceholderMapping> supplied, List<String> csvHeaders) {
+        Map<String, Campaign.PlaceholderMapping> given = new LinkedHashMap<>();
+        if (supplied != null) {
+            for (Campaign.PlaceholderMapping m : supplied) if (m != null && m.name() != null) given.put(m.name(), m);
+        }
+        List<Campaign.PlaceholderMapping> out = new ArrayList<>();
+        Set<String> columns = new HashSet<>();
+        for (CloudTemplateInfo.Variable v : t.variables()) {
+            String field = "placeholders." + v.key();
+            Campaign.PlaceholderMapping m = given.get(v.key());
+            if (m == null || m.source() == null) {
+                CloudTemplateInfo.Fill fill = t.fills() == null ? null : t.fills().get(v.key());
+                if (fill == null || fill.kind() == null || fill.kind() == CloudTemplateInfo.FillKind.AGENT) {
+                    throw new ValidationException(field, "needs a value");
+                }
+                continue;
+            }
+            String fallback = m.fallback() == null ? "" : m.fallback();
+            if (fallback.length() > MAX_TEXT) throw new ValidationException(field, "fallback is too long");
+            Campaign.PlaceholderSource source = csvHeaders != null ? csvSource(m, csvHeaders)
+                    : checked(workspaceId, m.source());
+            if (source == null) throw new ValidationException(field, "needs a value");
+            if (source.kind() == PlaceholderSourceKind.CSV_COLUMN && !columns.add(source.column())) {
+                throw CampaignErrors.columnReused();
+            }
+            out.add(new Campaign.PlaceholderMapping(v.key(), source, fallback));
+        }
+        return out;
     }
 
     static String nameKey(String name) {

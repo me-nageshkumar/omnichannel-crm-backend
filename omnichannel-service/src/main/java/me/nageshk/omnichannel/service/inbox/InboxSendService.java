@@ -146,6 +146,7 @@ public class InboxSendService {
     private final UsageCharger usage;
     private final CloudApi cloudApi;
     private final CloudMedia metaMedia;
+    private final CloudHeaderUploads headerUploads;
     private final CloudStoredStatuses cloudStatuses;
     private final CloudTemplates cloudTemplates;
     private final CloudTemplateFills templateFills;
@@ -336,9 +337,11 @@ public class InboxSendService {
             wamid = cloudApi.send(chat.getPhoneNumberId(), toCloud(chat, out), userIdOf(chat.getRemoteId()));
         } catch (CloudSendException e) {
             return CompletableFuture.failedFuture(switch (e.kind()) {
-                case TOKEN_REFUSED -> new NoDeviceException(InboxDevices.CLOUD_NOT_READY,
-                        "Meta refused this number's access token; replace it on Phone numbers.");
-                case RATE_LIMITED -> new NoDeviceException(CLOUD_RATE_LIMITED, "Meta asks to slow down: " + e.getMessage());
+                // Meta's own error stays the cause, so a campaign can read its code and Retry-After
+                case TOKEN_REFUSED -> (NoDeviceException) new NoDeviceException(InboxDevices.CLOUD_NOT_READY,
+                        "Meta refused this number's access token; replace it on Phone numbers.").initCause(e);
+                case RATE_LIMITED -> (NoDeviceException) new NoDeviceException(CLOUD_RATE_LIMITED,
+                        "Meta asks to slow down: " + e.getMessage()).initCause(e);
                 // our clock thought the window open; Meta's word wins
                 case WINDOW_CLOSED -> new WindowClosedException(ServiceWindow.of(chat, clock.instant()).closesAt());
                 default -> e;
@@ -413,11 +416,19 @@ public class InboxSendService {
             WaWebChat target = takenOver(actor, chat);
             String metaMediaId = null;
             if (file != null) {
-                try (InputStream in = file.resource().getInputStream()) {
-                    metaMediaId = metaMedia.upload(chat.getPhoneNumberId(), in.readAllBytes(), file.mimeType(),
-                            file.resource().getFilename());
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
+                java.util.function.Supplier<String> upload = () -> {
+                    try (InputStream in = file.resource().getInputStream()) {
+                        return metaMedia.upload(chat.getPhoneNumberId(), in.readAllBytes(), file.mimeType(),
+                                file.resource().getFilename());
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                };
+                try {
+                    // a campaign sends the same file to everyone: it goes to Meta once per number
+                    metaMediaId = actor instanceof CampaignActor
+                            ? headerUploads.metaMediaId(chat.getPhoneNumberId(), req.headerMediaId(), upload)
+                            : upload.get();
                 } catch (CloudMedia.CloudMediaException e) {
                     return CompletableFuture.failedFuture(new CloudSendException(CloudSendException.Kind.REFUSED, null,
                             "Meta did not take the header file", e.getMessage(), null));

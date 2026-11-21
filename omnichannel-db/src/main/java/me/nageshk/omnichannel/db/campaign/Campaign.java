@@ -8,6 +8,7 @@ import lombok.Setter;
 import me.nageshk.omnichannel.db.contact.ContactFilterSpec;
 import me.nageshk.omnichannel.db.contact.FilterKind;
 import me.nageshk.omnichannel.db.contact.advanced.Uses;
+import me.nageshk.omnichannel.db.phone.ConnectionType;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
@@ -36,6 +37,10 @@ public class Campaign {
     private List<String> templateNames;
     private List<PlaceholderMapping> placeholders;
     private List<String> senderIds;
+    /** The kind of number the campaign sends from; null on campaigns stored before Cloud campaigns (WhatsApp Web). */
+    private ConnectionType channel;
+    /** The Meta template of a Cloud campaign; null on WhatsApp Web campaigns. */
+    private CampaignCloudTemplate cloudTemplate;
     private CampaignStatus status;
     private PausedBy pausedBy;
     private String pauseReason;
@@ -70,5 +75,13 @@ public class Campaign {
     public record Counts(int total, int pending, int sent, int delivered, int read, int replied, int skipped,
             int failed) {
         public static final Counts ZERO = new Counts(0, 0, 0, 0, 0, 0, 0, 0);
+    }
+
+    public ConnectionType getChannel() {
+        return channel == null ? ConnectionType.WHATSAPP_WEB : channel;
+    }
+
+    public boolean isCloud() {
+        return getChannel() == ConnectionType.WHATSAPP_CLOUD_API;
     }
 }

@@ -33,11 +33,13 @@ public class CampaignLifecycleService {
     private final CampaignCsvStore csvStore;
     private final MongoTemplate mongo;
     private final Clock clock;
+    private final CloudCampaignChecks cloudChecks;
     private final Set<String> starting = ConcurrentHashMap.newKeySet();
 
     CampaignLifecycleService(CampaignService campaigns, CampaignValidator validator, CampaignSettingsService settings,
             CampaignMaterialiser materialiser, CampaignCounter counter, CampaignCsvStore csvStore, MongoTemplate mongo,
-            Clock clock) {
+            Clock clock, CloudCampaignChecks cloudChecks) {
+        this.cloudChecks = cloudChecks;
         this.campaigns = campaigns;
         this.validator = validator;
         this.settings = settings;
@@ -89,6 +91,11 @@ public class CampaignLifecycleService {
 
     /** PAUSED, by a user or the system, to RUNNING. */
     public Campaign resume(String workspaceId, String id) {
+        Campaign c = campaigns.require(workspaceId, id);
+        if (c.isCloud() && c.getStatus() == CampaignStatus.PAUSED) {
+            CloudCampaignChecks.Problem p = cloudChecks.beforeResume(c);
+            if (p != null) throw CampaignErrors.cannotResume(p.message());
+        }
         return transition(workspaceId, id, "resumed", List.of(CampaignStatus.PAUSED),
                 new Update().set("status", CampaignStatus.RUNNING).unset("pausedBy").unset("pauseReason"));
     }
@@ -120,6 +127,8 @@ public class CampaignLifecycleService {
         return new CampaignRequest(c.getName(),
                 new CampaignRequest.AudienceRequest(a.kind(), a.filterId(), a.phoneColumn(), a.nameColumn(),
                         a.segmentId()),
-                c.getTemplateIds(), c.getPlaceholders(), c.getSenderIds());
+                c.getTemplateIds(), c.getPlaceholders(), c.getSenderIds(), c.getChannel(),
+                c.getCloudTemplate() == null ? null : new CampaignRequest.CloudTemplateChoice(
+                        c.getCloudTemplate().cloudTemplateId(), c.getCloudTemplate().headerMediaId()));
     }
 }

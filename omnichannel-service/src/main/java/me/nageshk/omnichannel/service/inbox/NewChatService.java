@@ -151,6 +151,38 @@ public class NewChatService {
         return sender.send(actor, workspaceId, fresh, message, phone);
     }
 
+    /**
+     * Sends a Cloud campaign's Meta template to {@code phone} on a Cloud number (spec 2026-11-21 §5.3), treating the
+     * chat exactly as {@link #startForCampaign} does for WhatsApp Web: a closed chat is reopened and keeps its
+     * assignment, a chat nobody has (or a new one) is marked with the campaign so the first reply is routed; a Cloud
+     * number needs no lookup.
+     */
+    public CompletableFuture<MessageView> startCloudTemplateForCampaign(CampaignActor actor, String workspaceId,
+            String phoneNumberId, String phone, CloudTemplateRequest req) {
+        String remoteId = phone + "@c.us";
+        WaWebChat chat = existingChat(workspaceId, phoneNumberId, phone, remoteId);
+        if (chat == null) chat = chats.findByPhoneNumberIdAndRemoteId(phoneNumberId, remoteId).orElse(null);
+        if (chat != null) {
+            if (chat.getStatus() == ChatStatus.CLOSED) chat = assignment.reopen(actor, chat);
+            if (chat.getAssignedUserId() == null && chat.getAssignedTeamId() == null) {
+                chat.setCampaignId(actor.campaignId());
+            }
+            return sender.sendCloudTemplate(actor, workspaceId, chat, req, null);
+        }
+        PhoneNumber number = numbers.findByIdAndWorkspaceId(phoneNumberId, workspaceId)
+                .orElseThrow(() -> new NotFoundException("phone number not found"));
+        WaWebChat fresh = new WaWebChat();
+        fresh.setCustomerId(number.getCustomerId());
+        fresh.setWorkspaceId(workspaceId);
+        fresh.setPhoneNumberId(phoneNumberId);
+        fresh.setRemoteId(remoteId);
+        fresh.setContactId(contactRepository.findByWorkspaceIdAndPhone(workspaceId, phone).map(Contact::getId)
+                .orElse(null));
+        fresh.setStatus(ChatStatus.OPEN);
+        fresh.setCampaignId(actor.campaignId());
+        return sender.sendCloudTemplate(actor, workspaceId, fresh, req, phone);
+    }
+
     /** Writes to a chat that exists: refused if taken, reopened if closed, claimed if nobody has it. */
     private CompletableFuture<MessageView> sendToExisting(AuthenticatedUser me, String workspaceId, WaWebChat chat,
             SendRequest message) {
