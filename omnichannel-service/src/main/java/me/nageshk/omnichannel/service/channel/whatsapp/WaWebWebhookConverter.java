@@ -365,7 +365,19 @@ public final class WaWebWebhookConverter {
         Boolean forwarded = raw.path("isForwarded").asBoolean(false) ? Boolean.TRUE : null;
         Boolean frequently = raw.path("forwardingScore").asInt(0) >= FREQUENTLY_FORWARDED ? Boolean.TRUE : null;
         if (quoted == null && forwarded == null && frequently == null) return null;
-        return new Context(from, quoted, forwarded, frequently);
+        return new Context(from, quoted, forwarded, frequently, quoted == null ? null : quotedPreview(raw));
+    }
+
+    /** The quoted message's type and text as WhatsApp Web hands them over; null when it gives neither. */
+    private static Context.WaWeb quotedPreview(JsonNode raw) {
+        JsonNode q = raw.path("quotedMsg");
+        if (!q.isObject()) return null;
+        String rawType = text(q.path("type"));
+        String type = rawType == null ? null : cloudType(rawType);
+        String body = text(q.path("body"));
+        if (body == null) body = text(q.path("caption"));
+        if (type == null && body == null) return null;
+        return new Context.WaWeb(new Context.QuotedPreview(type, body));
     }
 
     /** True for a {@code ctwaContext} naming an ad: a source id, a conversion source or a click id. */
